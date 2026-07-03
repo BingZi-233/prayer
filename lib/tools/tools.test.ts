@@ -19,7 +19,7 @@ describe("kb tool", () => {
     repo.insertKbVec(id, new Float32Array([1, 0, 0]));
     const tool = makeKbTool(repo, fakeEmbed as any, 512);
     const res = await tool.handler({ query: "退货" }, {});
-    expect(res.content[0].text).toContain("退货 7 天内");
+    expect((res.content[0] as { text: string }).text).toContain("退货 7 天内");
   });
 });
 
@@ -33,7 +33,7 @@ describe("handoff tool", () => {
     );
     const evt = await p;
     expect(evt.sessionKey).toBe("1:2");
-    expect(res.content[0].text).toContain("人工");
+    expect((res.content[0] as { text: string }).text).toContain("人工");
     expect(repo.isHumanMode("1:2")).toBe(false);
   });
 });

@@ -43,8 +43,7 @@ describe("handoff handler", () => {
     (repo as unknown as { db: any });
     // 通过再次 setHumanMode 后手动回拨
     // 简化:直接调用内部 SQL
-    // @ts-expect-error 访问私有 db 仅测试用
-    repo["db"].prepare("UPDATE sessions SET human_since=? WHERE key=?").run(Date.now() - 3600_000, "1:2");
+    (repo as unknown as { db: any }).db.prepare("UPDATE sessions SET human_since=? WHERE key=?").run(Date.now() - 3600_000, "1:2");
     const r = await p;
     expect(r.sessionKey).toBe("1:2");
     stop();
