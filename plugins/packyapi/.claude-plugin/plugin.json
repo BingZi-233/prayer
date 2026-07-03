@@ -1,0 +1,8 @@
+{
+  "name": "packyapi",
+  "version": "0.1.0",
+  "description": "快速查询 PackyAPI 模型价格、可用模型与文档,全走公开 JSON API,省 token、高精确",
+  "author": { "name": "prayer" },
+  "commands": "./commands",
+  "skills": "./skills"
+}
