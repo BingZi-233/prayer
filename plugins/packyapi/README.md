@@ -14,9 +14,9 @@
 ## 直接用脚本
 
 ```bash
-python3 plugins/packyapi/scripts/packy.py price claude
-python3 plugins/packyapi/scripts/packy.py models --endpoint anthropic
-python3 plugins/packyapi/scripts/packy.py groups
+node plugins/packyapi/scripts/packy.ts price claude
+node plugins/packyapi/scripts/packy.ts models --endpoint anthropic
+node plugins/packyapi/scripts/packy.ts groups
 ```
 
 ## 安装(Claude Code)
@@ -26,4 +26,4 @@ python3 plugins/packyapi/scripts/packy.py groups
 - 项目级:在 `.claude/settings.json` 配置本地 marketplace 指向 `plugins/`,或
 - 直接把 `plugins/packyapi` 软链到 `~/.claude/plugins/`。
 
-依赖:`python3`(标准库,无第三方包)。
+依赖:Node ≥ v22.6(原生运行 TypeScript,无第三方包)。

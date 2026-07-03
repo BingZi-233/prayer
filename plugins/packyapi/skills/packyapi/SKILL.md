@@ -19,13 +19,13 @@ PackyAPI = AI API 聚合中转平台(`https://www.packyapi.com`),Anthropic/OpenA
 - `/packy-models [--endpoint anthropic] [--group cc]` — 列可用模型 ID。
 - `/packy-docs <主题>` — 定位并读单个文档页。
 
-底层脚本(可直接 Bash 调,`${CLAUDE_PLUGIN_ROOT}` 为本 plugin 根):
+底层脚本为 TypeScript,Node(v22.6+/24)原生 strip 直跑,零依赖。`${CLAUDE_PLUGIN_ROOT}` 为本 plugin 根:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/packy.py" price [关键词] [--group cc] [--base 2]
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/packy.py" models [--endpoint anthropic] [--group cc]
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/packy.py" groups
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/packy.py" raw <model>
+node "${CLAUDE_PLUGIN_ROOT}/scripts/packy.ts" price [关键词] [--group cc] [--base 2]
+node "${CLAUDE_PLUGIN_ROOT}/scripts/packy.ts" models [--endpoint anthropic] [--group cc]
+node "${CLAUDE_PLUGIN_ROOT}/scripts/packy.ts" groups
+node "${CLAUDE_PLUGIN_ROOT}/scripts/packy.ts" raw <model>
 ```
 
 ## 配置 Claude Agent SDK / Claude Code(走 PackyAPI)

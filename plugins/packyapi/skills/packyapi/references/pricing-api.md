@@ -55,7 +55,7 @@ cache  = input * cache_ratio
 | `codex` | 0.5 | codex 专用 |
 | `deepseek-officially` | 0.25 | deepseek 官方 |
 
-完整列表 / 实时值:`packy.py groups`。
+完整列表 / 实时值:`node packy.ts groups`。
 
 ## 需鉴权的端点(不可匿名)
 
