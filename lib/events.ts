@@ -57,6 +57,7 @@ export interface ErrorOccurred {
   scope: string;
   err: unknown;
   sessionKey?: string;
+  groupId?: number;
 }
 
 export interface EventMap {
