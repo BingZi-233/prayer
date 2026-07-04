@@ -114,11 +114,13 @@ export default function SessionsPage() {
                   <MessageScrollerViewport>
                     <MessageScrollerContent className="gap-3 p-4">
                       {msgs.map((m, i) => {
-                        const itemCls = "[content-visibility:visible] [contain-intrinsic-size:auto]";
+                        // inline style 覆盖组件基类的 content-visibility:auto + contain-intrinsic-size:10rem
+                        // (tailwind-merge 不去重 arbitrary property,占位 10rem 会产生巨大空隙)
+                        const itemStyle = { contentVisibility: "visible", containIntrinsicSize: "auto" } as const;
                         // 工具调用(Agent 发起)—— 左对齐,可折叠查看请求 / 响应
                         if (m.role === "tool") {
                           return (
-                            <MessageScrollerItem key={i} messageId={String(i)} className={itemCls}>
+                            <MessageScrollerItem key={i} messageId={String(i)} style={itemStyle}>
                               <details className="bg-muted/50 text-muted-foreground w-fit max-w-[85%] rounded-lg border px-2.5 py-1.5 text-xs">
                                 <summary className="flex cursor-pointer items-center gap-1.5 select-none">
                                   <Wrench className="size-3 shrink-0" />
@@ -143,7 +145,7 @@ export default function SessionsPage() {
                         if (!m.text) return null;
                         const isUser = m.role === "user";
                         return (
-                          <MessageScrollerItem key={i} messageId={String(i)} scrollAnchor={isUser} className={itemCls}>
+                          <MessageScrollerItem key={i} messageId={String(i)} scrollAnchor={isUser} style={itemStyle}>
                             <Message align={isUser ? "end" : "start"}>
                               <MessageContent>
                                 <Bubble variant={isUser ? "default" : "muted"}>

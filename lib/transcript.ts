@@ -47,13 +47,14 @@ export function parseTranscript(jsonl: string): TranscriptMsg[] {
   for (const line of jsonl.split("\n")) {
     const trimmed = line.trim();
     if (!trimmed) continue;
-    let rec: { type?: string; message?: { content?: unknown } };
+    let rec: { type?: string; isMeta?: boolean; message?: { content?: unknown } };
     try {
       rec = JSON.parse(trimmed);
     } catch {
       continue; // 坏行跳过
     }
     if (rec.type !== "user" && rec.type !== "assistant") continue; // 未知类型忽略
+    if (rec.isMeta) continue; // 合成注入(skill / system 上下文)非真人输入,跳过
     const role = rec.type;
     const content = rec.message?.content;
 
