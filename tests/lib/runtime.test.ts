@@ -11,6 +11,10 @@ const cfg: AppConfig = {
   dbPath: ":memory:",
   claudeConfigDir: "/tmp/cfgdir-test",
   model: "claude-sonnet-5",
+  reflectScanMs: 300000,
+  reflectLookbackMs: 7200000,
+  reflectSettleMs: 600000,
+  reflectWindowMax: 60,
 };
 
 function fakeBuilders(overrides: Partial<RuntimeBuilders> = {}): RuntimeBuilders {

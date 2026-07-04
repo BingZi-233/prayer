@@ -91,8 +91,11 @@ export class RuntimeManager {
         repo,
         botQQ: cfg.botQQ,
         adminGroupId: cfg.adminGroupId,
-        timeoutMin: cfg.handoffTimeoutMin,
         agent,
+        reflectScanMs: cfg.reflectScanMs,
+        reflectLookbackMs: cfg.reflectLookbackMs,
+        reflectSettleMs: cfg.reflectSettleMs,
+        reflectWindowMax: cfg.reflectWindowMax,
       });
       const client = builders.makeClient(cfg.onebotWsUrl, cfg.onebotAccessToken || undefined, (c) => {
         this.wsConnected = c;

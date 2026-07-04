@@ -11,6 +11,10 @@ const cfg: AppConfig = {
   dbPath: "./data/agent.db",
   claudeConfigDir: "./data/claude-config",
   model: "claude-sonnet-5",
+  reflectScanMs: 300000,
+  reflectLookbackMs: 7200000,
+  reflectSettleMs: 600000,
+  reflectWindowMax: 60,
 };
 
 describe("api helpers", () => {
