@@ -11,6 +11,10 @@ export interface AppConfig {
   dbPath: string;
   claudeConfigDir: string;
   model: string;
+  reflectScanMs: number;
+  reflectLookbackMs: number;
+  reflectSettleMs: number;
+  reflectWindowMax: number;
 }
 
 function seedFromEnv(env: Record<string, string | undefined>): AppConfig {
@@ -23,6 +27,10 @@ function seedFromEnv(env: Record<string, string | undefined>): AppConfig {
     dbPath: env.DB_PATH ?? "./data/agent.db",
     claudeConfigDir: env.CLAUDE_CONFIG_DIR ?? "./data/claude-config",
     model: env.ANTHROPIC_MODEL ?? "claude-sonnet-5",
+    reflectScanMs: Number(env.REFLECT_SCAN_MS ?? "300000"),
+    reflectLookbackMs: Number(env.REFLECT_LOOKBACK_MS ?? "7200000"),
+    reflectSettleMs: Number(env.REFLECT_SETTLE_MS ?? "600000"),
+    reflectWindowMax: Number(env.REFLECT_WINDOW_MAX ?? "60"),
   };
 }
 
