@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { Activity, Plug, Users, LifeBuoy, RotateCw, TriangleAlert, Clock } from "lucide-react";
+import { Activity, Plug, Users, RotateCw, TriangleAlert, Clock } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -19,7 +19,6 @@ interface Status {
   state: string;
   wsConnected: boolean;
   sessionCount: number;
-  handoffQueue: number;
   lastError?: string;
   bootedAt?: number;
 }
@@ -88,7 +87,6 @@ export default function StatusPage() {
       ) : null,
     },
     { label: "活动会话", icon: Users, value: s?.sessionCount },
-    { label: "转人工队列", icon: LifeBuoy, value: s?.handoffQueue },
   ];
 
   return (

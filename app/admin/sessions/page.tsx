@@ -10,7 +10,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from "@/components/ui/empty";
@@ -25,7 +24,7 @@ import {
   MessageScrollerViewport,
 } from "@/components/ui/message-scroller";
 
-interface Sess { key: string; sessionId: string | null; humanMode: boolean; updatedAt: number; }
+interface Sess { key: string; sessionId: string | null; updatedAt: number; }
 interface Msg { role: string; text?: string; tool?: string; input?: string; result?: string; }
 
 export default function SessionsPage() {
@@ -110,7 +109,6 @@ export default function SessionsPage() {
                     )}
                   >
                     <span className="truncate font-mono">{sess.key}</span>
-                    {sess.humanMode && <Badge variant="secondary" className="shrink-0">人工</Badge>}
                   </button>
                 ))}
               </div>

@@ -93,7 +93,7 @@ export default function ConfigPage() {
             <Card>
               <CardHeader>
                 <CardTitle>OneBot 连接</CardTitle>
-                <CardDescription>NapCat 正向 WS 连接与群 / 转人工参数。</CardDescription>
+                <CardDescription>NapCat 正向 WS 连接与群参数。</CardDescription>
               </CardHeader>
               <CardContent>
                 <FieldGroup>
@@ -113,11 +113,6 @@ export default function ConfigPage() {
                   <Field>
                     <FieldLabel htmlFor="adminGroupId">管理群号</FieldLabel>
                     <Input id="adminGroupId" inputMode="numeric" value={num("adminGroupId")} onChange={(e) => upd("adminGroupId", e.target.value)} />
-                  </Field>
-                  <Field>
-                    <FieldLabel htmlFor="handoffTimeoutMin">转人工超时(分钟)</FieldLabel>
-                    <Input id="handoffTimeoutMin" inputMode="numeric" value={num("handoffTimeoutMin")} onChange={(e) => upd("handoffTimeoutMin", e.target.value)} />
-                    <FieldDescription>人工接管超过该时长未 !resume 则自动恢复自动应答。</FieldDescription>
                   </Field>
                 </FieldGroup>
               </CardContent>
