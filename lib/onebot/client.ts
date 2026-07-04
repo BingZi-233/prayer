@@ -7,9 +7,18 @@ export class OneBotClient {
   private ws?: WebSocket;
   private stopped = false;
   private backoff = 1000;
+  private connected = false;
   private readonly onAction = (a: ActionSend) => this.sendAction(a);
 
-  constructor(private url: string, private accessToken?: string) {}
+  constructor(
+    private url: string,
+    private accessToken?: string,
+    private onStatus?: (connected: boolean) => void
+  ) {}
+
+  isConnected(): boolean {
+    return this.connected;
+  }
 
   start(): void {
     this.stopped = false;
@@ -20,8 +29,15 @@ export class OneBotClient {
   stop(): void {
     this.stopped = true;
     bus.off("action.send", this.onAction);
+    this.setConnected(false);
     this.ws?.close();
     this.ws = undefined;
+  }
+
+  private setConnected(v: boolean): void {
+    if (this.connected === v) return;
+    this.connected = v;
+    this.onStatus?.(v);
   }
 
   private connect(): void {
@@ -29,7 +45,10 @@ export class OneBotClient {
     const ws = new WebSocket(this.url, { headers });
     this.ws = ws;
 
-    ws.on("open", () => { this.backoff = 1000; });
+    ws.on("open", () => {
+      this.backoff = 1000;
+      this.setConnected(true);
+    });
 
     ws.on("message", (raw: WebSocket.RawData) => {
       let evt: unknown;
@@ -38,7 +57,10 @@ export class OneBotClient {
       if (msg) bus.emit("message.received", msg);
     });
 
-    ws.on("close", () => this.scheduleReconnect());
+    ws.on("close", () => {
+      this.setConnected(false);
+      this.scheduleReconnect();
+    });
     ws.on("error", () => ws.close());
   }
 
