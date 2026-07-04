@@ -236,14 +236,22 @@ export class Repo {
     return row.n;
   }
 
-  listSessions(): { key: string; sessionId: string | null; humanMode: boolean; updatedAt: number }[] {
+  listSessions(): {
+    key: string; sessionId: string | null; humanMode: boolean;
+    humanSince: number | null; lastQuestion: string | null; updatedAt: number;
+  }[] {
     const rows = this.db
-      .prepare("SELECT key, session_id, human_mode, updated_at FROM sessions ORDER BY updated_at DESC")
-      .all() as { key: string; session_id: string | null; human_mode: number; updated_at: number }[];
+      .prepare("SELECT key, session_id, human_mode, human_since, last_question, updated_at FROM sessions ORDER BY updated_at DESC")
+      .all() as {
+        key: string; session_id: string | null; human_mode: number;
+        human_since: number | null; last_question: string | null; updated_at: number;
+      }[];
     return rows.map((r) => ({
       key: r.key,
       sessionId: r.session_id,
       humanMode: !!r.human_mode,
+      humanSince: r.human_since,
+      lastQuestion: r.last_question,
       updatedAt: r.updated_at,
     }));
   }

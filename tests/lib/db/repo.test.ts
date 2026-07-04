@@ -24,6 +24,15 @@ describe("Repo sessions", () => {
     expect(repo.getResumeId("g:u")).toBeUndefined(); // 续接指针清空
     expect(repo.getSessionId("g:u")).toBe("sid-1"); // 展示指针保留
   });
+
+  it("listSessions 返回 humanSince/lastQuestion", () => {
+    repo.setSessionId("g:u", "sid-1");
+    db.prepare("UPDATE sessions SET human_mode=1, human_since=1700, last_question='退款吗' WHERE key='g:u'").run();
+    const s = repo.listSessions()[0];
+    expect(s.humanMode).toBe(true);
+    expect(s.humanSince).toBe(1700);
+    expect(s.lastQuestion).toBe("退款吗");
+  });
 });
 
 describe("Repo dedupe", () => {
