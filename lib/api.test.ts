@@ -1,0 +1,24 @@
+import { describe, it, expect } from "vitest";
+import { ok, fail, maskConfig } from "./api";
+import type { AppConfig } from "./config-store";
+
+const cfg: AppConfig = {
+  onebotWsUrl: "ws://x:1",
+  onebotAccessToken: "secret-token-9999",
+  botQQ: 1,
+  adminGroupId: 2,
+  handoffTimeoutMin: 30,
+  dbPath: "./data/agent.db",
+  claudeConfigDir: "./data/claude-config",
+  model: "claude-sonnet-5",
+};
+
+describe("api helpers", () => {
+  it("ok 包 data", () => expect(ok({ a: 1 })).toEqual({ ok: true, data: { a: 1 } }));
+  it("fail 包 error", () => expect(fail("boom")).toEqual({ ok: false, error: "boom" }));
+  it("maskConfig 掩码 token", () => {
+    const m = maskConfig(cfg);
+    expect(m.onebotAccessToken).toBe("••••9999");
+    expect(m.onebotWsUrl).toBe("ws://x:1"); // 非 secret 不动
+  });
+});
