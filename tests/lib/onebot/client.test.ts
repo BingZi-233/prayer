@@ -70,4 +70,30 @@ describe("OneBotClient", () => {
     expect(action.params.group_id).toBe(9);
     expect(action.params.message).toBe("hello");
   });
+
+  it("getGroupList → 发 get_group_list 并按 echo 解析 data", async () => {
+    const port = await startServer((ws) => {
+      ws.on("message", (raw: Buffer) => {
+        const req = JSON.parse(raw.toString());
+        if (req.action === "get_group_list") {
+          ws.send(JSON.stringify({
+            echo: req.echo,
+            data: [{ group_id: 111, group_name: "群甲" }, { group_id: 222, group_name: "群乙" }],
+          }));
+        }
+      });
+    });
+    client = new OneBotClient(`ws://127.0.0.1:${port}`);
+    client.start();
+    await new Promise((r) => setTimeout(r, 100)); // 等连接 open
+    const list = await client.getGroupList();
+    expect(Array.isArray(list)).toBe(true);
+    expect((list as any[]).map((g) => g.group_id)).toEqual([111, 222]);
+  });
+
+  it("getGroupList 未连接 → undefined", async () => {
+    client = new OneBotClient("ws://127.0.0.1:1"); // 不连
+    const list = await client.getGroupList();
+    expect(list).toBeUndefined();
+  });
 });

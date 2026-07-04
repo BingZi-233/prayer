@@ -106,6 +106,13 @@ export class OneBotClient {
     }));
   }
 
+  // 拉群列表(get_group_list)。未连接/超时 → undefined(不抛)。
+  getGroupList(): Promise<unknown[] | undefined> {
+    return this.call("get_group_list", {}).then((data) =>
+      Array.isArray(data) ? data : undefined
+    );
+  }
+
   // 发 OneBot API 请求并等回执(echo 关联)。超时/未连接 → resolve undefined(降级不抛)。
   private call(action: string, params: Record<string, unknown>, timeoutMs = 8000): Promise<any> {
     if (this.ws?.readyState !== WebSocket.OPEN) return Promise.resolve(undefined);
