@@ -59,7 +59,7 @@ describe("reflection-poller runScan", () => {
     const hits = repo.searchKb(new Float32Array([1, 0, 0]), 1);
     expect(hits[0].content).toContain("退款");
     expect(hits[0].source).toContain("human-reflection:100:");
-    expect(repo.reflectCursor()).toBe(NOW - 1000); // until = now - settle
+    expect(repo.groupReflectCursor(100)).toBe(NOW - 1000); // until = now - settle
   });
 
   it("effective=false → 不入库不通知", async () => {
@@ -71,12 +71,12 @@ describe("reflection-poller runScan", () => {
     expect(repo.searchKb(new Float32Array([1, 0, 0]), 1)).toHaveLength(0);
   });
 
-  it("时间带内无管理发言 → 不调用 LLM,游标仍推进", async () => {
+  it("群内无管理发言 → 不成为候选,不调用 LLM,游标不动", async () => {
     seed(100, 200, "member", "只有用户发言", NOW - 4000);
     const qf = vi.fn(fakeQuery("[]"));
     await runScan(opts({ queryFn: qf as never }));
     expect(qf).not.toHaveBeenCalled();
-    expect(repo.reflectCursor()).toBe(NOW - 1000);
+    expect(repo.groupReflectCursor(100)).toBe(0);
   });
 
   it("太新(settle 带内)的管理发言不被处理", async () => {
@@ -91,16 +91,16 @@ describe("reflection-poller runScan", () => {
     seed(100, 201, "admin", "答案", NOW - 4000);
     await runScan(opts({ queryFn: fakeQuery("抱歉无法处理") as never }));
     expect(repo.searchKb(new Float32Array([1, 0, 0]), 1)).toHaveLength(0);
-    expect(repo.reflectCursor()).toBe(NOW - 1000); // 仍推进
+    expect(repo.groupReflectCursor(100)).toBe(NOW - 1000); // 仍推进
   });
 
-  it("until <= cursor → 直接跳过(不重复处理)", async () => {
-    repo.setReflectCursor(NOW); // 游标已在 now,until=now-settle < cursor
+  it("until <= 群游标 → 直接跳过(不重复处理)", async () => {
+    repo.setGroupReflectCursor(100, NOW); // 该群游标已在 now,until=now-settle < cursor
     seed(100, 201, "admin", "答案", NOW - 4000);
     const qf = vi.fn(fakeQuery("[]"));
     await runScan(opts({ queryFn: qf as never }));
     expect(qf).not.toHaveBeenCalled();
-    expect(repo.reflectCursor()).toBe(NOW); // 不动
+    expect(repo.groupReflectCursor(100)).toBe(NOW); // 不动
   });
 
   it("忙群:band 管理发言在大量后续消息后仍入窗(不被 evict)", async () => {
@@ -124,5 +124,23 @@ describe("reflection-poller runScan", () => {
     );
     const hits = repo.searchKb(new Float32Array([1, 0, 0]), 10);
     expect(hits).toHaveLength(2);
+  });
+
+  it("单群处理抛错 → 该群游标不推进(下轮重试),其他群照常沉淀", async () => {
+    seed(100, 201, "admin", "群100答案", NOW - 4000);
+    seed(200, 202, "admin", "群200答案", NOW - 4000);
+    // 群100 转录触发抛错;群200 正常返回有效
+    const qf = (args: { prompt: string }) => {
+      if (args.prompt.includes("群100答案")) throw new Error("boom");
+      return fakeQuery('[{"question":"q","answer":"a","effective":true,"faq":"群200知识条"}]')();
+    };
+    const err = new Promise<any>((res) => bus.once("error.occurred", res));
+    await runScan(opts({ queryFn: qf as never }));
+    const e = await err;
+    expect(e.scope).toBe("reflection");
+    expect(e.groupId).toBe(100);
+    expect(repo.groupReflectCursor(100)).toBe(0); // 抛错群不推进
+    expect(repo.groupReflectCursor(200)).toBe(NOW - 1000); // 正常群推进
+    expect(repo.searchKb(new Float32Array([1, 0, 0]), 10)).toHaveLength(1); // 只群200沉淀
   });
 });

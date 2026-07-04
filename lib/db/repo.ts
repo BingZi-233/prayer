@@ -51,16 +51,28 @@ export class Repo {
       .run(groupId, userId, senderRole, text);
   }
 
-  // 指定时间带 (afterTs, untilTs] 内含 owner/admin 发言的 group,去重
-  groupsWithAdminMessagesBetween(afterTs: number, untilTs: number): number[] {
+  // 上界 untilTs 前存在 owner/admin 发言的候选 group,去重(每群游标另判 band)
+  groupsWithAdminMessagesUpTo(untilTs: number): number[] {
     const rows = this.db
       .prepare(
         `SELECT DISTINCT group_id FROM group_messages
-         WHERE created_at > ? AND created_at <= ? AND sender_role IN ('owner','admin')
+         WHERE created_at <= ? AND sender_role IN ('owner','admin')
          ORDER BY group_id`
       )
-      .all(afterTs, untilTs) as { group_id: number }[];
+      .all(untilTs) as { group_id: number }[];
     return rows.map((r) => r.group_id);
+  }
+
+  // 某群 (afterTs, untilTs] 内是否有 owner/admin 发言
+  hasAdminMessageBetween(groupId: number, afterTs: number, untilTs: number): boolean {
+    const row = this.db
+      .prepare(
+        `SELECT 1 FROM group_messages
+         WHERE group_id = ? AND created_at > ? AND created_at <= ? AND sender_role IN ('owner','admin')
+         LIMIT 1`
+      )
+      .get(groupId, afterTs, untilTs);
+    return !!row;
   }
 
   // 某群 sinceTs 之后最近 limit 条,按时间升序返回
@@ -133,13 +145,14 @@ export class Repo {
     this.db.prepare("DELETE FROM group_messages WHERE created_at < ?").run(beforeTs);
   }
 
-  // 反思游标(已处理到的时间戳),复用 config 表
-  reflectCursor(): number {
-    return Number(this.getConfigRow("reflect_cursor") ?? "0");
+  // 反思游标(每群独立,已处理到的时间戳),复用 config 表。
+  // 每群独立 → 单群处理抛错时只该群不推进、下轮重试,不牵连其他群。
+  groupReflectCursor(groupId: number): number {
+    return Number(this.getConfigRow(`reflect_cursor:${groupId}`) ?? "0");
   }
 
-  setReflectCursor(ts: number): void {
-    this.setConfigRow("reflect_cursor", String(ts));
+  setGroupReflectCursor(groupId: number, ts: number): void {
+    this.setConfigRow(`reflect_cursor:${groupId}`, String(ts));
   }
 
   seenMessage(messageId: number): boolean {

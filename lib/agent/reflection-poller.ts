@@ -77,11 +77,17 @@ function resolve(deps: ReflectionPollerDeps): Resolved {
 
 async function scanOnce(d: Resolved): Promise<void> {
   const now = d.now();
-  const cursor = d.repo.reflectCursor();
-  const until = now - d.settleMs;
-  if (until <= cursor) return; // 无新沉降带
+  const until = now - d.settleMs; // 已沉降上界
+  if (until <= 0) return;
 
-  for (const groupId of d.repo.groupsWithAdminMessagesBetween(cursor, until)) {
+  for (const groupId of d.repo.groupsWithAdminMessagesUpTo(until)) {
+    const cursor = d.repo.groupReflectCursor(groupId);
+    if (until <= cursor) continue; // 该群已处理到此
+    // 该群 band 内无新管理发言(旧发言早已处理) → 直接推进跳过,不喂 LLM
+    if (!d.repo.hasAdminMessageBetween(groupId, cursor, until)) {
+      d.repo.setGroupReflectCursor(groupId, until);
+      continue;
+    }
     try {
       const window = d.repo.groupReflectionWindow(groupId, cursor, now, PRE_CONTEXT, d.windowMax);
       if (!window.length) continue;
@@ -110,12 +116,13 @@ async function scanOnce(d: Resolved): Promise<void> {
           text: `已从群 ${groupId} 的人工回复沉淀 1 条知识:${faq.slice(0, 40)}${faq.length > 40 ? "…" : ""}`,
         });
       }
+      d.repo.setGroupReflectCursor(groupId, until); // 成功才推进该群游标
     } catch (err) {
+      // 该群不推进游标 → 下轮重试;剪枝上限保证最终自愈(超 lookback+settle 放弃)
       bus.emit("error.occurred", { scope: "reflection", err, groupId });
     }
   }
 
-  d.repo.setReflectCursor(until);
   d.repo.pruneGroupMessages(now - d.lookbackMs - d.settleMs);
 }
 

@@ -55,16 +55,17 @@ describe("Repo group_messages buffer", () => {
     expect(win[1].userId).toBe(201);
   });
 
-  it("groupsWithAdminMessagesBetween 只返带 owner/admin 且时间带内的群", () => {
+  it("groupsWithAdminMessagesUpTo 返 until 前有管理发言的群;hasAdminMessageBetween 判 band 内", () => {
     const now = Date.now();
     db.prepare("INSERT INTO group_messages (group_id,user_id,sender_role,text,created_at) VALUES (?,?,?,?,?)")
-      .run(100, 201, "admin", "带内客服", now - 100);
+      .run(100, 201, "admin", "客服", now - 100);
     db.prepare("INSERT INTO group_messages (group_id,user_id,sender_role,text,created_at) VALUES (?,?,?,?,?)")
-      .run(101, 202, "member", "带内用户", now - 100); // 非管理
-    db.prepare("INSERT INTO group_messages (group_id,user_id,sender_role,text,created_at) VALUES (?,?,?,?,?)")
-      .run(102, 203, "owner", "带外客服", now - 99999); // 太早
-    const groups = repo.groupsWithAdminMessagesBetween(now - 1000, now);
-    expect(groups).toEqual([100]);
+      .run(101, 202, "member", "用户", now - 100); // 非管理
+    expect(repo.groupsWithAdminMessagesUpTo(now)).toEqual([100]);
+    expect(repo.groupsWithAdminMessagesUpTo(now - 1000)).toEqual([]); // 太新未达上界
+    expect(repo.hasAdminMessageBetween(100, now - 1000, now)).toBe(true);
+    expect(repo.hasAdminMessageBetween(100, now - 50, now)).toBe(false); // band 内无(发言在 now-100)
+    expect(repo.hasAdminMessageBetween(101, now - 1000, now)).toBe(false); // 非管理
   });
 
   it("pruneGroupMessages 删早于阈值的行", () => {
@@ -76,9 +77,10 @@ describe("Repo group_messages buffer", () => {
     expect(repo.groupMessageWindow(100, 0, 10).map((m) => m.text)).toEqual(["新"]);
   });
 
-  it("reflectCursor 缺省 0,可读写 round-trip", () => {
-    expect(repo.reflectCursor()).toBe(0);
-    repo.setReflectCursor(123456);
-    expect(repo.reflectCursor()).toBe(123456);
+  it("groupReflectCursor 缺省 0,按群独立读写 round-trip", () => {
+    expect(repo.groupReflectCursor(100)).toBe(0);
+    repo.setGroupReflectCursor(100, 123456);
+    expect(repo.groupReflectCursor(100)).toBe(123456);
+    expect(repo.groupReflectCursor(200)).toBe(0); // 群隔离
   });
 });
