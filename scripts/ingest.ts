@@ -1,5 +1,5 @@
 import { readFileSync, readdirSync } from "node:fs";
-import { join } from "node:path";
+import { join, sep } from "node:path";
 import { openDb } from "../lib/db/index";
 import { Repo } from "../lib/db/repo";
 import { embed } from "../lib/tools/embed";
@@ -21,7 +21,10 @@ export interface IngestResult {
 }
 
 export async function runIngest(repo: Repo, dir = "docs/kb"): Promise<IngestResult[]> {
-  const files = readdirSync(dir).filter((f) => f.endsWith(".md") || f.endsWith(".txt"));
+  // 递归子目录;文件标识用相对 posix 路径(如 faq/退款.md),便于区分同名文件
+  const files = readdirSync(dir, { recursive: true })
+    .map((f) => String(f).split(sep).join("/"))
+    .filter((f) => f.endsWith(".md") || f.endsWith(".txt"));
   const out: IngestResult[] = [];
   for (const f of files) {
     const content = readFileSync(join(dir, f), "utf8");

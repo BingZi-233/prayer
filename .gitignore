@@ -36,3 +36,8 @@ pnpm-debug.log*
 *.tsbuildinfo
 next-env.d.ts
 data/
+
+# 本地工具产物 / 配置(非源码)
+.claude/
+.agents/
+.playwright-mcp/

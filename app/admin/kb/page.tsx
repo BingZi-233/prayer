@@ -31,9 +31,12 @@ export default function KbPage() {
     loadFiles();
   }, []);
 
+  // 逐段编码:catch-all 路由需真实 "/" 分隔子目录,不能整串编码
+  const encPath = (f: string) => f.split("/").map(encodeURIComponent).join("/");
+
   async function open(f: string) {
     setActive(f);
-    const r = await fetch(`/api/kb/${encodeURIComponent(f)}`).then((x) => x.json());
+    const r = await fetch(`/api/kb/${encPath(f)}`).then((x) => x.json());
     if (r.ok) setContent(r.data);
   }
 
@@ -41,7 +44,7 @@ export default function KbPage() {
     if (!active) return;
     setSaving(true);
     try {
-      const r = await fetch(`/api/kb/${encodeURIComponent(active)}`, {
+      const r = await fetch(`/api/kb/${encPath(active)}`, {
         method: "PUT",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ content }),
