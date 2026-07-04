@@ -3,6 +3,7 @@ import { sharedDb } from "@/lib/db/shared";
 import { Repo } from "@/lib/db/repo";
 import { getConfig } from "@/lib/config-store";
 import { ok, fail } from "@/lib/api";
+import { buildGroupStatMaps } from "@/lib/reflect-stats";
 
 // 反思专页:节奏配置 + 每群进度(游标/滞后/缓冲/沉淀数) + 沉淀条目列表
 export async function GET(): Promise<NextResponse> {
@@ -11,11 +12,7 @@ export async function GET(): Promise<NextResponse> {
     const repo = new Repo(sharedDb(cfg.dbPath));
     const now = Date.now();
 
-    const cursors = new Map(repo.reflectCursors().map((c) => [c.groupId, c.cursor]));
-    const msg = new Map(repo.groupMessageStats().map((m) => [m.groupId, m]));
-    const entries = repo.reflectionEntries();
-    const sed = new Map<number, number>();
-    for (const e of entries) if (e.groupId != null) sed.set(e.groupId, (sed.get(e.groupId) ?? 0) + 1);
+    const { cursors, msg, sed, entries } = buildGroupStatMaps(repo);
 
     const ids = new Set<number>([...cfg.enabledGroups, ...cursors.keys(), ...msg.keys()]);
     const groups = [...ids].map((groupId) => {

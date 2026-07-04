@@ -3,6 +3,7 @@ import { sharedDb } from "@/lib/db/shared";
 import { Repo } from "@/lib/db/repo";
 import { getConfig } from "@/lib/config-store";
 import { ok, fail } from "@/lib/api";
+import { buildGroupStatMaps } from "@/lib/reflect-stats";
 
 // 生效群活动页:生效群 ∪ 有活动群,各群消息量/最近活动/反思游标/沉淀数
 export async function GET(): Promise<NextResponse> {
@@ -11,10 +12,7 @@ export async function GET(): Promise<NextResponse> {
     const repo = new Repo(sharedDb(cfg.dbPath));
 
     const enabled = new Set(cfg.enabledGroups);
-    const cursors = new Map(repo.reflectCursors().map((c) => [c.groupId, c.cursor]));
-    const msg = new Map(repo.groupMessageStats().map((m) => [m.groupId, m]));
-    const sed = new Map<number, number>();
-    for (const e of repo.reflectionEntries()) if (e.groupId != null) sed.set(e.groupId, (sed.get(e.groupId) ?? 0) + 1);
+    const { cursors, msg, sed } = buildGroupStatMaps(repo);
 
     const ids = new Set<number>([...enabled, ...msg.keys()]);
     const list = [...ids].map((groupId) => ({
