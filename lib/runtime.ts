@@ -88,7 +88,8 @@ export class RuntimeManager {
     this.state = "starting";
     this.lastError = undefined;
     try {
-      process.env.CLAUDE_CONFIG_DIR = cfg.claudeConfigDir;
+      // 绝对化:CLI 子进程可能以不同 cwd 解析相对路径,绝对路径确保稳定命中配置目录
+      process.env.CLAUDE_CONFIG_DIR = resolve(cfg.claudeConfigDir);
       const db = builders.openDb(cfg.dbPath);
       const repo = builders.makeRepo(db);
       const agent = builders.makeAgent(cfg, repo);

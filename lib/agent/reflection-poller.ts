@@ -2,6 +2,7 @@ import { query as sdkQuery } from "@anthropic-ai/claude-agent-sdk";
 import { bus } from "../bus";
 import type { Repo } from "../db/repo";
 import { embed as defaultEmbed } from "../tools/embed";
+import { sdkEnv } from "./agent";
 
 export interface ReflectionPollerDeps {
   repo: Repo;
@@ -108,6 +109,8 @@ async function scanOnce(d: Resolved): Promise<void> {
             canUseTool: async () => ({ behavior: "deny" as const, message: "反思阶段不使用工具" }),
             maxTurns: 1,
             settingSources: ["user"],
+            // 与 agent 一致:剥继承 ANTHROPIC_*,用 CLAUDE_CONFIG_DIR/settings.json 的 env
+            env: sdkEnv(),
           } as never,
         })
       );

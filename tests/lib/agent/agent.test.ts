@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { Agent, isPackyCommand, isPackyRefPath, isPackyUrl, isToolAllowed } from "@/lib/agent/agent";
+import { Agent, isPackyCommand, isPackyRefPath, isPackyUrl, isToolAllowed, sdkEnv } from "@/lib/agent/agent";
 import { TOOL_NAMES } from "@/lib/tools/index";
 
 // 模拟 SDK query:产出 init(带 session_id)+ 一条 assistant 文本
@@ -100,6 +100,47 @@ describe("Agent.run", () => {
     const content = first.message.content;
     expect(content[0]).toEqual({ type: "text", text: "看图" });
     expect(content[1]).toEqual({ type: "image", source: { type: "base64", media_type: "image/png", data: "AAAA" } });
+  });
+});
+
+describe("sdkEnv", () => {
+  it("剥掉所有 ANTHROPIC_* 让 settings.json 的 env 接管", () => {
+    const out = sdkEnv({
+      PATH: "/usr/bin",
+      HOME: "/home/x",
+      CLAUDE_CONFIG_DIR: "/abs/data/claude-config",
+      ANTHROPIC_BASE_URL: "https://www.packyapi.com",
+      ANTHROPIC_AUTH_TOKEN: "leak",
+      ANTHROPIC_DEFAULT_SONNET_MODEL: "x",
+    });
+    expect(out.ANTHROPIC_BASE_URL).toBeUndefined();
+    expect(out.ANTHROPIC_AUTH_TOKEN).toBeUndefined();
+    expect(out.ANTHROPIC_DEFAULT_SONNET_MODEL).toBeUndefined();
+    // 保留 CONFIG_DIR 与必需变量
+    expect(out.CLAUDE_CONFIG_DIR).toBe("/abs/data/claude-config");
+    expect(out.PATH).toBe("/usr/bin");
+    expect(out.HOME).toBe("/home/x");
+  });
+  it("丢弃 undefined 值", () => {
+    const out = sdkEnv({ A: "1", B: undefined });
+    expect(out).toEqual({ A: "1" });
+  });
+});
+
+describe("Agent.run env", () => {
+  it("options.env 剥掉 ANTHROPIC_*(不 shadow settings.json)", async () => {
+    const prev = process.env.ANTHROPIC_BASE_URL;
+    process.env.ANTHROPIC_BASE_URL = "https://inherited.example";
+    let seen: any;
+    const spyQuery = async function* (args: any) {
+      seen = args;
+      yield { type: "result", subtype: "success" };
+    };
+    const agent = new Agent({ model: "m", systemPrompt: "s", makeToolServer: () => ({}), queryFn: spyQuery as any });
+    await agent.run("hi", undefined, { sessionKey: "1:2", groupId: 1, userId: 2 });
+    expect(seen.options.env.ANTHROPIC_BASE_URL).toBeUndefined();
+    if (prev === undefined) delete process.env.ANTHROPIC_BASE_URL;
+    else process.env.ANTHROPIC_BASE_URL = prev;
   });
 });
 
