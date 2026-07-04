@@ -262,4 +262,11 @@ export class Repo {
       .all() as { id: number; session_key: string; summary: string; created_at: number }[];
     return rows.map((r) => ({ id: r.id, sessionKey: r.session_key, summary: r.summary, createdAt: r.created_at }));
   }
+
+  listTickets(): { id: number; sessionKey: string; summary: string; status: string; createdAt: number }[] {
+    const rows = this.db
+      .prepare("SELECT id, session_key, summary, status, created_at FROM tickets ORDER BY created_at DESC")
+      .all() as { id: number; session_key: string; summary: string; status: string; created_at: number }[];
+    return rows.map((r) => ({ id: r.id, sessionKey: r.session_key, summary: r.summary, status: r.status, createdAt: r.created_at }));
+  }
 }

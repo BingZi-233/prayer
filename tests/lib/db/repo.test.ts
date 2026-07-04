@@ -70,6 +70,18 @@ describe("Repo kb", () => {
   });
 });
 
+describe("Repo tickets", () => {
+  it("listTickets 含 open 与 closed,按创建时间降序", () => {
+    const a = repo.createTicket("g:1", "问题A");
+    const b = repo.createTicket("g:2", "问题B");
+    db.prepare("UPDATE tickets SET status='closed' WHERE id=?").run(a);
+    const list = repo.listTickets();
+    expect(list.length).toBe(2);
+    expect(list.map((t) => t.status).sort()).toEqual(["closed", "open"]);
+    expect(list.find((t) => t.id === b)!.status).toBe("open");
+  });
+});
+
 describe("Repo group_messages buffer", () => {
   it("落库后能按窗口升序取回,并按 limit 截最近", () => {
     repo.bufferGroupMessage(100, 200, "member", "问题一");
