@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
-import { MessagesSquare, Wrench } from "lucide-react";
+import { MessagesSquare, RefreshCw, Wrench } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -11,6 +11,8 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Spinner } from "@/components/ui/spinner";
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from "@/components/ui/empty";
 import { Bubble, BubbleContent } from "@/components/ui/bubble";
 import { Message, MessageContent } from "@/components/ui/message";
@@ -31,6 +33,7 @@ export default function SessionsPage() {
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [active, setActive] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   async function loadSessions() {
     const r = await fetch("/api/sessions").then((x) => x.json());
@@ -40,23 +43,49 @@ export default function SessionsPage() {
     loadSessions();
   }, []);
 
+  async function loadTranscript(sessionId: string) {
+    const r = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}`).then((x) => x.json());
+    if (r.ok) setMsgs(r.data);
+  }
+
   async function open(sess: Sess) {
     if (!sess.sessionId) return;
     setActive(sess.key);
     setLoading(true);
     try {
-      const r = await fetch(`/api/sessions/${encodeURIComponent(sess.sessionId)}`).then((x) => x.json());
-      if (r.ok) setMsgs(r.data);
+      await loadTranscript(sess.sessionId);
     } finally {
       setLoading(false);
     }
   }
 
+  // 刷新:重拉会话列表 + 当前选中会话的 transcript(对话有更新时可见)
+  async function refresh() {
+    setRefreshing(true);
+    try {
+      const r = await fetch("/api/sessions").then((x) => x.json());
+      if (!r.ok) return;
+      setSessions(r.data);
+      if (active) {
+        const s = (r.data as Sess[]).find((x) => x.key === active);
+        if (s?.sessionId) await loadTranscript(s.sessionId);
+      }
+    } finally {
+      setRefreshing(false);
+    }
+  }
+
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold tracking-tight">会话</h1>
-        <p className="text-muted-foreground text-sm">查看历史会话的对话记录(读自 Claude SDK transcript)。</p>
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex flex-col gap-1">
+          <h1 className="text-2xl font-semibold tracking-tight">会话</h1>
+          <p className="text-muted-foreground text-sm">查看历史会话的对话记录(读自 Claude SDK transcript)。</p>
+        </div>
+        <Button variant="secondary" onClick={refresh} disabled={refreshing}>
+          {refreshing ? <Spinner data-icon="inline-start" /> : <RefreshCw data-icon="inline-start" />}
+          {refreshing ? "刷新中…" : "刷新"}
+        </Button>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[300px_1fr]">
@@ -90,8 +119,14 @@ export default function SessionsPage() {
         </Card>
 
         <Card className="flex h-[560px] flex-col overflow-hidden">
-          <CardHeader>
+          <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
             <CardTitle className="text-sm">{active ? `对话:${active}` : "对话"}</CardTitle>
+            {active && (
+              <Button variant="ghost" size="icon-sm" onClick={refresh} disabled={refreshing} title="刷新对话">
+                {refreshing ? <Spinner /> : <RefreshCw />}
+                <span className="sr-only">刷新对话</span>
+              </Button>
+            )}
           </CardHeader>
           <CardContent className="min-h-0 flex-1 p-0">
             {!active ? (
