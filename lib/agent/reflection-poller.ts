@@ -35,6 +35,8 @@ const REFLECT_SYSTEM = `你是客服知识运营助手。用户消息会给出�
 [{"question":"...","answer":"...","effective":true,"faq":"..."}]
 无可沉淀输出 []。`;
 
+const PRE_CONTEXT = 10; // band 前作为问题上下文的消息条数
+
 function extractJsonArray(s: string): any[] {
   const m = s.match(/\[[\s\S]*\]/);
   if (!m) return [];
@@ -81,7 +83,7 @@ async function scanOnce(d: Resolved): Promise<void> {
 
   for (const groupId of d.repo.groupsWithAdminMessagesBetween(cursor, until)) {
     try {
-      const window = d.repo.groupMessageWindow(groupId, now - d.lookbackMs, d.windowMax);
+      const window = d.repo.groupReflectionWindow(groupId, cursor, now, PRE_CONTEXT, d.windowMax);
       if (!window.length) continue;
       const transcript = window
         .map((m) => `[ts=${m.createdAt}][${label(m.senderRole)} ${m.userId}] ${m.text}`)
@@ -91,7 +93,7 @@ async function scanOnce(d: Resolved): Promise<void> {
         d.queryFn({
           prompt,
           options: {
-            systemPrompt: { type: "preset", preset: "claude_code", append: REFLECT_SYSTEM },
+            systemPrompt: REFLECT_SYSTEM,
             canUseTool: async () => ({ behavior: "deny" as const, message: "反思阶段不使用工具" }),
             maxTurns: 1,
             settingSources: ["user"],
@@ -101,8 +103,7 @@ async function scanOnce(d: Resolved): Promise<void> {
       for (const it of extractJsonArray(out)) {
         if (!it || it.effective !== true || typeof it.faq !== "string" || !it.faq.trim()) continue;
         const faq = it.faq.trim();
-        const id = d.repo.insertKbChunk("human-reflection", faq, `human-reflection:${groupId}:${d.now()}`);
-        d.repo.insertKbVec(id, await d.embed(faq));
+        d.repo.insertKbEntry("human-reflection", faq, `human-reflection:${groupId}:${d.now()}`, await d.embed(faq));
         bus.emit("action.send", {
           action: "send_group_msg",
           groupId: d.adminGroupId,

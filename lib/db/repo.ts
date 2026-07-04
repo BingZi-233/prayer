@@ -86,6 +86,49 @@ export class Repo {
       .reverse();
   }
 
+  // 反思窗口:cursor 之前最近 preLimit 条(问题上下文) + cursor 之后至 nowTs 的消息
+  // (band 与后续确认,升序,上限 postLimit)。band 属 (cursor,nowTs] 的最旧端,ASC LIMIT 必留,不会被后续消息挤出。
+  groupReflectionWindow(
+    groupId: number,
+    cursor: number,
+    nowTs: number,
+    preLimit: number,
+    postLimit: number
+  ): { userId: number; senderRole: string | null; text: string; createdAt: number }[] {
+    type Row = { user_id: number; sender_role: string | null; text: string; created_at: number };
+    const map = (r: Row) => ({ userId: r.user_id, senderRole: r.sender_role, text: r.text, createdAt: r.created_at });
+    const pre = (
+      this.db
+        .prepare(
+          `SELECT user_id, sender_role, text, created_at FROM group_messages
+           WHERE group_id = ? AND created_at <= ?
+           ORDER BY created_at DESC LIMIT ?`
+        )
+        .all(groupId, cursor, preLimit) as Row[]
+    )
+      .map(map)
+      .reverse();
+    const post = (
+      this.db
+        .prepare(
+          `SELECT user_id, sender_role, text, created_at FROM group_messages
+           WHERE group_id = ? AND created_at > ? AND created_at <= ?
+           ORDER BY created_at ASC LIMIT ?`
+        )
+        .all(groupId, cursor, nowTs, postLimit) as Row[]
+    ).map(map);
+    return [...pre, ...post];
+  }
+
+  // KB 原子写入:chunk + 向量同一事务,避免 embed/向量插入失败时残留孤儿 chunk
+  insertKbEntry(doc: string, content: string, source: string, embedding: Float32Array): number {
+    return this.db.transaction(() => {
+      const id = this.insertKbChunk(doc, content, source);
+      this.insertKbVec(id, embedding);
+      return id;
+    })();
+  }
+
   pruneGroupMessages(beforeTs: number): void {
     this.db.prepare("DELETE FROM group_messages WHERE created_at < ?").run(beforeTs);
   }

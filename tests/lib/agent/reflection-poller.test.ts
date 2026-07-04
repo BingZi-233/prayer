@@ -102,4 +102,27 @@ describe("reflection-poller runScan", () => {
     expect(qf).not.toHaveBeenCalled();
     expect(repo.reflectCursor()).toBe(NOW); // 不动
   });
+
+  it("忙群:band 管理发言在大量后续消息后仍入窗(不被 evict)", async () => {
+    seed(100, 200, "member", "怎么退款?", NOW - 8000); // 问题
+    seed(100, 201, "admin", "在我的订单页点退款", NOW - 7000); // 管理回答(band 内)
+    for (let i = 0; i < 70; i++) seed(100, 300 + i, "member", `灌水${i}`, NOW - 6000 + i);
+    let captured = "";
+    const qf = (args: { prompt: string }) => {
+      captured = args.prompt;
+      return fakeQuery("[]")();
+    };
+    await runScan(opts({ queryFn: qf as never, windowMax: 60 }));
+    expect(captured).toContain("在我的订单页点退款"); // 回答必须出现在喂给 LLM 的转录里
+  });
+
+  it("多群:各群 band 有管理发言 → 都被处理并各沉淀一条", async () => {
+    seed(100, 201, "admin", "群100答案", NOW - 4000);
+    seed(200, 202, "admin", "群200答案", NOW - 4000);
+    await runScan(
+      opts({ queryFn: fakeQuery('[{"question":"q","answer":"a","effective":true,"faq":"通用知识条"}]') as never })
+    );
+    const hits = repo.searchKb(new Float32Array([1, 0, 0]), 10);
+    expect(hits).toHaveLength(2);
+  });
 });
