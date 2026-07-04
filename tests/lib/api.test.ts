@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { ok, fail, maskConfig } from "./api";
-import type { AppConfig } from "./config-store";
+import { ok, fail, maskConfig } from "@/lib/api";
+import type { AppConfig } from "@/lib/config-store";
 
 const cfg: AppConfig = {
   onebotWsUrl: "ws://x:1",

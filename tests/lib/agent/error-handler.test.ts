@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { bus } from "../bus";
-import { registerErrorHandler } from "./error-handler";
+import { bus } from "@/lib/bus";
+import { registerErrorHandler } from "@/lib/agent/error-handler";
 
 beforeEach(() => bus.removeAllListeners());
 

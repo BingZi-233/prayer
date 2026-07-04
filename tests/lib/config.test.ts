@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { loadConfig } from "./config";
+import { loadConfig } from "@/lib/config";
 
 describe("loadConfig", () => {
   it("从 env 读取并转型", () => {

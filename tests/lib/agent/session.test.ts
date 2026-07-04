@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { openDb } from "../db/index";
-import { Repo } from "../db/repo";
-import { SessionStore } from "./session";
+import { openDb } from "@/lib/db/index";
+import { Repo } from "@/lib/db/repo";
+import { SessionStore } from "@/lib/agent/session";
 
 let store: SessionStore;
 

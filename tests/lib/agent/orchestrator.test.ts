@@ -1,10 +1,10 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { openDb } from "../db/index";
-import { Repo } from "../db/repo";
-import { bus } from "../bus";
-import { registerOrchestrator } from "./orchestrator";
-import { registerReplyMapper } from "./reply-mapper";
-import { SessionStore } from "./session";
+import { openDb } from "@/lib/db/index";
+import { Repo } from "@/lib/db/repo";
+import { bus } from "@/lib/bus";
+import { registerOrchestrator } from "@/lib/agent/orchestrator";
+import { registerReplyMapper } from "@/lib/agent/reply-mapper";
+import { SessionStore } from "@/lib/agent/session";
 
 let repo: Repo;
 

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { RuntimeManager, type RuntimeBuilders } from "./runtime";
-import type { AppConfig } from "./config-store";
+import { RuntimeManager, type RuntimeBuilders } from "@/lib/runtime";
+import type { AppConfig } from "@/lib/config-store";
 
 const cfg: AppConfig = {
   onebotWsUrl: "ws://x:1",

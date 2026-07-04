@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { bus } from "./bus";
+import { bus } from "@/lib/bus";
 
 describe("bus", () => {
   it("emit/on 传递类型化 payload", () => {
@@ -10,7 +10,7 @@ describe("bus", () => {
   });
 
   it("是单例(同一引用)", async () => {
-    const again = (await import("./bus")).bus;
+    const again = (await import("@/lib/bus")).bus;
     expect(again).toBe(bus);
   });
 });

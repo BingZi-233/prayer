@@ -1,9 +1,9 @@
 import { describe, it, expect, vi } from "vitest";
-import { chunkText, runIngest } from "./ingest";
-import { openDb } from "../lib/db/index";
-import { Repo } from "../lib/db/repo";
+import { chunkText, runIngest } from "@/scripts/ingest";
+import { openDb } from "@/lib/db/index";
+import { Repo } from "@/lib/db/repo";
 
-vi.mock("../lib/tools/embed", () => ({
+vi.mock("@/lib/tools/embed", () => ({
   embed: async () => new Float32Array([0.1, 0.2, 0.3]),
 }));
 

@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { embed } from "./embed";
-import { DIM } from "../db/index";
+import { embed } from "@/lib/tools/embed";
+import { DIM } from "@/lib/db/index";
 
 describe("embed", () => {
   it("返回长度为 DIM 的归一化向量", async () => {

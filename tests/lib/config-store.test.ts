@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { openDb } from "./db/index";
-import { Repo } from "./db/repo";
-import { getConfig, setConfig } from "./config-store";
+import { openDb } from "@/lib/db/index";
+import { Repo } from "@/lib/db/repo";
+import { getConfig, setConfig } from "@/lib/config-store";
 
 function mkRepo(): Repo {
   return new Repo(openDb(":memory:", 3));

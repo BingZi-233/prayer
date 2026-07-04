@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { openDb } from "../db/index";
-import { Repo } from "../db/repo";
-import { bus } from "../bus";
-import { registerGateway } from "./gateway";
-import type { QualifiedMessage } from "../events";
+import { openDb } from "@/lib/db/index";
+import { Repo } from "@/lib/db/repo";
+import { bus } from "@/lib/bus";
+import { registerGateway } from "@/lib/agent/gateway";
+import type { QualifiedMessage } from "@/lib/events";
 
 let repo: Repo;
 const BOT = 555;
@@ -59,5 +59,35 @@ describe("gateway", () => {
     bus.emit("message.received", { groupId: 999, userId: 7, messageId: 14, rawText: "!resume 1:2", atList: [BOT] });
     const r = await p;
     expect(r.sessionKey).toBe("1:2");
+  });
+
+  it("用户自助重置:@bot 发关键词 → 清 resumeId、回确认、不转 Agent", async () => {
+    repo.setSessionId("1:2", "sid-old");
+    const qualified = vi.fn();
+    bus.on("message.qualified", qualified);
+    const p = new Promise<any>((res) => bus.once("action.send", res));
+    bus.emit("message.received", { groupId: 1, userId: 2, messageId: 20, rawText: "重新开始", atList: [BOT] });
+    const a = await p;
+    expect(a.groupId).toBe(1);
+    expect(a.text).toContain("重置");
+    expect(repo.getSessionId("1:2")).toBeUndefined();
+    expect(qualified).not.toHaveBeenCalled();
+  });
+
+  it("普通问题不被重置关键词误伤", async () => {
+    const p = collectQualified();
+    bus.emit("message.received", { groupId: 1, userId: 2, messageId: 21, rawText: "怎么重置密码", atList: [BOT] });
+    const q = await p;
+    expect(q.text).toBe("怎么重置密码");
+  });
+
+  it("管理群 !reset <key> → 清 resumeId 并回确认", async () => {
+    repo.setSessionId("1:2", "sid-old");
+    const p = new Promise<any>((res) => bus.once("action.send", res));
+    bus.emit("message.received", { groupId: 999, userId: 7, messageId: 22, rawText: "!reset 1:2", atList: [BOT] });
+    const a = await p;
+    expect(a.groupId).toBe(999);
+    expect(a.text).toContain("1:2");
+    expect(repo.getSessionId("1:2")).toBeUndefined();
   });
 });

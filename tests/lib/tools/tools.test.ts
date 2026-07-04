@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { openDb } from "../db/index";
-import { Repo } from "../db/repo";
-import { bus } from "../bus";
-import { makeKbTool } from "./kb";
-import { makeHandoffTool } from "./handoff";
+import { openDb } from "@/lib/db/index";
+import { Repo } from "@/lib/db/repo";
+import { bus } from "@/lib/bus";
+import { makeKbTool } from "@/lib/tools/kb";
+import { makeHandoffTool } from "@/lib/tools/handoff";
 
 let repo: Repo;
 

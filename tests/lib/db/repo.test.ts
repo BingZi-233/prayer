@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { openDb } from "./index";
-import { Repo } from "./repo";
+import { openDb } from "@/lib/db/index";
+import { Repo } from "@/lib/db/repo";
 import type Database from "better-sqlite3";
 
 let db: Database.Database;

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseGroupMessage } from "./parse";
+import { parseGroupMessage } from "@/lib/onebot/parse";
 
 describe("parseGroupMessage", () => {
   it("解析数组段格式,提取 @ 列表与纯文本", () => {

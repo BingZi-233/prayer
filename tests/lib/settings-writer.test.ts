@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { maskSecret, mergeSecret, writeSettings, readSettings } from "./settings-writer";
+import { maskSecret, mergeSecret, writeSettings, readSettings } from "@/lib/settings-writer";
 
 describe("maskSecret", () => {
   it("空值返回空", () => expect(maskSecret("")).toBe(""));
@@ -49,4 +49,4 @@ describe("settings.json 读写", () => {
   });
 });
 
-import { writeSettingsRaw } from "./settings-writer";
+import { writeSettingsRaw } from "@/lib/settings-writer";

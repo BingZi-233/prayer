@@ -1,8 +1,8 @@
 import { describe, it, expect, afterEach } from "vitest";
 import { WebSocketServer } from "ws";
 import type { AddressInfo } from "node:net";
-import { bus } from "../bus";
-import { OneBotClient } from "./client";
+import { bus } from "@/lib/bus";
+import { OneBotClient } from "@/lib/onebot/client";
 
 let wss: WebSocketServer | undefined;
 let client: OneBotClient | undefined;

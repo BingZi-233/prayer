@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { openDb } from "./db/index";
-import { Repo } from "./db/repo";
-import { bus } from "./bus";
-import { assemble } from "./assemble";
+import { openDb } from "@/lib/db/index";
+import { Repo } from "@/lib/db/repo";
+import { bus } from "@/lib/bus";
+import { assemble } from "@/lib/assemble";
 
 beforeEach(() => bus.removeAllListeners());
 
