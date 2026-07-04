@@ -15,12 +15,14 @@ export function chunkText(text: string, maxLen = 500): string[] {
   return out;
 }
 
-async function main(): Promise<void> {
-  const cfg = loadConfig();
-  const db = openDb(cfg.dbPath);
-  const repo = new Repo(db);
-  const dir = "docs/kb";
+export interface IngestResult {
+  file: string;
+  chunks: number;
+}
+
+export async function runIngest(repo: Repo, dir = "docs/kb"): Promise<IngestResult[]> {
   const files = readdirSync(dir).filter((f) => f.endsWith(".md") || f.endsWith(".txt"));
+  const out: IngestResult[] = [];
   for (const f of files) {
     const content = readFileSync(join(dir, f), "utf8");
     const chunks = chunkText(content);
@@ -28,8 +30,17 @@ async function main(): Promise<void> {
       const id = repo.insertKbChunk(f, c, f);
       repo.insertKbVec(id, await embed(c));
     }
-    console.log(`ingested ${f}: ${chunks.length} chunks`);
+    out.push({ file: f, chunks: chunks.length });
   }
+  return out;
+}
+
+async function main(): Promise<void> {
+  const cfg = loadConfig();
+  const db = openDb(cfg.dbPath);
+  const repo = new Repo(db);
+  const results = await runIngest(repo, "docs/kb");
+  for (const r of results) console.log(`ingested ${r.file}: ${r.chunks} chunks`);
 }
 
 // 直接运行时执行(vitest import 时不执行)
