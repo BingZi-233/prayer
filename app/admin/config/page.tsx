@@ -102,6 +102,14 @@ export default function ConfigPage() {
   }
   // 群名查找:不在列表(bot 已退群)→ 裸 id
   const groupName = (id: number) => groups?.find((g) => g.groupId === id)?.groupName ?? String(id);
+  // 管理群下拉选项:已存 id 不在列表(bot 已退群)时补一条裸 id,避免显示为未选而被误覆盖
+  const adminGroupOptions = (): { groupId: number; groupName: string }[] => {
+    if (!groups) return [];
+    if (cfg?.adminGroupId && !groups.some((g) => g.groupId === cfg.adminGroupId)) {
+      return [{ groupId: cfg.adminGroupId, groupName: String(cfg.adminGroupId) }, ...groups];
+    }
+    return groups;
+  };
 
   return (
     <div className="flex max-w-2xl flex-col gap-6">
@@ -149,7 +157,7 @@ export default function ConfigPage() {
                           <SelectValue placeholder="选择管理群" />
                         </SelectTrigger>
                         <SelectContent>
-                          {groups.map((g) => (
+                          {adminGroupOptions().map((g) => (
                             <SelectItem key={g.groupId} value={String(g.groupId)}>
                               {g.groupName} ({g.groupId})
                             </SelectItem>
@@ -163,12 +171,12 @@ export default function ConfigPage() {
                     )}
                   </Field>
                   <Field>
-                    <FieldLabel>生效群</FieldLabel>
+                    <FieldLabel htmlFor="enabledGroups">生效群</FieldLabel>
                     {groups ? (
                       <>
                         <Popover>
                           <PopoverTrigger asChild>
-                            <Button variant="outline" role="combobox" className="justify-between font-normal">
+                            <Button id="enabledGroups" variant="outline" role="combobox" className="justify-between font-normal">
                               {cfg.enabledGroups.length ? `已选 ${cfg.enabledGroups.length} 个群` : "选择生效群"}
                               <ChevronsUpDown className="opacity-50" />
                             </Button>
