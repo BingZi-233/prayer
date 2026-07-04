@@ -43,10 +43,27 @@ export function isPackyCommand(cmd: string): boolean {
   return /^node\s+"?[^"]*\/packy\.ts"?(\s|$)/.test(c);
 }
 
-// 权限判定:白名单命中 → 放行;Bash 仅限 packy 脚本;其余拒绝
+// /packy-docs:仅放行读 packyapi skill 的 references/*.md(docs-map 等),不给任意文件读
+export function isPackyRefPath(path: string): boolean {
+  return /\/packyapi\/(.*\/)?references\/[^/]+\.md$/.test(path);
+}
+
+// /packy-docs:WebFetch 仅放行 packyapi.com 域名,防 SSRF / 数据外带
+export function isPackyUrl(url: string): boolean {
+  try {
+    const h = new URL(url).hostname.toLowerCase();
+    return h === "packyapi.com" || h === "www.packyapi.com";
+  } catch {
+    return false;
+  }
+}
+
+// 权限判定:白名单命中 → 放行;Bash/Read/WebFetch 仅限 packy 用途;其余拒绝
 export function isToolAllowed(toolName: string, input: Record<string, unknown>): boolean {
   if (TOOL_ALLOWLIST.has(toolName)) return true;
   if (toolName === "Bash") return isPackyCommand(String(input.command ?? ""));
+  if (toolName === "Read") return isPackyRefPath(String(input.file_path ?? ""));
+  if (toolName === "WebFetch") return isPackyUrl(String(input.url ?? ""));
   return false;
 }
 

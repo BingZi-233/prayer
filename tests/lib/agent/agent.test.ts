@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { Agent, isPackyCommand, isToolAllowed } from "@/lib/agent/agent";
+import { Agent, isPackyCommand, isPackyRefPath, isPackyUrl, isToolAllowed } from "@/lib/agent/agent";
 import { TOOL_NAMES } from "@/lib/tools/index";
 
 // 模拟 SDK query:产出 init(带 session_id)+ 一条 assistant 文本
@@ -40,10 +40,32 @@ describe("isToolAllowed", () => {
     expect(isToolAllowed("Bash", { command: "rm -rf /" })).toBe(false);
     expect(isToolAllowed("Bash", { command: "node /a/packy.ts; rm -rf /" })).toBe(false);
   });
+  it("Read 仅放行 packy references,WebFetch 仅放行 packyapi.com", () => {
+    expect(isToolAllowed("Read", { file_path: "/x/plugins/packyapi/skills/packyapi/references/docs-map.md" })).toBe(true);
+    expect(isToolAllowed("Read", { file_path: "/etc/passwd" })).toBe(false);
+    expect(isToolAllowed("Read", { file_path: "./data/claude-config/settings.json" })).toBe(false);
+    expect(isToolAllowed("WebFetch", { url: "https://www.packyapi.com/docs/x" })).toBe(true);
+    expect(isToolAllowed("WebFetch", { url: "https://evil.com/x" })).toBe(false);
+  });
   it("其余工具拒绝", () => {
-    expect(isToolAllowed("Read", {})).toBe(false);
     expect(isToolAllowed("Write", { file_path: "/x" })).toBe(false);
-    expect(isToolAllowed("WebFetch", { url: "http://x" })).toBe(false);
+    expect(isToolAllowed("Task", {})).toBe(false);
+    expect(isToolAllowed("Edit", { file_path: "/x" })).toBe(false);
+  });
+});
+
+describe("isPackyRefPath / isPackyUrl", () => {
+  it("references 路径", () => {
+    expect(isPackyRefPath("/a/packyapi/0.1.0/skills/packyapi/references/docs-map.md")).toBe(true);
+    expect(isPackyRefPath("/a/packyapi/references/pricing-api.md")).toBe(true);
+    expect(isPackyRefPath("/a/packyapi/scripts/packy.ts")).toBe(false);
+    expect(isPackyRefPath("/a/other/references/x.md")).toBe(false);
+  });
+  it("packyapi 域名", () => {
+    expect(isPackyUrl("https://packyapi.com/api/pricing")).toBe(true);
+    expect(isPackyUrl("https://www.packyapi.com/docs")).toBe(true);
+    expect(isPackyUrl("https://packyapi.com.evil.com/x")).toBe(false);
+    expect(isPackyUrl("not-a-url")).toBe(false);
   });
 });
 
