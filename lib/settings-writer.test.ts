@@ -13,6 +13,8 @@ describe("maskSecret", () => {
 describe("mergeSecret", () => {
   it("incoming 空则保留 existing", () => expect(mergeSecret("old", "")).toBe("old"));
   it("incoming 非空则覆盖", () => expect(mergeSecret("old", "new")).toBe("new"));
+  it("incoming 是掩码串(含•)则保留 existing", () =>
+    expect(mergeSecret("real-token", "•••• oken")).toBe("real-token"));
 });
 
 describe("settings.json 读写", () => {

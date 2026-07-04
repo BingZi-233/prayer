@@ -17,7 +17,9 @@ export function maskSecret(v: string): string {
 }
 
 export function mergeSecret(existing: string, incoming: string): string {
-  return incoming || existing;
+  // 空值或仍是掩码(含 • U+2022)→ 保留旧值,防止把掩码串当真值写回
+  if (!incoming || incoming.includes("•")) return existing;
+  return incoming;
 }
 
 export function writeSettings(configDir: string, settings: Settings): void {
