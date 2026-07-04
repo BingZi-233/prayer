@@ -21,6 +21,7 @@ interface RuntimeClient {
   start(): void;
   stop(): void;
   isConnected(): boolean;
+  getGroupList?(): Promise<unknown[] | undefined>;
 }
 
 export interface RuntimeBuilders {
@@ -77,6 +78,10 @@ export class RuntimeManager {
       lastError: this.lastError,
       bootedAt: this.bootedAt,
     };
+  }
+
+  async getGroups(): Promise<unknown[] | undefined> {
+    return this.client?.getGroupList?.();
   }
 
   start(cfg: AppConfig, builders: RuntimeBuilders): void {

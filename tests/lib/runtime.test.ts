@@ -105,4 +105,25 @@ describe("RuntimeManager", () => {
     expect(m.getStatus().state).toBe("error");
     expect(teardowns).toBe(1); // teardown 在 catch 里被调用,不泄漏
   });
+
+  it("getGroups 委托 client.getGroupList", async () => {
+    const b = fakeBuilders({
+      makeClient: () => ({
+        start() {}, stop() {}, isConnected: () => true,
+        getGroupList: async () => [{ group_id: 111, group_name: "群甲" }],
+      }) as never,
+    });
+    m.start(cfg, b);
+    const list = await m.getGroups();
+    expect(list).toEqual([{ group_id: 111, group_name: "群甲" }]);
+  });
+
+  it("未 start → getGroups 返回 undefined", async () => {
+    expect(await m.getGroups()).toBeUndefined();
+  });
+
+  it("client 无 getGroupList → getGroups 返回 undefined", async () => {
+    m.start(cfg, fakeBuilders()); // fakeBuilders 的 client 无 getGroupList
+    expect(await m.getGroups()).toBeUndefined();
+  });
 });
