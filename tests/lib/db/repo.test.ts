@@ -42,6 +42,23 @@ describe("Repo kb", () => {
     const hits = repo.searchKb(new Float32Array([1, 0, 0]), 1);
     expect(hits[0].content).toContain("退货");
   });
+
+  it("kbTotals / kbDocStats / kbChunksByDoc 供向量库预览", () => {
+    const a = repo.insertKbChunk("faq/退款.md", "退款要 7 天", "faq/退款.md");
+    repo.insertKbVec(a, new Float32Array([1, 0, 0]));
+    const b = repo.insertKbChunk("faq/退款.md", "整单退", "faq/退款.md");
+    repo.insertKbVec(b, new Float32Array([0, 1, 0]));
+    repo.insertKbChunk("intro.md", "简介", "intro.md"); // 只 chunk 无向量
+
+    expect(repo.kbTotals()).toEqual({ chunks: 3, vecs: 2 });
+    expect(repo.kbDocStats()).toEqual([
+      { doc: "faq/退款.md", chunks: 2 },
+      { doc: "intro.md", chunks: 1 },
+    ]);
+    const chunks = repo.kbChunksByDoc("faq/退款.md");
+    expect(chunks.map((c) => c.content)).toEqual(["退款要 7 天", "整单退"]);
+    expect(chunks[0].id).toBe(a);
+  });
 });
 
 describe("Repo group_messages buffer", () => {

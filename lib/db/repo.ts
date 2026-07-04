@@ -182,6 +182,27 @@ export class Repo {
       .run(BigInt(chunkId), Buffer.from(embedding.buffer));
   }
 
+  // 向量库预览:总量(chunks 与已建向量数,便于发现漏 embed 的孤儿 chunk)
+  kbTotals(): { chunks: number; vecs: number } {
+    const chunks = (this.db.prepare("SELECT COUNT(*) n FROM kb_chunks").get() as { n: number }).n;
+    const vecs = (this.db.prepare("SELECT COUNT(*) n FROM kb_vec").get() as { n: number }).n;
+    return { chunks, vecs };
+  }
+
+  // 按 doc 分组的 chunk 数,doc 升序(与文件列表同一相对路径标识)
+  kbDocStats(): { doc: string; chunks: number }[] {
+    return this.db
+      .prepare("SELECT doc, COUNT(*) chunks FROM kb_chunks GROUP BY doc ORDER BY doc")
+      .all() as { doc: string; chunks: number }[];
+  }
+
+  // 单 doc 的分块内容,按 id 升序(即入库/切分顺序)
+  kbChunksByDoc(doc: string): { id: number; content: string }[] {
+    return this.db
+      .prepare("SELECT id, content FROM kb_chunks WHERE doc = ? ORDER BY id")
+      .all(doc) as { id: number; content: string }[];
+  }
+
   searchKb(query: Float32Array, k: number): KbHit[] {
     const rows = this.db
       .prepare(
