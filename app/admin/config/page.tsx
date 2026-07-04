@@ -2,19 +2,17 @@
 
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { Save, KeyRound } from "lucide-react";
+import { Save } from "lucide-react";
 import {
   Card,
   CardContent,
   CardDescription,
-  CardFooter,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
@@ -35,12 +33,9 @@ const NUM_KEYS: (keyof Cfg)[] = ["botQQ", "adminGroupId", "handoffTimeoutMin"];
 export default function ConfigPage() {
   const [cfg, setCfg] = useState<Cfg | null>(null);
   const [busy, setBusy] = useState(false);
-  const [settings, setSettings] = useState("");
-  const [savingSettings, setSavingSettings] = useState(false);
 
   useEffect(() => {
     fetch("/api/config").then((x) => x.json()).then((r) => { if (r.ok) setCfg(r.data); });
-    fetch("/api/settings").then((x) => x.json()).then((r) => { if (r.ok) setSettings(r.data); });
   }, []);
 
   function upd(k: keyof Cfg, v: string) {
@@ -72,23 +67,6 @@ export default function ConfigPage() {
       toast.error(`保存失败:${e instanceof Error ? e.message : String(e)}`);
     } finally {
       setBusy(false);
-    }
-  }
-
-  async function saveSettings() {
-    setSavingSettings(true);
-    try {
-      const r = await fetch("/api/settings", {
-        method: "PUT",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ raw: settings }),
-      }).then((x) => x.json());
-      if (r.ok) toast.success("settings.json 已保存(下次重启 / 热重载生效)");
-      else toast.error(`保存失败:${r.error}`);
-    } catch (e) {
-      toast.error(`保存失败:${e instanceof Error ? e.message : String(e)}`);
-    } finally {
-      setSavingSettings(false);
     }
   }
 
@@ -150,7 +128,7 @@ export default function ConfigPage() {
             <Card>
               <CardHeader>
                 <CardTitle>Claude Agent SDK</CardTitle>
-                <CardDescription>模型与凭证目录;env / 权限等写入下方 settings.json。</CardDescription>
+                <CardDescription>模型与凭证目录。SDK 只需一个 CLAUDE_CONFIG_DIR(内含 claude login 生成的凭证)。</CardDescription>
               </CardHeader>
               <CardContent>
                 <FieldGroup>
@@ -161,7 +139,7 @@ export default function ConfigPage() {
                   <Field>
                     <FieldLabel htmlFor="claudeConfigDir">CLAUDE_CONFIG_DIR</FieldLabel>
                     <Input id="claudeConfigDir" value={cfg.claudeConfigDir} placeholder="./data/claude-config" onChange={(e) => upd("claudeConfigDir", e.target.value)} />
-                    <FieldDescription>settings.json 存于此目录,SDK 经 settingSources 加载。</FieldDescription>
+                    <FieldDescription>SDK 认证与配置目录,在该目录 `claude login` 后即可使用。</FieldDescription>
                   </Field>
                 </FieldGroup>
               </CardContent>
@@ -193,32 +171,6 @@ export default function ConfigPage() {
           </div>
         </Tabs>
       )}
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <KeyRound className="size-4" />
-            SDK settings.json(高级)
-          </CardTitle>
-          <CardDescription>
-            SDK 认证 / env(ANTHROPIC_BASE_URL / AUTH_TOKEN / MODEL 等)与权限。写入 CLAUDE_CONFIG_DIR/settings.json。
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Textarea
-            value={settings}
-            onChange={(e) => setSettings(e.target.value)}
-            className="min-h-[240px] font-mono text-xs"
-            spellCheck={false}
-          />
-        </CardContent>
-        <CardFooter>
-          <Button variant="secondary" onClick={saveSettings} disabled={savingSettings}>
-            {savingSettings ? <Spinner data-icon="inline-start" /> : <Save data-icon="inline-start" />}
-            保存 settings.json
-          </Button>
-        </CardFooter>
-      </Card>
     </div>
   );
 }
