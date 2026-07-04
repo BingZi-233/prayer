@@ -58,6 +58,49 @@ describe("Agent.run", () => {
     await agent.run("hi", undefined, { sessionKey: "1:2", groupId: 1, userId: 2 });
     expect(seen.options.plugins).toEqual([]);
   });
+
+  it("无图:prompt 为字符串(向后兼容)", async () => {
+    let seen: any;
+    const spyQuery = async function* (args: any) {
+      seen = args;
+      yield { type: "result", subtype: "success" };
+    };
+    const agent = new Agent({ model: "m", systemPrompt: "s", makeToolServer: () => ({}), queryFn: spyQuery as any });
+    await agent.run("在吗", undefined, { sessionKey: "1:2", groupId: 1, userId: 2 });
+    expect(seen.prompt).toBe("在吗");
+  });
+
+  it("引用/转发折叠进文本前言(无图仍字符串)", async () => {
+    let seen: any;
+    const spyQuery = async function* (args: any) {
+      seen = args;
+      yield { type: "result", subtype: "success" };
+    };
+    const agent = new Agent({ model: "m", systemPrompt: "s", makeToolServer: () => ({}), queryFn: spyQuery as any });
+    await agent.run("这是啥", undefined, { sessionKey: "1:2", groupId: 1, userId: 2 }, { quoted: "张三: 原问题", forwarded: "A: x\nB: y" });
+    expect(seen.prompt).toContain("【用户引用了一条消息:张三: 原问题】");
+    expect(seen.prompt).toContain("【用户转发的合并消息:");
+    expect(seen.prompt).toContain("这是啥");
+  });
+
+  it("有图:prompt 为 AsyncIterable,首条含 image block(base64)+ 文本", async () => {
+    let seen: any;
+    const spyQuery = async function* (args: any) {
+      seen = args;
+      yield { type: "result", subtype: "success" };
+    };
+    const agent = new Agent({ model: "m", systemPrompt: "s", makeToolServer: () => ({}), queryFn: spyQuery as any });
+    await agent.run("看图", undefined, { sessionKey: "1:2", groupId: 1, userId: 2 }, {
+      images: [{ data: "AAAA", mediaType: "image/png" }],
+    });
+    expect(typeof seen.prompt[Symbol.asyncIterator]).toBe("function");
+    const first = (await seen.prompt[Symbol.asyncIterator]().next()).value;
+    expect(first.type).toBe("user");
+    expect(first.message.role).toBe("user");
+    const content = first.message.content;
+    expect(content[0]).toEqual({ type: "text", text: "看图" });
+    expect(content[1]).toEqual({ type: "image", source: { type: "base64", media_type: "image/png", data: "AAAA" } });
+  });
 });
 
 describe("isToolAllowed", () => {

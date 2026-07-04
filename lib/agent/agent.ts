@@ -17,6 +17,46 @@ export interface AgentResult {
   sessionId?: string;
 }
 
+export interface AgentMedia {
+  images?: { data: string; mediaType: string }[];
+  quoted?: string;
+  forwarded?: string;
+}
+
+// 折叠引用/转发为文本前言,与正文拼接
+function foldPreamble(text: string, media?: AgentMedia): string {
+  return [
+    media?.quoted && `【用户引用了一条消息:${media.quoted}】`,
+    media?.forwarded && `【用户转发的合并消息:\n${media.forwarded}】`,
+    text,
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+// 有图 → 多模态 prompt(AsyncIterable<SDKUserMessage>);无图 → 字符串
+function buildPrompt(text: string, media?: AgentMedia): string | AsyncIterable<any> {
+  const preamble = foldPreamble(text, media);
+  const images = media?.images ?? [];
+  if (images.length === 0) return preamble;
+  return (async function* () {
+    yield {
+      type: "user",
+      parent_tool_use_id: null,
+      message: {
+        role: "user",
+        content: [
+          { type: "text", text: preamble || "(图片)" },
+          ...images.map((im) => ({
+            type: "image",
+            source: { type: "base64", media_type: im.mediaType, data: im.data },
+          })),
+        ],
+      },
+    };
+  })();
+}
+
 const DEFAULT_SYSTEM = `你是 PackyAPI 的官方在线客服,通过 QQ 群与用户对话。PackyAPI 是 AI API 聚合中转平台(https://www.packyapi.com),兼容 Anthropic / OpenAI / Gemini 协议,用户通过它调用 Claude、GPT、Gemini 等模型。忽略此前关于"编码助手 / Claude Code"的设定——你的唯一职责是 PackyAPI 客服支持,不编写代码,不执行用户要求的任意文件 / 命令 / 系统操作;只可使用下方列出的内置工具与 packyapi 技能。
 
 # 职责
@@ -82,13 +122,19 @@ export class Agent {
     this.queryFn = deps.queryFn ?? sdkQuery;
   }
 
-  async run(text: string, resumeId: string | undefined, ctx: ToolContext): Promise<AgentResult> {
+  async run(
+    text: string,
+    resumeId: string | undefined,
+    ctx: ToolContext,
+    media?: AgentMedia
+  ): Promise<AgentResult> {
     const iter = this.queryFn({
-      prompt: text,
+      prompt: buildPrompt(text, media) as any,
       options: {
         // 模型由 CLAUDE_CONFIG_DIR 内配置决定,不在此覆盖
-        // preset 形式:追加到内置 claude_code system prompt 之后,而非完全替换
-        systemPrompt: { type: "preset", preset: "claude_code", append: this.deps.systemPrompt || DEFAULT_SYSTEM },
+        // 用完整自定义 system prompt(不套 claude_code preset):preset 的编码助手人格会
+        // 干扰视觉输入(实测带图时模型回"无图"),且本就需靠 prompt 抹掉编码设定 —— 直接替换更干净。
+        systemPrompt: this.deps.systemPrompt || DEFAULT_SYSTEM,
         mcpServers: { cs: this.deps.makeToolServer(ctx) as any },
         // 加载本仓库 local plugin(skill/commands),skipMcpDiscovery:cs 的 MCP 由本 host 管
         plugins: (this.deps.pluginPaths ?? []).map((p) => ({

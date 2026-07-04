@@ -50,7 +50,7 @@ export function registerGateway(deps: GatewayDeps): () => void {
     if (repo.seenMessage(msg.messageId)) return;    // 去重
     const sessionKey = `${msg.groupId}:${msg.userId}`;
     if (repo.isHumanMode(sessionKey)) return;       // 人工接管中
-    if (!msg.rawText) return;
+    if (!msg.rawText && !msg.images?.length) return; // 纯图消息也放行
 
     // 用户自助重置:清 resumeId,不转 Agent
     if (RESET_KEYWORDS.test(msg.rawText)) {
@@ -68,6 +68,9 @@ export function registerGateway(deps: GatewayDeps): () => void {
       groupId: msg.groupId,
       userId: msg.userId,
       text: msg.rawText,
+      images: msg.images,
+      quoted: msg.quoted,
+      forwarded: msg.forwarded,
     });
   };
 

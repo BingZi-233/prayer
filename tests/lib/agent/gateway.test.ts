@@ -27,6 +27,25 @@ describe("gateway", () => {
     expect(q.text).toBe("订单在哪");
   });
 
+  it("纯图消息(无文本)@bot 也放行,并透传 images/quoted/forwarded", async () => {
+    const p = collectQualified();
+    bus.emit("message.received", {
+      groupId: 1,
+      userId: 2,
+      messageId: 40,
+      rawText: "",
+      atList: [BOT],
+      images: [{ data: "AAAA", mediaType: "image/png" }],
+      quoted: "张三: 原问题",
+      forwarded: "A: x",
+    });
+    const q = await p;
+    expect(q.text).toBe("");
+    expect(q.images).toEqual([{ data: "AAAA", mediaType: "image/png" }]);
+    expect(q.quoted).toBe("张三: 原问题");
+    expect(q.forwarded).toBe("A: x");
+  });
+
   it("未 @bot 不触发", async () => {
     const spy = vi.fn();
     bus.on("message.qualified", spy);

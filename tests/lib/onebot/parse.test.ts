@@ -15,7 +15,9 @@ describe("parseGroupMessage", () => {
       ],
     };
     const m = parseGroupMessage(evt);
-    expect(m).toEqual({ groupId: 100, userId: 200, messageId: 9, rawText: "你好", atList: [555] });
+    expect(m).toMatchObject({ groupId: 100, userId: 200, messageId: 9, rawText: "你好", atList: [555], imageUrls: [] });
+    expect(m?.replyId).toBeUndefined();
+    expect(m?.forwardId).toBeUndefined();
   });
 
   it("解析 CQ 字符串格式", () => {
@@ -43,5 +45,44 @@ describe("parseGroupMessage", () => {
     expect(parseGroupMessage({ ...base, sender: { role: "admin" } })?.senderRole).toBe("admin");
     expect(parseGroupMessage({ ...base, sender: { role: "member" } })?.senderRole).toBe("member");
     expect(parseGroupMessage(base)?.senderRole).toBeUndefined();
+  });
+
+  it("数组格式抽 image(url 优先 file)/ reply id / forward id,丢未知段", () => {
+    const evt = {
+      post_type: "message",
+      message_type: "group",
+      group_id: 1,
+      user_id: 2,
+      message_id: 5,
+      message: [
+        { type: "reply", data: { id: "888" } },
+        { type: "at", data: { qq: "2" } },
+        { type: "text", data: { text: "看这个" } },
+        { type: "image", data: { url: "http://a/1.jpg", file: "1.jpg" } },
+        { type: "image", data: { file: "2.jpg" } },
+        { type: "face", data: { id: "1" } }, // 丢
+        { type: "forward", data: { id: "res-x" } },
+      ],
+    };
+    const m = parseGroupMessage(evt)!;
+    expect(m.rawText).toBe("看这个");
+    expect(m.imageUrls).toEqual(["http://a/1.jpg", "2.jpg"]);
+    expect(m.replyId).toBe("888");
+    expect(m.forwardId).toBe("res-x");
+  });
+
+  it("CQ 字符串抽 image url 与 reply id", () => {
+    const evt = {
+      post_type: "message",
+      message_type: "group",
+      group_id: 1,
+      user_id: 2,
+      message_id: 6,
+      message: "[CQ:reply,id=42][CQ:image,file=x.jpg,url=http://b/x.jpg]帮看看",
+    };
+    const m = parseGroupMessage(evt)!;
+    expect(m.replyId).toBe("42");
+    expect(m.imageUrls).toEqual(["http://b/x.jpg"]);
+    expect(m.rawText).toBe("帮看看");
   });
 });
