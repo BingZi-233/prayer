@@ -70,7 +70,8 @@ describe("gateway", () => {
     const a = await p;
     expect(a.groupId).toBe(1);
     expect(a.text).toContain("重置");
-    expect(repo.getSessionId("1:2")).toBeUndefined();
+    expect(repo.getResumeId("1:2")).toBeUndefined(); // 续接指针已清
+    expect(repo.getSessionId("1:2")).toBe("sid-old"); // 展示指针保留,网页仍可查看
     expect(qualified).not.toHaveBeenCalled();
   });
 
@@ -88,6 +89,7 @@ describe("gateway", () => {
     const a = await p;
     expect(a.groupId).toBe(999);
     expect(a.text).toContain("1:2");
-    expect(repo.getSessionId("1:2")).toBeUndefined();
+    expect(repo.getResumeId("1:2")).toBeUndefined(); // 续接指针已清
+    expect(repo.getSessionId("1:2")).toBe("sid-old"); // 展示指针保留
   });
 });

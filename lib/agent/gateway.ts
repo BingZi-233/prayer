@@ -21,7 +21,7 @@ export function registerGateway(deps: GatewayDeps): () => void {
       if (mResume) { bus.emit("handoff.resumed", { sessionKey: mResume[1] }); return; }
       const mReset = msg.rawText.match(/^!reset\s+(\S+)/);
       if (mReset) {
-        repo.clearSessionId(mReset[1]);
+        repo.clearResumeId(mReset[1]);
         bus.emit("action.send", {
           action: "send_group_msg",
           groupId: adminGroupId,
@@ -39,7 +39,7 @@ export function registerGateway(deps: GatewayDeps): () => void {
 
     // 用户自助重置:清 resumeId,不转 Agent
     if (RESET_KEYWORDS.test(msg.rawText)) {
-      repo.clearSessionId(sessionKey);
+      repo.clearResumeId(sessionKey);
       bus.emit("action.send", {
         action: "send_group_msg",
         groupId: msg.groupId,

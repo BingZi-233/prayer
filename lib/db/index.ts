@@ -16,6 +16,7 @@ function migrate(db: Database.Database, dim: number): void {
     CREATE TABLE IF NOT EXISTS sessions (
       key TEXT PRIMARY KEY,
       session_id TEXT,
+      resume_id TEXT,
       human_mode INTEGER NOT NULL DEFAULT 0,
       human_since INTEGER,
       updated_at INTEGER NOT NULL DEFAULT (unixepoch('subsec') * 1000)
@@ -47,6 +48,15 @@ function migrate(db: Database.Database, dim: number): void {
       updated_at INTEGER NOT NULL DEFAULT (unixepoch('subsec') * 1000)
     );
   `);
+  // 旧库补列(resume_id 拆分自 session_id);新库已含,重复加列报错忽略。
+  // 回填仅在首次加列时执行(ALTER 成功后),旧 session_id 兼作续接指针,保持既有 resume 行为;
+  // 后续启动 ALTER 抛错跳过回填,避免把已 reset 的 resume_id 重新填回。
+  try {
+    db.exec("ALTER TABLE sessions ADD COLUMN resume_id TEXT");
+    db.exec("UPDATE sessions SET resume_id = session_id WHERE session_id IS NOT NULL");
+  } catch {
+    /* 列已存在 */
+  }
 }
 
 export { DIM };

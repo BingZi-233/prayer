@@ -4,7 +4,7 @@ export class SessionStore {
   constructor(private repo: Repo) {}
 
   resumeId(sessionKey: string): string | undefined {
-    return this.repo.getSessionId(sessionKey);
+    return this.repo.getResumeId(sessionKey);
   }
 
   remember(sessionKey: string, sessionId: string): void {

@@ -10,19 +10,20 @@ export interface KbHit {
 export class Repo {
   constructor(private db: Database.Database) {}
 
+  // 记住会话:session_id(展示,网页读 transcript)与 resume_id(续接)同步写入
   setSessionId(key: string, sessionId: string): void {
     this.db
       .prepare(
-        `INSERT INTO sessions (key, session_id) VALUES (?, ?)
-         ON CONFLICT(key) DO UPDATE SET session_id = excluded.session_id, updated_at = unixepoch('subsec')*1000`
+        `INSERT INTO sessions (key, session_id, resume_id) VALUES (?, ?, ?)
+         ON CONFLICT(key) DO UPDATE SET session_id = excluded.session_id, resume_id = excluded.resume_id, updated_at = unixepoch('subsec')*1000`
       )
-      .run(key, sessionId);
+      .run(key, sessionId, sessionId);
   }
 
-  // 清空 resumeId → 下条消息开全新 SDK session(保留 human_mode 等其它列)
-  clearSessionId(key: string): void {
+  // 仅清 resume_id → 下条消息开全新 SDK session;保留 session_id 供网页仍能查看历史
+  clearResumeId(key: string): void {
     this.db
-      .prepare("UPDATE sessions SET session_id = NULL, updated_at = unixepoch('subsec')*1000 WHERE key = ?")
+      .prepare("UPDATE sessions SET resume_id = NULL, updated_at = unixepoch('subsec')*1000 WHERE key = ?")
       .run(key);
   }
 
@@ -31,6 +32,14 @@ export class Repo {
       | { session_id: string | null }
       | undefined;
     return row?.session_id ?? undefined;
+  }
+
+  // 续接指针:reset 后为空 → Agent 不 resume,开新会话
+  getResumeId(key: string): string | undefined {
+    const row = this.db.prepare("SELECT resume_id FROM sessions WHERE key = ?").get(key) as
+      | { resume_id: string | null }
+      | undefined;
+    return row?.resume_id ?? undefined;
   }
 
   isHumanMode(key: string): boolean {

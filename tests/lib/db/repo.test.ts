@@ -20,6 +20,14 @@ describe("Repo sessions", () => {
     expect(repo.isHumanMode("g:u")).toBe(true);
   });
 
+  it("setSessionId 同步写 session_id 与 resume_id;clearResumeId 只清续接、保留展示", () => {
+    repo.setSessionId("g:u", "sid-1");
+    expect(repo.getResumeId("g:u")).toBe("sid-1");
+    repo.clearResumeId("g:u");
+    expect(repo.getResumeId("g:u")).toBeUndefined(); // 续接指针清空
+    expect(repo.getSessionId("g:u")).toBe("sid-1"); // 展示指针保留
+  });
+
   it("列出超时的 human 会话", () => {
     repo.setHumanMode("g:old", true);
     db.prepare("UPDATE sessions SET human_since = ? WHERE key = ?").run(Date.now() - 60 * 60 * 1000, "g:old");
