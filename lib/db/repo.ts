@@ -104,4 +104,28 @@ export class Repo {
       )
       .run(key, value);
   }
+
+  countSessions(): number {
+    const row = this.db.prepare("SELECT COUNT(*) AS n FROM sessions").get() as { n: number };
+    return row.n;
+  }
+
+  listSessions(): { key: string; sessionId: string | null; humanMode: boolean; updatedAt: number }[] {
+    const rows = this.db
+      .prepare("SELECT key, session_id, human_mode, updated_at FROM sessions ORDER BY updated_at DESC")
+      .all() as { key: string; session_id: string | null; human_mode: number; updated_at: number }[];
+    return rows.map((r) => ({
+      key: r.key,
+      sessionId: r.session_id,
+      humanMode: !!r.human_mode,
+      updatedAt: r.updated_at,
+    }));
+  }
+
+  openTickets(): { id: number; sessionKey: string; summary: string; createdAt: number }[] {
+    const rows = this.db
+      .prepare("SELECT id, session_key, summary, created_at FROM tickets WHERE status = 'open' ORDER BY created_at DESC")
+      .all() as { id: number; session_key: string; summary: string; created_at: number }[];
+    return rows.map((r) => ({ id: r.id, sessionKey: r.session_key, summary: r.summary, createdAt: r.created_at }));
+  }
 }
