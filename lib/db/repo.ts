@@ -88,4 +88,20 @@ export class Repo {
       .all(Buffer.from(query.buffer), k) as KbHit[];
     return rows;
   }
+
+  getConfigRow(key: string): string | undefined {
+    const row = this.db.prepare("SELECT value FROM config WHERE key = ?").get(key) as
+      | { value: string }
+      | undefined;
+    return row?.value;
+  }
+
+  setConfigRow(key: string, value: string): void {
+    this.db
+      .prepare(
+        `INSERT INTO config (key, value) VALUES (?, ?)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = unixepoch('subsec')*1000`
+      )
+      .run(key, value);
+  }
 }
