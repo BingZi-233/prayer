@@ -74,11 +74,14 @@ describe("Repo tickets", () => {
   it("listTickets 含 open 与 closed,按创建时间降序", () => {
     const a = repo.createTicket("g:1", "问题A");
     const b = repo.createTicket("g:2", "问题B");
-    db.prepare("UPDATE tickets SET status='closed' WHERE id=?").run(a);
+    db.prepare("UPDATE tickets SET status='closed', created_at=? WHERE id=?").run(1000, a);
+    db.prepare("UPDATE tickets SET created_at=? WHERE id=?").run(2000, b);
     const list = repo.listTickets();
     expect(list.length).toBe(2);
     expect(list.map((t) => t.status).sort()).toEqual(["closed", "open"]);
     expect(list.find((t) => t.id === b)!.status).toBe("open");
+    expect(list[0].id).toBe(b); // 降序:后创建的(created_at 更大)排首
+    expect(list[1].id).toBe(a);
   });
 });
 
