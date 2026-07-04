@@ -20,6 +20,7 @@ const patchSchema = z.object({
   dbPath: z.string().optional(),
   claudeConfigDir: z.string().optional(),
   model: z.string().optional(),
+  enabledGroups: z.array(z.number()).optional(),
 });
 
 export async function GET(): Promise<NextResponse> {

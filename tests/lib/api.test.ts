@@ -15,6 +15,7 @@ const cfg: AppConfig = {
   reflectLookbackMs: 7200000,
   reflectSettleMs: 600000,
   reflectWindowMax: 60,
+  enabledGroups: [],
 };
 
 describe("api helpers", () => {
