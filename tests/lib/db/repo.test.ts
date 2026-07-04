@@ -12,12 +12,9 @@ beforeEach(() => {
 });
 
 describe("Repo sessions", () => {
-  it("upsert 后能读回 session_id 与 human_mode", () => {
+  it("upsert 后能读回 session_id", () => {
     repo.setSessionId("g:u", "sid-1");
     expect(repo.getSessionId("g:u")).toBe("sid-1");
-    expect(repo.isHumanMode("g:u")).toBe(false);
-    repo.setHumanMode("g:u", true);
-    expect(repo.isHumanMode("g:u")).toBe(true);
   });
 
   it("setSessionId 同步写 session_id 与 resume_id;clearResumeId 只清续接、保留展示", () => {
@@ -26,31 +23,6 @@ describe("Repo sessions", () => {
     repo.clearResumeId("g:u");
     expect(repo.getResumeId("g:u")).toBeUndefined(); // 续接指针清空
     expect(repo.getSessionId("g:u")).toBe("sid-1"); // 展示指针保留
-  });
-
-  it("列出超时的 human 会话", () => {
-    repo.setHumanMode("g:old", true);
-    db.prepare("UPDATE sessions SET human_since = ? WHERE key = ?").run(Date.now() - 60 * 60 * 1000, "g:old");
-    const stale = repo.staleHumanSessions(30);
-    expect(stale).toContain("g:old");
-  });
-
-  it("转人工问题存取 round-trip", () => {
-    repo.setHandoffQuestion("100:200", "怎么退款?");
-    expect(repo.handoffQuestion("100:200")).toBe("怎么退款?");
-    expect(repo.handoffQuestion("无:此")).toBeUndefined();
-  });
-
-  it("humanSessionsInGroup 只返本群人工会话并解析 userId", () => {
-    repo.setHumanMode("100:200", true);
-    repo.setHumanMode("100:201", true);
-    repo.setHumanMode("999:300", true); // 别的群
-    repo.setHumanMode("100:202", false); // 非人工
-    const list = repo.humanSessionsInGroup(100).sort((a, b) => a.userId - b.userId);
-    expect(list).toEqual([
-      { key: "100:200", userId: 200 },
-      { key: "100:201", userId: 201 },
-    ]);
   });
 });
 

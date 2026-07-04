@@ -42,55 +42,6 @@ export class Repo {
     return row?.resume_id ?? undefined;
   }
 
-  isHumanMode(key: string): boolean {
-    const row = this.db.prepare("SELECT human_mode FROM sessions WHERE key = ?").get(key) as
-      | { human_mode: number }
-      | undefined;
-    return !!row?.human_mode;
-  }
-
-  setHumanMode(key: string, on: boolean): void {
-    this.db
-      .prepare(
-        `INSERT INTO sessions (key, human_mode, human_since) VALUES (?, ?, ?)
-         ON CONFLICT(key) DO UPDATE SET human_mode = excluded.human_mode, human_since = excluded.human_since`
-      )
-      .run(key, on ? 1 : 0, on ? Date.now() : null);
-  }
-
-  staleHumanSessions(timeoutMin: number): string[] {
-    const cutoff = Date.now() - timeoutMin * 60 * 1000;
-    const rows = this.db
-      .prepare("SELECT key FROM sessions WHERE human_mode = 1 AND human_since IS NOT NULL AND human_since < ?")
-      .all(cutoff) as { key: string }[];
-    return rows.map((r) => r.key);
-  }
-
-  // 记住转人工时的用户问题,供人工回复后反思配对
-  setHandoffQuestion(key: string, question: string): void {
-    this.db
-      .prepare(
-        `INSERT INTO sessions (key, last_question) VALUES (?, ?)
-         ON CONFLICT(key) DO UPDATE SET last_question = excluded.last_question, updated_at = unixepoch('subsec')*1000`
-      )
-      .run(key, question);
-  }
-
-  handoffQuestion(key: string): string | undefined {
-    const row = this.db.prepare("SELECT last_question FROM sessions WHERE key = ?").get(key) as
-      | { last_question: string | null }
-      | undefined;
-    return row?.last_question ?? undefined;
-  }
-
-  // 某群内处于人工接管的会话(key 形如 groupId:userId),用于把管理员发言配对到会话
-  humanSessionsInGroup(groupId: number): { key: string; userId: number }[] {
-    const rows = this.db
-      .prepare("SELECT key FROM sessions WHERE human_mode = 1 AND key LIKE ?")
-      .all(`${groupId}:%`) as { key: string }[];
-    return rows.map((r) => ({ key: r.key, userId: Number(r.key.split(":")[1]) }));
-  }
-
   // 群消息缓冲(被动反思用):落库
   bufferGroupMessage(groupId: number, userId: number, senderRole: string | null, text: string): void {
     this.db

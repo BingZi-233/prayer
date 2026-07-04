@@ -18,12 +18,11 @@ describe("Repo 统计/列表", () => {
   it("listSessions 返回 key/session_id/human_mode/updated_at", () => {
     const repo = mkRepo();
     repo.setSessionId("g1:u1", "s1");
-    repo.setHumanMode("g1:u1", true);
     const list = repo.listSessions();
     expect(list).toHaveLength(1);
     expect(list[0].key).toBe("g1:u1");
     expect(list[0].sessionId).toBe("s1");
-    expect(list[0].humanMode).toBe(true);
+    expect(list[0].humanMode).toBe(false);
   });
 
   it("openTickets 只返回 open", () => {

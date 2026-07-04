@@ -36,23 +36,6 @@ export interface ActionSend {
   text: string;
 }
 
-export interface HandoffRequested {
-  sessionKey: string;
-  groupId: number;
-  userId: number;
-  lastQuestion: string;
-}
-
-export interface HandoffResumed {
-  sessionKey: string;
-}
-
-export interface HandoffHumanReply {
-  sessionKey: string;
-  question: string;
-  answer: string;
-}
-
 export interface ErrorOccurred {
   scope: string;
   err: unknown;
@@ -65,8 +48,5 @@ export interface EventMap {
   "message.qualified": QualifiedMessage;
   "reply.ready": ReplyReady;
   "action.send": ActionSend;
-  "handoff.requested": HandoffRequested;
-  "handoff.resumed": HandoffResumed;
-  "handoff.humanReply": HandoffHumanReply;
   "error.occurred": ErrorOccurred;
 }
