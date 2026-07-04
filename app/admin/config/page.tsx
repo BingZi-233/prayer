@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { Save } from "lucide-react";
+import { Save, ChevronsUpDown } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -13,10 +13,14 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Badge } from "@/components/ui/badge";
 
 interface Cfg {
   onebotWsUrl: string;
@@ -35,16 +39,23 @@ const NUM_KEYS: (keyof Cfg)[] = ["botQQ", "adminGroupId", "handoffTimeoutMin"];
 export default function ConfigPage() {
   const [cfg, setCfg] = useState<Cfg | null>(null);
   const [busy, setBusy] = useState(false);
-  // 生效群:本地原始文本 state,失焦(onBlur)才 parse 提交到 cfg.enabledGroups
-  const [groupsText, setGroupsText] = useState("");
+  const [groups, setGroups] = useState<{ groupId: number; groupName: string }[] | null>(null);
+  const [groupsLoading, setGroupsLoading] = useState(true);
 
   useEffect(() => {
     fetch("/api/config").then((x) => x.json()).then((r) => {
       if (r.ok) {
         setCfg(r.data);
-        setGroupsText(((r.data.enabledGroups ?? []) as number[]).join("\n"));
       }
     });
+  }, []);
+
+  useEffect(() => {
+    fetch("/api/onebot/groups")
+      .then((x) => x.json())
+      .then((r) => setGroups(r.ok ? r.data : null))
+      .catch(() => setGroups(null))
+      .finally(() => setGroupsLoading(false));
   }, []);
 
   function upd(k: keyof Cfg, v: string) {
@@ -68,7 +79,6 @@ export default function ConfigPage() {
       }).then((x) => x.json());
       if (r.ok) {
         setCfg(r.data);
-        setGroupsText(((r.data.enabledGroups ?? []) as number[]).join("\n"));
         toast.success("配置已保存,Agent 已热重载");
       } else {
         toast.error(`保存失败:${r.error}`);
@@ -82,15 +92,16 @@ export default function ConfigPage() {
 
   const num = (k: keyof Cfg) => (cfg ? String(cfg[k]) : "");
 
-  // 失焦时才把本地文本 parse 成 number[] 提交到 cfg
-  function commitGroups() {
+  // 生效群多选 toggle:维护 cfg.enabledGroups(number[])
+  function toggleGroup(id: number) {
     if (!cfg) return;
-    const ids = groupsText
-      .split(/[\s,]+/)
-      .map((s) => Number(s.trim()))
-      .filter((n) => Number.isFinite(n) && n > 0);
-    setCfg({ ...cfg, enabledGroups: Array.from(new Set(ids)) });
+    const set = new Set(cfg.enabledGroups);
+    if (set.has(id)) set.delete(id);
+    else set.add(id);
+    setCfg({ ...cfg, enabledGroups: Array.from(set) });
   }
+  // 群名查找:不在列表(bot 已退群)→ 裸 id
+  const groupName = (id: number) => groups?.find((g) => g.groupId === id)?.groupName ?? String(id);
 
   return (
     <div className="flex max-w-2xl flex-col gap-6">
@@ -132,21 +143,71 @@ export default function ConfigPage() {
                   </Field>
                   <Field>
                     <FieldLabel htmlFor="adminGroupId">管理群号</FieldLabel>
-                    <Input id="adminGroupId" inputMode="numeric" value={num("adminGroupId")} onChange={(e) => upd("adminGroupId", e.target.value)} />
+                    {groups ? (
+                      <Select value={cfg.adminGroupId ? String(cfg.adminGroupId) : ""} onValueChange={(v) => upd("adminGroupId", v)}>
+                        <SelectTrigger id="adminGroupId">
+                          <SelectValue placeholder="选择管理群" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {groups.map((g) => (
+                            <SelectItem key={g.groupId} value={String(g.groupId)}>
+                              {g.groupName} ({g.groupId})
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <FieldDescription>
+                        {groupsLoading ? "正在获取群列表…" : "bot 未连接,无法获取群列表。请先填写连接并启动 bot。"}
+                      </FieldDescription>
+                    )}
                   </Field>
                   <Field>
-                    <FieldLabel htmlFor="enabledGroups">生效群</FieldLabel>
-                    <Textarea
-                      id="enabledGroups"
-                      className="min-h-24"
-                      value={groupsText}
-                      placeholder="每行一个群号,或逗号分隔"
-                      onChange={(e) => setGroupsText(e.target.value)}
-                      onBlur={commitGroups}
-                    />
-                    <FieldDescription>
-                      仅这些群里 bot 才会回复 / 缓冲 / 沉淀知识。留空 = 对所有群都不响应。管理群不受此列表影响。
-                    </FieldDescription>
+                    <FieldLabel>生效群</FieldLabel>
+                    {groups ? (
+                      <>
+                        <Popover>
+                          <PopoverTrigger asChild>
+                            <Button variant="outline" role="combobox" className="justify-between font-normal">
+                              {cfg.enabledGroups.length ? `已选 ${cfg.enabledGroups.length} 个群` : "选择生效群"}
+                              <ChevronsUpDown className="opacity-50" />
+                            </Button>
+                          </PopoverTrigger>
+                          <PopoverContent className="p-0" align="start">
+                            <Command>
+                              <CommandInput placeholder="搜索群名…" />
+                              <CommandList>
+                                <CommandEmpty>无匹配群</CommandEmpty>
+                                <CommandGroup>
+                                  {groups.map((g) => (
+                                    <CommandItem key={g.groupId} value={`${g.groupName} ${g.groupId}`} onSelect={() => toggleGroup(g.groupId)}>
+                                      <Checkbox checked={cfg.enabledGroups.includes(g.groupId)} className="mr-2" />
+                                      {g.groupName} ({g.groupId})
+                                    </CommandItem>
+                                  ))}
+                                </CommandGroup>
+                              </CommandList>
+                            </Command>
+                          </PopoverContent>
+                        </Popover>
+                        {cfg.enabledGroups.length > 0 && (
+                          <div className="mt-2 flex flex-wrap gap-1">
+                            {cfg.enabledGroups.map((id) => (
+                              <Badge key={id} variant="secondary" className="cursor-pointer" onClick={() => toggleGroup(id)}>
+                                {groupName(id)} ✕
+                              </Badge>
+                            ))}
+                          </div>
+                        )}
+                        <FieldDescription>
+                          仅这些群里 bot 才会回复 / 缓冲 / 沉淀知识。留空 = 对所有群都不响应。管理群不受此列表影响。
+                        </FieldDescription>
+                      </>
+                    ) : (
+                      <FieldDescription>
+                        {groupsLoading ? "正在获取群列表…" : "bot 未连接,无法获取群列表。请先填写连接并启动 bot。"}
+                      </FieldDescription>
+                    )}
                   </Field>
                 </FieldGroup>
               </CardContent>
