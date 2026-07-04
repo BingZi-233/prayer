@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { Activity, Plug, Users, RotateCw, TriangleAlert, Clock } from "lucide-react";
+import { Activity, Plug, Users, RotateCw, TriangleAlert, Clock, LifeBuoy, ShieldCheck, Brain } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -21,6 +21,7 @@ interface Status {
   sessionCount: number;
   lastError?: string;
   bootedAt?: number;
+  handoffQueue: number;
 }
 
 const STATE_LABEL: Record<string, string> = {
@@ -39,11 +40,16 @@ function stateVariant(s?: string): "default" | "secondary" | "destructive" {
 export default function StatusPage() {
   const [s, setS] = useState<Status | null>(null);
   const [busy, setBusy] = useState(false);
+  const [ov, setOv] = useState<{ enabledGroups: number; reflectionCount: number } | null>(null);
 
   async function load() {
     try {
-      const r = await fetch("/api/status").then((x) => x.json());
-      if (r.ok) setS(r.data);
+      const [st, o] = await Promise.all([
+        fetch("/api/status").then((x) => x.json()),
+        fetch("/api/overview").then((x) => x.json()),
+      ]);
+      if (st.ok) setS(st.data);
+      if (o.ok) setOv(o.data);
     } catch {
       /* 轮询失败静默 */
     }
@@ -87,6 +93,9 @@ export default function StatusPage() {
       ) : null,
     },
     { label: "活动会话", icon: Users, value: s?.sessionCount },
+    { label: "转人工/工单", icon: LifeBuoy, value: s?.handoffQueue },
+    { label: "生效群", icon: ShieldCheck, value: ov?.enabledGroups },
+    { label: "沉淀知识", icon: Brain, value: ov?.reflectionCount },
   ];
 
   return (
@@ -102,7 +111,7 @@ export default function StatusPage() {
         </Button>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {stats.map((st) => (
           <Card key={st.label}>
             <CardHeader>
