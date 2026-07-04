@@ -11,7 +11,7 @@ const BOT = 555;
 beforeEach(() => {
   bus.removeAllListeners();
   repo = new Repo(openDb(":memory:"));
-  registerGateway({ repo, botQQ: BOT, adminGroupId: 999 });
+  registerGateway({ repo, botQQ: BOT, adminGroupId: 999, enabledGroups: [1] });
 });
 
 function collectQualified(): Promise<QualifiedMessage> {
@@ -94,5 +94,22 @@ describe("gateway", () => {
     expect(a.text).toContain("1:2");
     expect(repo.getResumeId("1:2")).toBeUndefined(); // 续接指针已清
     expect(repo.getSessionId("1:2")).toBe("sid-old"); // 展示指针保留
+  });
+
+  it("非生效群 @bot 不触发", async () => {
+    const spy = vi.fn();
+    bus.on("message.qualified", spy);
+    bus.emit("message.received", { groupId: 777, userId: 2, messageId: 30, rawText: "订单在哪", atList: [BOT] });
+    await new Promise((r) => setTimeout(r, 50));
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it("非生效群不影响管理群命令(adminGroup 豁免)", async () => {
+    repo.setSessionId("1:2", "sid-old");
+    const p = new Promise<any>((res) => bus.once("action.send", res));
+    bus.emit("message.received", { groupId: 999, userId: 7, messageId: 31, rawText: "!reset 1:2", atList: [BOT] });
+    const a = await p;
+    expect(a.groupId).toBe(999);
+    expect(repo.getResumeId("1:2")).toBeUndefined();
   });
 });

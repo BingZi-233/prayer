@@ -6,15 +6,20 @@ export interface GatewayDeps {
   repo: Repo;
   botQQ: number;
   adminGroupId: number;
+  enabledGroups: number[];
 }
 
 // 用户自助重置对话的关键词(整条消息精确匹配,避免误触)
 const RESET_KEYWORDS = /^\s*(重新开始|重置对话|重置会话|重置|\/new|\/reset|\/clear)\s*$/i;
 
 export function registerGateway(deps: GatewayDeps): () => void {
-  const { repo, botQQ, adminGroupId } = deps;
+  const { repo, botQQ, adminGroupId, enabledGroups } = deps;
+  const enabled = new Set(enabledGroups);
 
   const onReceived = (msg: IncomingMessage) => {
+    // 生效群门:非生效群且非管理群 → 完全忽略
+    if (msg.groupId !== adminGroupId && !enabled.has(msg.groupId)) return;
+
     // 管理群命令优先
     if (msg.groupId === adminGroupId) {
       const mReset = msg.rawText.match(/^!reset\s+(\S+)/);
