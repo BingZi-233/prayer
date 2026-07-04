@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
-import { MessagesSquare } from "lucide-react";
+import { MessagesSquare, Wrench } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -112,19 +112,34 @@ export default function SessionsPage() {
               <MessageScrollerProvider>
                 <MessageScroller>
                   <MessageScrollerViewport>
-                    <MessageScrollerContent className="p-4">
+                    <MessageScrollerContent className="gap-3 p-4">
                       {msgs.map((m, i) => {
                         const isUser = m.role === "user";
+                        // 纯工具调用(无文本)渲染为紧凑 marker,不占整条气泡
+                        if (!m.text) {
+                          if (!m.tool) return null;
+                          return (
+                            <MessageScrollerItem key={i} messageId={String(i)} className="[content-visibility:visible] [contain-intrinsic-size:auto]">
+                              <div className="text-muted-foreground flex items-center justify-center gap-1.5 text-[0.7rem]">
+                                <Wrench className="size-3" />
+                                工具调用:{m.tool}
+                              </div>
+                            </MessageScrollerItem>
+                          );
+                        }
                         return (
-                          <MessageScrollerItem key={i} messageId={String(i)} scrollAnchor={isUser}>
+                          <MessageScrollerItem
+                            key={i}
+                            messageId={String(i)}
+                            scrollAnchor={isUser}
+                            className="[content-visibility:visible] [contain-intrinsic-size:auto]"
+                          >
                             <Message align={isUser ? "end" : "start"}>
                               <MessageContent>
                                 {m.tool && <MessageHeader>工具调用:{m.tool}</MessageHeader>}
-                                {m.text && (
-                                  <Bubble variant={isUser ? "default" : "muted"}>
-                                    <BubbleContent className="whitespace-pre-wrap">{m.text}</BubbleContent>
-                                  </Bubble>
-                                )}
+                                <Bubble variant={isUser ? "default" : "muted"}>
+                                  <BubbleContent className="whitespace-pre-wrap">{m.text}</BubbleContent>
+                                </Bubble>
                               </MessageContent>
                             </Message>
                           </MessageScrollerItem>
