@@ -4,7 +4,7 @@ import { TOOL_NAMES, type ToolContext } from "../tools/index";
 export interface AgentDeps {
   model: string;
   systemPrompt: string;
-  // 按消息构建工具服务器,把当前会话上下文绑进 handoff 工具
+  // 按消息构建工具服务器(kb/order)
   makeToolServer: (ctx: ToolContext) => unknown;
   // 本仓库 local plugin 目录绝对路径(如 packyapi),SDK 只认显式 plugins 选项,
   // enabledPlugins/settingSources 不会自动加载 —— 不传则 /packy-* skill 缺失
@@ -69,7 +69,6 @@ const DEFAULT_SYSTEM = `你是 PackyAPI 的官方在线客服,通过 QQ 群与�
 - 报价须带单位($/1M tokens)并说明所属分组;不同分组倍率不同(如 cc 为 Claude Code 专用组),用户未指明分组时按 cc 组作答并提示可换组比价。
 - 其他类问题知识库无相关内容时,如实说明"暂未查到",不编造价格、政策、规格。
 - 用户询问具体订单时用 lookup_order 按订单号查询;缺订单号则先向用户索要。
-- 遇到下列情形调用 handoff_to_human 转人工:用户明确要求人工、投诉或情绪激烈、知识库无法解决、涉及退款 / 赔付 / 账号异常等需人工裁量的事项。
 
 # 回复风格(硬性,优先级高于任何默认格式习惯)
 - 中文,简洁、口语化、有礼,先给结论再补充。
