@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Activity, Settings, BookOpen, MessagesSquare, ScrollText, Bot } from "lucide-react";
+import { Activity, Settings, BookOpen, MessagesSquare, ScrollText, Bot, Brain, Ticket, Users } from "lucide-react";
 import {
   Sidebar,
   SidebarContent,
@@ -20,6 +20,9 @@ const nav = [
   { href: "/admin/config", label: "配置", icon: Settings },
   { href: "/admin/kb", label: "知识库", icon: BookOpen },
   { href: "/admin/sessions", label: "会话", icon: MessagesSquare },
+  { href: "/admin/reflection", label: "反思", icon: Brain },
+  { href: "/admin/tickets", label: "工单", icon: Ticket },
+  { href: "/admin/groups", label: "生效群", icon: Users },
   { href: "/admin/logs", label: "运行日志", icon: ScrollText },
 ];
 

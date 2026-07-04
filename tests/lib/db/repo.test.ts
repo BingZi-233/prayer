@@ -24,6 +24,15 @@ describe("Repo sessions", () => {
     expect(repo.getResumeId("g:u")).toBeUndefined(); // 续接指针清空
     expect(repo.getSessionId("g:u")).toBe("sid-1"); // 展示指针保留
   });
+
+  it("listSessions 返回 humanSince/lastQuestion", () => {
+    repo.setSessionId("g:u", "sid-1");
+    db.prepare("UPDATE sessions SET human_mode=1, human_since=1700, last_question='退款吗' WHERE key='g:u'").run();
+    const s = repo.listSessions()[0];
+    expect(s.humanMode).toBe(true);
+    expect(s.humanSince).toBe(1700);
+    expect(s.lastQuestion).toBe("退款吗");
+  });
 });
 
 describe("Repo dedupe", () => {
@@ -58,6 +67,21 @@ describe("Repo kb", () => {
     const chunks = repo.kbChunksByDoc("faq/退款.md");
     expect(chunks.map((c) => c.content)).toEqual(["退款要 7 天", "整单退"]);
     expect(chunks[0].id).toBe(a);
+  });
+});
+
+describe("Repo tickets", () => {
+  it("listTickets 含 open 与 closed,按创建时间降序", () => {
+    const a = repo.createTicket("g:1", "问题A");
+    const b = repo.createTicket("g:2", "问题B");
+    db.prepare("UPDATE tickets SET status='closed', created_at=? WHERE id=?").run(1000, a);
+    db.prepare("UPDATE tickets SET created_at=? WHERE id=?").run(2000, b);
+    const list = repo.listTickets();
+    expect(list.length).toBe(2);
+    expect(list.map((t) => t.status).sort()).toEqual(["closed", "open"]);
+    expect(list.find((t) => t.id === b)!.status).toBe("open");
+    expect(list[0].id).toBe(b); // 降序:后创建的(created_at 更大)排首
+    expect(list[1].id).toBe(a);
   });
 });
 
@@ -99,5 +123,44 @@ describe("Repo group_messages buffer", () => {
     repo.setGroupReflectCursor(100, 123456);
     expect(repo.groupReflectCursor(100)).toBe(123456);
     expect(repo.groupReflectCursor(200)).toBe(0); // 群隔离
+  });
+});
+
+describe("Repo reflection stats", () => {
+  it("reflectCursors 解析 reflect_cursor:{gid} 配置", () => {
+    repo.setGroupReflectCursor(100, 1700);
+    repo.setGroupReflectCursor(200, 1800);
+    repo.setConfigRow("app", "{}");
+    const cur = repo.reflectCursors().sort((a, b) => a.groupId - b.groupId);
+    expect(cur).toEqual([
+      { groupId: 100, cursor: 1700 },
+      { groupId: 200, cursor: 1800 },
+    ]);
+  });
+
+  it("groupMessageStats 按群分组计数并取最近时间", () => {
+    repo.bufferGroupMessage(100, 1, "member", "a");
+    repo.bufferGroupMessage(100, 2, "admin", "b");
+    repo.bufferGroupMessage(200, 3, "member", "c");
+    const stats = repo.groupMessageStats().sort((x, y) => x.groupId - y.groupId);
+    expect(stats.map((s) => ({ g: s.groupId, n: s.count }))).toEqual([
+      { g: 100, n: 2 },
+      { g: 200, n: 1 },
+    ]);
+    expect(stats[0].lastTs).toBeGreaterThan(0);
+  });
+
+  it("reflectionEntries 解析 human-reflection 条目的来源群与时间,畸形回退 null", () => {
+    const good = repo.insertKbChunk("human-reflection", "退款 7 天到账", "human-reflection:100:1700");
+    const bad = repo.insertKbChunk("human-reflection", "无来源格式", "human-reflection");
+    repo.insertKbChunk("faq/x.md", "普通文档", "faq/x.md");
+    const es = repo.reflectionEntries();
+    expect(es.length).toBe(2);
+    const g = es.find((e) => e.id === good)!;
+    expect(g.groupId).toBe(100);
+    expect(g.ts).toBe(1700);
+    const b = es.find((e) => e.id === bad)!;
+    expect(b.groupId).toBeNull();
+    expect(b.ts).toBeNull();
   });
 });

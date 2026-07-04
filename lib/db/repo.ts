@@ -155,6 +155,32 @@ export class Repo {
     this.setConfigRow(`reflect_cursor:${groupId}`, String(ts));
   }
 
+  // 每群反思游标(config key = reflect_cursor:{gid}),供反思/群活动页展示进度
+  reflectCursors(): { groupId: number; cursor: number }[] {
+    const rows = this.db
+      .prepare("SELECT key, value FROM config WHERE key LIKE 'reflect_cursor:%'")
+      .all() as { key: string; value: string }[];
+    return rows.map((r) => ({ groupId: Number(r.key.slice("reflect_cursor:".length)), cursor: Number(r.value) }));
+  }
+
+  // 每群缓冲消息量 + 最近一条时间(反思原料规模)
+  groupMessageStats(): { groupId: number; count: number; lastTs: number }[] {
+    return this.db
+      .prepare("SELECT group_id AS groupId, COUNT(*) AS count, MAX(created_at) AS lastTs FROM group_messages GROUP BY group_id")
+      .all() as { groupId: number; count: number; lastTs: number }[];
+  }
+
+  // 反思沉淀的知识条目(doc='human-reflection');source 格式 human-reflection:{gid}:{ts},畸形回退 null
+  reflectionEntries(): { id: number; content: string; groupId: number | null; ts: number | null }[] {
+    const rows = this.db
+      .prepare("SELECT id, content, source FROM kb_chunks WHERE doc = 'human-reflection' ORDER BY id DESC")
+      .all() as { id: number; content: string; source: string | null }[];
+    return rows.map((r) => {
+      const m = /^human-reflection:(\d+):(\d+)$/.exec(r.source ?? "");
+      return { id: r.id, content: r.content, groupId: m ? Number(m[1]) : null, ts: m ? Number(m[2]) : null };
+    });
+  }
+
   seenMessage(messageId: number): boolean {
     const info = this.db
       .prepare("INSERT OR IGNORE INTO seen_messages (message_id) VALUES (?)")
@@ -236,14 +262,22 @@ export class Repo {
     return row.n;
   }
 
-  listSessions(): { key: string; sessionId: string | null; humanMode: boolean; updatedAt: number }[] {
+  listSessions(): {
+    key: string; sessionId: string | null; humanMode: boolean;
+    humanSince: number | null; lastQuestion: string | null; updatedAt: number;
+  }[] {
     const rows = this.db
-      .prepare("SELECT key, session_id, human_mode, updated_at FROM sessions ORDER BY updated_at DESC")
-      .all() as { key: string; session_id: string | null; human_mode: number; updated_at: number }[];
+      .prepare("SELECT key, session_id, human_mode, human_since, last_question, updated_at FROM sessions ORDER BY updated_at DESC")
+      .all() as {
+        key: string; session_id: string | null; human_mode: number;
+        human_since: number | null; last_question: string | null; updated_at: number;
+      }[];
     return rows.map((r) => ({
       key: r.key,
       sessionId: r.session_id,
       humanMode: !!r.human_mode,
+      humanSince: r.human_since,
+      lastQuestion: r.last_question,
       updatedAt: r.updated_at,
     }));
   }
@@ -253,5 +287,12 @@ export class Repo {
       .prepare("SELECT id, session_key, summary, created_at FROM tickets WHERE status = 'open' ORDER BY created_at DESC")
       .all() as { id: number; session_key: string; summary: string; created_at: number }[];
     return rows.map((r) => ({ id: r.id, sessionKey: r.session_key, summary: r.summary, createdAt: r.created_at }));
+  }
+
+  listTickets(): { id: number; sessionKey: string; summary: string; status: string; createdAt: number }[] {
+    const rows = this.db
+      .prepare("SELECT id, session_key, summary, status, created_at FROM tickets ORDER BY created_at DESC")
+      .all() as { id: number; session_key: string; summary: string; status: string; created_at: number }[];
+    return rows.map((r) => ({ id: r.id, sessionKey: r.session_key, summary: r.summary, status: r.status, createdAt: r.created_at }));
   }
 }
