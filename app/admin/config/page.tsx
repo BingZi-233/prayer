@@ -133,13 +133,9 @@ export default function ConfigPage() {
               <CardContent>
                 <FieldGroup>
                   <Field>
-                    <FieldLabel htmlFor="model">模型</FieldLabel>
-                    <Input id="model" value={cfg.model} placeholder="claude-sonnet-5" onChange={(e) => upd("model", e.target.value)} />
-                  </Field>
-                  <Field>
                     <FieldLabel htmlFor="claudeConfigDir">CLAUDE_CONFIG_DIR</FieldLabel>
                     <Input id="claudeConfigDir" value={cfg.claudeConfigDir} placeholder="./data/claude-config" onChange={(e) => upd("claudeConfigDir", e.target.value)} />
-                    <FieldDescription>SDK 认证与配置目录,在该目录 `claude login` 后即可使用。</FieldDescription>
+                    <FieldDescription>SDK 认证与配置目录,在该目录 `claude login` 后即可使用。模型等由该目录内配置决定。</FieldDescription>
                   </Field>
                 </FieldGroup>
               </CardContent>

@@ -29,7 +29,7 @@ export class Agent {
     const iter = this.queryFn({
       prompt: text,
       options: {
-        model: this.deps.model,
+        // 模型由 CLAUDE_CONFIG_DIR 内配置决定,不在此覆盖
         systemPrompt: this.deps.systemPrompt || DEFAULT_SYSTEM,
         mcpServers: { cs: this.deps.toolServer as any },
         allowedTools: TOOL_NAMES,
