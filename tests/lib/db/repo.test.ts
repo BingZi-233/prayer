@@ -134,4 +134,16 @@ describe("Repo reflection stats", () => {
       { groupId: 200, cursor: 1800 },
     ]);
   });
+
+  it("groupMessageStats 按群分组计数并取最近时间", () => {
+    repo.bufferGroupMessage(100, 1, "member", "a");
+    repo.bufferGroupMessage(100, 2, "admin", "b");
+    repo.bufferGroupMessage(200, 3, "member", "c");
+    const stats = repo.groupMessageStats().sort((x, y) => x.groupId - y.groupId);
+    expect(stats.map((s) => ({ g: s.groupId, n: s.count }))).toEqual([
+      { g: 100, n: 2 },
+      { g: 200, n: 1 },
+    ]);
+    expect(stats[0].lastTs).toBeGreaterThan(0);
+  });
 });

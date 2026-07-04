@@ -163,6 +163,13 @@ export class Repo {
     return rows.map((r) => ({ groupId: Number(r.key.slice("reflect_cursor:".length)), cursor: Number(r.value) }));
   }
 
+  // 每群缓冲消息量 + 最近一条时间(反思原料规模)
+  groupMessageStats(): { groupId: number; count: number; lastTs: number }[] {
+    return this.db
+      .prepare("SELECT group_id AS groupId, COUNT(*) AS count, MAX(created_at) AS lastTs FROM group_messages GROUP BY group_id")
+      .all() as { groupId: number; count: number; lastTs: number }[];
+  }
+
   seenMessage(messageId: number): boolean {
     const info = this.db
       .prepare("INSERT OR IGNORE INTO seen_messages (message_id) VALUES (?)")
