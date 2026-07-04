@@ -61,4 +61,18 @@ describe("config-store", () => {
     expect(cfg.reflectLookbackMs).toBe(7200000);
     expect(cfg.reflectWindowMax).toBe(60);
   });
+
+  it("enabledGroups 默认空数组", () => {
+    const repo = mkRepo();
+    const cfg = getConfig(repo, { ONEBOT_WS_URL: "ws://x:1", BOT_QQ: "1", ADMIN_GROUP_ID: "2" });
+    expect(cfg.enabledGroups).toEqual([]);
+  });
+
+  it("旧库缺 enabledGroups 补空数组;setConfig 可写入", () => {
+    const repo = mkRepo();
+    repo.setConfigRow("app", JSON.stringify({ botQQ: 5 }));
+    expect(getConfig(repo, {}).enabledGroups).toEqual([]); // 缺失补默认
+    setConfig(repo, { enabledGroups: [100, 200] });
+    expect(getConfig(repo, {}).enabledGroups).toEqual([100, 200]); // 存储值优先
+  });
 });

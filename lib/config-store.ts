@@ -15,6 +15,7 @@ export interface AppConfig {
   reflectLookbackMs: number;
   reflectSettleMs: number;
   reflectWindowMax: number;
+  enabledGroups: number[];
 }
 
 function seedFromEnv(env: Record<string, string | undefined>): AppConfig {
@@ -31,6 +32,7 @@ function seedFromEnv(env: Record<string, string | undefined>): AppConfig {
     reflectLookbackMs: Number(env.REFLECT_LOOKBACK_MS ?? "7200000"),
     reflectSettleMs: Number(env.REFLECT_SETTLE_MS ?? "600000"),
     reflectWindowMax: Number(env.REFLECT_WINDOW_MAX ?? "60"),
+    enabledGroups: [],
   };
 }
 
