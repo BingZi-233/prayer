@@ -6,6 +6,9 @@ export interface AgentDeps {
   systemPrompt: string;
   // 按消息构建工具服务器,把当前会话上下文绑进 handoff 工具
   makeToolServer: (ctx: ToolContext) => unknown;
+  // 本仓库 local plugin 目录绝对路径(如 packyapi),SDK 只认显式 plugins 选项,
+  // enabledPlugins/settingSources 不会自动加载 —— 不传则 /packy-* skill 缺失
+  pluginPaths?: string[];
   queryFn?: typeof sdkQuery;
 }
 
@@ -81,6 +84,12 @@ export class Agent {
         // preset 形式:追加到内置 claude_code system prompt 之后,而非完全替换
         systemPrompt: { type: "preset", preset: "claude_code", append: this.deps.systemPrompt || DEFAULT_SYSTEM },
         mcpServers: { cs: this.deps.makeToolServer(ctx) as any },
+        // 加载本仓库 local plugin(skill/commands),skipMcpDiscovery:cs 的 MCP 由本 host 管
+        plugins: (this.deps.pluginPaths ?? []).map((p) => ({
+          type: "local" as const,
+          path: p,
+          skipMcpDiscovery: true,
+        })),
         // 单一放行出口:不用 allowedTools 预授权(bare 名会 shadow canUseTool),全部工具落到此回调
         // 白名单判定见 isToolAllowed;未命中一律拒绝(headless 不弹交互授权)
         canUseTool: async (toolName: string, input: Record<string, unknown>) => {

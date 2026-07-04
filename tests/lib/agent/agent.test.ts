@@ -28,6 +28,36 @@ describe("Agent.run", () => {
     await agent.run("hi", "sid-prev", { sessionKey: "1:2", groupId: 1, userId: 2 });
     expect(seen.options.resume).toBe("sid-prev");
   });
+
+  it("pluginPaths 转成 options.plugins 的 local 项(skipMcpDiscovery)", async () => {
+    let seen: any;
+    const spyQuery = async function* (args: any) {
+      seen = args;
+      yield { type: "result", subtype: "success" };
+    };
+    const agent = new Agent({
+      model: "m",
+      systemPrompt: "s",
+      makeToolServer: () => ({}),
+      pluginPaths: ["/abs/plugins/packyapi"],
+      queryFn: spyQuery as any,
+    });
+    await agent.run("hi", undefined, { sessionKey: "1:2", groupId: 1, userId: 2 });
+    expect(seen.options.plugins).toEqual([
+      { type: "local", path: "/abs/plugins/packyapi", skipMcpDiscovery: true },
+    ]);
+  });
+
+  it("未给 pluginPaths 时 options.plugins 为空数组", async () => {
+    let seen: any;
+    const spyQuery = async function* (args: any) {
+      seen = args;
+      yield { type: "result", subtype: "success" };
+    };
+    const agent = new Agent({ model: "m", systemPrompt: "s", makeToolServer: () => ({}), queryFn: spyQuery as any });
+    await agent.run("hi", undefined, { sessionKey: "1:2", groupId: 1, userId: 2 });
+    expect(seen.options.plugins).toEqual([]);
+  });
 });
 
 describe("isToolAllowed", () => {

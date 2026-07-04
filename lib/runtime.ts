@@ -1,3 +1,4 @@
+import { resolve } from "path";
 import { bus } from "./bus";
 import { logger } from "./logger";
 import type { AppConfig } from "./config-store";
@@ -49,6 +50,8 @@ async function defaultBuilders(): Promise<RuntimeBuilders> {
         model: cfg.model,
         systemPrompt: "",
         makeToolServer: (ctx) => buildToolServer(repo, ctx),
+        // 本仓库 local plugin 目录(源码,非 cache),绝对化后交给 SDK 显式加载
+        pluginPaths: [resolve(process.cwd(), "plugins/packyapi")],
       }),
     assemble,
     makeClient: (url, token, onStatus) => new OneBotClient(url, token, onStatus),
