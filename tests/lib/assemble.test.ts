@@ -14,6 +14,7 @@ describe("assemble e2e(总线级)", () => {
       repo,
       botQQ: 555,
       adminGroupId: 999,
+      enabledGroups: [1],
       agent: fakeAgent as any,
     });
 

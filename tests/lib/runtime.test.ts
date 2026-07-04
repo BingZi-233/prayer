@@ -7,6 +7,7 @@ const cfg: AppConfig = {
   onebotAccessToken: "",
   botQQ: 1,
   adminGroupId: 2,
+  enabledGroups: [],
   handoffTimeoutMin: 30,
   dbPath: ":memory:",
   claudeConfigDir: "/tmp/cfgdir-test",

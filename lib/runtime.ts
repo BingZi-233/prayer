@@ -91,6 +91,7 @@ export class RuntimeManager {
         repo,
         botQQ: cfg.botQQ,
         adminGroupId: cfg.adminGroupId,
+        enabledGroups: cfg.enabledGroups,
         agent,
         reflectScanMs: cfg.reflectScanMs,
         reflectLookbackMs: cfg.reflectLookbackMs,

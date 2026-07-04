@@ -12,6 +12,7 @@ export interface AssembleDeps {
   repo: Repo;
   botQQ: number;
   adminGroupId: number;
+  enabledGroups: number[];
   agent: Agent;
   reflectScanMs?: number;
   reflectLookbackMs?: number;
@@ -21,16 +22,17 @@ export interface AssembleDeps {
 
 /** 装配全链路,返回 teardown 用于热重载时卸载监听器与定时器 */
 export function assemble(deps: AssembleDeps): () => void {
-  const { repo, botQQ, adminGroupId, agent } = deps;
+  const { repo, botQQ, adminGroupId, enabledGroups, agent } = deps;
   const cleanups = [
     registerErrorHandler(),
-    registerGateway({ repo, botQQ, adminGroupId }),
+    registerGateway({ repo, botQQ, adminGroupId, enabledGroups }),
     registerOrchestrator({ agent, store: new SessionStore(repo) }),
     registerReplyMapper(),
-    registerMessageBuffer({ repo, botQQ, adminGroupId }),
+    registerMessageBuffer({ repo, botQQ, adminGroupId, enabledGroups }),
     registerReflectionPoller({
       repo,
       adminGroupId,
+      enabledGroups,
       scanMs: deps.reflectScanMs,
       lookbackMs: deps.reflectLookbackMs,
       settleMs: deps.reflectSettleMs,
