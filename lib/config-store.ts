@@ -36,7 +36,8 @@ export function getConfig(
     repo.setConfigRow(KEY, JSON.stringify(seeded));
     return seeded;
   }
-  return JSON.parse(raw) as AppConfig;
+  // 与默认值合并:日后给 AppConfig 加字段时,旧库缺失字段自动补默认(存储值优先)
+  return { ...seedFromEnv(env), ...(JSON.parse(raw) as Partial<AppConfig>) };
 }
 
 export function setConfig(repo: Repo, patch: Partial<AppConfig>): AppConfig {

@@ -17,7 +17,7 @@ export function maskSecret(v: string): string {
 }
 
 export function mergeSecret(existing: string, incoming: string): string {
-  return incoming ? incoming : existing;
+  return incoming || existing;
 }
 
 export function writeSettings(configDir: string, settings: Settings): void {

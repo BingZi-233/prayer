@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { mkdtempSync, readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { maskSecret, mergeSecret, writeSettings, readSettings } from "./settings-writer";
@@ -38,6 +38,12 @@ describe("settings.json 读写", () => {
   it("writeSettingsRaw 拒绝非法 JSON", () => {
     const dir = mkdtempSync(join(tmpdir(), "cfg-"));
     expect(() => writeSettingsRaw(dir, "{not json")).toThrow();
+  });
+
+  it("readSettings 遇损坏 JSON 返回 null", () => {
+    const dir = mkdtempSync(join(tmpdir(), "cfg-"));
+    writeFileSync(join(dir, "settings.json"), "{broken", "utf8");
+    expect(readSettings(dir)).toBeNull();
   });
 });
 

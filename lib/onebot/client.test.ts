@@ -36,6 +36,25 @@ describe("OneBotClient", () => {
     expect(m.groupId).toBe(1);
   });
 
+  it("连接 open/stop → onStatus 回调 + isConnected 反映状态", async () => {
+    const statuses: boolean[] = [];
+    const connected = new Promise<void>((res) => {
+      startServer(() => {}).then((port) => {
+        client = new OneBotClient(`ws://127.0.0.1:${port}`, undefined, (c) => {
+          statuses.push(c);
+          if (c) res();
+        });
+        client.start();
+      });
+    });
+    await connected;
+    expect(client!.isConnected()).toBe(true);
+    expect(statuses).toContain(true);
+    client!.stop();
+    expect(client!.isConnected()).toBe(false);
+    expect(statuses[statuses.length - 1]).toBe(false);
+  });
+
   it("action.send → 对端收到 send_group_msg 动作", async () => {
     const gotAction = new Promise<any>((res) => {
       startServer((ws) => {

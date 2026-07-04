@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { logger } from "./logger";
+import { logger, captureConsole } from "./logger";
 
 describe("logger ring buffer", () => {
   beforeEach(() => logger.clear());
@@ -19,5 +19,14 @@ describe("logger ring buffer", () => {
     expect(lines).toHaveLength(500);
     expect(lines[0].msg).toBe("m100");
     expect(lines[499].msg).toBe("m599");
+  });
+
+  it("captureConsole 捕获 Error 的 message/stack(非 {})", () => {
+    captureConsole();
+    logger.clear();
+    console.error(new Error("boom"));
+    const joined = logger.tail().map((l) => l.msg).join("\n");
+    expect(joined).toContain("boom");
+    expect(joined).not.toBe("{}");
   });
 });

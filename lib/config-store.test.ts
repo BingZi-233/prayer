@@ -40,4 +40,16 @@ describe("config-store", () => {
     expect(cfg.dbPath).toBe("./data/agent.db");
     expect(cfg.claudeConfigDir).toBe("./data/claude-config");
   });
+
+  it("旧库缺字段:读取时用默认值补齐", () => {
+    const repo = mkRepo();
+    // 模拟老版本只存了部分字段的行
+    repo.setConfigRow("app", JSON.stringify({ botQQ: 5, onebotWsUrl: "ws://old:1" }));
+    const cfg = getConfig(repo, {});
+    expect(cfg.botQQ).toBe(5); // 存储值优先
+    expect(cfg.onebotWsUrl).toBe("ws://old:1");
+    expect(cfg.claudeConfigDir).toBe("./data/claude-config"); // 缺失字段补默认
+    expect(cfg.handoffTimeoutMin).toBe(30);
+    expect(cfg.model).toBe("claude-sonnet-5");
+  });
 });

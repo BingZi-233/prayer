@@ -30,9 +30,14 @@ export const logger: RingLogger = g.__agentLogger ?? (g.__agentLogger = new Ring
 export function captureConsole(): void {
   if (g.__consolePatched) return;
   g.__consolePatched = true;
+  const fmt = (a: unknown): string => {
+    if (typeof a === "string") return a;
+    if (a instanceof Error) return `${a.message}\n${a.stack ?? ""}`;
+    return JSON.stringify(a);
+  };
   const wrap = (level: LogLine["level"], orig: (...a: unknown[]) => void) => {
     return (...args: unknown[]) => {
-      logger.log(level, args.map((a) => (typeof a === "string" ? a : JSON.stringify(a))).join(" "));
+      logger.log(level, args.map(fmt).join(" "));
       orig(...args);
     };
   };
