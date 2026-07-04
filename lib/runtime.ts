@@ -48,7 +48,7 @@ async function defaultBuilders(): Promise<RuntimeBuilders> {
       new Agent({
         model: cfg.model,
         systemPrompt: "",
-        toolServer: buildToolServer(repo),
+        makeToolServer: (ctx) => buildToolServer(repo, ctx),
       }),
     assemble,
     makeClient: (url, token, onStatus) => new OneBotClient(url, token, onStatus),

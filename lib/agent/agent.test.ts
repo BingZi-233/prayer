@@ -10,8 +10,8 @@ async function* fakeQuery(_args: any) {
 
 describe("Agent.run", () => {
   it("返回最终文本 + 新 session_id", async () => {
-    const agent = new Agent({ model: "claude-sonnet-5", systemPrompt: "客服", toolServer: {} as any, queryFn: fakeQuery as any });
-    const out = await agent.run("在吗", undefined);
+    const agent = new Agent({ model: "claude-sonnet-5", systemPrompt: "客服", makeToolServer: () => ({}), queryFn: fakeQuery as any });
+    const out = await agent.run("在吗", undefined, { sessionKey: "1:2", groupId: 1, userId: 2 });
     expect(out.text).toContain("有什么可以帮您");
     expect(out.sessionId).toBe("sid-new");
   });
@@ -23,8 +23,8 @@ describe("Agent.run", () => {
       yield { type: "system", subtype: "init", session_id: "sid-x" };
       yield { type: "result", subtype: "success" };
     };
-    const agent = new Agent({ model: "m", systemPrompt: "s", toolServer: {} as any, queryFn: spyQuery as any });
-    await agent.run("hi", "sid-prev");
+    const agent = new Agent({ model: "m", systemPrompt: "s", makeToolServer: () => ({}), queryFn: spyQuery as any });
+    await agent.run("hi", "sid-prev", { sessionKey: "1:2", groupId: 1, userId: 2 });
     expect(seen.options.resume).toBe("sid-prev");
   });
 });

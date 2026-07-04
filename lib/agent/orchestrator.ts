@@ -15,7 +15,11 @@ export function registerOrchestrator(deps: OrchestratorDeps): () => void {
 
   async function handle(q: QualifiedMessage): Promise<void> {
     const resumeId = store.resumeId(q.sessionKey);
-    const result = await agent.run(q.text, resumeId);
+    const result = await agent.run(q.text, resumeId, {
+      sessionKey: q.sessionKey,
+      groupId: q.groupId,
+      userId: q.userId,
+    });
     if (result.sessionId) store.remember(q.sessionKey, result.sessionId);
     if (result.text) bus.emit("reply.ready", { groupId: q.groupId, text: result.text });
   }

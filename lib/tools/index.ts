@@ -12,10 +12,18 @@ export const TOOL_NAMES = [
   "mcp__cs__handoff_to_human",
 ];
 
-export function buildToolServer(repo: Repo) {
+// 当前消息的会话上下文,由 runtime 绑定进工具(handoff 用),不进模型
+export interface ToolContext {
+  sessionKey: string;
+  groupId: number;
+  userId: number;
+}
+
+// 按消息构建:kb/order 无状态,handoff 绑定当前 ctx
+export function buildToolServer(repo: Repo, ctx: ToolContext) {
   return createSdkMcpServer({
     name: "cs",
     version: "1.0.0",
-    tools: [makeKbTool(repo, embed, DIM), makeOrderTool(), makeHandoffTool()],
+    tools: [makeKbTool(repo, embed, DIM), makeOrderTool(), makeHandoffTool(ctx)],
   });
 }
