@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
-import { MessagesSquare, RefreshCw, Wrench } from "lucide-react";
+import { MessagesSquare, RefreshCw, Wrench, UserRound } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -23,9 +23,17 @@ import {
   MessageScrollerProvider,
   MessageScrollerViewport,
 } from "@/components/ui/message-scroller";
+import { Badge } from "@/components/ui/badge";
 
-interface Sess { key: string; sessionId: string | null; updatedAt: number; }
+interface Sess { key: string; sessionId: string | null; humanMode: boolean; humanSince: number | null; lastQuestion: string | null; updatedAt: number; }
 interface Msg { role: string; text?: string; tool?: string; input?: string; result?: string; }
+
+function since(ts: number | null): string {
+  if (!ts) return "";
+  const min = Math.floor((Date.now() - ts) / 60000);
+  if (min < 60) return `${min} 分钟`;
+  return `${Math.floor(min / 60)} 小时 ${min % 60} 分`;
+}
 
 export default function SessionsPage() {
   const [sessions, setSessions] = useState<Sess[]>([]);
@@ -104,11 +112,22 @@ export default function SessionsPage() {
                     onClick={() => open(sess)}
                     disabled={!sess.sessionId}
                     className={cn(
-                      "hover:bg-muted flex items-center justify-between gap-2 rounded-md px-2 py-1.5 text-left text-xs disabled:opacity-50",
+                      "hover:bg-muted flex flex-col gap-1 rounded-md px-2 py-1.5 text-left text-xs disabled:opacity-50",
                       active === sess.key && "bg-muted",
                     )}
                   >
-                    <span className="truncate font-mono">{sess.key}</span>
+                    <span className="flex items-center justify-between gap-2">
+                      <span className="truncate font-mono">{sess.key}</span>
+                      {sess.humanMode && (
+                        <Badge variant="destructive" className="shrink-0 gap-1">
+                          <UserRound className="size-3" />
+                          人工{sess.humanSince ? ` ${since(sess.humanSince)}` : ""}
+                        </Badge>
+                      )}
+                    </span>
+                    {sess.lastQuestion && (
+                      <span className="text-muted-foreground truncate">Q: {sess.lastQuestion}</span>
+                    )}
                   </button>
                 ))}
               </div>
