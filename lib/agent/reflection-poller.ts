@@ -10,6 +10,7 @@ export interface ReflectionPollerDeps {
   lookbackMs?: number;
   settleMs?: number;
   windowMax?: number;
+  enabledGroups?: number[];
   embed?: (text: string) => Promise<Float32Array>;
   queryFn?: typeof sdkQuery;
   now?: () => number;
@@ -21,6 +22,7 @@ interface Resolved {
   lookbackMs: number;
   settleMs: number;
   windowMax: number;
+  enabledGroups: number[];
   embed: (text: string) => Promise<Float32Array>;
   queryFn: typeof sdkQuery;
   now: () => number;
@@ -69,6 +71,7 @@ function resolve(deps: ReflectionPollerDeps): Resolved {
     lookbackMs: deps.lookbackMs ?? 7_200_000,
     settleMs: deps.settleMs ?? 600_000,
     windowMax: deps.windowMax ?? 60,
+    enabledGroups: deps.enabledGroups ?? [],
     embed: deps.embed ?? defaultEmbed,
     queryFn: deps.queryFn ?? sdkQuery,
     now: deps.now ?? (() => Date.now()),
@@ -80,7 +83,9 @@ async function scanOnce(d: Resolved): Promise<void> {
   const until = now - d.settleMs; // 已沉降上界
   if (until <= 0) return;
 
+  const enabled = new Set(d.enabledGroups);
   for (const groupId of d.repo.groupsWithAdminMessagesUpTo(until)) {
+    if (!enabled.has(groupId)) continue; // 生效群门:非生效群不沉淀
     const cursor = d.repo.groupReflectCursor(groupId);
     if (until <= cursor) continue; // 该群已处理到此
     // 该群 band 内无新管理发言(旧发言早已处理) → 直接推进跳过,不喂 LLM

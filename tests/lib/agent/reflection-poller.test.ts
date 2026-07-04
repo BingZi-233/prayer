@@ -32,6 +32,7 @@ const opts = (over: Record<string, unknown> = {}) => ({
   lookbackMs: 1_000_000,
   settleMs: 1000,
   windowMax: 60,
+  enabledGroups: [100],
   ...over,
 });
 
@@ -120,7 +121,10 @@ describe("reflection-poller runScan", () => {
     seed(100, 201, "admin", "群100答案", NOW - 4000);
     seed(200, 202, "admin", "群200答案", NOW - 4000);
     await runScan(
-      opts({ queryFn: fakeQuery('[{"question":"q","answer":"a","effective":true,"faq":"通用知识条"}]') as never })
+      opts({
+        enabledGroups: [100, 200],
+        queryFn: fakeQuery('[{"question":"q","answer":"a","effective":true,"faq":"通用知识条"}]') as never,
+      })
     );
     const hits = repo.searchKb(new Float32Array([1, 0, 0]), 10);
     expect(hits).toHaveLength(2);
@@ -135,12 +139,21 @@ describe("reflection-poller runScan", () => {
       return fakeQuery('[{"question":"q","answer":"a","effective":true,"faq":"群200知识条"}]')();
     };
     const err = new Promise<any>((res) => bus.once("error.occurred", res));
-    await runScan(opts({ queryFn: qf as never }));
+    await runScan(opts({ enabledGroups: [100, 200], queryFn: qf as never }));
     const e = await err;
     expect(e.scope).toBe("reflection");
     expect(e.groupId).toBe(100);
     expect(repo.groupReflectCursor(100)).toBe(0); // 抛错群不推进
     expect(repo.groupReflectCursor(200)).toBe(NOW - 1000); // 正常群推进
     expect(repo.searchKb(new Float32Array([1, 0, 0]), 10)).toHaveLength(1); // 只群200沉淀
+  });
+
+  it("非生效群即使有已沉降管理发言也跳过,不调用 LLM,游标不动", async () => {
+    seed(100, 200, "member", "退款多久?", NOW - 5000);
+    seed(100, 201, "admin", "3 个工作日", NOW - 4000);
+    const qf = vi.fn(fakeQuery("[]"));
+    await runScan(opts({ enabledGroups: [], queryFn: qf as never }));
+    expect(qf).not.toHaveBeenCalled();
+    expect(repo.groupReflectCursor(100)).toBe(0);
   });
 });
