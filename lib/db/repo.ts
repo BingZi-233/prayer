@@ -155,6 +155,14 @@ export class Repo {
     this.setConfigRow(`reflect_cursor:${groupId}`, String(ts));
   }
 
+  // 每群反思游标(config key = reflect_cursor:{gid}),供反思/群活动页展示进度
+  reflectCursors(): { groupId: number; cursor: number }[] {
+    const rows = this.db
+      .prepare("SELECT key, value FROM config WHERE key LIKE 'reflect_cursor:%'")
+      .all() as { key: string; value: string }[];
+    return rows.map((r) => ({ groupId: Number(r.key.slice("reflect_cursor:".length)), cursor: Number(r.value) }));
+  }
+
   seenMessage(messageId: number): boolean {
     const info = this.db
       .prepare("INSERT OR IGNORE INTO seen_messages (message_id) VALUES (?)")

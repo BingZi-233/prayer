@@ -122,3 +122,16 @@ describe("Repo group_messages buffer", () => {
     expect(repo.groupReflectCursor(200)).toBe(0); // 群隔离
   });
 });
+
+describe("Repo reflection stats", () => {
+  it("reflectCursors 解析 reflect_cursor:{gid} 配置", () => {
+    repo.setGroupReflectCursor(100, 1700);
+    repo.setGroupReflectCursor(200, 1800);
+    repo.setConfigRow("app", "{}");
+    const cur = repo.reflectCursors().sort((a, b) => a.groupId - b.groupId);
+    expect(cur).toEqual([
+      { groupId: 100, cursor: 1700 },
+      { groupId: 200, cursor: 1800 },
+    ]);
+  });
+});
