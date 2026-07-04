@@ -61,9 +61,10 @@ describe("Agent.run", () => {
 });
 
 describe("isToolAllowed", () => {
-  it("白名单工具放行:cs 三工具 + WebSearch", () => {
+  it("白名单工具放行:cs 三工具 + WebSearch + Skill", () => {
     for (const t of TOOL_NAMES) expect(isToolAllowed(t, {})).toBe(true);
     expect(isToolAllowed("WebSearch", {})).toBe(true);
+    expect(isToolAllowed("Skill", { command: "packyapi" })).toBe(true);
   });
   it("Bash 仅放行 packy 脚本", () => {
     expect(isToolAllowed("Bash", { command: "node /a/packy.ts models" })).toBe(true);
