@@ -15,7 +15,7 @@ PackyAPI = AI API 聚合中转平台(`https://www.packyapi.com`),Anthropic/OpenA
 
 ## 命令
 
-- `/packy-price [关键词] [--group cc]` — 计价($/1M tokens)。
+- `/packy-price [关键词] [--group cc]` — 计价($/1M tokens);给关键词自动列该模型全部可用分组,`--group` 锁单组。
 - `/packy-models [--endpoint anthropic] [--group cc]` — 列可用模型 ID。
 - `/packy-docs <主题>` — 定位并读单个文档页。
 

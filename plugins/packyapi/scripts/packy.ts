@@ -77,36 +77,56 @@ function padStart(s: string, n: number): string {
 }
 
 function cmdPrice(d: Pricing, args: string[]): void {
-  const group = opt(args, "--group", "cc")!;
+  // --group 显式指定 → 仅该组;未指定时查具体模型(有关键词)→ 列出模型所在全部分组,
+  // 无关键词(列全表)→ 默认 cc,避免逐组笛卡尔积爆表。
+  const groupArg = opt(args, "--group");
   const base = Number(opt(args, "--base", "2"));
   const kw = (positional(args)[0] ?? "").toLowerCase();
-  const gr = grValue(d, group);
+  // 行:[model, group, in, out, cache, endpoints]
   const rows: string[][] = [];
   for (const m of d.data) {
-    if (!m.enable_groups?.includes(group)) continue;
     if (kw && !m.model_name.toLowerCase().includes(kw)) continue;
-    const ep = (m.supported_endpoint_types ?? []).join(",");
-    if (m.quota_type === 1) {
-      rows.push([m.model_name, `$${(m.model_price * gr).toFixed(4)}/次`, "-", "-", ep]);
+    let groups: string[];
+    if (groupArg) {
+      if (!m.enable_groups?.includes(groupArg)) continue;
+      groups = [groupArg];
+    } else if (kw) {
+      groups = m.enable_groups ?? [];
     } else {
-      const inp = m.model_ratio * gr * base;
-      rows.push([
-        m.model_name,
-        `$${inp.toFixed(2)}`,
-        `$${(inp * m.completion_ratio).toFixed(2)}`,
-        `$${(inp * m.cache_ratio).toFixed(2)}`,
-        ep,
-      ]);
+      groups = m.enable_groups?.includes("cc") ? ["cc"] : [];
+    }
+    const ep = (m.supported_endpoint_types ?? []).join(",");
+    for (const g of groups) {
+      const gr = grValue(d, g);
+      if (m.quota_type === 1) {
+        rows.push([m.model_name, g, `$${(m.model_price * gr).toFixed(4)}/次`, "-", "-", ep]);
+      } else {
+        const inp = m.model_ratio * gr * base;
+        rows.push([
+          m.model_name,
+          g,
+          `$${inp.toFixed(2)}`,
+          `$${(inp * m.completion_ratio).toFixed(2)}`,
+          `$${(inp * m.cache_ratio).toFixed(2)}`,
+          ep,
+        ]);
+      }
     }
   }
   if (rows.length === 0) {
-    console.log(`无匹配(group=${group}, 关键词=${kw || "无"})`);
+    console.log(`无匹配(group=${groupArg ?? "自动"}, 关键词=${kw || "无"})`);
     return;
   }
-  console.log(`# 组 ${group}(倍率 ${gr}, base ${base}) — 单位 $/1M tokens`);
-  console.log(`${pad("model", 32)} ${padStart("in", 8)} ${padStart("out", 9)} ${padStart("cache", 8)}  endpoints`);
-  for (const r of rows.sort((a, b) => a[0].localeCompare(b[0]))) {
-    console.log(`${pad(r[0], 32)} ${padStart(r[1], 8)} ${padStart(r[2], 9)} ${padStart(r[3], 8)}  ${r[4]}`);
+  const scope = groupArg ? `组 ${groupArg}(倍率 ${grValue(d, groupArg)})` : kw ? "各分组" : "组 cc";
+  console.log(`# ${scope}, base ${base} — 单位 $/1M tokens`);
+  console.log(
+    `${pad("model", 32)} ${pad("group", 18)} ${padStart("in", 8)} ${padStart("out", 9)} ${padStart("cache", 8)}  endpoints`
+  );
+  const sorted = rows.sort((a, b) => a[0].localeCompare(b[0]) || grValue(d, a[1]) - grValue(d, b[1]));
+  for (const r of sorted) {
+    console.log(
+      `${pad(r[0], 32)} ${pad(r[1], 18)} ${padStart(r[2], 8)} ${padStart(r[3], 9)} ${padStart(r[4], 8)}  ${r[5]}`
+    );
   }
 }
 
