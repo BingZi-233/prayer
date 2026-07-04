@@ -23,7 +23,7 @@ export async function GET(): Promise<NextResponse> {
       return {
         groupId,
         cursor,
-        lagMs: Math.max(0, now - cfg.reflectSettleMs - cursor),
+        lagMs: cursor === 0 ? null : Math.max(0, now - cfg.reflectSettleMs - cursor),
         bufferCount: msg.get(groupId)?.count ?? 0,
         sedimentedCount: sed.get(groupId) ?? 0,
       };
