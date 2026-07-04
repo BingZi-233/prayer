@@ -91,6 +91,63 @@ export class Repo {
     return rows.map((r) => ({ key: r.key, userId: Number(r.key.split(":")[1]) }));
   }
 
+  // 群消息缓冲(被动反思用):落库
+  bufferGroupMessage(groupId: number, userId: number, senderRole: string | null, text: string): void {
+    this.db
+      .prepare(
+        "INSERT INTO group_messages (group_id, user_id, sender_role, text) VALUES (?, ?, ?, ?)"
+      )
+      .run(groupId, userId, senderRole, text);
+  }
+
+  // 指定时间带 (afterTs, untilTs] 内含 owner/admin 发言的 group,去重
+  groupsWithAdminMessagesBetween(afterTs: number, untilTs: number): number[] {
+    const rows = this.db
+      .prepare(
+        `SELECT DISTINCT group_id FROM group_messages
+         WHERE created_at > ? AND created_at <= ? AND sender_role IN ('owner','admin')
+         ORDER BY group_id`
+      )
+      .all(afterTs, untilTs) as { group_id: number }[];
+    return rows.map((r) => r.group_id);
+  }
+
+  // 某群 sinceTs 之后最近 limit 条,按时间升序返回
+  groupMessageWindow(
+    groupId: number,
+    sinceTs: number,
+    limit: number
+  ): { userId: number; senderRole: string | null; text: string; createdAt: number }[] {
+    const rows = this.db
+      .prepare(
+        `SELECT user_id, sender_role, text, created_at FROM group_messages
+         WHERE group_id = ? AND created_at > ?
+         ORDER BY created_at DESC LIMIT ?`
+      )
+      .all(groupId, sinceTs, limit) as {
+      user_id: number;
+      sender_role: string | null;
+      text: string;
+      created_at: number;
+    }[];
+    return rows
+      .map((r) => ({ userId: r.user_id, senderRole: r.sender_role, text: r.text, createdAt: r.created_at }))
+      .reverse();
+  }
+
+  pruneGroupMessages(beforeTs: number): void {
+    this.db.prepare("DELETE FROM group_messages WHERE created_at < ?").run(beforeTs);
+  }
+
+  // 反思游标(已处理到的时间戳),复用 config 表
+  reflectCursor(): number {
+    return Number(this.getConfigRow("reflect_cursor") ?? "0");
+  }
+
+  setReflectCursor(ts: number): void {
+    this.setConfigRow("reflect_cursor", String(ts));
+  }
+
   seenMessage(messageId: number): boolean {
     const info = this.db
       .prepare("INSERT OR IGNORE INTO seen_messages (message_id) VALUES (?)")

@@ -71,3 +71,42 @@ describe("Repo kb", () => {
     expect(hits[0].content).toContain("退货");
   });
 });
+
+describe("Repo group_messages buffer", () => {
+  it("落库后能按窗口升序取回,并按 limit 截最近", () => {
+    repo.bufferGroupMessage(100, 200, "member", "问题一");
+    repo.bufferGroupMessage(100, 201, "admin", "回答一");
+    repo.bufferGroupMessage(999, 300, "member", "别的群"); // 不同群
+    const win = repo.groupMessageWindow(100, 0, 10);
+    expect(win.map((m) => m.text)).toEqual(["问题一", "回答一"]);
+    expect(win[1].senderRole).toBe("admin");
+    expect(win[1].userId).toBe(201);
+  });
+
+  it("groupsWithAdminMessagesBetween 只返带 owner/admin 且时间带内的群", () => {
+    const now = Date.now();
+    db.prepare("INSERT INTO group_messages (group_id,user_id,sender_role,text,created_at) VALUES (?,?,?,?,?)")
+      .run(100, 201, "admin", "带内客服", now - 100);
+    db.prepare("INSERT INTO group_messages (group_id,user_id,sender_role,text,created_at) VALUES (?,?,?,?,?)")
+      .run(101, 202, "member", "带内用户", now - 100); // 非管理
+    db.prepare("INSERT INTO group_messages (group_id,user_id,sender_role,text,created_at) VALUES (?,?,?,?,?)")
+      .run(102, 203, "owner", "带外客服", now - 99999); // 太早
+    const groups = repo.groupsWithAdminMessagesBetween(now - 1000, now);
+    expect(groups).toEqual([100]);
+  });
+
+  it("pruneGroupMessages 删早于阈值的行", () => {
+    const now = Date.now();
+    db.prepare("INSERT INTO group_messages (group_id,user_id,sender_role,text,created_at) VALUES (?,?,?,?,?)")
+      .run(100, 200, "member", "旧", now - 10000);
+    repo.bufferGroupMessage(100, 200, "member", "新");
+    repo.pruneGroupMessages(now - 5000);
+    expect(repo.groupMessageWindow(100, 0, 10).map((m) => m.text)).toEqual(["新"]);
+  });
+
+  it("reflectCursor 缺省 0,可读写 round-trip", () => {
+    expect(repo.reflectCursor()).toBe(0);
+    repo.setReflectCursor(123456);
+    expect(repo.reflectCursor()).toBe(123456);
+  });
+});
