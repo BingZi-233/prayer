@@ -13,6 +13,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
@@ -26,6 +27,7 @@ interface Cfg {
   dbPath: string;
   claudeConfigDir: string;
   model: string;
+  enabledGroups: number[];
 }
 
 const NUM_KEYS: (keyof Cfg)[] = ["botQQ", "adminGroupId", "handoffTimeoutMin"];
@@ -33,9 +35,16 @@ const NUM_KEYS: (keyof Cfg)[] = ["botQQ", "adminGroupId", "handoffTimeoutMin"];
 export default function ConfigPage() {
   const [cfg, setCfg] = useState<Cfg | null>(null);
   const [busy, setBusy] = useState(false);
+  // 生效群:本地原始文本 state,失焦(onBlur)才 parse 提交到 cfg.enabledGroups
+  const [groupsText, setGroupsText] = useState("");
 
   useEffect(() => {
-    fetch("/api/config").then((x) => x.json()).then((r) => { if (r.ok) setCfg(r.data); });
+    fetch("/api/config").then((x) => x.json()).then((r) => {
+      if (r.ok) {
+        setCfg(r.data);
+        setGroupsText(((r.data.enabledGroups ?? []) as number[]).join("\n"));
+      }
+    });
   }, []);
 
   function upd(k: keyof Cfg, v: string) {
@@ -59,6 +68,7 @@ export default function ConfigPage() {
       }).then((x) => x.json());
       if (r.ok) {
         setCfg(r.data);
+        setGroupsText(((r.data.enabledGroups ?? []) as number[]).join("\n"));
         toast.success("配置已保存,Agent 已热重载");
       } else {
         toast.error(`保存失败:${r.error}`);
@@ -71,6 +81,16 @@ export default function ConfigPage() {
   }
 
   const num = (k: keyof Cfg) => (cfg ? String(cfg[k]) : "");
+
+  // 失焦时才把本地文本 parse 成 number[] 提交到 cfg
+  function commitGroups() {
+    if (!cfg) return;
+    const ids = groupsText
+      .split(/[\s,]+/)
+      .map((s) => Number(s.trim()))
+      .filter((n) => Number.isFinite(n) && n > 0);
+    setCfg({ ...cfg, enabledGroups: Array.from(new Set(ids)) });
+  }
 
   return (
     <div className="flex max-w-2xl flex-col gap-6">
@@ -113,6 +133,20 @@ export default function ConfigPage() {
                   <Field>
                     <FieldLabel htmlFor="adminGroupId">管理群号</FieldLabel>
                     <Input id="adminGroupId" inputMode="numeric" value={num("adminGroupId")} onChange={(e) => upd("adminGroupId", e.target.value)} />
+                  </Field>
+                  <Field>
+                    <FieldLabel htmlFor="enabledGroups">生效群</FieldLabel>
+                    <Textarea
+                      id="enabledGroups"
+                      className="min-h-24"
+                      value={groupsText}
+                      placeholder="每行一个群号,或逗号分隔"
+                      onChange={(e) => setGroupsText(e.target.value)}
+                      onBlur={commitGroups}
+                    />
+                    <FieldDescription>
+                      仅这些群里 bot 才会回复 / 缓冲 / 沉淀知识。留空 = 对所有群都不响应。管理群不受此列表影响。
+                    </FieldDescription>
                   </Field>
                 </FieldGroup>
               </CardContent>
