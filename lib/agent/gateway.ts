@@ -31,6 +31,21 @@ export function registerGateway(deps: GatewayDeps): () => void {
       }
     }
 
+    // 人工接管期:群主/群管在用户群的发言视作人工答案,触发反思沉淀(不进 Agent)。
+    // 放在 @bot 过滤之前,因为人工回复通常不 @bot。
+    if (msg.senderRole === "owner" || msg.senderRole === "admin") {
+      if (msg.userId !== botQQ && msg.rawText && !msg.rawText.startsWith("!")) {
+        for (const s of repo.humanSessionsInGroup(msg.groupId)) {
+          if (s.userId === msg.userId) continue;    // 排除用户本人恰是群主/群管
+          bus.emit("handoff.humanReply", {
+            sessionKey: s.key,
+            question: repo.handoffQuestion(s.key) ?? "",
+            answer: msg.rawText,
+          });
+        }
+      }
+    }
+
     if (!msg.atList.includes(botQQ)) return;        // 仅 @bot
     if (repo.seenMessage(msg.messageId)) return;    // 去重
     const sessionKey = `${msg.groupId}:${msg.userId}`;

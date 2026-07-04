@@ -34,6 +34,24 @@ describe("Repo sessions", () => {
     const stale = repo.staleHumanSessions(30);
     expect(stale).toContain("g:old");
   });
+
+  it("转人工问题存取 round-trip", () => {
+    repo.setHandoffQuestion("100:200", "怎么退款?");
+    expect(repo.handoffQuestion("100:200")).toBe("怎么退款?");
+    expect(repo.handoffQuestion("无:此")).toBeUndefined();
+  });
+
+  it("humanSessionsInGroup 只返本群人工会话并解析 userId", () => {
+    repo.setHumanMode("100:200", true);
+    repo.setHumanMode("100:201", true);
+    repo.setHumanMode("999:300", true); // 别的群
+    repo.setHumanMode("100:202", false); // 非人工
+    const list = repo.humanSessionsInGroup(100).sort((a, b) => a.userId - b.userId);
+    expect(list).toEqual([
+      { key: "100:200", userId: 200 },
+      { key: "100:201", userId: 201 },
+    ]);
+  });
 });
 
 describe("Repo dedupe", () => {

@@ -66,6 +66,31 @@ export class Repo {
     return rows.map((r) => r.key);
   }
 
+  // 记住转人工时的用户问题,供人工回复后反思配对
+  setHandoffQuestion(key: string, question: string): void {
+    this.db
+      .prepare(
+        `INSERT INTO sessions (key, last_question) VALUES (?, ?)
+         ON CONFLICT(key) DO UPDATE SET last_question = excluded.last_question, updated_at = unixepoch('subsec')*1000`
+      )
+      .run(key, question);
+  }
+
+  handoffQuestion(key: string): string | undefined {
+    const row = this.db.prepare("SELECT last_question FROM sessions WHERE key = ?").get(key) as
+      | { last_question: string | null }
+      | undefined;
+    return row?.last_question ?? undefined;
+  }
+
+  // 某群内处于人工接管的会话(key 形如 groupId:userId),用于把管理员发言配对到会话
+  humanSessionsInGroup(groupId: number): { key: string; userId: number }[] {
+    const rows = this.db
+      .prepare("SELECT key FROM sessions WHERE human_mode = 1 AND key LIKE ?")
+      .all(`${groupId}:%`) as { key: string }[];
+    return rows.map((r) => ({ key: r.key, userId: Number(r.key.split(":")[1]) }));
+  }
+
   seenMessage(messageId: number): boolean {
     const info = this.db
       .prepare("INSERT OR IGNORE INTO seen_messages (message_id) VALUES (?)")

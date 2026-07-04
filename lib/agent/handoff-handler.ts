@@ -13,6 +13,7 @@ export function registerHandoffHandler(deps: HandoffDeps): () => void {
 
   const onRequested = (e: { sessionKey: string; lastQuestion: string }) => {
     repo.setHumanMode(e.sessionKey, true);
+    repo.setHandoffQuestion(e.sessionKey, e.lastQuestion); // 存问题,供人工回复后反思配对
     bus.emit("action.send", {
       action: "send_group_msg",
       groupId: adminGroupId,

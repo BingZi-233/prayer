@@ -4,6 +4,7 @@ export interface IncomingMessage {
   messageId: number;
   rawText: string;
   atList: number[]; // 被 @ 的 QQ 列表
+  senderRole?: string; // OneBot 群角色:owner / admin / member(反思识别人工回复用)
 }
 
 export interface QualifiedMessage {
@@ -35,6 +36,12 @@ export interface HandoffResumed {
   sessionKey: string;
 }
 
+export interface HandoffHumanReply {
+  sessionKey: string;
+  question: string;
+  answer: string;
+}
+
 export interface ErrorOccurred {
   scope: string;
   err: unknown;
@@ -48,5 +55,6 @@ export interface EventMap {
   "action.send": ActionSend;
   "handoff.requested": HandoffRequested;
   "handoff.resumed": HandoffResumed;
+  "handoff.humanReply": HandoffHumanReply;
   "error.occurred": ErrorOccurred;
 }

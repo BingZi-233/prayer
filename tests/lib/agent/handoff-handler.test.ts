@@ -19,6 +19,7 @@ describe("handoff handler", () => {
     bus.emit("handoff.requested", { sessionKey: "1:2", groupId: 1, userId: 2, lastQuestion: "退款没到" });
     const a = await notice;
     expect(repo.isHumanMode("1:2")).toBe(true);
+    expect(repo.handoffQuestion("1:2")).toBe("退款没到"); // 问题落库供反思
     expect(a.groupId).toBe(999);
     expect(a.text).toContain("1:2");
     stop();

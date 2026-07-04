@@ -5,6 +5,7 @@ import { registerGateway } from "./agent/gateway";
 import { registerOrchestrator } from "./agent/orchestrator";
 import { registerReplyMapper } from "./agent/reply-mapper";
 import { registerHandoffHandler } from "./agent/handoff-handler";
+import { registerReflectionHandler } from "./agent/reflection-handler";
 import { registerErrorHandler } from "./agent/error-handler";
 
 export interface AssembleDeps {
@@ -24,6 +25,7 @@ export function assemble(deps: AssembleDeps): () => void {
     registerOrchestrator({ agent, store: new SessionStore(repo) }),
     registerReplyMapper(),
     registerHandoffHandler({ repo, adminGroupId, timeoutMin }),
+    registerReflectionHandler({ repo, adminGroupId }),
   ];
   return () => cleanups.forEach((c) => c());
 }

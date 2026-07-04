@@ -19,6 +19,7 @@ function migrate(db: Database.Database, dim: number): void {
       resume_id TEXT,
       human_mode INTEGER NOT NULL DEFAULT 0,
       human_since INTEGER,
+      last_question TEXT,
       updated_at INTEGER NOT NULL DEFAULT (unixepoch('subsec') * 1000)
     );
     CREATE TABLE IF NOT EXISTS seen_messages (
@@ -54,6 +55,12 @@ function migrate(db: Database.Database, dim: number): void {
   try {
     db.exec("ALTER TABLE sessions ADD COLUMN resume_id TEXT");
     db.exec("UPDATE sessions SET resume_id = session_id WHERE session_id IS NOT NULL");
+  } catch {
+    /* 列已存在 */
+  }
+  // 旧库补 last_question(转人工问题,反思沉淀用);重复加列报错忽略
+  try {
+    db.exec("ALTER TABLE sessions ADD COLUMN last_question TEXT");
   } catch {
     /* 列已存在 */
   }

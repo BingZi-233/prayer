@@ -36,4 +36,12 @@ describe("parseGroupMessage", () => {
     expect(parseGroupMessage({ post_type: "message", message_type: "private" })).toBeNull();
     expect(parseGroupMessage({ post_type: "meta_event" })).toBeNull();
   });
+
+  it("提取 sender.role(owner/admin/member),缺失为 undefined", () => {
+    const base = { post_type: "message", message_type: "group", group_id: 1, user_id: 2, message_id: 3, message: "hi" };
+    expect(parseGroupMessage({ ...base, sender: { role: "owner" } })?.senderRole).toBe("owner");
+    expect(parseGroupMessage({ ...base, sender: { role: "admin" } })?.senderRole).toBe("admin");
+    expect(parseGroupMessage({ ...base, sender: { role: "member" } })?.senderRole).toBe("member");
+    expect(parseGroupMessage(base)?.senderRole).toBeUndefined();
+  });
 });

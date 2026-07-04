@@ -26,5 +26,6 @@ export function parseGroupMessage(evt: any): IncomingMessage | null {
     messageId: Number(evt.message_id),
     rawText: text.trim(),
     atList,
+    senderRole: evt.sender?.role,
   };
 }
