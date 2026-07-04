@@ -19,6 +19,13 @@ export class Repo {
       .run(key, sessionId);
   }
 
+  // 清空 resumeId → 下条消息开全新 SDK session(保留 human_mode 等其它列)
+  clearSessionId(key: string): void {
+    this.db
+      .prepare("UPDATE sessions SET session_id = NULL, updated_at = unixepoch('subsec')*1000 WHERE key = ?")
+      .run(key);
+  }
+
   getSessionId(key: string): string | undefined {
     const row = this.db.prepare("SELECT session_id FROM sessions WHERE key = ?").get(key) as
       | { session_id: string | null }
