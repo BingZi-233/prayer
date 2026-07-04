@@ -8,6 +8,7 @@ export class OneBotClient {
   private stopped = false;
   private backoff = 1000;
   private connected = false;
+  private reconnectTimer?: ReturnType<typeof setTimeout>;
   private readonly onAction = (a: ActionSend) => this.sendAction(a);
 
   constructor(
@@ -29,6 +30,10 @@ export class OneBotClient {
   stop(): void {
     this.stopped = true;
     bus.off("action.send", this.onAction);
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = undefined;
+    }
     this.setConnected(false);
     this.ws?.close();
     this.ws = undefined;
@@ -41,6 +46,7 @@ export class OneBotClient {
   }
 
   private connect(): void {
+    if (this.stopped) return; // 拆卸后挂起的重连不再建连
     const headers = this.accessToken ? { Authorization: `Bearer ${this.accessToken}` } : undefined;
     const ws = new WebSocket(this.url, { headers });
     this.ws = ws;
@@ -66,7 +72,7 @@ export class OneBotClient {
 
   private scheduleReconnect(): void {
     if (this.stopped) return;
-    setTimeout(() => this.connect(), this.backoff);
+    this.reconnectTimer = setTimeout(() => this.connect(), this.backoff);
     this.backoff = Math.min(this.backoff * 2, 30000);
   }
 

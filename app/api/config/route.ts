@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { openDb } from "@/lib/db/index";
+import { sharedDb } from "@/lib/db/shared";
 import { Repo } from "@/lib/db/repo";
 import { getConfig, setConfig, type AppConfig } from "@/lib/config-store";
 import { getRuntime, defaultBuilders } from "@/lib/runtime";
@@ -8,7 +8,7 @@ import { ok, fail, maskConfig } from "@/lib/api";
 import { mergeSecret } from "@/lib/settings-writer";
 
 function repo(): Repo {
-  return new Repo(openDb(process.env.DB_PATH ?? "./data/agent.db"));
+  return new Repo(sharedDb(process.env.DB_PATH ?? "./data/agent.db"));
 }
 
 const patchSchema = z.object({

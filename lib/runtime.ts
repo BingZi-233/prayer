@@ -26,7 +26,7 @@ export interface RuntimeBuilders {
   openDb: (path: string) => unknown;
   makeRepo: (db: unknown) => Repo;
   makeAgent: (cfg: AppConfig, repo: Repo) => Agent;
-  assemble: (args: AssembleDeps) => void;
+  assemble: (args: AssembleDeps) => () => void;
   makeClient: (
     url: string,
     token: string | undefined,
@@ -61,6 +61,8 @@ export class RuntimeManager {
   private bootedAt?: number;
   private repo?: Repo;
   private client?: RuntimeClient;
+  private db?: { close?: () => void };
+  private teardown?: () => void;
   private wsConnected = false;
 
   getStatus(): RuntimeStatus {
@@ -82,7 +84,7 @@ export class RuntimeManager {
       const db = builders.openDb(cfg.dbPath);
       const repo = builders.makeRepo(db);
       const agent = builders.makeAgent(cfg, repo);
-      builders.assemble({
+      this.teardown = builders.assemble({
         repo,
         botQQ: cfg.botQQ,
         adminGroupId: cfg.adminGroupId,
@@ -94,27 +96,49 @@ export class RuntimeManager {
       });
       client.start();
       this.repo = repo;
+      this.db = db as { close?: () => void };
       this.client = client;
       this.bootedAt = Date.now();
       this.state = "running";
       logger.log("info", "[runtime] started");
     } catch (err) {
+      // 回收可能已半装配的资源(定时器/监听器/DB 连接),避免失败 start 泄漏
+      this.teardownAll();
       this.state = "error";
       this.lastError = err instanceof Error ? err.message : String(err);
       logger.log("error", `[runtime] start failed: ${this.lastError}`);
     }
   }
 
-  stop(): void {
+  /** 卸载管线拥有的所有资源:teardown(监听器+定时器)、WS 客户端、DB 连接 */
+  private teardownAll(): void {
+    try {
+      this.teardown?.();
+    } catch (e) {
+      logger.log("warn", `[runtime] teardown error: ${e instanceof Error ? e.message : String(e)}`);
+    }
     try {
       this.client?.stop();
-    } finally {
-      bus.removeAllListeners();
-      this.client = undefined;
-      this.wsConnected = false;
-      this.state = "stopped";
-      logger.log("info", "[runtime] stopped");
+    } catch {
+      /* ignore */
     }
+    try {
+      this.db?.close?.();
+    } catch {
+      /* ignore */
+    }
+    bus.removeAllListeners(); // 兜底:清任何遗漏的监听器
+    this.teardown = undefined;
+    this.client = undefined;
+    this.db = undefined;
+    this.repo = undefined;
+    this.wsConnected = false;
+  }
+
+  stop(): void {
+    this.teardownAll();
+    this.state = "stopped";
+    logger.log("info", "[runtime] stopped");
   }
 
   reconfigure(cfg: AppConfig, builders: RuntimeBuilders): void {

@@ -8,10 +8,10 @@ export interface GatewayDeps {
   adminGroupId: number;
 }
 
-export function registerGateway(deps: GatewayDeps): void {
+export function registerGateway(deps: GatewayDeps): () => void {
   const { repo, botQQ, adminGroupId } = deps;
 
-  bus.on("message.received", (msg: IncomingMessage) => {
+  const onReceived = (msg: IncomingMessage) => {
     // 管理群命令优先
     if (msg.groupId === adminGroupId) {
       const m = msg.rawText.match(/^!resume\s+(\S+)/);
@@ -30,5 +30,8 @@ export function registerGateway(deps: GatewayDeps): void {
       userId: msg.userId,
       text: msg.rawText,
     });
-  });
+  };
+
+  bus.on("message.received", onReceived);
+  return () => bus.off("message.received", onReceived);
 }

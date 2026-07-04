@@ -26,7 +26,7 @@ function fakeBuilders(overrides: Partial<RuntimeBuilders> = {}): RuntimeBuilders
     openDb: () => ({}) as never,
     makeRepo: () => ({ countSessions: () => 3, openTickets: () => [{}, {}] }) as never,
     makeAgent: () => ({}) as never,
-    assemble: () => {},
+    assemble: () => () => {},
     makeClient: () => client as never,
     ...overrides,
   };
@@ -74,5 +74,30 @@ describe("RuntimeManager", () => {
     m.reconfigure({ ...cfg, botQQ: 9 }, b);
     expect(stops).toBeGreaterThanOrEqual(1);
     expect(m.getStatus().state).toBe("running");
+  });
+
+  it("stop/reconfigure 调用 assemble 返回的 teardown 并关闭 DB", () => {
+    let teardowns = 0;
+    let closes = 0;
+    const b = fakeBuilders({
+      openDb: () => ({ close: () => { closes++; } }) as never,
+      assemble: () => () => { teardowns++; },
+    });
+    m.start(cfg, b);
+    m.stop();
+    expect(teardowns).toBe(1);
+    expect(closes).toBe(1);
+    expect(m.getStatus().state).toBe("stopped");
+  });
+
+  it("start 抛错时回收半装配资源(teardown 被调用)", () => {
+    let teardowns = 0;
+    const b = fakeBuilders({
+      assemble: () => () => { teardowns++; },
+      makeClient: () => ({ start() { throw new Error("boom"); }, stop() {}, isConnected: () => false }) as never,
+    });
+    m.start(cfg, b);
+    expect(m.getStatus().state).toBe("error");
+    expect(teardowns).toBe(1); // teardown 在 catch 里被调用,不泄漏
   });
 });

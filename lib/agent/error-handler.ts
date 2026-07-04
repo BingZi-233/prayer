@@ -4,10 +4,10 @@ export interface ErrorHandlerDeps {
   logger?: (scope: string, err: unknown) => void;
 }
 
-export function registerErrorHandler(deps: ErrorHandlerDeps = {}): void {
+export function registerErrorHandler(deps: ErrorHandlerDeps = {}): () => void {
   const logger = deps.logger ?? ((scope, err) => console.error(`[${scope}]`, err));
 
-  bus.on("error.occurred", (e) => {
+  const onError = (e: { scope: string; err: unknown; sessionKey?: string }) => {
     logger(e.scope, e.err);
     if (e.sessionKey) {
       const groupId = Number(e.sessionKey.split(":")[0]);
@@ -19,5 +19,8 @@ export function registerErrorHandler(deps: ErrorHandlerDeps = {}): void {
         });
       }
     }
-  });
+  };
+
+  bus.on("error.occurred", onError);
+  return () => bus.off("error.occurred", onError);
 }

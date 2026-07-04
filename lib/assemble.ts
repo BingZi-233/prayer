@@ -15,11 +15,15 @@ export interface AssembleDeps {
   agent: Agent;
 }
 
-export function assemble(deps: AssembleDeps): void {
+/** 装配全链路,返回 teardown 用于热重载时卸载监听器与定时器 */
+export function assemble(deps: AssembleDeps): () => void {
   const { repo, botQQ, adminGroupId, timeoutMin, agent } = deps;
-  registerErrorHandler();
-  registerGateway({ repo, botQQ, adminGroupId });
-  registerOrchestrator({ agent, store: new SessionStore(repo) });
-  registerReplyMapper();
-  registerHandoffHandler({ repo, adminGroupId, timeoutMin });
+  const cleanups = [
+    registerErrorHandler(),
+    registerGateway({ repo, botQQ, adminGroupId }),
+    registerOrchestrator({ agent, store: new SessionStore(repo) }),
+    registerReplyMapper(),
+    registerHandoffHandler({ repo, adminGroupId, timeoutMin }),
+  ];
+  return () => cleanups.forEach((c) => c());
 }
