@@ -4,6 +4,7 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
 
 interface Cfg {
   onebotWsUrl: string;
@@ -22,10 +23,22 @@ export default function ConfigPage() {
   const [cfg, setCfg] = useState<Cfg | null>(null);
   const [msg, setMsg] = useState("");
   const [busy, setBusy] = useState(false);
+  const [settings, setSettings] = useState("");
+  const [sMsg, setSMsg] = useState("");
 
   useEffect(() => {
     fetch("/api/config").then((x) => x.json()).then((r) => { if (r.ok) setCfg(r.data); });
+    fetch("/api/settings").then((x) => x.json()).then((r) => { if (r.ok) setSettings(r.data); });
   }, []);
+
+  async function saveSettings() {
+    const r = await fetch("/api/settings", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ raw: settings }),
+    }).then((x) => x.json());
+    setSMsg(r.ok ? "settings.json 已保存(下次重启/热重载生效)" : `失败:${r.error}`);
+  }
 
   function upd(k: keyof Cfg, v: string) {
     if (!cfg) return;
@@ -84,8 +97,20 @@ export default function ConfigPage() {
         <Button onClick={save} disabled={busy}>{busy ? "保存中…" : "保存并热重载"}</Button>
         {msg && <span className="text-sm text-muted-foreground">{msg}</span>}
       </div>
+      <Card className="flex flex-col gap-3 p-4">
+        <Label>SDK settings.json(高级)</Label>
+        <Textarea
+          value={settings}
+          onChange={(e) => setSettings(e.target.value)}
+          className="min-h-[240px] font-mono text-xs"
+        />
+        <div className="flex items-center gap-3">
+          <Button variant="secondary" onClick={saveSettings}>保存 settings.json</Button>
+          {sMsg && <span className="text-sm text-muted-foreground">{sMsg}</span>}
+        </div>
+      </Card>
       <p className="text-xs text-muted-foreground">
-        提示:SDK 认证经 CLAUDE_CONFIG_DIR/settings.json 配置。当前 MVP 表单管连接参数;settings.json 高级编辑见后续迭代。
+        提示:SDK 认证/env(ANTHROPIC_BASE_URL/AUTH_TOKEN/MODEL 等)写在上方 settings.json,存入 CLAUDE_CONFIG_DIR;query 经 settingSources 加载。
       </p>
     </div>
   );

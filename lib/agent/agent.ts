@@ -35,6 +35,7 @@ export class Agent {
         allowedTools: TOOL_NAMES,
         resume: resumeId,
         maxTurns: 8,
+        settingSources: ["user"],
       } as any,
     });
 
