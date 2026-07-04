@@ -170,6 +170,17 @@ export class Repo {
       .all() as { groupId: number; count: number; lastTs: number }[];
   }
 
+  // 反思沉淀的知识条目(doc='human-reflection');source 格式 human-reflection:{gid}:{ts},畸形回退 null
+  reflectionEntries(): { id: number; content: string; groupId: number | null; ts: number | null }[] {
+    const rows = this.db
+      .prepare("SELECT id, content, source FROM kb_chunks WHERE doc = 'human-reflection' ORDER BY id DESC")
+      .all() as { id: number; content: string; source: string | null }[];
+    return rows.map((r) => {
+      const m = /^human-reflection:(\d+):(\d+)$/.exec(r.source ?? "");
+      return { id: r.id, content: r.content, groupId: m ? Number(m[1]) : null, ts: m ? Number(m[2]) : null };
+    });
+  }
+
   seenMessage(messageId: number): boolean {
     const info = this.db
       .prepare("INSERT OR IGNORE INTO seen_messages (message_id) VALUES (?)")

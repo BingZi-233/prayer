@@ -146,4 +146,18 @@ describe("Repo reflection stats", () => {
     ]);
     expect(stats[0].lastTs).toBeGreaterThan(0);
   });
+
+  it("reflectionEntries 解析 human-reflection 条目的来源群与时间,畸形回退 null", () => {
+    const good = repo.insertKbChunk("human-reflection", "退款 7 天到账", "human-reflection:100:1700");
+    const bad = repo.insertKbChunk("human-reflection", "无来源格式", "human-reflection");
+    repo.insertKbChunk("faq/x.md", "普通文档", "faq/x.md");
+    const es = repo.reflectionEntries();
+    expect(es.length).toBe(2);
+    const g = es.find((e) => e.id === good)!;
+    expect(g.groupId).toBe(100);
+    expect(g.ts).toBe(1700);
+    const b = es.find((e) => e.id === bad)!;
+    expect(b.groupId).toBeNull();
+    expect(b.ts).toBeNull();
+  });
 });
