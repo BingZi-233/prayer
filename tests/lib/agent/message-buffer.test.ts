@@ -18,7 +18,7 @@ beforeEach(() => {
 
 describe("message-buffer", () => {
   it("普通用户群消息落库(含 senderRole)", () => {
-    const stop = registerMessageBuffer({ repo, botQQ: 1, adminGroupId: 999 });
+    const stop = registerMessageBuffer({ repo, botQQ: 1, adminGroupId: 999, enabledGroups: [100] });
     bus.emit("message.received", msg({ senderRole: "admin", rawText: "答案" }));
     const win = repo.groupMessageWindow(100, 0, 10);
     expect(win).toHaveLength(1);
@@ -27,7 +27,7 @@ describe("message-buffer", () => {
   });
 
   it("排除管理群 / bot 自己 / 空文本", () => {
-    const stop = registerMessageBuffer({ repo, botQQ: 1, adminGroupId: 999 });
+    const stop = registerMessageBuffer({ repo, botQQ: 1, adminGroupId: 999, enabledGroups: [100] });
     bus.emit("message.received", msg({ groupId: 999, rawText: "管理群" }));
     bus.emit("message.received", msg({ userId: 1, rawText: "bot 自己" }));
     bus.emit("message.received", msg({ rawText: "   " }));
@@ -37,9 +37,16 @@ describe("message-buffer", () => {
   });
 
   it("teardown 后不再落库", () => {
-    const stop = registerMessageBuffer({ repo, botQQ: 1, adminGroupId: 999 });
+    const stop = registerMessageBuffer({ repo, botQQ: 1, adminGroupId: 999, enabledGroups: [100] });
     stop();
     bus.emit("message.received", msg({ rawText: "之后" }));
     expect(repo.groupMessageWindow(100, 0, 10)).toHaveLength(0);
+  });
+
+  it("非生效群消息不落库", () => {
+    const stop = registerMessageBuffer({ repo, botQQ: 1, adminGroupId: 999, enabledGroups: [100] });
+    bus.emit("message.received", msg({ groupId: 888, rawText: "非生效群" }));
+    expect(repo.groupMessageWindow(888, 0, 10)).toHaveLength(0);
+    stop();
   });
 });
