@@ -13,7 +13,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from "@/components/ui/empty";
 import { Bubble, BubbleContent } from "@/components/ui/bubble";
-import { Message, MessageContent, MessageHeader } from "@/components/ui/message";
+import { Message, MessageContent } from "@/components/ui/message";
 import {
   MessageScroller,
   MessageScrollerButton,
@@ -24,7 +24,7 @@ import {
 } from "@/components/ui/message-scroller";
 
 interface Sess { key: string; sessionId: string | null; humanMode: boolean; updatedAt: number; }
-interface Msg { role: string; text: string; tool?: string; }
+interface Msg { role: string; text?: string; tool?: string; input?: string; result?: string; }
 
 export default function SessionsPage() {
   const [sessions, setSessions] = useState<Sess[]>([]);
@@ -114,29 +114,38 @@ export default function SessionsPage() {
                   <MessageScrollerViewport>
                     <MessageScrollerContent className="gap-3 p-4">
                       {msgs.map((m, i) => {
-                        const isUser = m.role === "user";
-                        // 纯工具调用(无文本)渲染为紧凑 marker,不占整条气泡
-                        if (!m.text) {
-                          if (!m.tool) return null;
+                        const itemCls = "[content-visibility:visible] [contain-intrinsic-size:auto]";
+                        // 工具调用(Agent 发起)—— 左对齐,可折叠查看请求 / 响应
+                        if (m.role === "tool") {
                           return (
-                            <MessageScrollerItem key={i} messageId={String(i)} className="[content-visibility:visible] [contain-intrinsic-size:auto]">
-                              <div className="text-muted-foreground flex items-center justify-center gap-1.5 text-[0.7rem]">
-                                <Wrench className="size-3" />
-                                工具调用:{m.tool}
-                              </div>
+                            <MessageScrollerItem key={i} messageId={String(i)} className={itemCls}>
+                              <details className="bg-muted/50 text-muted-foreground w-fit max-w-[85%] rounded-lg border px-2.5 py-1.5 text-xs">
+                                <summary className="flex cursor-pointer items-center gap-1.5 select-none">
+                                  <Wrench className="size-3 shrink-0" />
+                                  工具调用:<span className="text-foreground font-medium">{m.tool}</span>
+                                </summary>
+                                {m.input && (
+                                  <div className="mt-2">
+                                    <div className="mb-1 font-medium">请求</div>
+                                    <pre className="bg-background overflow-auto rounded p-2 whitespace-pre-wrap">{m.input}</pre>
+                                  </div>
+                                )}
+                                {m.result && (
+                                  <div className="mt-2">
+                                    <div className="mb-1 font-medium">响应</div>
+                                    <pre className="bg-background overflow-auto rounded p-2 whitespace-pre-wrap">{m.result}</pre>
+                                  </div>
+                                )}
+                              </details>
                             </MessageScrollerItem>
                           );
                         }
+                        if (!m.text) return null;
+                        const isUser = m.role === "user";
                         return (
-                          <MessageScrollerItem
-                            key={i}
-                            messageId={String(i)}
-                            scrollAnchor={isUser}
-                            className="[content-visibility:visible] [contain-intrinsic-size:auto]"
-                          >
+                          <MessageScrollerItem key={i} messageId={String(i)} scrollAnchor={isUser} className={itemCls}>
                             <Message align={isUser ? "end" : "start"}>
                               <MessageContent>
-                                {m.tool && <MessageHeader>工具调用:{m.tool}</MessageHeader>}
                                 <Bubble variant={isUser ? "default" : "muted"}>
                                   <BubbleContent className="whitespace-pre-wrap">{m.text}</BubbleContent>
                                 </Bubble>

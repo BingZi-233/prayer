@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { parseTranscript, findTranscript } from "./transcript";
 
 describe("parseTranscript", () => {
-  it("解析 user/assistant 文本 + tool_use", () => {
+  it("文本与 tool_use 拆成独立条目", () => {
     const jsonl = [
       JSON.stringify({ type: "user", message: { content: "你好" } }),
       JSON.stringify({
@@ -14,10 +14,30 @@ describe("parseTranscript", () => {
       }),
     ].join("\n");
     const msgs = parseTranscript(jsonl);
-    expect(msgs[0]).toEqual({ role: "user", text: "你好", tool: undefined });
-    expect(msgs[1].role).toBe("assistant");
-    expect(msgs[1].text).toBe("您好,请问");
-    expect(msgs[1].tool).toBe("kb_search");
+    expect(msgs[0]).toEqual({ role: "user", text: "你好" });
+    expect(msgs[1]).toEqual({ role: "assistant", text: "您好,请问" });
+    expect(msgs[2].role).toBe("tool");
+    expect(msgs[2].tool).toBe("kb_search");
+    expect(msgs[2].input).toContain("退款");
+  });
+
+  it("tool_result 按 tool_use_id 回填到对应 tool_use 的 result", () => {
+    const jsonl = [
+      JSON.stringify({
+        type: "assistant",
+        message: { content: [{ type: "tool_use", id: "call_1", name: "kb_search", input: { query: "价格" } }] },
+      }),
+      JSON.stringify({
+        type: "user",
+        message: { content: [{ type: "tool_result", tool_use_id: "call_1", content: [{ type: "text", text: "知识库无相关内容。" }] }] },
+      }),
+    ].join("\n");
+    const msgs = parseTranscript(jsonl);
+    expect(msgs).toHaveLength(1); // tool_result 合并进 tool_use,不新增条目
+    expect(msgs[0].role).toBe("tool");
+    expect(msgs[0].tool).toBe("kb_search");
+    expect(msgs[0].input).toContain("价格");
+    expect(msgs[0].result).toBe("知识库无相关内容。");
   });
 
   it("坏行跳过,未知类型忽略", () => {
