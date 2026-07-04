@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { Agent, isPackyCommand } from "@/lib/agent/agent";
+import { Agent, isPackyCommand, isToolAllowed } from "@/lib/agent/agent";
+import { TOOL_NAMES } from "@/lib/tools/index";
 
 // 模拟 SDK query:产出 init(带 session_id)+ 一条 assistant 文本
 async function* fakeQuery(_args: any) {
@@ -26,6 +27,23 @@ describe("Agent.run", () => {
     const agent = new Agent({ model: "m", systemPrompt: "s", makeToolServer: () => ({}), queryFn: spyQuery as any });
     await agent.run("hi", "sid-prev", { sessionKey: "1:2", groupId: 1, userId: 2 });
     expect(seen.options.resume).toBe("sid-prev");
+  });
+});
+
+describe("isToolAllowed", () => {
+  it("白名单工具放行:cs 三工具 + WebSearch", () => {
+    for (const t of TOOL_NAMES) expect(isToolAllowed(t, {})).toBe(true);
+    expect(isToolAllowed("WebSearch", {})).toBe(true);
+  });
+  it("Bash 仅放行 packy 脚本", () => {
+    expect(isToolAllowed("Bash", { command: "node /a/packy.ts models" })).toBe(true);
+    expect(isToolAllowed("Bash", { command: "rm -rf /" })).toBe(false);
+    expect(isToolAllowed("Bash", { command: "node /a/packy.ts; rm -rf /" })).toBe(false);
+  });
+  it("其余工具拒绝", () => {
+    expect(isToolAllowed("Read", {})).toBe(false);
+    expect(isToolAllowed("Write", { file_path: "/x" })).toBe(false);
+    expect(isToolAllowed("WebFetch", { url: "http://x" })).toBe(false);
   });
 });
 
