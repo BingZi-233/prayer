@@ -59,6 +59,7 @@ export default function GroupsPage() {
                   <TableHead>生效</TableHead>
                   <TableHead className="text-right">消息量</TableHead>
                   <TableHead>最近活动</TableHead>
+                  <TableHead>反思进度</TableHead>
                   <TableHead className="text-right">已沉淀</TableHead>
                 </TableRow>
               </TableHeader>
@@ -71,6 +72,7 @@ export default function GroupsPage() {
                     </TableCell>
                     <TableCell className="text-right tabular-nums">{r.messageCount}</TableCell>
                     <TableCell className="text-muted-foreground">{fmtTs(r.lastTs)}</TableCell>
+                    <TableCell className="text-muted-foreground">{r.cursor ? fmtTs(r.cursor) : "—"}</TableCell>
                     <TableCell className="text-right tabular-nums">{r.sedimentedCount}</TableCell>
                   </TableRow>
                 ))}
