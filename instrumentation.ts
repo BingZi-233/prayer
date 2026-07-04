@@ -1,37 +1,24 @@
 export async function register(): Promise<void> {
-  // 仅 Node runtime 执行(跳过 edge)
   if (process.env.NEXT_RUNTIME !== "nodejs") return;
 
-  const { loadConfig } = await import("./lib/config");
-  const { openDb } = await import("./lib/db/index");
-  const { Repo } = await import("./lib/db/repo");
-  const { Agent } = await import("./lib/agent/agent");
-  const { buildToolServer } = await import("./lib/tools/index");
-  const { assemble } = await import("./lib/assemble");
-  const { OneBotClient } = await import("./lib/onebot/client");
-
   const g = globalThis as unknown as { __agentBooted?: boolean };
-  if (g.__agentBooted) return; // 单例守卫
+  if (g.__agentBooted) return;
   g.__agentBooted = true;
 
-  const cfg = loadConfig();
-  const db = openDb(cfg.dbPath);
-  const repo = new Repo(db);
-  const agent = new Agent({
-    model: cfg.model,
-    systemPrompt: "",
-    toolServer: buildToolServer(repo),
-  });
+  const { captureConsole } = await import("./lib/logger");
+  const { openDb } = await import("./lib/db/index");
+  const { Repo } = await import("./lib/db/repo");
+  const { getConfig } = await import("./lib/config-store");
+  const { getRuntime, defaultBuilders } = await import("./lib/runtime");
 
-  assemble({
-    repo,
-    botQQ: cfg.botQQ,
-    adminGroupId: cfg.adminGroupId,
-    timeoutMin: cfg.handoffTimeoutMin,
-    agent,
-  });
+  captureConsole();
 
-  const client = new OneBotClient(cfg.onebotWsUrl, cfg.onebotAccessToken);
-  client.start();
+  // 读配置(首启从 env 种子入库)
+  const seedDb = openDb(process.env.DB_PATH ?? "./data/agent.db");
+  const cfg = getConfig(new Repo(seedDb));
+  seedDb.close();
+
+  const builders = await defaultBuilders();
+  getRuntime().start(cfg, builders);
   console.log("[agent] OneBot 客服 Agent 已启动");
 }
