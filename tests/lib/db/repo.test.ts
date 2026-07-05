@@ -25,6 +25,18 @@ describe("Repo sessions", () => {
     expect(repo.getSessionId("g:u")).toBe("sid-1"); // 展示指针保留
   });
 
+  it("clearAllResumeIds 清所有续接、保留展示,返回受影响数", () => {
+    repo.setSessionId("g:u1", "sid-1");
+    repo.setSessionId("g:u2", "sid-2");
+    repo.clearResumeId("g:u2"); // u2 已无 resume_id → 不计入
+    const n = repo.clearAllResumeIds();
+    expect(n).toBe(1); // 仅 u1 此前仍有 resume_id
+    expect(repo.getResumeId("g:u1")).toBeUndefined();
+    expect(repo.getResumeId("g:u2")).toBeUndefined();
+    expect(repo.getSessionId("g:u1")).toBe("sid-1"); // 展示指针保留
+    expect(repo.getSessionId("g:u2")).toBe("sid-2");
+  });
+
   it("listSessions 返回 humanSince/lastQuestion", () => {
     repo.setSessionId("g:u", "sid-1");
     db.prepare("UPDATE sessions SET human_mode=1, human_since=1700, last_question='退款吗' WHERE key='g:u'").run();

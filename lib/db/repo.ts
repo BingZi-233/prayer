@@ -27,6 +27,15 @@ export class Repo {
       .run(key);
   }
 
+  // 一键清所有会话的 resume_id → 每个会话下条消息各自开全新对话;session_id 保留,网页历史仍可查。
+  // 返回受影响(此前仍有 resume_id)的会话数,供后台提示。
+  clearAllResumeIds(): number {
+    const info = this.db
+      .prepare("UPDATE sessions SET resume_id = NULL, updated_at = unixepoch('subsec')*1000 WHERE resume_id IS NOT NULL")
+      .run();
+    return info.changes;
+  }
+
   getSessionId(key: string): string | undefined {
     const row = this.db.prepare("SELECT session_id FROM sessions WHERE key = ?").get(key) as
       | { session_id: string | null }

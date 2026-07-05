@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { MessagesSquare, RefreshCw, Wrench, UserRound } from "lucide-react";
+import { MessagesSquare, RefreshCw, Wrench, UserRound, RotateCcw, TriangleAlert } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -27,6 +27,16 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { useGroupNames, useMemberNames } from "@/lib/group-name";
 
 interface Sess { key: string; sessionId: string | null; humanMode: boolean; humanSince: number | null; lastQuestion: string | null; updatedAt: number; }
@@ -53,6 +63,9 @@ function SessionsInner() {
   const [active, setActive] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [resetting, setResetting] = useState(false);
+  // 三步确认:0 关闭,1/2/3 逐级确认弹窗
+  const [confirmStep, setConfirmStep] = useState(0);
   const { name } = useGroupNames();
   const memberName = useMemberNames(sessions.map((s) => s.key));
   const params = useSearchParams();
@@ -124,6 +137,41 @@ function SessionsInner() {
     }
   }
 
+  // 三步确认文案(逐级加重),第三步 CTA 执行重开
+  const confirmSteps = [
+    {
+      title: `重开全部 ${sessions.length} 个会话?`,
+      desc: "每个会话下条消息将各自开启全新对话,历史记录仍保留可查。",
+      cta: "继续",
+    },
+    {
+      title: "二次确认",
+      desc: "此操作会清空所有会话的续接上下文,机器人将丢失当前对话记忆。确定继续?",
+      cta: "我了解,继续",
+    },
+    {
+      title: "最后确认",
+      desc: "该操作立即生效且不可撤销。点下方按钮执行全部重开。",
+      cta: "执行全部重开",
+    },
+  ];
+
+  // 一键重开:清所有会话 resume_id,每个会话下条消息各自开全新对话(历史仍可查)
+  async function resetAll() {
+    setConfirmStep(0);
+    setResetting(true);
+    try {
+      const r = await fetch("/api/sessions", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "reset_all" }),
+      }).then((x) => x.json());
+      if (r.ok) await loadSessions();
+    } finally {
+      setResetting(false);
+    }
+  }
+
   const shown = sessions
     .filter((s) => (humanOnly ? s.humanMode : true))
     .filter((s) => {
@@ -145,10 +193,20 @@ function SessionsInner() {
           <h1 className="text-2xl font-semibold tracking-tight">会话</h1>
           <p className="text-muted-foreground text-sm">查看历史会话的对话记录(读自 Claude SDK transcript)。</p>
         </div>
-        <Button variant="secondary" onClick={refresh} disabled={refreshing}>
-          {refreshing ? <Spinner data-icon="inline-start" /> : <RefreshCw data-icon="inline-start" />}
-          {refreshing ? "刷新中…" : "刷新"}
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="destructive"
+            onClick={() => setConfirmStep(1)}
+            disabled={resetting || sessions.length === 0}
+          >
+            {resetting ? <Spinner data-icon="inline-start" /> : <RotateCcw data-icon="inline-start" />}
+            {resetting ? "重开中…" : "全部重开"}
+          </Button>
+          <Button variant="secondary" onClick={refresh} disabled={refreshing}>
+            {refreshing ? <Spinner data-icon="inline-start" /> : <RefreshCw data-icon="inline-start" />}
+            {refreshing ? "刷新中…" : "刷新"}
+          </Button>
+        </div>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[300px_1fr]">
@@ -283,6 +341,38 @@ function SessionsInner() {
           </CardContent>
         </Card>
       </div>
+
+      <AlertDialog open={confirmStep > 0} onOpenChange={(o) => !o && setConfirmStep(0)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <TriangleAlert className="size-5 text-destructive" />
+              {confirmSteps[confirmStep - 1]?.title}
+            </AlertDialogTitle>
+            <AlertDialogDescription>{confirmSteps[confirmStep - 1]?.desc}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setConfirmStep(0)}>取消</AlertDialogCancel>
+            {confirmStep < 3 ? (
+              <AlertDialogAction
+                onClick={(e) => {
+                  e.preventDefault(); // 阻止默认关闭,推进到下一步
+                  setConfirmStep((s) => s + 1);
+                }}
+              >
+                {confirmSteps[confirmStep - 1]?.cta}
+              </AlertDialogAction>
+            ) : (
+              <AlertDialogAction
+                className="bg-destructive/10 text-destructive hover:bg-destructive/20"
+                onClick={resetAll}
+              >
+                {confirmSteps[2].cta}
+              </AlertDialogAction>
+            )}
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
