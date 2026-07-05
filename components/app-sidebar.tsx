@@ -11,23 +11,26 @@ import {
   SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
+  SidebarMenuBadge,
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
+import { useLive } from "@/components/live-provider";
 
 const nav = [
   { href: "/admin", label: "运行状态", icon: Activity },
   { href: "/admin/config", label: "配置", icon: Settings },
   { href: "/admin/kb", label: "知识库", icon: BookOpen },
-  { href: "/admin/sessions", label: "会话", icon: MessagesSquare },
+  { href: "/admin/sessions", label: "会话", icon: MessagesSquare, badge: "human" as const },
   { href: "/admin/reflection", label: "反思", icon: Brain },
-  { href: "/admin/tickets", label: "工单", icon: Ticket },
+  { href: "/admin/tickets", label: "工单", icon: Ticket, badge: "tickets" as const },
   { href: "/admin/groups", label: "生效群", icon: Users },
   { href: "/admin/logs", label: "运行日志", icon: ScrollText },
 ];
 
 export function AppSidebar() {
   const pathname = usePathname();
+  const { overview } = useLive();
   return (
     <Sidebar>
       <SidebarHeader>
@@ -56,6 +59,12 @@ export function AppSidebar() {
                         <span>{n.label}</span>
                       </Link>
                     </SidebarMenuButton>
+                    {n.badge === "tickets" && (overview?.openTickets ?? 0) > 0 && (
+                      <SidebarMenuBadge>{overview!.openTickets}</SidebarMenuBadge>
+                    )}
+                    {n.badge === "human" && (overview?.humanSessions ?? 0) > 0 && (
+                      <SidebarMenuBadge className="text-destructive">{overview!.humanSessions}</SidebarMenuBadge>
+                    )}
                   </SidebarMenuItem>
                 );
               })}
