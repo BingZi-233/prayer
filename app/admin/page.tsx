@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { toast } from "sonner";
 import { Activity, Plug, Users, RotateCw, TriangleAlert, Clock, LifeBuoy, ShieldCheck, Brain } from "lucide-react";
 import {
@@ -40,7 +41,7 @@ function stateVariant(s?: string): "default" | "secondary" | "destructive" {
 export default function StatusPage() {
   const [s, setS] = useState<Status | null>(null);
   const [busy, setBusy] = useState(false);
-  const [ov, setOv] = useState<{ enabledGroups: number; reflectionCount: number } | null>(null);
+  const [ov, setOv] = useState<{ enabledGroups: number; reflectionCount: number; openTickets: number; humanSessions: number } | null>(null);
 
   async function load() {
     try {
@@ -110,6 +111,30 @@ export default function StatusPage() {
           {busy ? "重启中…" : "重启 Agent"}
         </Button>
       </div>
+
+      {(ov?.openTickets ?? 0) > 0 || (ov?.humanSessions ?? 0) > 0 ? (
+        <Card className="border-destructive/50">
+          <CardHeader>
+            <CardTitle className="text-destructive flex items-center gap-2 text-base">
+              <LifeBuoy className="size-4" />
+              有待处理事项
+            </CardTitle>
+            <CardDescription>转人工客户正在等待,请尽快处理。</CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-wrap gap-2">
+            {(ov?.openTickets ?? 0) > 0 && (
+              <Button asChild variant="outline" size="sm">
+                <Link href="/admin/tickets">待处理工单 {ov!.openTickets}</Link>
+              </Button>
+            )}
+            {(ov?.humanSessions ?? 0) > 0 && (
+              <Button asChild variant="outline" size="sm">
+                <Link href="/admin/sessions?human=1">人工会话 {ov!.humanSessions}</Link>
+              </Button>
+            )}
+          </CardContent>
+        </Card>
+      ) : null}
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {stats.map((st) => (
