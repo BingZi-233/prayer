@@ -16,6 +16,16 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { RelativeTime } from "@/components/relative-time";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 
 interface Status {
   state: string;
@@ -107,10 +117,30 @@ export default function StatusPage() {
           <h1 className="text-2xl font-semibold tracking-tight">运行状态</h1>
           <p className="text-muted-foreground text-sm">实时监控 Agent 运行、连接与会话情况(每 3 秒刷新)。</p>
         </div>
-        <Button onClick={restart} disabled={busy}>
-          {busy ? <Spinner data-icon="inline-start" /> : <RotateCw data-icon="inline-start" />}
-          {busy ? "重启中…" : "重启 Agent"}
-        </Button>
+        <Dialog>
+          <DialogTrigger asChild>
+            <Button disabled={busy}>
+              {busy ? <Spinner data-icon="inline-start" /> : <RotateCw data-icon="inline-start" />}
+              {busy ? "重启中…" : "重启 Agent"}
+            </Button>
+          </DialogTrigger>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>确认重启 Agent?</DialogTitle>
+              <DialogDescription>
+                重启会断开当前 WS 连接并重新装配 Agent,进行中的会话可能中断,运行日志将清空。
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <DialogClose asChild>
+                <Button variant="outline">取消</Button>
+              </DialogClose>
+              <DialogClose asChild>
+                <Button onClick={restart} disabled={busy}>确认重启</Button>
+              </DialogClose>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
 
       {(ov?.openTickets ?? 0) > 0 || (ov?.humanSessions ?? 0) > 0 ? (
