@@ -19,7 +19,12 @@ export interface AssembleDeps {
   reflectLookbackMs?: number;
   reflectSettleMs?: number;
   reflectWindowMax?: number;
+  // 会话空闲超时(ms):超时则下条消息开全新对话,不 resume 旧会话。缺省 5 分钟
+  resumeTtlMs?: number;
 }
+
+// 会话空闲 TTL 默认值:5 分钟无活动 → 新开对话
+const DEFAULT_RESUME_TTL_MS = 300_000;
 
 /** 装配全链路,返回 teardown 用于热重载时卸载监听器与定时器 */
 export function assemble(deps: AssembleDeps): () => void {
@@ -27,7 +32,11 @@ export function assemble(deps: AssembleDeps): () => void {
   const cleanups = [
     registerErrorHandler(),
     registerGateway({ repo, botQQ, adminGroupId, enabledGroups }),
-    registerOrchestrator({ agent, store: new SessionStore(repo), classify: makeIntentClassifier() }),
+    registerOrchestrator({
+      agent,
+      store: new SessionStore(repo, deps.resumeTtlMs ?? DEFAULT_RESUME_TTL_MS),
+      classify: makeIntentClassifier(),
+    }),
     registerReplyMapper(),
     registerMessageBuffer({ repo, botQQ, adminGroupId, enabledGroups }),
     registerReflectionPoller({

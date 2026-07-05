@@ -34,11 +34,16 @@ export class Repo {
     return row?.session_id ?? undefined;
   }
 
-  // 续接指针:reset 后为空 → Agent 不 resume,开新会话
-  getResumeId(key: string): string | undefined {
-    const row = this.db.prepare("SELECT resume_id FROM sessions WHERE key = ?").get(key) as
-      | { resume_id: string | null }
-      | undefined;
+  // 续接指针:reset 后为空 → Agent 不 resume,开新会话。
+  // maxIdleMs > 0 时惰性过期:距上次活动(updated_at)超时则视为无 resume,下条消息开新会话
+  // (不改库,session_id 仍在 → 网页可查历史);maxIdleMs <= 0 关闭过期。
+  getResumeId(key: string, maxIdleMs = 0): string | undefined {
+    const row = this.db
+      .prepare(
+        `SELECT resume_id FROM sessions
+         WHERE key = ? AND (? <= 0 OR updated_at >= unixepoch('subsec') * 1000 - ?)`
+      )
+      .get(key, maxIdleMs, maxIdleMs) as { resume_id: string | null } | undefined;
     return row?.resume_id ?? undefined;
   }
 
