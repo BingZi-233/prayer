@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { Save, ChevronsUpDown } from "lucide-react";
+import { Save, ChevronsUpDown, X } from "lucide-react";
 import {
   Card,
   CardContent,
@@ -201,8 +201,9 @@ export default function ConfigPage() {
                         {cfg.enabledGroups.length > 0 && (
                           <div className="mt-2 flex flex-wrap gap-1">
                             {cfg.enabledGroups.map((id) => (
-                              <Badge key={id} variant="secondary" className="cursor-pointer" onClick={() => toggleGroup(id)}>
-                                {groupName(id)} ✕
+                              <Badge key={id} variant="secondary" className="cursor-pointer gap-1" onClick={() => toggleGroup(id)}>
+                                {groupName(id)}
+                                <X className="size-3" />
                               </Badge>
                             ))}
                           </div>
