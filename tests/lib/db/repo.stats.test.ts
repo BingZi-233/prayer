@@ -33,4 +33,14 @@ describe("Repo 统计/列表", () => {
     expect(t[0].sessionKey).toBe("g1:u1");
     expect(t[0].summary).toBe("退款问题");
   });
+
+  it("listSessions 可据 humanMode 计数人工会话", () => {
+    const repo = mkRepo();
+    repo.setSessionId("g1:u1", "s1");
+    repo.setSessionId("g1:u2", "s2");
+    (repo as unknown as { db: import("better-sqlite3").Database }).db
+      .prepare("UPDATE sessions SET human_mode = 1 WHERE key = ?")
+      .run("g1:u1");
+    expect(repo.listSessions().filter((s) => s.humanMode).length).toBe(1);
+  });
 });
