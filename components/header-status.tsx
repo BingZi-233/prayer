@@ -2,6 +2,7 @@
 
 import { cn } from "@/lib/utils";
 import { useLive } from "@/components/live-provider";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 const STATE_LABEL: Record<string, string> = {
   running: "运行中",
@@ -26,6 +27,7 @@ export function HeaderStatus() {
         <span className="text-muted-foreground">{status ? (STATE_LABEL[state!] ?? state) : "…"}</span>
         {status && !status.wsConnected && <span className="text-muted-foreground">· WS 断开</span>}
       </span>
+      <ThemeToggle />
     </div>
   );
 }
