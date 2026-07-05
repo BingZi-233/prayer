@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from "@/components/ui/empty";
 import { useGroupNames } from "@/lib/group-name";
+import { RelativeTime } from "@/components/relative-time";
 
 interface Row { id: number; sessionKey: string; summary: string; status: string; createdAt: number; }
 
@@ -71,7 +72,7 @@ export default function TicketsPage() {
                     <TableCell>
                       <Badge variant={r.status === "open" ? "default" : "secondary"}>{r.status === "open" ? "待处理" : "已关闭"}</Badge>
                     </TableCell>
-                    <TableCell className="text-muted-foreground">{new Date(r.createdAt).toLocaleString()}</TableCell>
+                    <TableCell className="text-muted-foreground"><RelativeTime ts={r.createdAt} /></TableCell>
                     <TableCell>
                       <Button asChild variant="ghost" size="sm" className="h-7 px-2 text-xs">
                         <Link href={`/admin/sessions?key=${encodeURIComponent(r.sessionKey)}`}>查看会话</Link>

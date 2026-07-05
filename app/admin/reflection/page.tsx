@@ -6,13 +6,13 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { RelativeTime } from "@/components/relative-time";
 
 interface GroupRow { groupId: number; cursor: number; lagMs: number | null; bufferCount: number; sedimentedCount: number; }
 interface Entry { id: number; content: string; groupId: number | null; ts: number | null; }
 interface Data { config: { scanMs: number; lookbackMs: number; settleMs: number; windowMax: number }; groups: GroupRow[]; entries: Entry[]; }
 
 const min = (ms: number) => `${Math.round(ms / 60000)} 分`;
-const fmtTs = (ts: number) => (ts ? new Date(ts).toLocaleString() : "—");
 
 export default function ReflectionPage() {
   const [d, setD] = useState<Data | null>(null);
@@ -85,7 +85,7 @@ export default function ReflectionPage() {
                 {d.groups.map((g) => (
                   <TableRow key={g.groupId}>
                     <TableCell className="font-medium">{name(g.groupId)}</TableCell>
-                    <TableCell className="text-muted-foreground">{g.cursor ? fmtTs(g.cursor) : "—"}</TableCell>
+                    <TableCell className="text-muted-foreground"><RelativeTime ts={g.cursor} /></TableCell>
                     <TableCell className="text-right tabular-nums">{g.lagMs == null ? "未反思" : g.lagMs > 0 ? min(g.lagMs) : "0"}</TableCell>
                     <TableCell className="text-right tabular-nums">{g.bufferCount}</TableCell>
                     <TableCell className="text-right tabular-nums">{g.sedimentedCount}</TableCell>
@@ -112,7 +112,7 @@ export default function ReflectionPage() {
                   <div key={e.id} className="bg-muted/40 rounded-md border p-3">
                     <div className="text-muted-foreground mb-1.5 flex items-center gap-2 text-xs">
                       {e.groupId != null && <Badge variant="secondary">{name(e.groupId)}</Badge>}
-                      <span>{e.ts ? fmtTs(e.ts) : "—"}</span>
+                      <RelativeTime ts={e.ts} />
                     </div>
                     <p className="text-sm whitespace-pre-wrap">{e.content}</p>
                   </div>

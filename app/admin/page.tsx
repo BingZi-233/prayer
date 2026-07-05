@@ -15,6 +15,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
+import { RelativeTime } from "@/components/relative-time";
 
 interface Status {
   state: string;
@@ -172,7 +173,7 @@ export default function StatusPage() {
       {s?.bootedAt && (
         <p className="text-muted-foreground flex items-center gap-1.5 text-xs">
           <Clock className="size-3.5" />
-          启动于 {new Date(s.bootedAt).toLocaleString()}
+          启动于 <RelativeTime ts={s.bootedAt} />
         </p>
       )}
     </div>

@@ -5,10 +5,9 @@ import { Users } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { RelativeTime } from "@/components/relative-time";
 
 interface Row { groupId: number; enabled: boolean; messageCount: number; lastTs: number; cursor: number; sedimentedCount: number; }
-
-const fmtTs = (ts: number) => (ts ? new Date(ts).toLocaleString() : "—");
 
 export default function GroupsPage() {
   const [rows, setRows] = useState<Row[]>([]);
@@ -71,8 +70,8 @@ export default function GroupsPage() {
                       <Badge variant={r.enabled ? "default" : "secondary"}>{r.enabled ? "生效" : "未生效"}</Badge>
                     </TableCell>
                     <TableCell className="text-right tabular-nums">{r.messageCount}</TableCell>
-                    <TableCell className="text-muted-foreground">{fmtTs(r.lastTs)}</TableCell>
-                    <TableCell className="text-muted-foreground">{r.cursor ? fmtTs(r.cursor) : "—"}</TableCell>
+                    <TableCell className="text-muted-foreground"><RelativeTime ts={r.lastTs} /></TableCell>
+                    <TableCell className="text-muted-foreground"><RelativeTime ts={r.cursor} /></TableCell>
                     <TableCell className="text-right tabular-nums">{r.sedimentedCount}</TableCell>
                   </TableRow>
                 ))}
