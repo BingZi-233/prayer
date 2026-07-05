@@ -106,6 +106,13 @@ export class OneBotClient {
     }));
   }
 
+  // 查群成员群名片/昵称(get_group_member_info)。未连接/超时 → undefined(不抛)。
+  getGroupMemberInfo(groupId: number, userId: number): Promise<{ card?: string; nickname?: string } | undefined> {
+    return this.call("get_group_member_info", { group_id: groupId, user_id: userId, no_cache: false }).then((data) =>
+      data && typeof data === "object" ? (data as { card?: string; nickname?: string }) : undefined,
+    );
+  }
+
   // 拉群列表(get_group_list)。未连接/超时 → undefined(不抛)。
   getGroupList(): Promise<unknown[] | undefined> {
     return this.call("get_group_list", {}).then((data) =>

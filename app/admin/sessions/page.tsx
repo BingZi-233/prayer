@@ -27,7 +27,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
-import { useGroupNames } from "@/lib/group-name";
+import { useGroupNames, useMemberNames } from "@/lib/group-name";
 
 interface Sess { key: string; sessionId: string | null; humanMode: boolean; humanSince: number | null; lastQuestion: string | null; updatedAt: number; }
 interface Msg { role: string; text?: string; tool?: string; input?: string; result?: string; }
@@ -53,10 +53,20 @@ function SessionsInner() {
   const [active, setActive] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const { label } = useGroupNames();
+  const { name } = useGroupNames();
+  const memberName = useMemberNames(sessions.map((s) => s.key));
   const params = useSearchParams();
   const [query, setQuery] = useState("");
   const [humanOnly, setHumanOnly] = useState(params.get("human") === "1");
+
+  // session key "gid:uid" → "群名 · 群昵称";昵称查不到回退 uid;非法 key 原样
+  const keyLabel = (key: string) => {
+    const [gid, uid] = key.split(":");
+    const g = Number(gid);
+    if (!gid || Number.isNaN(g)) return key;
+    const who = memberName(key) || uid || "";
+    return who ? `${name(g)} · ${who}` : name(g);
+  };
 
   async function loadSessions() {
     const r = await fetch("/api/sessions").then((x) => x.json());
@@ -121,7 +131,7 @@ function SessionsInner() {
       const q = query.toLowerCase();
       return (
         s.key.toLowerCase().includes(q) ||
-        label(s.key).toLowerCase().includes(q) ||
+        keyLabel(s.key).toLowerCase().includes(q) ||
         (s.lastQuestion ?? "").toLowerCase().includes(q)
       );
     })
@@ -173,7 +183,7 @@ function SessionsInner() {
                     )}
                   >
                     <span className="flex items-center justify-between gap-2">
-                      <span className="truncate" title={sess.key}>{label(sess.key)}</span>
+                      <span className="truncate" title={sess.key}>{keyLabel(sess.key)}</span>
                       {sess.humanMode && (
                         <Badge variant="destructive" className="shrink-0 gap-1">
                           <UserRound className="size-3" />
@@ -193,7 +203,7 @@ function SessionsInner() {
 
         <Card className="flex h-[560px] flex-col overflow-hidden">
           <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
-            <CardTitle className="text-sm" title={active ?? undefined}>{active ? `对话:${label(active)}` : "对话"}</CardTitle>
+            <CardTitle className="text-sm" title={active ?? undefined}>{active ? `对话:${keyLabel(active)}` : "对话"}</CardTitle>
             {active && (
               <Button variant="ghost" size="icon-sm" onClick={refresh} disabled={refreshing} title="刷新对话">
                 {refreshing ? <Spinner /> : <RefreshCw />}
