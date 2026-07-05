@@ -5,12 +5,16 @@ import Link from "next/link";
 import { Ticket } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from "@/components/ui/empty";
+import { useGroupNames } from "@/lib/group-name";
 
 interface Row { id: number; sessionKey: string; summary: string; status: string; createdAt: number; }
 
 export default function TicketsPage() {
   const [rows, setRows] = useState<Row[]>([]);
+  const { label } = useGroupNames();
 
   async function load() {
     try {
@@ -39,7 +43,13 @@ export default function TicketsPage() {
         <CardHeader><CardTitle className="flex items-center gap-2 text-sm"><Ticket className="size-4" />工单列表</CardTitle></CardHeader>
         <CardContent>
           {rows.length === 0 ? (
-            <p className="text-muted-foreground text-sm">暂无工单。</p>
+            <Empty>
+              <EmptyHeader>
+                <EmptyMedia variant="icon"><Ticket /></EmptyMedia>
+                <EmptyTitle>暂无工单</EmptyTitle>
+                <EmptyDescription>转人工触发时会在此生成工单。</EmptyDescription>
+              </EmptyHeader>
+            </Empty>
           ) : (
             <Table>
               <TableHeader>
@@ -49,20 +59,24 @@ export default function TicketsPage() {
                   <TableHead>摘要</TableHead>
                   <TableHead>状态</TableHead>
                   <TableHead>创建时间</TableHead>
+                  <TableHead className="w-24">操作</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {rows.map((r) => (
                   <TableRow key={r.id}>
                     <TableCell className="tabular-nums">{r.id}</TableCell>
-                    <TableCell>
-                      <Link href="/admin/sessions" className="font-mono text-xs underline-offset-2 hover:underline">{r.sessionKey}</Link>
-                    </TableCell>
+                    <TableCell><span className="text-xs">{label(r.sessionKey)}</span></TableCell>
                     <TableCell className="max-w-[360px] truncate">{r.summary}</TableCell>
                     <TableCell>
                       <Badge variant={r.status === "open" ? "default" : "secondary"}>{r.status === "open" ? "待处理" : "已关闭"}</Badge>
                     </TableCell>
                     <TableCell className="text-muted-foreground">{new Date(r.createdAt).toLocaleString()}</TableCell>
+                    <TableCell>
+                      <Button asChild variant="ghost" size="sm" className="h-7 px-2 text-xs">
+                        <Link href={`/admin/sessions?key=${encodeURIComponent(r.sessionKey)}`}>查看会话</Link>
+                      </Button>
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
