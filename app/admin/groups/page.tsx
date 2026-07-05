@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { RelativeTime } from "@/components/relative-time";
+import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from "@/components/ui/empty";
 
 interface Row { groupId: number; enabled: boolean; messageCount: number; lastTs: number; cursor: number; sedimentedCount: number; }
 
@@ -49,7 +50,13 @@ export default function GroupsPage() {
         <CardHeader><CardTitle className="flex items-center gap-2 text-sm"><Users className="size-4" />群活动</CardTitle></CardHeader>
         <CardContent>
           {rows.length === 0 ? (
-            <p className="text-muted-foreground text-sm">暂无群活动。</p>
+            <Empty>
+              <EmptyHeader>
+                <EmptyMedia variant="icon"><Users /></EmptyMedia>
+                <EmptyTitle>暂无群活动</EmptyTitle>
+                <EmptyDescription>生效群产生消息后会在此展示。</EmptyDescription>
+              </EmptyHeader>
+            </Empty>
           ) : (
             <Table>
               <TableHeader>

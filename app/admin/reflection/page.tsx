@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { RelativeTime } from "@/components/relative-time";
+import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from "@/components/ui/empty";
 
 interface GroupRow { groupId: number; cursor: number; lagMs: number | null; bufferCount: number; sedimentedCount: number; }
 interface Entry { id: number; content: string; groupId: number | null; ts: number | null; }
@@ -69,7 +70,13 @@ export default function ReflectionPage() {
         <CardHeader><CardTitle className="text-sm">每群反思进度</CardTitle></CardHeader>
         <CardContent>
           {!d || d.groups.length === 0 ? (
-            <p className="text-muted-foreground text-sm">暂无群反思记录。</p>
+            <Empty>
+              <EmptyHeader>
+                <EmptyMedia variant="icon"><Brain /></EmptyMedia>
+                <EmptyTitle>暂无反思记录</EmptyTitle>
+                <EmptyDescription>生效群有人工回复后会在此沉淀反思。</EmptyDescription>
+              </EmptyHeader>
+            </Empty>
           ) : (
             <Table>
               <TableHeader>
@@ -104,7 +111,13 @@ export default function ReflectionPage() {
         </CardHeader>
         <CardContent>
           {!d || d.entries.length === 0 ? (
-            <p className="text-muted-foreground text-sm">暂无沉淀条目。</p>
+            <Empty>
+              <EmptyHeader>
+                <EmptyMedia variant="icon"><Brain /></EmptyMedia>
+                <EmptyTitle>暂无沉淀知识</EmptyTitle>
+                <EmptyDescription>反思写入 kb 的条目会在此展示。</EmptyDescription>
+              </EmptyHeader>
+            </Empty>
           ) : (
             <ScrollArea className="h-[400px] pr-3">
               <div className="flex flex-col gap-2">

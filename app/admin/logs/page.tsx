@@ -11,6 +11,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from "@/components/ui/empty";
 
 interface Log {
   ts: number;
@@ -59,7 +60,13 @@ export default function LogsPage() {
         </CardHeader>
         <CardContent>
           {logs.length === 0 ? (
-            <p className="text-muted-foreground text-sm">暂无日志。</p>
+            <Empty>
+              <EmptyHeader>
+                <EmptyMedia variant="icon"><ScrollText /></EmptyMedia>
+                <EmptyTitle>暂无日志</EmptyTitle>
+                <EmptyDescription>Agent 运行后会输出日志。</EmptyDescription>
+              </EmptyHeader>
+            </Empty>
           ) : (
             <ScrollArea className="bg-muted/40 h-[520px] rounded-md">
               <div className="flex flex-col gap-0.5 p-3 font-mono text-xs">
