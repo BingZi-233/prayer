@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { MessagesSquare, RefreshCw, Wrench, UserRound } from "lucide-react";
 import {
@@ -24,6 +25,9 @@ import {
   MessageScrollerViewport,
 } from "@/components/ui/message-scroller";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
+import { useGroupNames } from "@/lib/group-name";
 
 interface Sess { key: string; sessionId: string | null; humanMode: boolean; humanSince: number | null; lastQuestion: string | null; updatedAt: number; }
 interface Msg { role: string; text?: string; tool?: string; input?: string; result?: string; }
@@ -36,11 +40,23 @@ function since(ts: number | null): string {
 }
 
 export default function SessionsPage() {
+  return (
+    <Suspense fallback={null}>
+      <SessionsInner />
+    </Suspense>
+  );
+}
+
+function SessionsInner() {
   const [sessions, setSessions] = useState<Sess[]>([]);
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [active, setActive] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const { label } = useGroupNames();
+  const params = useSearchParams();
+  const [query, setQuery] = useState("");
+  const [humanOnly, setHumanOnly] = useState(params.get("human") === "1");
 
   async function loadSessions() {
     const r = await fetch("/api/sessions").then((x) => x.json());
@@ -49,6 +65,22 @@ export default function SessionsPage() {
   useEffect(() => {
     loadSessions();
   }, []);
+
+  // URL ?key=... → 自动打开对应会话
+  useEffect(() => {
+    const key = params.get("key");
+    if (!key) return;
+    const s = sessions.find((x) => x.key === key);
+    if (s && active !== s.key) open(s);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessions, params]);
+
+  // 列表自动轮询(3s);选中会话有更新则一并刷新 transcript(复用 refresh)
+  useEffect(() => {
+    const t = setInterval(refresh, 3000);
+    return () => clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active]);
 
   async function loadTranscript(sessionId: string) {
     const r = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}`).then((x) => x.json());
@@ -82,6 +114,20 @@ export default function SessionsPage() {
     }
   }
 
+  const shown = sessions
+    .filter((s) => (humanOnly ? s.humanMode : true))
+    .filter((s) => {
+      if (!query.trim()) return true;
+      const q = query.toLowerCase();
+      return (
+        s.key.toLowerCase().includes(q) ||
+        label(s.key).toLowerCase().includes(q) ||
+        (s.lastQuestion ?? "").toLowerCase().includes(q)
+      );
+    })
+    // 人工优先置顶,其余保持 updatedAt DESC(接口已排序)
+    .sort((a, b) => Number(b.humanMode) - Number(a.humanMode));
+
   return (
     <div className="flex flex-col gap-6">
       <div className="flex items-start justify-between gap-4">
@@ -99,14 +145,24 @@ export default function SessionsPage() {
         <Card className="h-fit">
           <CardHeader>
             <CardTitle className="text-sm">会话列表</CardTitle>
-            <CardDescription>{sessions.length} 个会话</CardDescription>
+            <CardDescription>{shown.length} / {sessions.length} 个会话</CardDescription>
           </CardHeader>
-          <CardContent>
-            {sessions.length === 0 ? (
-              <p className="text-muted-foreground text-sm">暂无会话。</p>
+          <CardContent className="flex flex-col gap-2">
+            <Input
+              placeholder="搜索群名 / QQ / 问题…"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              className="h-8 text-xs"
+            />
+            <label className="flex cursor-pointer items-center gap-2 text-xs">
+              <Checkbox checked={humanOnly} onCheckedChange={(v) => setHumanOnly(!!v)} />
+              仅看人工会话
+            </label>
+            {shown.length === 0 ? (
+              <p className="text-muted-foreground text-sm">{sessions.length === 0 ? "暂无会话。" : "无匹配会话。"}</p>
             ) : (
               <div className="flex flex-col gap-1">
-                {sessions.map((sess) => (
+                {shown.map((sess) => (
                   <button
                     key={sess.key}
                     onClick={() => open(sess)}
@@ -117,7 +173,7 @@ export default function SessionsPage() {
                     )}
                   >
                     <span className="flex items-center justify-between gap-2">
-                      <span className="truncate font-mono">{sess.key}</span>
+                      <span className="truncate" title={sess.key}>{label(sess.key)}</span>
                       {sess.humanMode && (
                         <Badge variant="destructive" className="shrink-0 gap-1">
                           <UserRound className="size-3" />
@@ -137,7 +193,7 @@ export default function SessionsPage() {
 
         <Card className="flex h-[560px] flex-col overflow-hidden">
           <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
-            <CardTitle className="text-sm">{active ? `对话:${active}` : "对话"}</CardTitle>
+            <CardTitle className="text-sm" title={active ?? undefined}>{active ? `对话:${label(active)}` : "对话"}</CardTitle>
             {active && (
               <Button variant="ghost" size="icon-sm" onClick={refresh} disabled={refreshing} title="刷新对话">
                 {refreshing ? <Spinner /> : <RefreshCw />}
