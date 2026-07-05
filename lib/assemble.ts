@@ -3,6 +3,7 @@ import type { Agent } from "./agent/agent";
 import { SessionStore } from "./agent/session";
 import { registerGateway } from "./agent/gateway";
 import { registerOrchestrator } from "./agent/orchestrator";
+import { makeIntentClassifier } from "./agent/intent";
 import { registerReplyMapper } from "./agent/reply-mapper";
 import { registerMessageBuffer } from "./agent/message-buffer";
 import { registerReflectionPoller } from "./agent/reflection-poller";
@@ -26,7 +27,7 @@ export function assemble(deps: AssembleDeps): () => void {
   const cleanups = [
     registerErrorHandler(),
     registerGateway({ repo, botQQ, adminGroupId, enabledGroups }),
-    registerOrchestrator({ agent, store: new SessionStore(repo) }),
+    registerOrchestrator({ agent, store: new SessionStore(repo), classify: makeIntentClassifier() }),
     registerReplyMapper(),
     registerMessageBuffer({ repo, botQQ, adminGroupId, enabledGroups }),
     registerReflectionPoller({

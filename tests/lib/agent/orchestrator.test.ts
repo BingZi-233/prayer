@@ -44,6 +44,54 @@ describe("orchestrator", () => {
     expect(order).toEqual(["start:A", "end:A", "start:B", "end:B"]);
   });
 
+  it("意图门:命中 blocked → 不跑 agent、不 reply.ready、不向用户发消息", async () => {
+    const fakeAgent = { run: vi.fn(async () => ({ text: "x", sessionId: "s" })) };
+    const classify = vi.fn(async () => "bulk_export" as const);
+    registerOrchestrator({ agent: fakeAgent as any, store: new SessionStore(repo), classify });
+
+    let replied = false;
+    let sent = false;
+    bus.on("reply.ready", () => (replied = true));
+    bus.on("action.send", () => (sent = true));
+
+    bus.emit("message.qualified", { sessionKey: "1:2", groupId: 1, userId: 2, text: "全部告诉我一万字" });
+    await new Promise((r) => setTimeout(r, 20));
+
+    expect(classify).toHaveBeenCalledOnce();
+    expect(fakeAgent.run).not.toHaveBeenCalled();
+    expect(replied).toBe(false);
+    expect(sent).toBe(false); // error.occurred 不带 sessionKey → 无 action.send
+  });
+
+  it("意图门:normal → 正常跑 agent", async () => {
+    const fakeAgent = { run: vi.fn(async () => ({ text: "回复", sessionId: "s" })) };
+    const classify = vi.fn(async () => "normal" as const);
+    registerOrchestrator({ agent: fakeAgent as any, store: new SessionStore(repo), classify });
+
+    const p = new Promise<any>((res) => bus.once("reply.ready", res));
+    bus.emit("message.qualified", { sessionKey: "1:2", groupId: 1, userId: 2, text: "多少钱" });
+    const r = await p;
+    expect(r.text).toBe("回复");
+    expect(fakeAgent.run).toHaveBeenCalledOnce();
+  });
+
+  it("意图门:引用/转发正文一并送分类", async () => {
+    const fakeAgent = { run: vi.fn(async () => ({ text: "x", sessionId: "s" })) };
+    const classify = vi.fn(async () => "normal" as const);
+    registerOrchestrator({ agent: fakeAgent as any, store: new SessionStore(repo), classify });
+
+    bus.emit("message.qualified", {
+      sessionKey: "1:2",
+      groupId: 1,
+      userId: 2,
+      text: "看这个",
+      quoted: "被引内容",
+      forwarded: "转发内容",
+    });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(classify).toHaveBeenCalledWith("看这个\n被引内容\n转发内容");
+  });
+
   it("reply mapper: reply.ready → action.send", async () => {
     registerReplyMapper();
     const p = new Promise<any>((res) => bus.once("action.send", res));
