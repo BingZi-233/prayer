@@ -171,6 +171,9 @@ export class Agent {
         },
         resume: resumeId,
         maxTurns: 8,
+        // 强制 default:CLAUDE_CONFIG_DIR/settings.json 里若合了 bypassPermissions,
+        // 会整体跳过 canUseTool,让上面的白名单形同虚设 —— 显式钉死模式堵死这个绕过口子
+        permissionMode: "default",
         settingSources: ["user"],
         // 剥继承的 ANTHROPIC_*,让 CLAUDE_CONFIG_DIR/settings.json 的 env 块生效
         env: sdkEnv(),

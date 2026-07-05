@@ -87,6 +87,8 @@ export function makeIntentClassifier(deps: IntentClassifierDeps = {}): IntentCla
             systemPrompt: INTENT_SYSTEM,
             canUseTool: async () => ({ behavior: "deny" as const, message: "分类阶段不使用工具" }),
             maxTurns: 1,
+            // 同 agent.ts:防 settings 里的 bypassPermissions 把 canUseTool 短路掉
+            permissionMode: "default",
             settingSources: ["user"],
             // 与 agent/反思一致:剥继承 ANTHROPIC_*,用 CLAUDE_CONFIG_DIR/settings.json 的 env
             env: sdkEnv(),

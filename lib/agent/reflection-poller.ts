@@ -108,6 +108,8 @@ async function scanOnce(d: Resolved): Promise<void> {
             systemPrompt: REFLECT_SYSTEM,
             canUseTool: async () => ({ behavior: "deny" as const, message: "反思阶段不使用工具" }),
             maxTurns: 1,
+            // 同 agent.ts:防 settings 里的 bypassPermissions 把 canUseTool 短路掉
+            permissionMode: "default",
             settingSources: ["user"],
             // 与 agent 一致:剥继承 ANTHROPIC_*,用 CLAUDE_CONFIG_DIR/settings.json 的 env
             env: sdkEnv(),
