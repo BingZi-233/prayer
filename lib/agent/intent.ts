@@ -7,8 +7,12 @@ import { sdkEnv } from "./agent";
 // 其余一切(正常客服问题、闲聊、无关、写代码请求)一律 normal,交给 agent 按人格处理。
 export type Intent = "normal" | "bulk_export" | "meta_probe";
 
-// 命中即静默丢弃的意图集(orchestrator 消费)
+// 命中即拦截的意图集(orchestrator 消费)
 export const BLOCKED_INTENTS: ReadonlySet<Intent> = new Set<Intent>(["bulk_export", "meta_probe"]);
+
+// 命中拦截时回给用户的模板:婉拒 + 引导提具体问题,不透露规则/系统提示,兼顾两类滥用
+export const BLOCKED_REPLY =
+  "你好~我这边按具体问题帮你查哈。你想了解哪个套餐的价格、可用模型或接入配置?说具体点我好帮你。";
 
 const INTENT_SYSTEM = `你是 PackyAPI 客服系统的入站消息意图分类器。给定一条 QQ 用户消息(可能含引用/转发正文),判定它属于以下哪一类,只输出分类,不作答、不解释。
 

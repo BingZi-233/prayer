@@ -2,7 +2,7 @@ import { bus } from "../bus";
 import type { Agent } from "./agent";
 import type { SessionStore } from "./session";
 import type { QualifiedMessage } from "../events";
-import { BLOCKED_INTENTS, type IntentClassifier } from "./intent";
+import { BLOCKED_INTENTS, BLOCKED_REPLY, type IntentClassifier } from "./intent";
 
 export interface OrchestratorDeps {
   agent: Agent;
@@ -22,11 +22,12 @@ export function registerOrchestrator(deps: OrchestratorDeps): () => void {
       const probe = [q.text, q.quoted, q.forwarded].filter(Boolean).join("\n");
       const intent = await classify(probe);
       if (BLOCKED_INTENTS.has(intent)) {
-        // 静默:不跑 agent、不回复用户。记日志(不带 sessionKey → error-handler 不向用户发消息)
+        // 拦截:不跑 agent,回模板婉拒。同时记日志审计(不带 sessionKey → error-handler 不另发消息)
         bus.emit("error.occurred", {
           scope: "intent",
           err: `blocked intent=${intent} session=${q.sessionKey}`,
         });
+        bus.emit("reply.ready", { groupId: q.groupId, text: BLOCKED_REPLY });
         return;
       }
     }

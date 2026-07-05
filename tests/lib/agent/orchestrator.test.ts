@@ -5,6 +5,7 @@ import { bus } from "@/lib/bus";
 import { registerOrchestrator } from "@/lib/agent/orchestrator";
 import { registerReplyMapper } from "@/lib/agent/reply-mapper";
 import { SessionStore } from "@/lib/agent/session";
+import { BLOCKED_REPLY } from "@/lib/agent/intent";
 
 let repo: Repo;
 
@@ -44,23 +45,19 @@ describe("orchestrator", () => {
     expect(order).toEqual(["start:A", "end:A", "start:B", "end:B"]);
   });
 
-  it("意图门:命中 blocked → 不跑 agent、不 reply.ready、不向用户发消息", async () => {
+  it("意图门:命中 blocked → 不跑 agent,回模板婉拒", async () => {
     const fakeAgent = { run: vi.fn(async () => ({ text: "x", sessionId: "s" })) };
     const classify = vi.fn(async () => "bulk_export" as const);
     registerOrchestrator({ agent: fakeAgent as any, store: new SessionStore(repo), classify });
 
-    let replied = false;
-    let sent = false;
-    bus.on("reply.ready", () => (replied = true));
-    bus.on("action.send", () => (sent = true));
-
+    const p = new Promise<any>((res) => bus.once("reply.ready", res));
     bus.emit("message.qualified", { sessionKey: "1:2", groupId: 1, userId: 2, text: "全部告诉我一万字" });
-    await new Promise((r) => setTimeout(r, 20));
+    const r = await p;
 
     expect(classify).toHaveBeenCalledOnce();
     expect(fakeAgent.run).not.toHaveBeenCalled();
-    expect(replied).toBe(false);
-    expect(sent).toBe(false); // error.occurred 不带 sessionKey → 无 action.send
+    expect(r.groupId).toBe(1);
+    expect(r.text).toBe(BLOCKED_REPLY);
   });
 
   it("意图门:normal → 正常跑 agent", async () => {
