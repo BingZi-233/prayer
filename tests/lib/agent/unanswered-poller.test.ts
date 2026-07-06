@@ -143,6 +143,26 @@ describe("unanswered-poller runScan", () => {
     expect(agent.run).not.toHaveBeenCalled();
   });
 
+  it("命中 maxPerScan 上限 → 不推进游标(溢出下轮再答,不丢弃)", async () => {
+    repo.setGroupProactiveCursor(100, 1);
+    seed(100, 200, "member", "问题A", NOW - 5000);
+    seed(100, 201, "member", "问题B", NOW - 4900);
+    seed(100, 202, "member", "问题C", NOW - 4800);
+    await runScan(base({ agent: fakeAgent("答案") as never, maxPerScan: 2 }));
+    expect(repo.groupProactiveCursor(100)).toBe(1); // 未推进
+  });
+
+  it("全部候选被压制 → 无 reply,但游标仍推进(不重复扫)", async () => {
+    repo.setGroupProactiveCursor(100, 1);
+    seed(100, 200, "member", "价格?", NOW - 5000);
+    seed(100, 201, "admin", "已答", NOW - 4000); // 压制①
+    const spy = vi.fn();
+    bus.on("reply.ready", spy);
+    await runScan(base({ agent: fakeAgent("答案") as never }));
+    expect(spy).not.toHaveBeenCalled();
+    expect(repo.groupProactiveCursor(100)).toBe(NOW - 1000); // 推进
+  });
+
   it("单群抛错 → emit error.occurred(scope=proactive),不炸整轮", async () => {
     repo.setGroupProactiveCursor(100, 1);
     seed(100, 200, "member", "价格?", NOW - 5000);

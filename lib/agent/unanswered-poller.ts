@@ -72,6 +72,8 @@ async function scanOnce(d: Resolved): Promise<void> {
       }
 
       const rows = d.repo.groupMemberMessagesBetween(groupId, cursor, until);
+      // 每用户取 band 内最新一条为代表(questionTs=最新),对两条压制都是最宽松取值:
+      // 只要用户最后一句仍无人应答就兜底。前文多句升序拼进 text 作上下文。
       // 按 userId 归组:每人取 band 内文本(升序拼接)作上下文,代表 ts = 最后一条
       const byUser = new Map<number, { text: string; questionTs: number }>();
       for (const r of rows) {
@@ -83,8 +85,9 @@ async function scanOnce(d: Resolved): Promise<void> {
       }
 
       let hits = 0;
+      let capped = false;
       for (const [userId, { text, questionTs }] of byUser) {
-        if (hits >= d.maxPerScan) break;
+        if (hits >= d.maxPerScan) { capped = true; break; }
         // 压制①:问题后(至 now)群里有 owner/admin 发言 → 人工接管
         if (d.repo.hasAdminMessageBetween(groupId, questionTs, now)) continue;
         // 压制②:该用户会话已被主链路 @处理 / 已兜底过
@@ -108,7 +111,8 @@ async function scanOnce(d: Resolved): Promise<void> {
         hits++;
       }
 
-      d.repo.setGroupProactiveCursor(groupId, until);
+      // 命中上限时不推进游标:下轮已答用户被压制②挡下,自然轮到溢出用户;避免答案被永久丢弃
+      if (!capped) d.repo.setGroupProactiveCursor(groupId, until);
     } catch (err) {
       // 单群失败不牵连其他群;该群不推进游标 → 下轮重试
       bus.emit("error.occurred", { scope: "proactive", err, groupId });
@@ -125,8 +129,15 @@ export async function runScan(deps: UnansweredPollerDeps): Promise<void> {
 export function registerUnansweredPoller(deps: UnansweredPollerDeps): () => void {
   const d = resolve(deps);
   const scanMs = deps.scanMs ?? 60_000;
+  let running = false; // 防重入:上一轮未结束则跳过本次触发,避免重复兜底
   const timer = setInterval(() => {
-    void scanOnce(d).catch((err) => bus.emit("error.occurred", { scope: "proactive", err }));
+    if (running) return;
+    running = true;
+    void scanOnce(d)
+      .catch((err) => bus.emit("error.occurred", { scope: "proactive", err }))
+      .finally(() => {
+        running = false;
+      });
   }, scanMs);
   return () => clearInterval(timer);
 }
