@@ -2,6 +2,7 @@ import { bus } from "../bus";
 import { logger } from "../logger";
 import type { Repo } from "../db/repo";
 import type { Agent } from "./agent";
+import { AGENT_FALLBACK_TEXT } from "./agent";
 import type { SessionStore } from "./session";
 import type { AnswerabilityClassifier } from "./answerability";
 
@@ -48,10 +49,10 @@ function resolve(d: UnansweredPollerDeps): Resolved {
   };
 }
 
-// 真答案判定:非空且不含哨兵。撞哨兵/空 → 沉默。
+// 真答案判定:非空、不含哨兵、且不是 agent 降级兜底文案。撞任一 → 沉默。
 function isAnswer(text: string): boolean {
   const t = text.trim();
-  return t.length > 0 && !t.includes("__NO_ANSWER__");
+  return t.length > 0 && !t.includes("__NO_ANSWER__") && t !== AGENT_FALLBACK_TEXT;
 }
 
 async function scanOnce(d: Resolved): Promise<void> {
@@ -90,7 +91,8 @@ async function scanOnce(d: Resolved): Promise<void> {
         if (hits >= d.maxPerScan) { capped = true; break; }
         // 压制①:问题后(至 now)群里有 owner/admin 发言 → 人工接管
         if (d.repo.hasAdminMessageBetween(groupId, questionTs, now)) continue;
-        // 压制②:该用户会话已被主链路 @处理 / 已兜底过
+        // 压制②:该用户会话已被主链路 @处理/已兜底过(setSessionId 刷了 updated_at)。
+        // 注:被意图门拦截的 @bot 消息不 remember → 不走此路,靠 fail-closed 判官兜住。
         const key = `${groupId}:${userId}`;
         const upd = d.repo.sessionUpdatedAt(key);
         if (upd !== undefined && upd > questionTs) continue;

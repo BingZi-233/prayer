@@ -4,6 +4,7 @@ import { Repo } from "@/lib/db/repo";
 import { bus } from "@/lib/bus";
 import { SessionStore } from "@/lib/agent/session";
 import { runScan } from "@/lib/agent/unanswered-poller";
+import { AGENT_FALLBACK_TEXT } from "@/lib/agent/agent";
 
 let repo: Repo;
 const NOW = 10_000_000;
@@ -115,6 +116,16 @@ describe("unanswered-poller runScan", () => {
     bus.on("reply.ready", spy);
     await runScan(base({ agent: fakeAgent("   ") as never }));
     expect(spy).not.toHaveBeenCalled();
+  });
+
+  it("agent 降级兜底文案(非抛错)→ 沉默、不写回 session", async () => {
+    repo.setGroupProactiveCursor(100, 1);
+    seed(100, 200, "member", "问题?", NOW - 5000);
+    const spy = vi.fn();
+    bus.on("reply.ready", spy);
+    await runScan(base({ agent: fakeAgent(AGENT_FALLBACK_TEXT) as never }));
+    expect(spy).not.toHaveBeenCalled();
+    expect(repo.sessionUpdatedAt("100:200")).toBeUndefined();
   });
 
   it("太新(> until)消息不处理", async () => {
