@@ -2,6 +2,7 @@
 
 import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { MessagesSquare, RefreshCw, Wrench, UserRound, RotateCcw, TriangleAlert } from "lucide-react";
 import {
@@ -166,7 +167,14 @@ function SessionsInner() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ action: "reset_all" }),
       }).then((x) => x.json());
-      if (r.ok) await loadSessions();
+      if (r.ok) {
+        await loadSessions();
+        toast.success(`已重开 ${r.data.reset} 个会话,下条消息各自开新对话`);
+      } else {
+        toast.error(`重开失败:${r.error}`);
+      }
+    } catch (e) {
+      toast.error(`重开失败:${e instanceof Error ? e.message : String(e)}`);
     } finally {
       setResetting(false);
     }
