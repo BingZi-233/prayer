@@ -136,6 +136,20 @@ export function isToolAllowed(toolName: string, input: Record<string, unknown>):
   return false;
 }
 
+// 拒因 message:引导模型停止重试、改走合规路径,避免反复撞被拒工具烧光 maxTurns
+export function denyMessage(toolName: string): string {
+  switch (toolName) {
+    case "Bash":
+      return "Bash 仅能执行 PackyAPI 查询脚本,不接受其他命令。请勿再尝试变体,改用 kb_search 或 packyapi 技能获取信息。";
+    case "Read":
+      return "Read 仅能读取 packyapi 技能的 references 文档,不能读任意文件。请勿再尝试其他路径,改用 kb_search。";
+    case "WebFetch":
+      return "WebFetch 仅能访问 packyapi.com。请勿再尝试其他地址,改用 kb_search 或 packyapi 技能。";
+    default:
+      return `无 ${toolName} 工具可用。请改用 kb_search 或 packyapi 技能,勿再尝试此工具。`;
+  }
+}
+
 export class Agent {
   private queryFn: typeof sdkQuery;
   constructor(private deps: AgentDeps) {
@@ -165,12 +179,17 @@ export class Agent {
         // 单一放行出口:不用 allowedTools 预授权(bare 名会 shadow canUseTool),全部工具落到此回调
         // 白名单判定见 isToolAllowed;未命中一律拒绝(headless 不弹交互授权)
         canUseTool: async (toolName: string, input: Record<string, unknown>) => {
-          return isToolAllowed(toolName, input)
-            ? { behavior: "allow" as const, updatedInput: input }
-            : { behavior: "deny" as const, message: `工具 ${toolName} 未授权` };
+          if (isToolAllowed(toolName, input)) {
+            return { behavior: "allow" as const, updatedInput: input };
+          }
+          // 精准拒因 message:笼统的"未授权"会让模型误以为是语法问题、换参数重试,
+          // 白烧 turn 直到 maxTurns。明确"停手 + 改走 kb_search/技能"堵掉 deny 循环。
+          const message = denyMessage(toolName);
+          console.warn("[agent] 拒绝工具调用:", toolName, JSON.stringify(input).slice(0, 200));
+          return { behavior: "deny" as const, message };
         },
         resume: resumeId,
-        maxTurns: 8,
+        maxTurns: 20,
         // 强制 default:CLAUDE_CONFIG_DIR/settings.json 里若合了 bypassPermissions,
         // 会整体跳过 canUseTool,让上面的白名单形同虚设 —— 显式钉死模式堵死这个绕过口子
         permissionMode: "default",
@@ -182,15 +201,22 @@ export class Agent {
 
     let sessionId: string | undefined = resumeId;
     let out = "";
-    for await (const msg of iter as AsyncIterable<any>) {
-      if (msg.type === "system" && msg.subtype === "init" && msg.session_id) {
-        sessionId = msg.session_id;
-      }
-      if (msg.type === "assistant" && Array.isArray(msg.message?.content)) {
-        for (const block of msg.message.content) {
-          if (block.type === "text") out += block.text;
+    try {
+      for await (const msg of iter as AsyncIterable<any>) {
+        if (msg.type === "system" && msg.subtype === "init" && msg.session_id) {
+          sessionId = msg.session_id;
+        }
+        if (msg.type === "assistant" && Array.isArray(msg.message?.content)) {
+          for (const block of msg.message.content) {
+            if (block.type === "text") out += block.text;
+          }
         }
       }
+    } catch (e) {
+      // maxTurns / CLI 异常:SDK 会把错误结果转成抛出的 Error(reject 迭代器),
+      // 这里降级 —— 保留已累积文本与 sessionId,避免整个请求 500、丢掉会话
+      console.error("[agent] query 迭代中断,降级返回已累积内容:", e);
+      if (!out.trim()) out = "(处理超出步数上限或出错,请换个说法或稍后再试)";
     }
     return { text: out.trim(), sessionId };
   }
