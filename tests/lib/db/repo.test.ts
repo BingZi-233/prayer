@@ -176,3 +176,38 @@ describe("Repo reflection stats", () => {
     expect(b.ts).toBeNull();
   });
 });
+
+describe("repo 主动兜底支持", () => {
+  const mk = () => new Repo(openDb(":memory:"));
+
+  it("sessionUpdatedAt:无会话→undefined,写入后→数值", () => {
+    const repo = mk();
+    expect(repo.sessionUpdatedAt("1:2")).toBeUndefined();
+    repo.setSessionId("1:2", "sess-a");
+    expect(typeof repo.sessionUpdatedAt("1:2")).toBe("number");
+  });
+
+  it("groupProactiveCursor:默认0,可设可读", () => {
+    const repo = mk();
+    expect(repo.groupProactiveCursor(100)).toBe(0);
+    repo.setGroupProactiveCursor(100, 12345);
+    expect(repo.groupProactiveCursor(100)).toBe(12345);
+  });
+
+  it("groupMemberMessagesBetween:只取(after,until]内非管理发言,升序", () => {
+    const repo = mk();
+    const seed = (uid: number, role: string | null, text: string, at: number) =>
+      (repo as any).db
+        .prepare("INSERT INTO group_messages (group_id,user_id,sender_role,text,created_at) VALUES (?,?,?,?,?)")
+        .run(100, uid, role, text, at);
+    seed(200, "member", "太早", 100);        // <= after,排除
+    seed(200, "member", "问题A", 200);
+    seed(201, null, "问题B", 300);
+    seed(202, "admin", "管理发言", 400);      // 管理,排除
+    seed(203, "owner", "群主发言", 450);      // 群主,排除
+    seed(200, "member", "太新", 900);         // > until,排除
+    const rows = repo.groupMemberMessagesBetween(100, 100, 500);
+    expect(rows.map((r) => r.text)).toEqual(["问题A", "问题B"]);
+    expect(rows[0]).toMatchObject({ userId: 200, createdAt: 200 });
+  });
+});
