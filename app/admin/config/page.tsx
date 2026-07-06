@@ -32,9 +32,31 @@ interface Cfg {
   claudeConfigDir: string;
   model: string;
   enabledGroups: number[];
+  reflectScanMs: number;
+  reflectLookbackMs: number;
+  reflectSettleMs: number;
+  reflectWindowMax: number;
+  proactiveEnabled: boolean;
+  proactiveScanMs: number;
+  proactiveSilenceMs: number;
+  proactiveMaxPerScan: number;
+  // SDK 凭证:存 CLAUDE_CONFIG_DIR/settings.json,非 AppConfig
+  sdkBaseUrl: string;
+  sdkAuthToken: string;
 }
 
-const NUM_KEYS: (keyof Cfg)[] = ["botQQ", "adminGroupId", "handoffTimeoutMin"];
+const NUM_KEYS: (keyof Cfg)[] = [
+  "botQQ",
+  "adminGroupId",
+  "handoffTimeoutMin",
+  "reflectScanMs",
+  "reflectLookbackMs",
+  "reflectSettleMs",
+  "reflectWindowMax",
+  "proactiveScanMs",
+  "proactiveSilenceMs",
+  "proactiveMaxPerScan",
+];
 
 export default function ConfigPage() {
   const [cfg, setCfg] = useState<Cfg | null>(null);
@@ -70,6 +92,9 @@ export default function ConfigPage() {
     const payload: Partial<Cfg> = { ...cfg };
     if (typeof payload.onebotAccessToken === "string" && payload.onebotAccessToken.includes("•")) {
       delete payload.onebotAccessToken;
+    }
+    if (typeof payload.sdkAuthToken === "string" && payload.sdkAuthToken.includes("•")) {
+      delete payload.sdkAuthToken;
     }
     try {
       const r = await fetch("/api/config", {
@@ -125,6 +150,8 @@ export default function ConfigPage() {
           <TabsList>
             <TabsTrigger value="onebot">OneBot</TabsTrigger>
             <TabsTrigger value="sdk">Claude SDK</TabsTrigger>
+            <TabsTrigger value="reflect">反思</TabsTrigger>
+            <TabsTrigger value="proactive">主动回复</TabsTrigger>
             <TabsTrigger value="storage">存储</TabsTrigger>
           </TabsList>
 
@@ -148,6 +175,11 @@ export default function ConfigPage() {
                   <Field>
                     <FieldLabel htmlFor="botQQ">Bot QQ</FieldLabel>
                     <Input id="botQQ" inputMode="numeric" value={num("botQQ")} onChange={(e) => upd("botQQ", e.target.value)} />
+                  </Field>
+                  <Field>
+                    <FieldLabel htmlFor="handoffTimeoutMin">转人工超时(分钟)</FieldLabel>
+                    <Input id="handoffTimeoutMin" inputMode="numeric" value={num("handoffTimeoutMin")} onChange={(e) => upd("handoffTimeoutMin", e.target.value)} />
+                    <FieldDescription>转人工后无人处理超过此时长自动回收工单。默认 30。</FieldDescription>
                   </Field>
                   <Field>
                     <FieldLabel htmlFor="adminGroupId">管理群号</FieldLabel>
@@ -227,14 +259,98 @@ export default function ConfigPage() {
             <Card>
               <CardHeader>
                 <CardTitle>Claude Agent SDK</CardTitle>
-                <CardDescription>模型与凭证目录。SDK 只需一个 CLAUDE_CONFIG_DIR(内含 claude login 生成的凭证)。</CardDescription>
+                <CardDescription>模型、中转凭证与配置目录。Base URL / Auth Token 写入配置目录的 settings.json,无需再设环境变量。</CardDescription>
               </CardHeader>
               <CardContent>
                 <FieldGroup>
                   <Field>
+                    <FieldLabel htmlFor="model">模型</FieldLabel>
+                    <Input id="model" value={cfg.model} placeholder="claude-sonnet-5" onChange={(e) => upd("model", e.target.value)} />
+                    <FieldDescription>Agent 调用的模型 ID(显式传给 SDK query)。</FieldDescription>
+                  </Field>
+                  <Field>
+                    <FieldLabel htmlFor="sdkBaseUrl">Base URL</FieldLabel>
+                    <Input id="sdkBaseUrl" value={cfg.sdkBaseUrl} placeholder="https://www.packyapi.com" onChange={(e) => upd("sdkBaseUrl", e.target.value)} />
+                    <FieldDescription>中转 API 地址(ANTHROPIC_BASE_URL)。</FieldDescription>
+                  </Field>
+                  <Field>
+                    <FieldLabel htmlFor="sdkAuthToken">Auth Token</FieldLabel>
+                    <Input id="sdkAuthToken" value={cfg.sdkAuthToken} placeholder="留空不修改" onChange={(e) => upd("sdkAuthToken", e.target.value)} />
+                    <FieldDescription>中转鉴权令牌(ANTHROPIC_AUTH_TOKEN)。已保存以掩码显示,留空或不改则保留原值。</FieldDescription>
+                  </Field>
+                  <Field>
                     <FieldLabel htmlFor="claudeConfigDir">CLAUDE_CONFIG_DIR</FieldLabel>
                     <Input id="claudeConfigDir" value={cfg.claudeConfigDir} placeholder="./data/claude-config" onChange={(e) => upd("claudeConfigDir", e.target.value)} />
-                    <FieldDescription>SDK 认证与配置目录,在该目录 `claude login` 后即可使用。模型等由该目录内配置决定。</FieldDescription>
+                    <FieldDescription>SDK 认证与配置目录,上面的凭证即写入此目录的 settings.json。</FieldDescription>
+                  </Field>
+                </FieldGroup>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="reflect">
+            <Card>
+              <CardHeader>
+                <CardTitle>反思(知识沉淀)</CardTitle>
+                <CardDescription>后台周期性回看群聊,把人工答复沉淀为 kb 的 human-reflection 条目供 Agent 检索。</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <FieldGroup>
+                  <Field>
+                    <FieldLabel htmlFor="reflectScanMs">扫描间隔(毫秒)</FieldLabel>
+                    <Input id="reflectScanMs" inputMode="numeric" value={num("reflectScanMs")} onChange={(e) => upd("reflectScanMs", e.target.value)} />
+                    <FieldDescription>反思轮询周期。默认 300000(5 分钟)。</FieldDescription>
+                  </Field>
+                  <Field>
+                    <FieldLabel htmlFor="reflectLookbackMs">回看窗口(毫秒)</FieldLabel>
+                    <Input id="reflectLookbackMs" inputMode="numeric" value={num("reflectLookbackMs")} onChange={(e) => upd("reflectLookbackMs", e.target.value)} />
+                    <FieldDescription>每次反思往回看多久的聊天记录。默认 7200000(2 小时)。</FieldDescription>
+                  </Field>
+                  <Field>
+                    <FieldLabel htmlFor="reflectSettleMs">静置阈值(毫秒)</FieldLabel>
+                    <Input id="reflectSettleMs" inputMode="numeric" value={num("reflectSettleMs")} onChange={(e) => upd("reflectSettleMs", e.target.value)} />
+                    <FieldDescription>对话静置超过此时长才纳入反思,避免打断进行中的会话。默认 600000(10 分钟)。</FieldDescription>
+                  </Field>
+                  <Field>
+                    <FieldLabel htmlFor="reflectWindowMax">单窗最大消息数</FieldLabel>
+                    <Input id="reflectWindowMax" inputMode="numeric" value={num("reflectWindowMax")} onChange={(e) => upd("reflectWindowMax", e.target.value)} />
+                    <FieldDescription>单次反思送入的最大消息条数。默认 60。</FieldDescription>
+                  </Field>
+                </FieldGroup>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="proactive">
+            <Card>
+              <CardHeader>
+                <CardTitle>主动回复(无人应答兜底)</CardTitle>
+                <CardDescription>群里有人提问但一段时间无人应答时,bot 主动补一句。仅对生效群生效;人工已接管或主链路已答则沉默。</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <FieldGroup>
+                  <Field orientation="horizontal">
+                    <Checkbox
+                      id="proactiveEnabled"
+                      checked={cfg.proactiveEnabled}
+                      onCheckedChange={(v) => cfg && setCfg({ ...cfg, proactiveEnabled: v === true })}
+                    />
+                    <FieldLabel htmlFor="proactiveEnabled">启用主动回复</FieldLabel>
+                  </Field>
+                  <Field>
+                    <FieldLabel htmlFor="proactiveSilenceMs">静默阈值(毫秒)</FieldLabel>
+                    <Input id="proactiveSilenceMs" inputMode="numeric" value={num("proactiveSilenceMs")} onChange={(e) => upd("proactiveSilenceMs", e.target.value)} />
+                    <FieldDescription>问题发出后无人应答超过此时长才兜底。默认 180000(3 分钟)。</FieldDescription>
+                  </Field>
+                  <Field>
+                    <FieldLabel htmlFor="proactiveScanMs">扫描间隔(毫秒)</FieldLabel>
+                    <Input id="proactiveScanMs" inputMode="numeric" value={num("proactiveScanMs")} onChange={(e) => upd("proactiveScanMs", e.target.value)} />
+                    <FieldDescription>轮询检查未应答问题的周期。默认 60000(1 分钟)。</FieldDescription>
+                  </Field>
+                  <Field>
+                    <FieldLabel htmlFor="proactiveMaxPerScan">单次最多兜底数</FieldLabel>
+                    <Input id="proactiveMaxPerScan" inputMode="numeric" value={num("proactiveMaxPerScan")} onChange={(e) => upd("proactiveMaxPerScan", e.target.value)} />
+                    <FieldDescription>每轮扫描最多主动回复几条,防刷屏。溢出保留到下轮,不丢弃。默认 2。</FieldDescription>
                   </Field>
                 </FieldGroup>
               </CardContent>
