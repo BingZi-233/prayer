@@ -36,6 +36,7 @@ pnpm-debug.log*
 *.tsbuildinfo
 next-env.d.ts
 data/
+logs/
 
 # 本地工具产物 / 配置(非源码)
 .claude/
