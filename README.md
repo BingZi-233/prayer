@@ -1,34 +1,16 @@
-# Next.js template
+# OneBot 客服 Agent
 
-This is a Next.js template with shadcn/ui.
+基于 Claude Agent SDK 的 OneBot(QQ)群聊客服 Agent。通过正向 WebSocket 连接 NapCat 收发消息,支持知识库检索(RAG)、多轮记忆、业务 tool 调用与转人工,并带一个 Next.js 管理后台。
 
-## Adding components
+技术栈:Next.js 16 + React 19 + shadcn/ui + better-sqlite3(sqlite-vec 向量索引)+ `@anthropic-ai/claude-agent-sdk`。
 
-To add components to your app, run the following command:
+## 架构
 
-```bash
-npx shadcn@latest add button
-```
+单进程:Next.js Node 服务。`instrumentation.ts` 在 Node runtime 启动时装配并拉起 OneBot Agent —— 管住 `next start` 这一个进程即管住全部(Agent + 后台 + WS 连接)。
 
-This will place the ui components in the `components` directory.
-
-## Using components
-
-To use the components in your app, import them as follows:
-
-```tsx
-import { Button } from "@/components/ui/button";
-```
-
-## OneBot 客服 Agent
-
-本项目内置一个基于 Claude Agent SDK 的 OneBot(QQ)群聊客服 Agent,通过正向 WebSocket 连接 NapCat 收发消息,支持知识库检索(RAG)、多轮记忆、业务 tool 调用与转人工。
-
-### 运行步骤
+## 运行步骤
 
 1. **填写 `.env`**
-
-   复制 `.env.example` 为 `.env`,并填写各项配置:
 
    ```bash
    cp .env.example .env
@@ -42,11 +24,11 @@ import { Button } from "@/components/ui/button";
 
 2. **灌知识库**
 
-   将知识文档放入约定目录后执行摄入脚本,生成本地 embedding 并写入向量库:
-
    ```bash
    pnpm ingest
    ```
+
+   将知识文档放入约定目录后执行,生成本地 embedding 并写入向量库。
 
 3. **构建并以 Node runtime 启动**
 
@@ -55,17 +37,67 @@ import { Button } from "@/components/ui/button";
    pnpm start
    ```
 
-   > ⚠️ **不能用 `next dev` 启动生产客服 Agent**:`next dev` 以及任何 edge/serverless 部署形态都无法满足本 Agent 的运行要求 —— Claude Agent SDK 需要在**本机 Node runtime** 中调用本地 `claude` 可执行二进制(而非 edge/serverless 沙箱),因此必须用 `pnpm build && pnpm start` 以标准 Node 服务方式运行,`instrumentation.ts` 才会在启动时完成装配并建立 OneBot 连接。
+   生产/常驻建议用 pm2(见下)。
+
+   > ⚠️ **不能用 `next dev` 跑生产客服 Agent**。两个原因:
+   > 1. Claude Agent SDK 需在**本机 Node runtime** 调用本地 `claude` 二进制,edge/serverless 沙箱不行;必须 `pnpm build && pnpm start`,`instrumentation.ts` 才会装配并建立 OneBot 连接。
+   > 2. `next dev` 对**局域网/远程访问**不可靠:HMR WebSocket 握手失败、客户端 hydration 不完成,导致管理后台页面卡在骨架屏、数据加载不出来(后端 API 本身正常)。对外访问一律走生产构建。
 
 4. **NapCat 开正向 WS server**
 
-   在 NapCat 侧配置「正向 WebSocket 服务器」,监听端口需与 `.env` 中的 `ONEBOT_WS_URL` 指向的本机端口一致(默认 `ws://127.0.0.1:3001`),并按需配置 `ONEBOT_ACCESS_TOKEN`。
+   NapCat 侧配置「正向 WebSocket 服务器」,监听端口与 `.env` 的 `ONEBOT_WS_URL` 一致(默认 `ws://127.0.0.1:3001`),按需配 `ONEBOT_ACCESS_TOKEN`。
 
 5. **群里 @bot 测试**
 
-   在已加入的 QQ 群内 `@` 机器人发送消息,确认 Agent 能够回复;涉及知识库问答、业务查询、转人工等场景可分别验证。
+   已加入的 QQ 群内 `@` 机器人发消息,验证回复 / 知识库问答 / 业务查询 / 转人工。
 
-### 环境要求与限制
+## 进程管理(pm2)
 
-- 部署环境必须能找到 `claude` 可执行文件(随 `@anthropic-ai/claude-agent-sdk` 提供的平台包,或通过 `pathToClaudeCodeExecutable` 显式指定)。
-- 仅支持标准 Node.js 服务器运行时,**不支持** Vercel/边缘函数等 edge 或 serverless 部署方式。
+生产/常驻用 pm2,配置见 `ecosystem.config.cjs`(单进程 fork 模式,native sqlite + WS 长连接不可 cluster,日志写 `logs/`)。
+
+```bash
+pnpm pm:start     # build + 启动(后台守护)
+pnpm pm:status    # 查看状态
+pnpm pm:logs      # 实时日志
+pnpm pm:restart   # 重新 build + 重启(--update-env 刷新 .env)
+pnpm pm:stop      # 停止(保留在 pm2 列表)
+pnpm pm:delete    # 从 pm2 移除
+```
+
+开机自启(**Linux / systemd**,需 sudo):
+
+```bash
+pnpm pm:enable    # 装 systemd 自启单元 + pm2 save 快照进程
+pnpm pm:disable   # 移除 systemd 自启
+```
+
+> 进程列表变动(加删 app)后重跑 `pnpm exec pm2 save` 刷新快照,重启才能正确 resurrect。
+
+## 管理后台
+
+启动后访问 `/admin`(默认端口 3000,绑 `0.0.0.0` 可局域网访问):
+
+| 路径 | 功能 |
+| --- | --- |
+| `/admin` | 运行状态(WS 连接 / 会话数 / 转人工队列) |
+| `/admin/config` | 配置(OneBot / Claude SDK / 存储),保存即热重载 |
+| `/admin/kb` | 知识库管理与向量摄入 |
+| `/admin/sessions` | 历史会话对话记录、一键重开 |
+| `/admin/reflection` | 被动反思 |
+| `/admin/tickets` | 转人工工单 |
+| `/admin/groups` | 生效群白名单 |
+| `/admin/logs` | 运行日志 |
+
+## 开发
+
+```bash
+pnpm dev          # 本地开发(localhost;勿对外)
+pnpm test         # vitest
+pnpm typecheck    # tsc --noEmit
+pnpm lint         # eslint
+```
+
+## 环境要求与限制
+
+- 部署环境须能找到 `claude` 可执行文件(随 `@anthropic-ai/claude-agent-sdk` 的平台包提供,或用 `pathToClaudeCodeExecutable` 显式指定)。
+- 仅支持标准 Node.js 服务器运行时,**不支持** Vercel / 边缘函数等 edge / serverless 部署。
