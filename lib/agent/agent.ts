@@ -160,7 +160,8 @@ export class Agent {
     text: string,
     resumeId: string | undefined,
     ctx: ToolContext,
-    media?: AgentMedia
+    media?: AgentMedia,
+    opts?: { systemSuffix?: string }
   ): Promise<AgentResult> {
     const iter = this.queryFn({
       prompt: buildPrompt(text, media) as any,
@@ -168,7 +169,9 @@ export class Agent {
         // 模型由 CLAUDE_CONFIG_DIR 内配置决定,不在此覆盖
         // 用完整自定义 system prompt(不套 claude_code preset):preset 的编码助手人格会
         // 干扰视觉输入(实测带图时模型回"无图"),且本就需靠 prompt 抹掉编码设定 —— 直接替换更干净。
-        systemPrompt: this.deps.systemPrompt || DEFAULT_SYSTEM,
+        systemPrompt:
+          (this.deps.systemPrompt || DEFAULT_SYSTEM) +
+          (opts?.systemSuffix ? "\n\n" + opts.systemSuffix : ""),
         mcpServers: { cs: this.deps.makeToolServer(ctx) as any },
         // 加载本仓库 local plugin(skill/commands),skipMcpDiscovery:cs 的 MCP 由本 host 管
         plugins: (this.deps.pluginPaths ?? []).map((p) => ({
