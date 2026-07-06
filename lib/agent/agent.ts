@@ -104,6 +104,9 @@ const DEFAULT_SYSTEM = `你是 PackyAPI 的官方在线客服,通过 QQ 群与�
 // 放行它模型才能按 skill 描述自动触发 packyapi 查价,而非退到 Bash 兜底
 export const TOOL_ALLOWLIST = new Set<string>([...TOOL_NAMES, "WebSearch", "Skill"]);
 
+// Agent 降级兜底文案:maxTurns/CLI 出错且无累积文本时返回。主动路径据此判为非答案 → 沉默。
+export const AGENT_FALLBACK_TEXT = "(处理超出步数上限或出错,请换个说法或稍后再试)";
+
 // 仅放行 PackyAPI 查询脚本(node .../packy.ts <子命令>),拒绝任何 shell 链接/重定向,
 // 防止面向 QQ 用户的 bot 被 prompt-injection 诱导执行任意命令。
 export function isPackyCommand(cmd: string): boolean {
@@ -160,7 +163,8 @@ export class Agent {
     text: string,
     resumeId: string | undefined,
     ctx: ToolContext,
-    media?: AgentMedia
+    media?: AgentMedia,
+    opts?: { systemSuffix?: string }
   ): Promise<AgentResult> {
     const iter = this.queryFn({
       prompt: buildPrompt(text, media) as any,
@@ -168,7 +172,9 @@ export class Agent {
         // 模型由 CLAUDE_CONFIG_DIR 内配置决定,不在此覆盖
         // 用完整自定义 system prompt(不套 claude_code preset):preset 的编码助手人格会
         // 干扰视觉输入(实测带图时模型回"无图"),且本就需靠 prompt 抹掉编码设定 —— 直接替换更干净。
-        systemPrompt: this.deps.systemPrompt || DEFAULT_SYSTEM,
+        systemPrompt:
+          (this.deps.systemPrompt || DEFAULT_SYSTEM) +
+          (opts?.systemSuffix ? "\n\n" + opts.systemSuffix : ""),
         mcpServers: { cs: this.deps.makeToolServer(ctx) as any },
         // 加载本仓库 local plugin(skill/commands),skipMcpDiscovery:cs 的 MCP 由本 host 管
         plugins: (this.deps.pluginPaths ?? []).map((p) => ({
@@ -216,7 +222,7 @@ export class Agent {
       // maxTurns / CLI 异常:SDK 会把错误结果转成抛出的 Error(reject 迭代器),
       // 这里降级 —— 保留已累积文本与 sessionId,避免整个请求 500、丢掉会话
       console.error("[agent] query 迭代中断,降级返回已累积内容:", e);
-      if (!out.trim()) out = "(处理超出步数上限或出错,请换个说法或稍后再试)";
+      if (!out.trim()) out = AGENT_FALLBACK_TEXT;
     }
     return { text: out.trim(), sessionId };
   }

@@ -25,4 +25,35 @@ describe("assemble e2e(总线级)", () => {
     expect(a.groupId).toBe(1);
     expect(a.text).toBe("已收到您的问题");
   });
+
+  it("proactiveEnabled 开关控制 poller 定时器:开启比关闭多挂一个,teardown 均清干净", () => {
+    vi.useFakeTimers();
+    try {
+      const repo = new Repo(openDb(":memory:"));
+      const fakeAgent = { run: vi.fn(async () => ({ text: "x", sessionId: "s" })) };
+      const mk = (extra: Record<string, unknown> = {}) =>
+        assemble({
+          repo, botQQ: 555, adminGroupId: 999, enabledGroups: [1],
+          agent: fakeAgent as any,
+          ...extra,
+        });
+
+      const baseline = vi.getTimerCount();
+
+      // 关闭(默认):reflection-poller 挂若干定时器,proactive 不额外多挂
+      const off = mk();
+      const disabledCount = vi.getTimerCount() - baseline;
+      off();
+      expect(vi.getTimerCount()).toBe(baseline); // teardown 清干净
+
+      // 开启:比关闭恰好多一个 poller 定时器
+      const on = mk({ proactiveEnabled: true, proactiveScanMs: 999999 });
+      const enabledCount = vi.getTimerCount() - baseline;
+      expect(enabledCount).toBe(disabledCount + 1);
+      on();
+      expect(vi.getTimerCount()).toBe(baseline); // teardown 全清
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

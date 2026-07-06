@@ -103,6 +103,42 @@ describe("Agent.run", () => {
   });
 });
 
+describe("Agent.run systemSuffix", () => {
+  it("传 systemSuffix → 拼接进 systemPrompt", async () => {
+    let captured: any;
+    const queryFn = ((args: any) => {
+      captured = args;
+      return (async function* () {
+        yield { type: "assistant", message: { content: [{ type: "text", text: "ok" }] } };
+      })();
+    }) as any;
+    const agent = new Agent({
+      model: "m",
+      systemPrompt: "BASE",
+      makeToolServer: () => ({}) as any,
+      queryFn,
+    });
+    await agent.run("hi", undefined, { sessionKey: "1:2", groupId: 1, userId: 2 }, undefined, {
+      systemSuffix: "SENTINEL_RULE",
+    });
+    expect(captured.options.systemPrompt).toContain("BASE");
+    expect(captured.options.systemPrompt).toContain("SENTINEL_RULE");
+  });
+
+  it("不传 opts → systemPrompt 不含额外后缀(行为不变)", async () => {
+    let captured: any;
+    const queryFn = ((args: any) => {
+      captured = args;
+      return (async function* () {
+        yield { type: "assistant", message: { content: [{ type: "text", text: "ok" }] } };
+      })();
+    }) as any;
+    const agent = new Agent({ model: "m", systemPrompt: "BASE", makeToolServer: () => ({}) as any, queryFn });
+    await agent.run("hi", undefined, { sessionKey: "1:2", groupId: 1, userId: 2 });
+    expect(captured.options.systemPrompt).toBe("BASE");
+  });
+});
+
 describe("sdkEnv", () => {
   it("剥掉所有 ANTHROPIC_* 让 settings.json 的 env 接管", () => {
     const out = sdkEnv({

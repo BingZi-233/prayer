@@ -159,6 +159,41 @@ export class Repo {
     this.db.prepare("DELETE FROM group_messages WHERE created_at < ?").run(beforeTs);
   }
 
+  // 会话最后活动时间(主链路 @处理 / 兜底都会 setSessionId 刷新)。主动兜底压制②用:
+  // 该值 > 问题 ts → 该用户已被主链路处理或已兜底过 → 不重复插话。
+  sessionUpdatedAt(key: string): number | undefined {
+    const row = this.db.prepare("SELECT updated_at FROM sessions WHERE key = ?").get(key) as
+      | { updated_at: number }
+      | undefined;
+    return row?.updated_at;
+  }
+
+  // 主动兜底游标(每群独立,已扫描到的时间戳),复用 config 表,照抄 reflect cursor。
+  groupProactiveCursor(groupId: number): number {
+    return Number(this.getConfigRow(`proactive_cursor:${groupId}`) ?? "0");
+  }
+
+  setGroupProactiveCursor(groupId: number, ts: number): void {
+    this.setConfigRow(`proactive_cursor:${groupId}`, String(ts));
+  }
+
+  // 某群 (afterTs, untilTs] 内的非管理发言(member/NULL),升序。主动兜底候选原料。
+  groupMemberMessagesBetween(
+    groupId: number,
+    afterTs: number,
+    untilTs: number
+  ): { userId: number; text: string; createdAt: number }[] {
+    const rows = this.db
+      .prepare(
+        `SELECT user_id, text, created_at FROM group_messages
+         WHERE group_id = ? AND created_at > ? AND created_at <= ?
+           AND (sender_role IS NULL OR sender_role NOT IN ('owner','admin'))
+         ORDER BY created_at ASC`
+      )
+      .all(groupId, afterTs, untilTs) as { user_id: number; text: string; created_at: number }[];
+    return rows.map((r) => ({ userId: r.user_id, text: r.text, createdAt: r.created_at }));
+  }
+
   // 反思游标(每群独立,已处理到的时间戳),复用 config 表。
   // 每群独立 → 单群处理抛错时只该群不推进、下轮重试,不牵连其他群。
   groupReflectCursor(groupId: number): number {

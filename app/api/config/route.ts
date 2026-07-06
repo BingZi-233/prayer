@@ -21,6 +21,10 @@ const patchSchema = z.object({
   claudeConfigDir: z.string().optional(),
   model: z.string().optional(),
   enabledGroups: z.array(z.number()).optional(),
+  proactiveEnabled: z.boolean().optional(),
+  proactiveScanMs: z.number().optional(),
+  proactiveSilenceMs: z.number().optional(),
+  proactiveMaxPerScan: z.number().optional(),
 });
 
 export async function GET(): Promise<NextResponse> {

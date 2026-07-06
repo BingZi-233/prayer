@@ -76,3 +76,28 @@ describe("config-store", () => {
     expect(getConfig(repo, {}).enabledGroups).toEqual([100, 200]); // 存储值优先
   });
 });
+
+describe("config-store proactive 字段", () => {
+  it("无 env → proactive 默认值(默认关)", () => {
+    const repo = new Repo(openDb(":memory:"));
+    const cfg = getConfig(repo, {});
+    expect(cfg.proactiveEnabled).toBe(false);
+    expect(cfg.proactiveScanMs).toBe(60000);
+    expect(cfg.proactiveSilenceMs).toBe(180000);
+    expect(cfg.proactiveMaxPerScan).toBe(2);
+  });
+
+  it("env 覆盖 proactive 字段", () => {
+    const repo = new Repo(openDb(":memory:"));
+    const cfg = getConfig(repo, {
+      PROACTIVE_ENABLED: "true",
+      PROACTIVE_SCAN_MS: "30000",
+      PROACTIVE_SILENCE_MS: "120000",
+      PROACTIVE_MAX_PER_SCAN: "5",
+    });
+    expect(cfg.proactiveEnabled).toBe(true);
+    expect(cfg.proactiveScanMs).toBe(30000);
+    expect(cfg.proactiveSilenceMs).toBe(120000);
+    expect(cfg.proactiveMaxPerScan).toBe(5);
+  });
+});
