@@ -18,7 +18,9 @@
     "pm:restart": "next build && pm2 restart prayer --update-env",
     "pm:status": "pm2 status prayer",
     "pm:logs": "pm2 logs prayer",
-    "pm:delete": "pm2 delete prayer"
+    "pm:delete": "pm2 delete prayer",
+    "pm:enable": "sudo env PATH=$PATH:$(dirname $(command -v node)) $(pnpm bin)/pm2 startup systemd -u $USER --hp $HOME && pm2 save",
+    "pm:disable": "sudo env PATH=$PATH:$(dirname $(command -v node)) $(pnpm bin)/pm2 unstartup systemd -u $USER --hp $HOME"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.3.198",
