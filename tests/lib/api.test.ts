@@ -16,6 +16,10 @@ const cfg: AppConfig = {
   reflectSettleMs: 600000,
   reflectWindowMax: 60,
   enabledGroups: [],
+  proactiveEnabled: false,
+  proactiveScanMs: 60000,
+  proactiveSilenceMs: 180000,
+  proactiveMaxPerScan: 2,
 };
 
 describe("api helpers", () => {

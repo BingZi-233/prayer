@@ -16,6 +16,10 @@ export interface AppConfig {
   reflectSettleMs: number;
   reflectWindowMax: number;
   enabledGroups: number[];
+  proactiveEnabled: boolean;
+  proactiveScanMs: number;
+  proactiveSilenceMs: number;
+  proactiveMaxPerScan: number;
 }
 
 function seedFromEnv(env: Record<string, string | undefined>): AppConfig {
@@ -33,6 +37,10 @@ function seedFromEnv(env: Record<string, string | undefined>): AppConfig {
     reflectSettleMs: Number(env.REFLECT_SETTLE_MS ?? "600000"),
     reflectWindowMax: Number(env.REFLECT_WINDOW_MAX ?? "60"),
     enabledGroups: [],
+    proactiveEnabled: env.PROACTIVE_ENABLED === "true",
+    proactiveScanMs: Number(env.PROACTIVE_SCAN_MS ?? "60000"),
+    proactiveSilenceMs: Number(env.PROACTIVE_SILENCE_MS ?? "180000"),
+    proactiveMaxPerScan: Number(env.PROACTIVE_MAX_PER_SCAN ?? "2"),
   };
 }
 
