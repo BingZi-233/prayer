@@ -108,6 +108,10 @@ export class RuntimeManager {
         reflectLookbackMs: cfg.reflectLookbackMs,
         reflectSettleMs: cfg.reflectSettleMs,
         reflectWindowMax: cfg.reflectWindowMax,
+        proactiveEnabled: cfg.proactiveEnabled,
+        proactiveScanMs: cfg.proactiveScanMs,
+        proactiveSilenceMs: cfg.proactiveSilenceMs,
+        proactiveMaxPerScan: cfg.proactiveMaxPerScan,
       });
       const client = builders.makeClient(cfg.onebotWsUrl, cfg.onebotAccessToken || undefined, (c) => {
         this.wsConnected = c;

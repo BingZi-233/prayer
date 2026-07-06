@@ -25,4 +25,30 @@ describe("assemble e2e(总线级)", () => {
     expect(a.groupId).toBe(1);
     expect(a.text).toBe("已收到您的问题");
   });
+
+  it("proactiveEnabled=false(默认) → 不挂 poller(agent 不被主动调用)", async () => {
+    const repo = new Repo(openDb(":memory:"));
+    const fakeAgent = { run: vi.fn(async () => ({ text: "x", sessionId: "s" })) };
+    const teardown = assemble({
+      repo, botQQ: 555, adminGroupId: 999, enabledGroups: [1],
+      agent: fakeAgent as any,
+    });
+    // 无主动路径:非 @bot 的普通消息不应触发 agent
+    bus.emit("message.received", { groupId: 1, userId: 2, messageId: 9, rawText: "普通消息", atList: [] });
+    await new Promise((r) => setTimeout(r, 10));
+    expect(fakeAgent.run).not.toHaveBeenCalled();
+    teardown();
+  });
+
+  it("proactiveEnabled=true → 挂 poller(装配不报错,teardown 可清定时器)", async () => {
+    const repo = new Repo(openDb(":memory:"));
+    const fakeAgent = { run: vi.fn(async () => ({ text: "x", sessionId: "s" })) };
+    const teardown = assemble({
+      repo, botQQ: 555, adminGroupId: 999, enabledGroups: [1],
+      agent: fakeAgent as any,
+      proactiveEnabled: true, proactiveScanMs: 999999,
+    });
+    expect(typeof teardown).toBe("function");
+    teardown(); // 清定时器
+  });
 });

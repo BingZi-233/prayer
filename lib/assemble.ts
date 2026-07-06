@@ -8,6 +8,8 @@ import { registerReplyMapper } from "./agent/reply-mapper";
 import { registerMessageBuffer } from "./agent/message-buffer";
 import { registerReflectionPoller } from "./agent/reflection-poller";
 import { registerErrorHandler } from "./agent/error-handler";
+import { registerUnansweredPoller } from "./agent/unanswered-poller";
+import { makeAnswerabilityClassifier } from "./agent/answerability";
 
 export interface AssembleDeps {
   repo: Repo;
@@ -21,6 +23,10 @@ export interface AssembleDeps {
   reflectWindowMax?: number;
   // 会话空闲超时(ms):超时则下条消息开全新对话,不 resume 旧会话。缺省 5 分钟
   resumeTtlMs?: number;
+  proactiveEnabled?: boolean;
+  proactiveScanMs?: number;
+  proactiveSilenceMs?: number;
+  proactiveMaxPerScan?: number;
 }
 
 // 会话空闲 TTL 默认值:5 分钟无活动 → 新开对话
@@ -29,12 +35,13 @@ const DEFAULT_RESUME_TTL_MS = 300_000;
 /** 装配全链路,返回 teardown 用于热重载时卸载监听器与定时器 */
 export function assemble(deps: AssembleDeps): () => void {
   const { repo, botQQ, adminGroupId, enabledGroups, agent } = deps;
+  const store = new SessionStore(repo, deps.resumeTtlMs ?? DEFAULT_RESUME_TTL_MS);
   const cleanups = [
     registerErrorHandler(),
     registerGateway({ repo, botQQ, adminGroupId, enabledGroups }),
     registerOrchestrator({
       agent,
-      store: new SessionStore(repo, deps.resumeTtlMs ?? DEFAULT_RESUME_TTL_MS),
+      store,
       classify: makeIntentClassifier(),
     }),
     registerReplyMapper(),
@@ -49,5 +56,20 @@ export function assemble(deps: AssembleDeps): () => void {
       windowMax: deps.reflectWindowMax,
     }),
   ];
+  if (deps.proactiveEnabled) {
+    cleanups.push(
+      registerUnansweredPoller({
+        repo,
+        agent,
+        store,
+        classify: makeAnswerabilityClassifier(),
+        adminGroupId,
+        enabledGroups,
+        scanMs: deps.proactiveScanMs,
+        silenceMs: deps.proactiveSilenceMs,
+        maxPerScan: deps.proactiveMaxPerScan,
+      })
+    );
+  }
   return () => cleanups.forEach((c) => c());
 }
