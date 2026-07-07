@@ -177,6 +177,59 @@ describe("Repo reflection stats", () => {
   });
 });
 
+describe("searchBaseKb", () => {
+  it("只返回非 human-reflection 条目", () => {
+    repo.insertKbEntry("faq/x.md", "基础文档内容", "faq/x.md", new Float32Array([1, 0, 0]));
+    repo.insertKbEntry("human-reflection", "反思内容", "human-reflection:100:1", new Float32Array([1, 0, 0]));
+    const hits = repo.searchBaseKb(new Float32Array([1, 0, 0]), 5);
+    expect(hits).toHaveLength(1);
+    expect(hits[0].content).toBe("基础文档内容");
+  });
+
+  it("反思聚集也能凑够 k 条基础条目", () => {
+    // 同一向量下 5 条反思 + 3 条基础;plain k=3 会被反思占满返回 0 条基础
+    const vec = () => new Float32Array([1, 0, 0]);
+    for (let i = 0; i < 5; i++) repo.insertKbEntry("human-reflection", `反思${i}`, `human-reflection:1:${i}`, vec());
+    for (let i = 0; i < 3; i++) repo.insertKbEntry("faq/f.md", `基础${i}`, "faq/f.md", vec());
+    const hits = repo.searchBaseKb(vec(), 3);
+    expect(hits).toHaveLength(3);
+    expect(hits.every((h) => h.content.startsWith("基础"))).toBe(true);
+  });
+});
+
+describe("replaceReflectionEntries", () => {
+  const vec = () => new Float32Array([1, 0, 0]);
+
+  it("删旧 human-reflection + 插新,不动基础文档,向量数一致", () => {
+    repo.insertKbEntry("faq/x.md", "基础", "faq/x.md", vec());
+    repo.insertKbEntry("human-reflection", "旧1", "human-reflection:100:1", vec());
+    repo.insertKbEntry("human-reflection", "旧2", "human-reflection:100:2", vec());
+    const oldIds = repo.reflectionEntries().map((r) => r.id);
+    repo.replaceReflectionEntries(oldIds, [{ content: "新条", embedding: vec() }], 12345);
+    const refs = repo.reflectionEntries();
+    expect(refs).toHaveLength(1);
+    expect(refs[0].content).toBe("新条");
+    expect(refs[0].groupId).toBe(0);
+    expect(refs[0].ts).toBe(12345);
+    expect(repo.searchBaseKb(vec(), 5)).toHaveLength(1);
+    const t = repo.kbTotals();
+    expect(t.chunks).toBe(t.vecs);
+  });
+
+  it("只删快照内 id,压缩期间并发新增的反思条目存活", () => {
+    repo.insertKbEntry("human-reflection", "旧1", "human-reflection:100:1", vec());
+    repo.insertKbEntry("human-reflection", "旧2", "human-reflection:100:2", vec());
+    const snapshot = repo.reflectionEntries().map((r) => r.id); // 2 条
+    // 模拟压缩 await 期间 poller 并发插入
+    repo.insertKbEntry("human-reflection", "并发新增", "human-reflection:200:9", vec());
+    repo.replaceReflectionEntries(snapshot, [{ content: "整理后", embedding: vec() }], 500);
+    const contents = repo.reflectionEntries().map((r) => r.content).sort();
+    expect(contents).toEqual(["并发新增", "整理后"]); // 并发条目未被误删
+    const t = repo.kbTotals();
+    expect(t.chunks).toBe(t.vecs); // 无孤儿
+  });
+});
+
 describe("repo 主动兜底支持", () => {
   const mk = () => new Repo(openDb(":memory:"));
 

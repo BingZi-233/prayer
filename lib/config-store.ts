@@ -14,6 +14,8 @@ export interface AppConfig {
   reflectLookbackMs: number;
   reflectSettleMs: number;
   reflectWindowMax: number;
+  reflectCompactMs: number;
+  reflectCompactMinEntries: number;
   enabledGroups: number[];
   proactiveEnabled: boolean;
   proactiveScanMs: number;
@@ -36,6 +38,8 @@ function seedFromEnv(env: Record<string, string | undefined>): AppConfig {
     reflectLookbackMs: Number(env.REFLECT_LOOKBACK_MS ?? "7200000"),
     reflectSettleMs: Number(env.REFLECT_SETTLE_MS ?? "600000"),
     reflectWindowMax: Number(env.REFLECT_WINDOW_MAX ?? "60"),
+    reflectCompactMs: Number(env.REFLECT_COMPACT_MS ?? "86400000"),
+    reflectCompactMinEntries: Number(env.REFLECT_COMPACT_MIN_ENTRIES ?? "10"),
     enabledGroups: [],
     proactiveEnabled: env.PROACTIVE_ENABLED === "true",
     proactiveScanMs: Number(env.PROACTIVE_SCAN_MS ?? "60000"),
