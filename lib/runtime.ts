@@ -52,8 +52,9 @@ async function defaultBuilders(): Promise<RuntimeBuilders> {
         model: cfg.model,
         systemPrompt: "",
         makeToolServer: (ctx) => buildToolServer(repo, ctx),
-        // 本仓库 local plugin 目录(源码,非 cache),绝对化后交给 SDK 显式加载
-        pluginPaths: [resolve(process.cwd(), "plugins/packyapi")],
+        // 不再显式传 pluginPaths:插件唯一由 CLAUDE_CONFIG_DIR/settings.json 的
+        // enabledPlugins(settingSources:["user"])加载,避免与显式 plugins 双加载/冲突。
+        // web 插件管理器通过 claude plugin CLI 管理 enabledPlugins + cache。
       }),
     assemble,
     makeClient: (url, token, onStatus) => new OneBotClient(url, token, onStatus),
