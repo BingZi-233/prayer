@@ -96,4 +96,28 @@ describe("OneBotClient", () => {
     const list = await client.getGroupList();
     expect(list).toBeUndefined();
   });
+
+  it("getGroupMemberList → 发 get_group_member_list 并按 echo 解析 data", async () => {
+    const port = await startServer((ws) => {
+      ws.on("message", (raw: Buffer) => {
+        const req = JSON.parse(raw.toString());
+        if (req.action === "get_group_member_list") {
+          ws.send(JSON.stringify({
+            echo: req.echo,
+            data: [{ user_id: 5, card: "小明" }, { user_id: 6, nickname: "阿花" }],
+          }));
+        }
+      });
+    });
+    client = new OneBotClient(`ws://127.0.0.1:${port}`);
+    client.start();
+    await new Promise((r) => setTimeout(r, 100));
+    const list = await client.getGroupMemberList(111);
+    expect((list as any[]).map((m) => m.user_id)).toEqual([5, 6]);
+  });
+
+  it("getGroupMemberList 未连接 → undefined", async () => {
+    client = new OneBotClient("ws://127.0.0.1:1");
+    expect(await client.getGroupMemberList(111)).toBeUndefined();
+  });
 });

@@ -22,7 +22,7 @@ interface RuntimeClient {
   stop(): void;
   isConnected(): boolean;
   getGroupList?(): Promise<unknown[] | undefined>;
-  getGroupMemberInfo?(groupId: number, userId: number): Promise<{ card?: string; nickname?: string } | undefined>;
+  getGroupMemberList?(groupId: number): Promise<unknown[] | undefined>;
 }
 
 export interface RuntimeBuilders {
@@ -85,8 +85,8 @@ export class RuntimeManager {
     return this.client?.getGroupList?.();
   }
 
-  async getMemberInfo(groupId: number, userId: number): Promise<{ card?: string; nickname?: string } | undefined> {
-    return this.client?.getGroupMemberInfo?.(groupId, userId);
+  async getGroupMembers(groupId: number): Promise<unknown[] | undefined> {
+    return this.client?.getGroupMemberList?.(groupId);
   }
 
   start(cfg: AppConfig, builders: RuntimeBuilders): void {

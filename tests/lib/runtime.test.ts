@@ -131,4 +131,21 @@ describe("RuntimeManager", () => {
     m.start(cfg, fakeBuilders()); // fakeBuilders 的 client 无 getGroupList
     expect(await m.getGroups()).toBeUndefined();
   });
+
+  it("getGroupMembers 委托 client.getGroupMemberList", async () => {
+    const b = fakeBuilders({
+      makeClient: () => ({
+        start() {}, stop() {}, isConnected: () => true,
+        getGroupMemberList: async (g: number) => [{ user_id: 5, card: "小明", group_id: g }],
+      }) as never,
+    });
+    m.start(cfg, b);
+    const list = await m.getGroupMembers(111);
+    expect(list).toEqual([{ user_id: 5, card: "小明", group_id: 111 }]);
+  });
+
+  it("client 无 getGroupMemberList → getGroupMembers 返回 undefined", async () => {
+    m.start(cfg, fakeBuilders());
+    expect(await m.getGroupMembers(111)).toBeUndefined();
+  });
 });
