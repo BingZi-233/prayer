@@ -1,0 +1,12 @@
+{
+  "name": "cs",
+  "version": "1.0.0",
+  "description": "客服知识库检索 MCP server(kb_search):本地 embed(bge-small-zh)+ sqlite-vec 语义检索,只读知识库",
+  "author": { "name": "prayer" },
+  "mcpServers": {
+    "cs": {
+      "command": "node",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/cs-mcp.ts"]
+    }
+  }
+}

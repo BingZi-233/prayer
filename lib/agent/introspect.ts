@@ -2,7 +2,6 @@ import { resolve } from "path";
 import { query as sdkQuery } from "@anthropic-ai/claude-agent-sdk";
 import type { AppConfig } from "../config-store";
 import { TOOL_ALLOWLIST, sdkEnv } from "./agent";
-import { CS_SERVER_INFO } from "../tools/index";
 
 export interface CapabilityTool {
   name: string;
@@ -52,15 +51,8 @@ export function buildToolPolicy(): CapabilityToolPolicy {
   };
 }
 
-// 与 lib/runtime.ts 默认 pluginPaths 保持一致
-function defaultPluginPaths(): string[] {
-  return [resolve(process.cwd(), "plugins/packyapi")];
-}
-
 export interface ProbeOptions {
   queryFn?: typeof sdkQuery;
-  makeToolServer?: () => unknown;
-  pluginPaths?: string[];
   refresh?: boolean;
   now?: () => number;
 }
@@ -97,6 +89,24 @@ async function settled<T>(p: Promise<T>, fallback: T): Promise<T> {
   }
 }
 
+// 轮询 mcpServerStatus 直到无 pending(所有 server 连上/失败)或超时。
+// 插件 MCP 为子进程,握手需时(cs 要先加载 embed 模型数秒);不轮询则读到 pending / 空 tools。
+// 全程不产出 user 消息 → 不触发模型 → 零 token。
+async function pollMcpStatus(
+  q: { mcpServerStatus: () => Promise<McpStatusRaw[]> },
+  timeoutMs = 20_000,
+  stepMs = 500
+): Promise<McpStatusRaw[]> {
+  const deadline = Date.now() + timeoutMs;
+  let last: McpStatusRaw[] = [];
+  for (;;) {
+    last = await settled(q.mcpServerStatus(), [] as McpStatusRaw[]);
+    if (last.length === 0 || last.every((s) => s.status !== "pending")) return last;
+    if (Date.now() >= deadline) return last;
+    await new Promise((r) => setTimeout(r, stepMs));
+  }
+}
+
 const CACHE_TTL_MS = 60_000;
 const capCacheHolder = globalThis as unknown as { __capCache?: { at: number; data: Capabilities } };
 
@@ -113,13 +123,13 @@ export async function probeCapabilities(cfg: AppConfig, opts: ProbeOptions = {})
 async function probeUncached(cfg: AppConfig, opts: ProbeOptions = {}): Promise<Capabilities> {
   const now = opts.now ?? Date.now;
   const queryFn = opts.queryFn ?? sdkQuery;
-  const pluginPaths = opts.pluginPaths ?? defaultPluginPaths();
 
-  // 绝对化配置目录,防 cwd 漂移(与 runtime.start 一致)
+  // 绝对化配置目录与 DB 路径,防 cwd 漂移(与 runtime.start 一致)。
+  // DB_PATH 供 cs 插件 MCP 子进程(plugins/cs/scripts/cs-mcp.ts)继承打开知识库。
   process.env.CLAUDE_CONFIG_DIR = resolve(cfg.claudeConfigDir);
+  process.env.DB_PATH = resolve(cfg.dbPath);
 
   const abortController = new AbortController();
-  const toolServer = opts.makeToolServer ? opts.makeToolServer() : {};
 
   const q = queryFn({
     // 流式空输入:永不产出 user 消息 —— CLI 仍完成 init(控制方法可用),但无 user turn →
@@ -131,8 +141,8 @@ async function probeUncached(cfg: AppConfig, opts: ProbeOptions = {}): Promise<C
       });
     })() as any,
     options: {
-      mcpServers: { cs: toolServer as any },
-      plugins: pluginPaths.map((p) => ({ type: "local" as const, path: p, skipMcpDiscovery: true })),
+      // cs / packyapi 及其 MCP server 全部经 enabledPlugins(settingSources:["user"])动态加载并被
+      // mcpServerStatus() 上报 —— 不再静态装配 in-process cs,也不显式传 pluginPaths。
       settingSources: ["user"],
       permissionMode: "default",
       maxTurns: 1,
@@ -154,18 +164,8 @@ async function probeUncached(cfg: AppConfig, opts: ProbeOptions = {}): Promise<C
     const [plugins, skills, mcp] = await Promise.all([
       settled(q.reloadPlugins(), { plugins: [] as CapabilityPlugin[] }),
       settled(q.reloadSkills(), { skills: [] as CapabilitySkill[] }),
-      settled(q.mcpServerStatus() as Promise<McpStatusRaw[]>, [] as McpStatusRaw[]),
+      pollMcpStatus(q),
     ]);
-    const mcpServers = normalizeMcp(mcp);
-    // in-process cs server SDK 不上报,缺失则静态补入(单一源见 lib/tools/index CS_SERVER_INFO)
-    if (!mcpServers.some((s) => s.name === CS_SERVER_INFO.name)) {
-      mcpServers.unshift({
-        name: CS_SERVER_INFO.name,
-        status: "connected",
-        version: CS_SERVER_INFO.version,
-        tools: CS_SERVER_INFO.tools.map((t) => ({ name: t.name, description: t.description, readOnly: t.readOnly })),
-      });
-    }
     return {
       plugins: (plugins.plugins ?? []).map((p: CapabilityPlugin) => ({ name: p.name, path: p.path, source: p.source })),
       skills: (skills.skills ?? []).map((s: any) => ({
@@ -173,7 +173,7 @@ async function probeUncached(cfg: AppConfig, opts: ProbeOptions = {}): Promise<C
         description: s.description,
         argumentHint: s.argumentHint || undefined,
       })),
-      mcpServers,
+      mcpServers: normalizeMcp(mcp),
       toolPolicy: buildToolPolicy(),
       probedAt: now(),
     };

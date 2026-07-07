@@ -41,7 +41,6 @@ async function defaultBuilders(): Promise<RuntimeBuilders> {
   const { sharedDb } = await import("./db/shared");
   const { Repo } = await import("./db/repo");
   const { Agent } = await import("./agent/agent");
-  const { buildToolServer } = await import("./tools/index");
   const { assemble } = await import("./assemble");
   const { OneBotClient } = await import("./onebot/client");
   return {
@@ -49,13 +48,13 @@ async function defaultBuilders(): Promise<RuntimeBuilders> {
     // 异步 scanOnce(await agent.run 期间)不会撞到 "database connection is not open"
     openDb: (p) => sharedDb(p),
     makeRepo: (db) => new Repo(db as never),
-    makeAgent: (_cfg, repo) =>
+    makeAgent: (_cfg, _repo) =>
       new Agent({
         systemPrompt: "",
-        makeToolServer: (ctx) => buildToolServer(repo, ctx),
-        // 不再显式传 pluginPaths:插件唯一由 CLAUDE_CONFIG_DIR/settings.json 的
-        // enabledPlugins(settingSources:["user"])加载,避免与显式 plugins 双加载/冲突。
+        // 不显式传 pluginPaths:插件(cs / packyapi)及其 MCP server 唯一由 CLAUDE_CONFIG_DIR/settings.json
+        // 的 enabledPlugins(settingSources:["user"])加载,避免与显式 plugins 双加载/冲突。
         // web 插件管理器通过 claude plugin CLI 管理 enabledPlugins + cache。
+        // 知识库检索由 cs 插件的 MCP server 承载,其子进程经 env DB_PATH(见 start)打开 DB。
       }),
     assemble,
     makeClient: (url, token, onStatus) => new OneBotClient(url, token, onStatus),
@@ -96,6 +95,8 @@ export class RuntimeManager {
     try {
       // 绝对化:CLI 子进程可能以不同 cwd 解析相对路径,绝对路径确保稳定命中配置目录
       process.env.CLAUDE_CONFIG_DIR = resolve(cfg.claudeConfigDir);
+      // DB_PATH 供 cs 插件 MCP 子进程(plugins/cs/scripts/cs-mcp.ts)继承打开知识库(只读)
+      process.env.DB_PATH = resolve(cfg.dbPath);
       const db = builders.openDb(cfg.dbPath);
       const repo = builders.makeRepo(db);
       const agent = builders.makeAgent(cfg, repo);

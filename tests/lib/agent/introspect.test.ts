@@ -4,7 +4,7 @@ import { buildToolPolicy } from "@/lib/agent/introspect";
 describe("buildToolPolicy", () => {
   it("allowlist 含 kb_search / WebSearch / Skill,gated 含 Bash/Read/WebFetch", () => {
     const p = buildToolPolicy();
-    expect(p.allowlist).toContain("mcp__cs__kb_search");
+    expect(p.allowlist).toContain("mcp__plugin_cs_cs__kb_search");
     expect(p.allowlist).toContain("WebSearch");
     expect(p.allowlist).toContain("Skill");
     const tools = p.gated.map((g) => g.tool);
@@ -72,7 +72,6 @@ function opts(over: Partial<ProbeOptions> = {}): ProbeOptions {
       (opts as any)._captured = captured;
       return fakeQuery();
     }) as any,
-    makeToolServer: () => ({}),
     refresh: true,
     now: () => 1000,
     ...over,
@@ -108,28 +107,26 @@ describe("probeCapabilities", () => {
   });
 });
 
-describe("probeCapabilities cs 补全", () => {
-  it("SDK 未报 cs 时静态补入 cs + kb_search(只读)", async () => {
+describe("probeCapabilities MCP 动态发现", () => {
+  it("cs 由 mcpServerStatus 动态上报(不再静态补入),含 kb_search(只读)", async () => {
     const caps = await probeCapabilities(cfg, {
-      queryFn: (() => fakeQuery({ mcpServerStatus: async () => [] })) as any,
-      makeToolServer: () => ({}),
+      queryFn: (() => fakeQuery()) as any, // fakeQuery 默认 mcpServerStatus 报 cs
       refresh: true,
       now: () => 2000,
     });
     const cs = caps.mcpServers.find((m) => m.name === "cs");
     expect(cs).toBeTruthy();
-    expect(cs!.tools.map((t) => t.name)).toContain("kb_search");
     expect(cs!.tools.find((t) => t.name === "kb_search")!.readOnly).toBe(true);
+    expect(caps.mcpServers.filter((m) => m.name === "cs").length).toBe(1);
   });
 
-  it("SDK 已报 cs 时不重复(用 SDK 上报的)", async () => {
+  it("SDK 未报任何 MCP → mcpServers 为空(无静态补入)", async () => {
     const caps = await probeCapabilities(cfg, {
-      queryFn: (() => fakeQuery()) as any, // fakeQuery 默认 mcpServerStatus 报 cs
-      makeToolServer: () => ({}),
+      queryFn: (() => fakeQuery({ mcpServerStatus: async () => [] })) as any,
       refresh: true,
       now: () => 2000,
     });
-    expect(caps.mcpServers.filter((m) => m.name === "cs").length).toBe(1);
+    expect(caps.mcpServers).toEqual([]);
   });
 });
 
@@ -139,7 +136,6 @@ describe("probeCapabilities 缓存", () => {
     let t = 1000;
     const mk = (refresh: boolean): ProbeOptions => ({
       queryFn: (() => { calls++; return fakeQuery(); }) as any,
-      makeToolServer: () => ({}),
       refresh,
       now: () => t,
     });
@@ -160,7 +156,6 @@ describe("probeCapabilities 零 token", () => {
     let capturedPrompt: unknown;
     await probeCapabilities(cfg, {
       queryFn: ((params: any) => { capturedPrompt = params.prompt; return fakeQuery(); }) as any,
-      makeToolServer: () => ({}),
       refresh: true,
       now: () => 1,
     });
