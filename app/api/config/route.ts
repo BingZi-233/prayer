@@ -34,10 +34,11 @@ const patchSchema = z.object({
   sdkAuthToken: z.string().optional(),
 });
 
-/** 读 settings.json env 块的 SDK 凭证,token 掩码 */
-function readSdkCreds(configDir: string): { sdkBaseUrl: string; sdkAuthToken: string } {
+/** 读 settings.json env 块的 SDK 配置(模型 + 中转凭证),token 掩码 */
+function readSdkCreds(configDir: string): { model: string; sdkBaseUrl: string; sdkAuthToken: string } {
   const env = readSettings(configDir)?.env ?? {};
   return {
+    model: env.ANTHROPIC_MODEL ?? "",
     sdkBaseUrl: env.ANTHROPIC_BASE_URL ?? "",
     sdkAuthToken: maskSecret(env.ANTHROPIC_AUTH_TOKEN ?? ""),
   };
@@ -55,7 +56,8 @@ export async function PUT(req: NextRequest): Promise<NextResponse> {
 
   const r = repo();
   const current = getConfig(r);
-  const { sdkBaseUrl, sdkAuthToken, ...rest } = parsed.data;
+  // model 与中转凭证不入 AppConfig,统一落 settings.json 的 env 块
+  const { sdkBaseUrl, sdkAuthToken, model, ...rest } = parsed.data;
   const patch = { ...rest } as Partial<AppConfig>;
   // secret 留空则保留
   if ("onebotAccessToken" in patch) {
@@ -63,10 +65,15 @@ export async function PUT(req: NextRequest): Promise<NextResponse> {
   }
   const next = setConfig(r, patch);
 
-  // SDK 凭证写 settings.json env 块(保留其余键;token 掩码/留空则保留旧值)
-  if (sdkBaseUrl !== undefined || sdkAuthToken !== undefined) {
+  // 模型 + SDK 凭证写 settings.json env 块(保留其余键;token 掩码/留空则保留旧值)
+  if (sdkBaseUrl !== undefined || sdkAuthToken !== undefined || model !== undefined) {
     const settings = readSettings(next.claudeConfigDir) ?? {};
     const env = { ...(settings.env ?? {}) };
+    // 模型:非空写入,清空则删键 → SDK 回落其内置默认
+    if (model !== undefined) {
+      if (model) env.ANTHROPIC_MODEL = model;
+      else delete env.ANTHROPIC_MODEL;
+    }
     if (sdkBaseUrl !== undefined) env.ANTHROPIC_BASE_URL = sdkBaseUrl;
     if (sdkAuthToken !== undefined) {
       env.ANTHROPIC_AUTH_TOKEN = mergeSecret(env.ANTHROPIC_AUTH_TOKEN ?? "", sdkAuthToken);

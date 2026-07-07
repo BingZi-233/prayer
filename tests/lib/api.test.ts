@@ -10,7 +10,6 @@ const cfg: AppConfig = {
   handoffTimeoutMin: 30,
   dbPath: "./data/agent.db",
   claudeConfigDir: "./data/claude-config",
-  model: "claude-sonnet-5",
   reflectScanMs: 300000,
   reflectLookbackMs: 7200000,
   reflectSettleMs: 600000,

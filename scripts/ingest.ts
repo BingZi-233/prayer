@@ -3,7 +3,6 @@ import { join, sep } from "node:path";
 import { openDb } from "../lib/db/index";
 import { Repo } from "../lib/db/repo";
 import { embed } from "../lib/tools/embed";
-import { loadConfig } from "../lib/config";
 
 export function chunkText(text: string, maxLen = 500): string[] {
   const paras = text.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean);
@@ -39,8 +38,8 @@ export async function runIngest(repo: Repo, dir = "docs/kb"): Promise<IngestResu
 }
 
 async function main(): Promise<void> {
-  const cfg = loadConfig();
-  const db = openDb(cfg.dbPath);
+  // kb 灌库 CLI:只需 DB_PATH(缺省同 config-store 默认),不依赖其他 env
+  const db = openDb(process.env.DB_PATH ?? "./data/agent.db");
   const repo = new Repo(db);
   const results = await runIngest(repo, "docs/kb");
   for (const r of results) console.log(`ingested ${r.file}: ${r.chunks} chunks`);

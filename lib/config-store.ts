@@ -10,7 +10,6 @@ export interface AppConfig {
   handoffTimeoutMin: number;
   dbPath: string;
   claudeConfigDir: string;
-  model: string;
   reflectScanMs: number;
   reflectLookbackMs: number;
   reflectSettleMs: number;
@@ -31,7 +30,8 @@ function seedFromEnv(env: Record<string, string | undefined>): AppConfig {
     handoffTimeoutMin: Number(env.HANDOFF_TIMEOUT_MIN ?? "30"),
     dbPath: env.DB_PATH ?? "./data/agent.db",
     claudeConfigDir: env.CLAUDE_CONFIG_DIR ?? "./data/claude-config",
-    model: env.ANTHROPIC_MODEL ?? "claude-sonnet-5",
+    // 模型不入 AppConfig:由 CLAUDE_CONFIG_DIR/settings.json 的 env.ANTHROPIC_MODEL 决定,
+    // 与 BASE_URL/AUTH_TOKEN 同一 env 块,不再显式传给 SDK query。
     reflectScanMs: Number(env.REFLECT_SCAN_MS ?? "300000"),
     reflectLookbackMs: Number(env.REFLECT_LOOKBACK_MS ?? "7200000"),
     reflectSettleMs: Number(env.REFLECT_SETTLE_MS ?? "600000"),

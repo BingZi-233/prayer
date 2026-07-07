@@ -25,18 +25,16 @@ describe("config-store", () => {
   it("setConfig 局部更新并持久化", () => {
     const repo = mkRepo();
     getConfig(repo, { ONEBOT_WS_URL: "ws://x:1", BOT_QQ: "1", ADMIN_GROUP_ID: "2" });
-    setConfig(repo, { botQQ: 999, model: "claude-opus-4-8" });
+    setConfig(repo, { botQQ: 999 });
     const cfg = getConfig(repo, {});
     expect(cfg.botQQ).toBe(999);
-    expect(cfg.model).toBe("claude-opus-4-8");
     expect(cfg.onebotWsUrl).toBe("ws://x:1"); // 未改字段保留
   });
 
-  it("默认值:handoffTimeoutMin=30, model, dbPath, claudeConfigDir", () => {
+  it("默认值:handoffTimeoutMin=30, dbPath, claudeConfigDir", () => {
     const repo = mkRepo();
     const cfg = getConfig(repo, { ONEBOT_WS_URL: "ws://x:1", BOT_QQ: "1", ADMIN_GROUP_ID: "2" });
     expect(cfg.handoffTimeoutMin).toBe(30);
-    expect(cfg.model).toBe("claude-sonnet-5");
     expect(cfg.dbPath).toBe("./data/agent.db");
     expect(cfg.claudeConfigDir).toBe("./data/claude-config");
   });
@@ -50,7 +48,6 @@ describe("config-store", () => {
     expect(cfg.onebotWsUrl).toBe("ws://old:1");
     expect(cfg.claudeConfigDir).toBe("./data/claude-config"); // 缺失字段补默认
     expect(cfg.handoffTimeoutMin).toBe(30);
-    expect(cfg.model).toBe("claude-sonnet-5");
   });
 
   it("reflect 参数有默认值,env 可覆盖", () => {

@@ -266,7 +266,7 @@ export default function ConfigPage() {
                   <Field>
                     <FieldLabel htmlFor="model">模型</FieldLabel>
                     <Input id="model" value={cfg.model} placeholder="claude-sonnet-5" onChange={(e) => upd("model", e.target.value)} />
-                    <FieldDescription>Agent 调用的模型 ID(显式传给 SDK query)。</FieldDescription>
+                    <FieldDescription>Agent 模型 ID,写入配置目录 settings.json 的 env.ANTHROPIC_MODEL。留空则用 SDK 内置默认。</FieldDescription>
                   </Field>
                   <Field>
                     <FieldLabel htmlFor="sdkBaseUrl">Base URL</FieldLabel>
