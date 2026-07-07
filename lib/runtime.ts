@@ -110,6 +110,8 @@ export class RuntimeManager {
         reflectLookbackMs: cfg.reflectLookbackMs,
         reflectSettleMs: cfg.reflectSettleMs,
         reflectWindowMax: cfg.reflectWindowMax,
+        reflectCompactMs: cfg.reflectCompactMs,
+        reflectCompactMinEntries: cfg.reflectCompactMinEntries,
         proactiveEnabled: cfg.proactiveEnabled,
         proactiveScanMs: cfg.proactiveScanMs,
         proactiveSilenceMs: cfg.proactiveSilenceMs,

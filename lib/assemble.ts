@@ -7,6 +7,7 @@ import { makeIntentClassifier } from "./agent/intent";
 import { registerReplyMapper } from "./agent/reply-mapper";
 import { registerMessageBuffer } from "./agent/message-buffer";
 import { registerReflectionPoller } from "./agent/reflection-poller";
+import { registerReflectionCompactor } from "./agent/reflection-compactor";
 import { registerErrorHandler } from "./agent/error-handler";
 import { registerUnansweredPoller } from "./agent/unanswered-poller";
 import { makeAnswerabilityClassifier } from "./agent/answerability";
@@ -21,6 +22,8 @@ export interface AssembleDeps {
   reflectLookbackMs?: number;
   reflectSettleMs?: number;
   reflectWindowMax?: number;
+  reflectCompactMs?: number;
+  reflectCompactMinEntries?: number;
   // 会话空闲超时(ms):超时则下条消息开全新对话,不 resume 旧会话。缺省 5 分钟
   resumeTtlMs?: number;
   proactiveEnabled?: boolean;
@@ -56,6 +59,16 @@ export function assemble(deps: AssembleDeps): () => void {
       windowMax: deps.reflectWindowMax,
     }),
   ];
+  if ((deps.reflectCompactMs ?? 86_400_000) > 0) {
+    cleanups.push(
+      registerReflectionCompactor({
+        repo,
+        adminGroupId,
+        compactMs: deps.reflectCompactMs,
+        minEntries: deps.reflectCompactMinEntries,
+      })
+    );
+  }
   if (deps.proactiveEnabled) {
     cleanups.push(
       registerUnansweredPoller({
