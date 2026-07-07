@@ -108,6 +108,31 @@ describe("probeCapabilities", () => {
   });
 });
 
+describe("probeCapabilities cs 补全", () => {
+  it("SDK 未报 cs 时静态补入 cs + kb_search(只读)", async () => {
+    const caps = await probeCapabilities(cfg, {
+      queryFn: (() => fakeQuery({ mcpServerStatus: async () => [] })) as any,
+      makeToolServer: () => ({}),
+      refresh: true,
+      now: () => 2000,
+    });
+    const cs = caps.mcpServers.find((m) => m.name === "cs");
+    expect(cs).toBeTruthy();
+    expect(cs!.tools.map((t) => t.name)).toContain("kb_search");
+    expect(cs!.tools.find((t) => t.name === "kb_search")!.readOnly).toBe(true);
+  });
+
+  it("SDK 已报 cs 时不重复(用 SDK 上报的)", async () => {
+    const caps = await probeCapabilities(cfg, {
+      queryFn: (() => fakeQuery()) as any, // fakeQuery 默认 mcpServerStatus 报 cs
+      makeToolServer: () => ({}),
+      refresh: true,
+      now: () => 2000,
+    });
+    expect(caps.mcpServers.filter((m) => m.name === "cs").length).toBe(1);
+  });
+});
+
 describe("probeCapabilities 缓存", () => {
   it("TTL 内二次调用不重启 query;refresh=true 绕过;TTL 过期重探", async () => {
     let calls = 0;

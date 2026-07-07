@@ -2,6 +2,7 @@ import { resolve } from "path";
 import { query as sdkQuery } from "@anthropic-ai/claude-agent-sdk";
 import type { AppConfig } from "../config-store";
 import { TOOL_ALLOWLIST, sdkEnv } from "./agent";
+import { CS_SERVER_INFO } from "../tools/index";
 
 export interface CapabilityTool {
   name: string;
@@ -148,6 +149,16 @@ async function probeUncached(cfg: AppConfig, opts: ProbeOptions = {}): Promise<C
       settled(q.reloadSkills(), { skills: [] as CapabilitySkill[] }),
       settled(q.mcpServerStatus() as Promise<McpStatusRaw[]>, [] as McpStatusRaw[]),
     ]);
+    const mcpServers = normalizeMcp(mcp);
+    // in-process cs server SDK 不上报,缺失则静态补入(单一源见 lib/tools/index CS_SERVER_INFO)
+    if (!mcpServers.some((s) => s.name === CS_SERVER_INFO.name)) {
+      mcpServers.unshift({
+        name: CS_SERVER_INFO.name,
+        status: "connected",
+        version: CS_SERVER_INFO.version,
+        tools: CS_SERVER_INFO.tools.map((t) => ({ name: t.name, description: t.description, readOnly: t.readOnly })),
+      });
+    }
     return {
       plugins: (plugins.plugins ?? []).map((p: CapabilityPlugin) => ({ name: p.name, path: p.path, source: p.source })),
       skills: (skills.skills ?? []).map((s: any) => ({
@@ -155,7 +166,7 @@ async function probeUncached(cfg: AppConfig, opts: ProbeOptions = {}): Promise<C
         description: s.description,
         argumentHint: s.argumentHint || undefined,
       })),
-      mcpServers: normalizeMcp(mcp),
+      mcpServers,
       toolPolicy: buildToolPolicy(),
       probedAt: now(),
     };
