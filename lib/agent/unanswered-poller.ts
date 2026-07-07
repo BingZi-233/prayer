@@ -108,6 +108,7 @@ async function scanOnce(d: Resolved): Promise<void> {
         );
         if (!isAnswer(result.text)) continue; // 哨兵/空 → 沉默
         if (result.sessionId) d.store.remember(key, result.sessionId);
+        d.repo.insertProactiveReply(groupId, userId, text, result.text); // 留痕供监控页
         bus.emit("reply.ready", { groupId, text: result.text });
         logger.log("info", `[proactive] 群 ${groupId} 主动回答用户 ${userId}`);
         hits++;

@@ -177,6 +177,33 @@ export class Repo {
     this.setConfigRow(`proactive_cursor:${groupId}`, String(ts));
   }
 
+  // 主动回复命中留痕:每次真正主动补位一句就记一行,供监控页看历史/次数。
+  insertProactiveReply(groupId: number, userId: number, question: string, answer: string): void {
+    this.db
+      .prepare("INSERT INTO proactive_replies (group_id, user_id, question, answer) VALUES (?, ?, ?, ?)")
+      .run(groupId, userId, question, answer);
+  }
+
+  // 最近主动回复(降序),监控页插话列表用
+  proactiveReplies(limit: number): { id: number; groupId: number; userId: number; question: string; answer: string; ts: number }[] {
+    const rows = this.db
+      .prepare("SELECT id, group_id, user_id, question, answer, created_at FROM proactive_replies ORDER BY id DESC LIMIT ?")
+      .all(limit) as { id: number; group_id: number; user_id: number; question: string; answer: string; created_at: number }[];
+    return rows.map((r) => ({ id: r.id, groupId: r.group_id, userId: r.user_id, question: r.question, answer: r.answer, ts: r.created_at }));
+  }
+
+  // 每群主动回复数 + 最近一条时间,监控页每群行用
+  proactiveGroupCounts(): { groupId: number; count: number; lastTs: number }[] {
+    return this.db
+      .prepare("SELECT group_id AS groupId, COUNT(*) AS count, MAX(created_at) AS lastTs FROM proactive_replies GROUP BY group_id")
+      .all() as { groupId: number; count: number; lastTs: number }[];
+  }
+
+  // 主动回复总数
+  proactiveTotalCount(): number {
+    return (this.db.prepare("SELECT COUNT(*) n FROM proactive_replies").get() as { n: number }).n;
+  }
+
   // 某群 (afterTs, untilTs] 内的非管理发言(member/NULL),升序。主动兜底候选原料。
   groupMemberMessagesBetween(
     groupId: number,

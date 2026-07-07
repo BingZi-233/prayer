@@ -51,6 +51,17 @@ describe("unanswered-poller runScan", () => {
     expect(agent.run).toHaveBeenCalledTimes(1);
     expect(repo.sessionUpdatedAt("100:200")).toBeGreaterThan(0); // remember 写回
     expect(repo.groupProactiveCursor(100)).toBe(NOW - 1000);
+    // 命中留痕:库里 1 条,内容为问题原料 + agent 答案
+    expect(repo.proactiveTotalCount()).toBe(1);
+    const rec = repo.proactiveReplies(10);
+    expect(rec[0]).toMatchObject({ groupId: 100, userId: 200, question: "claude 价格?", answer: "cc 组每百万 token 20 美元" });
+  });
+
+  it("沉默(哨兵/空/降级)不写库", async () => {
+    repo.setGroupProactiveCursor(100, 1);
+    seed(100, 200, "member", "价格?", NOW - 5000);
+    await runScan(base({ agent: fakeAgent("__NO_ANSWER__") as never }));
+    expect(repo.proactiveTotalCount()).toBe(0);
   });
 
   it("冷启动(游标==0):设为 until 并跳过,不答积压", async () => {

@@ -38,18 +38,19 @@ export interface RuntimeBuilders {
 }
 
 async function defaultBuilders(): Promise<RuntimeBuilders> {
-  const { openDb } = await import("./db/index");
+  const { sharedDb } = await import("./db/shared");
   const { Repo } = await import("./db/repo");
   const { Agent } = await import("./agent/agent");
   const { buildToolServer } = await import("./tools/index");
   const { assemble } = await import("./assemble");
   const { OneBotClient } = await import("./onebot/client");
   return {
-    openDb: (p) => openDb(p),
+    // 复用 API 路由的进程级共享连接:reconfigure 不关它,in-flight 的
+    // 异步 scanOnce(await agent.run 期间)不会撞到 "database connection is not open"
+    openDb: (p) => sharedDb(p),
     makeRepo: (db) => new Repo(db as never),
-    makeAgent: (cfg, repo) =>
+    makeAgent: (_cfg, repo) =>
       new Agent({
-        model: cfg.model,
         systemPrompt: "",
         makeToolServer: (ctx) => buildToolServer(repo, ctx),
         // 不再显式传 pluginPaths:插件唯一由 CLAUDE_CONFIG_DIR/settings.json 的
@@ -67,7 +68,6 @@ export class RuntimeManager {
   private bootedAt?: number;
   private repo?: Repo;
   private client?: RuntimeClient;
-  private db?: { close?: () => void };
   private teardown?: () => void;
   private wsConnected = false;
 
@@ -119,7 +119,6 @@ export class RuntimeManager {
       });
       client.start();
       this.repo = repo;
-      this.db = db as { close?: () => void };
       this.client = client;
       this.bootedAt = Date.now();
       this.state = "running";
@@ -133,7 +132,9 @@ export class RuntimeManager {
     }
   }
 
-  /** 卸载管线拥有的所有资源:teardown(监听器+定时器)、WS 客户端、DB 连接 */
+  /** 卸载管线拥有的所有资源:teardown(监听器+定时器)、WS 客户端。
+   *  DB 连接由 sharedDb 进程级缓存持有,不在此关闭:否则会切断 API 路由
+   *  与仍在 await agent.run 的 in-flight scanOnce,触发 "database connection is not open"。 */
   private teardownAll(): void {
     try {
       this.teardown?.();
@@ -145,15 +146,9 @@ export class RuntimeManager {
     } catch {
       /* ignore */
     }
-    try {
-      this.db?.close?.();
-    } catch {
-      /* ignore */
-    }
     bus.removeAllListeners(); // 兜底:清任何遗漏的监听器
     this.teardown = undefined;
     this.client = undefined;
-    this.db = undefined;
     this.repo = undefined;
     this.wsConnected = false;
   }

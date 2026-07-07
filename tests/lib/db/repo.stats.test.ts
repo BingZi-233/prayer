@@ -43,4 +43,28 @@ describe("Repo 统计/列表", () => {
       .run("g1:u1");
     expect(repo.listSessions().filter((s) => s.humanMode).length).toBe(1);
   });
+
+  it("proactive 回复:插入 → 总数/每群计数/最近列表", () => {
+    const repo = mkRepo();
+    expect(repo.proactiveTotalCount()).toBe(0);
+    expect(repo.proactiveReplies(10)).toHaveLength(0);
+    expect(repo.proactiveGroupCounts()).toHaveLength(0);
+
+    repo.insertProactiveReply(100, 200, "价格?", "cc 组 20 美元");
+    repo.insertProactiveReply(100, 201, "限流?", "看分组");
+    repo.insertProactiveReply(101, 202, "接入?", "填 base_url");
+
+    expect(repo.proactiveTotalCount()).toBe(3);
+
+    const counts = repo.proactiveGroupCounts().sort((a, b) => a.groupId - b.groupId);
+    expect(counts).toHaveLength(2);
+    expect(counts[0]).toMatchObject({ groupId: 100, count: 2 });
+    expect(counts[1]).toMatchObject({ groupId: 101, count: 1 });
+    expect(counts[0].lastTs).toBeGreaterThan(0);
+
+    const recent = repo.proactiveReplies(2);
+    expect(recent).toHaveLength(2);
+    // 降序:最新(101/接入)在前
+    expect(recent[0]).toMatchObject({ groupId: 101, userId: 202, question: "接入?", answer: "填 base_url" });
+  });
 });

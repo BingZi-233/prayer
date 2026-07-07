@@ -57,6 +57,15 @@ function migrate(db: Database.Database, dim: number): void {
       created_at INTEGER NOT NULL DEFAULT (unixepoch('subsec') * 1000)
     );
     CREATE INDEX IF NOT EXISTS idx_gm_group_time ON group_messages(group_id, created_at);
+    CREATE TABLE IF NOT EXISTS proactive_replies (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      group_id INTEGER NOT NULL,
+      user_id INTEGER NOT NULL,
+      question TEXT NOT NULL,
+      answer TEXT NOT NULL,
+      created_at INTEGER NOT NULL DEFAULT (unixepoch('subsec') * 1000)
+    );
+    CREATE INDEX IF NOT EXISTS idx_pr_time ON proactive_replies(created_at);
   `);
   // 旧库补列(resume_id 拆分自 session_id);新库已含,重复加列报错忽略。
   // 回填仅在首次加列时执行(ALTER 成功后),旧 session_id 兼作续接指针,保持既有 resume 行为;

@@ -15,7 +15,6 @@ const cfg: AppConfig = {
   handoffTimeoutMin: 30,
   dbPath: ":memory:",
   claudeConfigDir: "/tmp/cfgdir-test",
-  model: "claude-sonnet-5",
   reflectScanMs: 300000,
   reflectLookbackMs: 7200000,
   reflectSettleMs: 600000,
@@ -85,7 +84,7 @@ describe("RuntimeManager", () => {
     expect(m.getStatus().state).toBe("running");
   });
 
-  it("stop/reconfigure 调用 assemble 返回的 teardown 并关闭 DB", () => {
+  it("stop 调用 teardown 但不关闭 DB(连接由 sharedDb 进程级持有)", () => {
     let teardowns = 0;
     let closes = 0;
     const b = fakeBuilders({
@@ -95,7 +94,7 @@ describe("RuntimeManager", () => {
     m.start(cfg, b);
     m.stop();
     expect(teardowns).toBe(1);
-    expect(closes).toBe(1);
+    expect(closes).toBe(0); // reconfigure/stop 不关共享连接:避免切断 in-flight scanOnce
     expect(m.getStatus().state).toBe("stopped");
   });
 
