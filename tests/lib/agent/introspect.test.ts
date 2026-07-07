@@ -107,3 +107,25 @@ describe("probeCapabilities", () => {
     expect(caps.plugins.length).toBe(1);
   });
 });
+
+describe("probeCapabilities 缓存", () => {
+  it("TTL 内二次调用不重启 query;refresh=true 绕过;TTL 过期重探", async () => {
+    let calls = 0;
+    let t = 1000;
+    const mk = (refresh: boolean): ProbeOptions => ({
+      queryFn: (() => { calls++; return fakeQuery(); }) as any,
+      makeToolServer: () => ({}),
+      refresh,
+      now: () => t,
+    });
+    await probeCapabilities(cfg, mk(true)); // seed cache at t=1000 (bypass any prior)
+    calls = 0;                               // reset counter after seeding
+    await probeCapabilities(cfg, mk(false)); // TTL 内命中缓存 → 不新增
+    expect(calls).toBe(0);
+    await probeCapabilities(cfg, mk(true)); // refresh 绕过 → +1
+    expect(calls).toBe(1);
+    t += 61_000; // 超 TTL
+    await probeCapabilities(cfg, mk(false)); // 过期重探 → +1
+    expect(calls).toBe(2);
+  });
+});

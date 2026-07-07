@@ -96,7 +96,20 @@ async function settled<T>(p: Promise<T>, fallback: T): Promise<T> {
   }
 }
 
+const CACHE_TTL_MS = 60_000;
+const capCacheHolder = globalThis as unknown as { __capCache?: { at: number; data: Capabilities } };
+
 export async function probeCapabilities(cfg: AppConfig, opts: ProbeOptions = {}): Promise<Capabilities> {
+  const now = opts.now ?? Date.now;
+  if (!opts.refresh && capCacheHolder.__capCache && now() - capCacheHolder.__capCache.at < CACHE_TTL_MS) {
+    return capCacheHolder.__capCache.data;
+  }
+  const data = await probeUncached(cfg, opts);
+  capCacheHolder.__capCache = { at: now(), data };
+  return data;
+}
+
+async function probeUncached(cfg: AppConfig, opts: ProbeOptions = {}): Promise<Capabilities> {
   const now = opts.now ?? Date.now;
   const queryFn = opts.queryFn ?? sdkQuery;
   const pluginPaths = opts.pluginPaths ?? defaultPluginPaths();
