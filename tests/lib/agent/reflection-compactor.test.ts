@@ -93,6 +93,33 @@ describe("runCompact", () => {
     expect(repo.reflectionEntries()).toHaveLength(4);
     expect(spy).not.toHaveBeenCalled();
   });
+
+  it("基础上下文:去重后的基础片段注入 prompt(同一 chunk 只出现一次)", async () => {
+    seedReflections(3); // 3 条反思,同一向量都最近邻到同一基础 chunk
+    repo.insertKbEntry("faq/x.md", "基础片段X", "faq/x.md", vec());
+    let captured = "";
+    const qf = (args: { prompt: string }) => {
+      captured = args.prompt;
+      return fakeQuery('[{"faq":"甲"}]')();
+    };
+    await runCompact(opts({ queryFn: qf as never }));
+    expect(captured).toContain("【权威基础文档片段】");
+    expect(captured).toContain("基础片段X");
+    expect(captured.split("基础片段X").length - 1).toBe(1); // 去重:只一次
+  });
+
+  it("旁路:context 阶段 embed 抛错 → emit error,不抛不替换", async () => {
+    seedReflections(5);
+    const err = new Promise<any>((res) => bus.once("error.occurred", res));
+    let n = 0;
+    const throwingEmbed = async () => {
+      if (n++ === 0) throw new Error("embed boom");
+      return vec();
+    };
+    await runCompact(opts({ embed: throwingEmbed as never, queryFn: fakeQuery("[]") as never }));
+    expect((await err).scope).toBe("reflection-compact");
+    expect(repo.reflectionEntries()).toHaveLength(5);
+  });
 });
 
 describe("validateCompacted", () => {

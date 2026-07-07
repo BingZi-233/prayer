@@ -87,20 +87,19 @@ export async function runCompact(deps: ReflectionCompactorDeps): Promise<void> {
   const entries = d.repo.reflectionEntries();
   if (entries.length < d.minEntries) return;
 
-  // 权威上下文:逐条反思检索基础文档 top-k,按 chunk id 去重
-  const ctx = new Map<number, string>();
-  for (const e of entries) {
-    for (const h of d.repo.searchBaseKb(await d.embed(e.content), d.baseContextK)) {
-      ctx.set(h.id, h.content);
-    }
-  }
-  const baseBlock = [...ctx.values()].map((c, i) => `(${i + 1}) ${c}`).join("\n");
-  const refBlock = entries.map((e, i) => `[${i + 1}] ${e.content}`).join("\n");
-  const prompt = `【权威基础文档片段】\n${baseBlock || "(无)"}\n\n【现有反思条目】\n${refBlock}`;
-
-  let out: string;
   try {
-    out = await collectText(
+    // 权威上下文:逐条反思检索基础文档 top-k,按 chunk id 去重
+    const ctx = new Map<number, string>();
+    for (const e of entries) {
+      for (const h of d.repo.searchBaseKb(await d.embed(e.content), d.baseContextK)) {
+        ctx.set(h.id, h.content);
+      }
+    }
+    const baseBlock = [...ctx.values()].map((c, i) => `(${i + 1}) ${c}`).join("\n");
+    const refBlock = entries.map((e, i) => `[${i + 1}] ${e.content}`).join("\n");
+    const prompt = `【权威基础文档片段】\n${baseBlock || "(无)"}\n\n【现有反思条目】\n${refBlock}`;
+
+    const out = await collectText(
       d.queryFn({
         prompt,
         options: {
@@ -113,29 +112,28 @@ export async function runCompact(deps: ReflectionCompactorDeps): Promise<void> {
         } as never,
       })
     );
+
+    const faqs = validateCompacted(out, entries.length);
+    if (!faqs) {
+      bus.emit("error.occurred", {
+        scope: "reflection-compact",
+        err: new Error("LLM 产出未过安全校验,保留旧库"),
+      });
+      return;
+    }
+
+    const withVec: { content: string; embedding: Float32Array }[] = [];
+    for (const faq of faqs) withVec.push({ content: faq, embedding: await d.embed(faq) });
+    d.repo.replaceReflectionEntries(withVec, d.now());
+
+    bus.emit("action.send", {
+      action: "send_group_msg",
+      groupId: d.adminGroupId,
+      text: `反思整理:${entries.length} → ${faqs.length} 条`,
+    });
   } catch (err) {
     bus.emit("error.occurred", { scope: "reflection-compact", err });
-    return;
   }
-
-  const faqs = validateCompacted(out, entries.length);
-  if (!faqs) {
-    bus.emit("error.occurred", {
-      scope: "reflection-compact",
-      err: new Error("LLM 产出未过安全校验,保留旧库"),
-    });
-    return;
-  }
-
-  const withVec: { content: string; embedding: Float32Array }[] = [];
-  for (const faq of faqs) withVec.push({ content: faq, embedding: await d.embed(faq) });
-  d.repo.replaceReflectionEntries(withVec, d.now());
-
-  bus.emit("action.send", {
-    action: "send_group_msg",
-    groupId: d.adminGroupId,
-    text: `反思整理:${entries.length} → ${faqs.length} 条`,
-  });
 }
 
 // Task 5 补 registerReflectionCompactor(定时器 + 防重入)
