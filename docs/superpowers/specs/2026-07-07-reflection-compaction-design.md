@@ -56,7 +56,7 @@ setInterval(compactMs) ── registerReflectionCompactor (running 防重入)
 ### lib/db/repo.ts（新增方法）
 
 - `searchBaseKb(query: Float32Array, k: number): KbHit[]`：向量近邻，过滤 `c.doc != 'human-reflection'`。因 vec0 的 KNN 需固定 `k`，实现取较大 `k*4` 再 join 后过滤反思、截取前 `k`。
-- `replaceReflectionEntries(entries: {content: string; embedding: Float32Array}[], sourceTs: number): void`：单事务内 `DELETE FROM kb_vec WHERE chunk_id IN (SELECT id FROM kb_chunks WHERE doc='human-reflection')` → `DELETE FROM kb_chunks WHERE doc='human-reflection'` → 逐条 `insertKbChunk('human-reflection', content, 'human-reflection:0:'+sourceTs)` + `insertKbVec`。空 `entries` 由调用方在安全底线拦截，不应到达此处执行清空。
+- `replaceReflectionEntries(oldIds: number[], entries: {content: string; embedding: Float32Array}[], sourceTs: number): void`：单事务内按快照 id 删除 `DELETE FROM kb_vec WHERE chunk_id IN (oldIds)` → `DELETE FROM kb_chunks WHERE id IN (oldIds)` → 逐条 `insertKbChunk('human-reflection', content, 'human-reflection:0:'+sourceTs)` + `insertKbVec`。只删 `oldIds`(压缩起始快照)而非按 doc,避免误删压缩 await 期间 poller 并发新增的反思。空 `entries` 由调用方在安全底线拦截。
 
 ### lib/config-store.ts（新增字段）
 
