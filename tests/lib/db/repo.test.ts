@@ -45,6 +45,15 @@ describe("Repo sessions", () => {
     expect(s.humanSince).toBe(1700);
     expect(s.lastQuestion).toBe("退款吗");
   });
+
+  it("listSessions.active 反映 resume_id 是否存在", () => {
+    repo.setSessionId("g:a", "sid-a");
+    repo.setSessionId("g:b", "sid-b");
+    repo.clearResumeId("g:b");
+    const byKey = Object.fromEntries(repo.listSessions().map((s) => [s.key, s.active]));
+    expect(byKey["g:a"]).toBe(true);
+    expect(byKey["g:b"]).toBe(false);
+  });
 });
 
 describe("Repo dedupe", () => {

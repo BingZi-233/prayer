@@ -379,18 +379,19 @@ export class Repo {
   }
 
   listSessions(): {
-    key: string; sessionId: string | null; humanMode: boolean;
+    key: string; sessionId: string | null; active: boolean; humanMode: boolean;
     humanSince: number | null; lastQuestion: string | null; updatedAt: number;
   }[] {
     const rows = this.db
-      .prepare("SELECT key, session_id, human_mode, human_since, last_question, updated_at FROM sessions ORDER BY updated_at DESC")
+      .prepare("SELECT key, session_id, resume_id, human_mode, human_since, last_question, updated_at FROM sessions ORDER BY updated_at DESC")
       .all() as {
-        key: string; session_id: string | null; human_mode: number;
+        key: string; session_id: string | null; resume_id: string | null; human_mode: number;
         human_since: number | null; last_question: string | null; updated_at: number;
       }[];
     return rows.map((r) => ({
       key: r.key,
       sessionId: r.session_id,
+      active: r.resume_id !== null, // 有续接指针 → 下条消息接续当前对话;否则将开新会话
       humanMode: !!r.human_mode,
       humanSince: r.human_since,
       lastQuestion: r.last_question,

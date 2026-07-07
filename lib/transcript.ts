@@ -7,6 +7,36 @@ export interface TranscriptMsg {
   tool?: string; // 工具名(role==='tool')
   input?: string; // 工具请求(JSON)
   result?: string; // 工具响应
+  ts?: number; // 记录时间戳(ms);源自 jsonl 行的 timestamp
+  model?: string; // assistant 回合的模型名
+}
+
+// Claude Code 会以 type:"user" 注入非真人内容(后台任务通知 / 系统提醒 / 斜杠命令 /
+// 本地命令输出 / hook 上下文 / 用户打断标记)。这些不是人发的消息,不能渲成用户气泡。
+const SYNTHETIC_PREFIXES = [
+  "<task-notification>",
+  "<system-reminder>",
+  "<command-name>",
+  "<command-message>",
+  "<command-args>",
+  "<local-command-stdout>",
+  "<local-command-stderr>",
+  "<user-prompt-submit-hook>",
+  "<session-start-hook>",
+  "[Request interrupted",
+];
+
+// 剥离真人文本里被追加/嵌入的 <system-reminder>…</system-reminder> 片段(hook 会挂到真提示后)。
+function stripSystemReminders(text: string): string {
+  return text.replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, "");
+}
+
+// 归一化一段 user 文本:剥离注入片段后,整体是合成注入或空 → null(丢弃);否则返回真人文本。
+function humanUserText(raw: string): string | null {
+  const stripped = stripSystemReminders(raw).trim();
+  if (!stripped) return null;
+  if (SYNTHETIC_PREFIXES.some((p) => stripped.startsWith(p))) return null;
+  return stripped;
 }
 
 function stringify(v: unknown): string {
@@ -47,7 +77,7 @@ export function parseTranscript(jsonl: string): TranscriptMsg[] {
   for (const line of jsonl.split("\n")) {
     const trimmed = line.trim();
     if (!trimmed) continue;
-    let rec: { type?: string; isMeta?: boolean; message?: { content?: unknown } };
+    let rec: { type?: string; isMeta?: boolean; timestamp?: string; message?: { content?: unknown; model?: string } };
     try {
       rec = JSON.parse(trimmed);
     } catch {
@@ -57,9 +87,12 @@ export function parseTranscript(jsonl: string): TranscriptMsg[] {
     if (rec.isMeta) continue; // 合成注入(skill / system 上下文)非真人输入,跳过
     const role = rec.type;
     const content = rec.message?.content;
+    const ts = rec.timestamp ? Date.parse(rec.timestamp) || undefined : undefined;
+    const model = role === "assistant" ? rec.message?.model : undefined;
 
     if (typeof content === "string") {
-      if (content) out.push({ role, text: content });
+      const text = role === "user" ? humanUserText(content) : content || null;
+      if (text) out.push({ role, text, ts, model });
       continue;
     }
     if (!Array.isArray(content)) continue;
@@ -68,15 +101,16 @@ export function parseTranscript(jsonl: string): TranscriptMsg[] {
       if (!raw || typeof raw !== "object") continue;
       const b = raw as Block;
       if (b.type === "text" && b.text) {
-        out.push({ role, text: b.text });
+        const text = role === "user" ? humanUserText(b.text) : b.text;
+        if (text) out.push({ role, text, ts, model });
       } else if (b.type === "tool_use" && b.name) {
-        const idx = out.push({ role: "tool", tool: b.name, input: stringify(b.input) }) - 1;
+        const idx = out.push({ role: "tool", tool: b.name, input: stringify(b.input), ts }) - 1;
         if (b.id) byToolId.set(b.id, idx);
       } else if (b.type === "tool_result") {
         const text = resultText(b.content);
         const idx = b.tool_use_id ? byToolId.get(b.tool_use_id) : undefined;
         if (idx !== undefined) out[idx].result = text; // 回填到对应 tool_use
-        else out.push({ role: "tool", tool: "result", result: text }); // 孤儿结果
+        else out.push({ role: "tool", tool: "result", result: text, ts }); // 孤儿结果
       }
       // thinking 等其它块忽略
     }

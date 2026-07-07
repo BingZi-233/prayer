@@ -50,6 +50,57 @@ describe("parseTranscript", () => {
   it("空输入返回空数组", () => {
     expect(parseTranscript("")).toEqual([]);
   });
+
+  it("合成注入的 user 记录(<task-notification> 等)不产 user 气泡", () => {
+    const synth = [
+      "<task-notification>\n<task-id>abc</task-id>\n完成</task-notification>",
+      "<system-reminder>后台提醒</system-reminder>",
+      "<command-name>/foo</command-name>",
+      "<local-command-stdout>输出</local-command-stdout>",
+      "<user-prompt-submit-hook>hook</user-prompt-submit-hook>",
+      "[Request interrupted by user]",
+    ];
+    const jsonl = [
+      ...synth.map((c) => JSON.stringify({ type: "user", message: { content: c } })),
+      JSON.stringify({ type: "user", message: { content: "真人问题" } }),
+    ].join("\n");
+    const msgs = parseTranscript(jsonl);
+    expect(msgs).toHaveLength(1);
+    expect(msgs[0]).toMatchObject({ role: "user", text: "真人问题" });
+  });
+
+  it("剥离真人文本尾部注入的 <system-reminder> 片段", () => {
+    const jsonl = JSON.stringify({
+      type: "user",
+      message: { content: "怎么续费?\n\n<system-reminder>注入的上下文</system-reminder>" },
+    });
+    const msgs = parseTranscript(jsonl);
+    expect(msgs).toHaveLength(1);
+    expect(msgs[0].text).toBe("怎么续费?");
+  });
+
+  it("数组内文本块也过滤合成注入,只留真人块", () => {
+    const jsonl = JSON.stringify({
+      type: "user",
+      message: { content: [{ type: "text", text: "<system-reminder>x</system-reminder>" }, { type: "text", text: "你好" }] },
+    });
+    const msgs = parseTranscript(jsonl);
+    expect(msgs).toEqual([{ role: "user", text: "你好" }]);
+  });
+
+  it("带 timestamp / model:每条挂 ts,assistant 挂 model", () => {
+    const jsonl = [
+      JSON.stringify({ type: "user", timestamp: "2026-07-07T12:00:00.000Z", message: { content: "hi" } }),
+      JSON.stringify({
+        type: "assistant",
+        timestamp: "2026-07-07T12:00:01.000Z",
+        message: { model: "MiniMax-M3", content: [{ type: "text", text: "您好" }] },
+      }),
+    ].join("\n");
+    const msgs = parseTranscript(jsonl);
+    expect(msgs[0]).toMatchObject({ role: "user", text: "hi", ts: Date.parse("2026-07-07T12:00:00.000Z") });
+    expect(msgs[1]).toMatchObject({ role: "assistant", text: "您好", model: "MiniMax-M3", ts: Date.parse("2026-07-07T12:00:01.000Z") });
+  });
 });
 
 describe("findTranscript", () => {

@@ -1,10 +1,10 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useDeferredValue, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { MessagesSquare, RefreshCw, Wrench, UserRound, RotateCcw, TriangleAlert } from "lucide-react";
+import { MessagesSquare, RefreshCw, Wrench, RotateCcw, TriangleAlert, Circle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -20,7 +20,6 @@ import {
 } from "@/components/ui/message-scroller";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -34,17 +33,24 @@ import {
 import { PageHeader } from "@/components/admin/page-header";
 import { SectionCard } from "@/components/admin/section-card";
 import { DataState, EmptyState } from "@/components/admin/data-state";
+import { RelativeTime } from "@/components/relative-time";
 import { useGroupNames, useMemberNames } from "@/lib/group-name";
 
-interface Sess { key: string; sessionId: string | null; humanMode: boolean; humanSince: number | null; lastQuestion: string | null; updatedAt: number; }
-interface Msg { role: string; text?: string; tool?: string; input?: string; result?: string; }
+interface Sess {
+  key: string;
+  sessionId: string | null;
+  active: boolean;
+  lastQuestion: string | null;
+  updatedAt: number;
+}
+interface Msg { role: string; text?: string; tool?: string; input?: string; result?: string; ts?: number; model?: string; }
 
-// 人工接管时长的内联标签("人工 5 分钟"),非时间戳展示 → 不走 RelativeTime
-function since(ts: number | null): string {
+const POLL_MS = 3000;
+
+// 气泡内联时间戳(HH:mm),非相对时间 → 不走 RelativeTime
+function clock(ts: number | undefined): string {
   if (!ts) return "";
-  const min = Math.floor((Date.now() - ts) / 60000);
-  if (min < 60) return `${min} 分钟`;
-  return `${Math.floor(min / 60)} 小时 ${min % 60} 分`;
+  return new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
 export default function SessionsPage() {
@@ -62,13 +68,15 @@ function SessionsInner() {
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [resetting, setResetting] = useState(false);
-  // 三步确认:0 关闭,1/2/3 逐级确认弹窗
+  // 三步确认:0 关闭,1/2/3 逐级确认弹窗(全部重开)
   const [confirmStep, setConfirmStep] = useState(0);
+  // 单会话重开的目标 key(null = 关闭);单步确认
+  const [resetKey, setResetKey] = useState<string | null>(null);
   const { name } = useGroupNames();
   const memberName = useMemberNames((sessions ?? []).map((s) => s.key));
   const params = useSearchParams();
   const [query, setQuery] = useState("");
-  const [humanOnly, setHumanOnly] = useState(params.get("human") === "1");
+  const deferredQuery = useDeferredValue(query); // 输入不阻塞过滤,免逐字符重渲
 
   // session key "gid:uid" → "群名 · 群昵称";昵称查不到回退 uid;非法 key 原样
   const keyLabel = (key: string) => {
@@ -96,9 +104,11 @@ function SessionsInner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessions, params]);
 
-  // 列表自动轮询(3s);选中会话有更新则一并刷新 transcript(复用 refresh)
+  // 列表自动轮询(3s);标签页隐藏时跳过,选中会话有更新则一并刷 transcript
   useEffect(() => {
-    const t = setInterval(refresh, 3000);
+    const t = setInterval(() => {
+      if (!document.hidden) refresh();
+    }, POLL_MS);
     return () => clearInterval(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active]);
@@ -177,23 +187,40 @@ function SessionsInner() {
     }
   }
 
+  // 单会话重开:只清该会话 resume_id
+  async function resetOne(key: string) {
+    setResetKey(null);
+    try {
+      const r = await fetch("/api/sessions", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "reset", key }),
+      }).then((x) => x.json());
+      if (r.ok) {
+        await loadSessions();
+        toast.success("已重开该会话,下条消息开新对话");
+      } else {
+        toast.error(`重开失败:${r.error}`);
+      }
+    } catch (e) {
+      toast.error(`重开失败:${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
   const list = sessions ?? [];
-  const shown = list
-    .filter((s) => (humanOnly ? s.humanMode : true))
-    .filter((s) => {
-      if (!query.trim()) return true;
-      const q = query.toLowerCase();
-      return (
-        s.key.toLowerCase().includes(q) ||
-        keyLabel(s.key).toLowerCase().includes(q) ||
-        (s.lastQuestion ?? "").toLowerCase().includes(q)
-      );
-    })
-    // 人工优先置顶,其余保持 updatedAt DESC(接口已排序)
-    .sort((a, b) => Number(b.humanMode) - Number(a.humanMode));
+  const activeCount = list.filter((s) => s.active).length;
+  const shown = list.filter((s) => {
+    if (!deferredQuery.trim()) return true;
+    const q = deferredQuery.toLowerCase();
+    return (
+      s.key.toLowerCase().includes(q) ||
+      keyLabel(s.key).toLowerCase().includes(q) ||
+      (s.lastQuestion ?? "").toLowerCase().includes(q)
+    );
+  });
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex h-[calc(100svh-6.5rem)] min-h-0 flex-col gap-6">
       <PageHeader
         title="会话"
         description="查看历史会话的对话记录(读自 Claude SDK transcript)。"
@@ -215,12 +242,12 @@ function SessionsInner() {
         }
       />
 
-      <div className="grid gap-4 lg:grid-cols-[300px_1fr]">
+      <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[320px_1fr]">
         <SectionCard
           title="会话列表"
-          description={`${shown.length} / ${list.length} 个会话`}
-          className="h-fit"
-          contentClassName="flex flex-col gap-2"
+          description={`${shown.length} / ${list.length} 个 · ${activeCount} 活跃`}
+          className="flex min-h-0 flex-col overflow-hidden"
+          contentClassName="flex min-h-0 flex-1 flex-col gap-2"
         >
           <Input
             placeholder="搜索群名 / QQ / 问题…"
@@ -228,42 +255,54 @@ function SessionsInner() {
             onChange={(e) => setQuery(e.target.value)}
             className="h-8 text-xs"
           />
-          <label className="flex cursor-pointer items-center gap-2 text-xs">
-            <Checkbox checked={humanOnly} onCheckedChange={(v) => setHumanOnly(!!v)} />
-            仅看人工会话
-          </label>
           <DataState
             loading={sessions === null}
             empty={shown.length === 0}
             emptyIcon={MessagesSquare}
             emptyTitle={list.length === 0 ? "暂无会话" : "无匹配会话"}
-            emptyDescription={list.length === 0 ? "生效群产生对话后会在此出现。" : "调整搜索或筛选条件。"}
+            emptyDescription={list.length === 0 ? "生效群产生对话后会在此出现。" : "调整搜索条件。"}
             skeleton={<Skeleton className="h-32 w-full" />}
           >
-            <div className="flex flex-col gap-1">
+            <div className="-mr-1 flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto pr-1">
               {shown.map((sess) => (
-                <button
+                <div
                   key={sess.key}
-                  onClick={() => open(sess)}
-                  disabled={!sess.sessionId}
                   className={cn(
-                    "hover:bg-muted flex flex-col gap-1 rounded-md px-2 py-1.5 text-left text-xs disabled:opacity-50",
+                    "group hover:bg-muted relative flex flex-col gap-1 rounded-md px-2 py-1.5 text-xs",
                     active === sess.key && "bg-muted",
+                    !sess.sessionId && "opacity-50",
                   )}
                 >
-                  <span className="flex items-center justify-between gap-2">
-                    <span className="truncate" title={sess.key}>{keyLabel(sess.key)}</span>
-                    {sess.humanMode && (
-                      <Badge variant="destructive" className="shrink-0 gap-1">
-                        <UserRound className="size-3" />
-                        人工{sess.humanSince ? ` ${since(sess.humanSince)}` : ""}
-                      </Badge>
+                  <button
+                    onClick={() => open(sess)}
+                    disabled={!sess.sessionId}
+                    className="flex flex-col gap-1 text-left disabled:cursor-not-allowed"
+                  >
+                    <span className="flex items-center gap-1.5">
+                      <Circle
+                        className={cn(
+                          "size-2 shrink-0",
+                          sess.active ? "fill-emerald-500 text-emerald-500" : "fill-muted-foreground/40 text-muted-foreground/40",
+                        )}
+                      />
+                      <span className="truncate" title={sess.key}>{keyLabel(sess.key)}</span>
+                    </span>
+                    {sess.lastQuestion && (
+                      <span className="text-muted-foreground truncate">Q: {sess.lastQuestion}</span>
                     )}
-                  </span>
-                  {sess.lastQuestion && (
-                    <span className="text-muted-foreground truncate">Q: {sess.lastQuestion}</span>
-                  )}
-                </button>
+                    <span className="text-muted-foreground/70">
+                      <RelativeTime ts={sess.updatedAt} />
+                    </span>
+                  </button>
+                  {/* 悬停出单会话重开 */}
+                  <button
+                    onClick={() => setResetKey(sess.key)}
+                    title="重开该会话"
+                    className="text-muted-foreground hover:text-destructive absolute top-1.5 right-1.5 opacity-0 transition group-hover:opacity-100"
+                  >
+                    <RotateCcw className="size-3.5" />
+                  </button>
+                </div>
               ))}
             </div>
           </DataState>
@@ -275,7 +314,7 @@ function SessionsInner() {
               {active ? `对话:${keyLabel(active)}` : "对话"}
             </span>
           }
-          className="flex h-[560px] flex-col overflow-hidden"
+          className="flex min-h-0 flex-col overflow-hidden"
           contentClassName="min-h-0 flex-1 p-0"
         >
           {!active ? (
@@ -335,6 +374,20 @@ function SessionsInner() {
                                 <Bubble variant={isUser ? "default" : "muted"}>
                                   <BubbleContent className="whitespace-pre-wrap">{m.text}</BubbleContent>
                                 </Bubble>
+                                {/* 时间 + assistant 模型标 */}
+                                <span
+                                  className={cn(
+                                    "text-muted-foreground/70 mt-0.5 flex items-center gap-1.5 text-[10px]",
+                                    isUser && "justify-end",
+                                  )}
+                                >
+                                  {clock(m.ts)}
+                                  {!isUser && m.model && (
+                                    <Badge variant="outline" className="h-4 px-1 py-0 text-[10px] font-normal">
+                                      {m.model}
+                                    </Badge>
+                                  )}
+                                </span>
                               </MessageContent>
                             </Message>
                           </MessageScrollerItem>
@@ -350,6 +403,31 @@ function SessionsInner() {
         </SectionCard>
       </div>
 
+      {/* 单会话重开确认(单步) */}
+      <AlertDialog open={resetKey !== null} onOpenChange={(o) => !o && setResetKey(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <TriangleAlert className="text-destructive size-5" />
+              重开该会话?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {resetKey ? keyLabel(resetKey) : ""} 的下条消息将开启全新对话,历史记录仍保留可查。
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>取消</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive/10 text-destructive hover:bg-destructive/20"
+              onClick={() => resetKey && resetOne(resetKey)}
+            >
+              重开
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* 全部重开三步确认 */}
       <AlertDialog open={confirmStep > 0} onOpenChange={(o) => !o && setConfirmStep(0)}>
         <AlertDialogContent>
           <AlertDialogHeader>
