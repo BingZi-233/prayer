@@ -12,7 +12,7 @@ export const CS_SERVER_INFO = {
   name: "cs",
   version: "1.0.0",
   tools: [
-    { name: "kb_search", description: "检索产品知识库/FAQ,回答事实性问题前先调用。", readOnly: true },
+    { name: "kb_search", description: "检索产品知识库/FAQ,回答事实性问题前先调用。返回最相关的知识片段。", readOnly: true },
   ],
 };
 
