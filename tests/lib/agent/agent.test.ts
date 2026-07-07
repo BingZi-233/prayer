@@ -11,7 +11,7 @@ async function* fakeQuery(_args: any) {
 
 describe("Agent.run", () => {
   it("返回最终文本 + 新 session_id", async () => {
-    const agent = new Agent({ model: "claude-sonnet-5", systemPrompt: "客服", makeToolServer: () => ({}), queryFn: fakeQuery as any });
+    const agent = new Agent({systemPrompt: "客服", makeToolServer: () => ({}), queryFn: fakeQuery as any });
     const out = await agent.run("在吗", undefined, { sessionKey: "1:2", groupId: 1, userId: 2 });
     expect(out.text).toContain("有什么可以帮您");
     expect(out.sessionId).toBe("sid-new");
@@ -24,7 +24,7 @@ describe("Agent.run", () => {
       yield { type: "system", subtype: "init", session_id: "sid-x" };
       yield { type: "result", subtype: "success" };
     };
-    const agent = new Agent({ model: "m", systemPrompt: "s", makeToolServer: () => ({}), queryFn: spyQuery as any });
+    const agent = new Agent({systemPrompt: "s", makeToolServer: () => ({}), queryFn: spyQuery as any });
     await agent.run("hi", "sid-prev", { sessionKey: "1:2", groupId: 1, userId: 2 });
     expect(seen.options.resume).toBe("sid-prev");
   });
@@ -36,7 +36,6 @@ describe("Agent.run", () => {
       yield { type: "result", subtype: "success" };
     };
     const agent = new Agent({
-      model: "m",
       systemPrompt: "s",
       makeToolServer: () => ({}),
       pluginPaths: ["/abs/plugins/packyapi"],
@@ -54,7 +53,7 @@ describe("Agent.run", () => {
       seen = args;
       yield { type: "result", subtype: "success" };
     };
-    const agent = new Agent({ model: "m", systemPrompt: "s", makeToolServer: () => ({}), queryFn: spyQuery as any });
+    const agent = new Agent({systemPrompt: "s", makeToolServer: () => ({}), queryFn: spyQuery as any });
     await agent.run("hi", undefined, { sessionKey: "1:2", groupId: 1, userId: 2 });
     expect(seen.options.plugins).toEqual([]);
   });
@@ -65,7 +64,7 @@ describe("Agent.run", () => {
       seen = args;
       yield { type: "result", subtype: "success" };
     };
-    const agent = new Agent({ model: "m", systemPrompt: "s", makeToolServer: () => ({}), queryFn: spyQuery as any });
+    const agent = new Agent({systemPrompt: "s", makeToolServer: () => ({}), queryFn: spyQuery as any });
     await agent.run("在吗", undefined, { sessionKey: "1:2", groupId: 1, userId: 2 });
     expect(seen.prompt).toBe("在吗");
   });
@@ -76,7 +75,7 @@ describe("Agent.run", () => {
       seen = args;
       yield { type: "result", subtype: "success" };
     };
-    const agent = new Agent({ model: "m", systemPrompt: "s", makeToolServer: () => ({}), queryFn: spyQuery as any });
+    const agent = new Agent({systemPrompt: "s", makeToolServer: () => ({}), queryFn: spyQuery as any });
     await agent.run("这是啥", undefined, { sessionKey: "1:2", groupId: 1, userId: 2 }, { quoted: "张三: 原问题", forwarded: "A: x\nB: y" });
     expect(seen.prompt).toContain("【用户引用了一条消息:张三: 原问题】");
     expect(seen.prompt).toContain("【用户转发的合并消息:");
@@ -89,7 +88,7 @@ describe("Agent.run", () => {
       seen = args;
       yield { type: "result", subtype: "success" };
     };
-    const agent = new Agent({ model: "m", systemPrompt: "s", makeToolServer: () => ({}), queryFn: spyQuery as any });
+    const agent = new Agent({systemPrompt: "s", makeToolServer: () => ({}), queryFn: spyQuery as any });
     await agent.run("看图", undefined, { sessionKey: "1:2", groupId: 1, userId: 2 }, {
       images: [{ data: "AAAA", mediaType: "image/png" }],
     });
@@ -113,7 +112,6 @@ describe("Agent.run systemSuffix", () => {
       })();
     }) as any;
     const agent = new Agent({
-      model: "m",
       systemPrompt: "BASE",
       makeToolServer: () => ({}) as any,
       queryFn,
@@ -133,7 +131,7 @@ describe("Agent.run systemSuffix", () => {
         yield { type: "assistant", message: { content: [{ type: "text", text: "ok" }] } };
       })();
     }) as any;
-    const agent = new Agent({ model: "m", systemPrompt: "BASE", makeToolServer: () => ({}) as any, queryFn });
+    const agent = new Agent({systemPrompt: "BASE", makeToolServer: () => ({}) as any, queryFn });
     await agent.run("hi", undefined, { sessionKey: "1:2", groupId: 1, userId: 2 });
     expect(captured.options.systemPrompt).toBe("BASE");
   });
@@ -172,7 +170,7 @@ describe("Agent.run env", () => {
       seen = args;
       yield { type: "result", subtype: "success" };
     };
-    const agent = new Agent({ model: "m", systemPrompt: "s", makeToolServer: () => ({}), queryFn: spyQuery as any });
+    const agent = new Agent({systemPrompt: "s", makeToolServer: () => ({}), queryFn: spyQuery as any });
     await agent.run("hi", undefined, { sessionKey: "1:2", groupId: 1, userId: 2 });
     expect(seen.options.env.ANTHROPIC_BASE_URL).toBeUndefined();
     if (prev === undefined) delete process.env.ANTHROPIC_BASE_URL;
@@ -215,7 +213,9 @@ describe("isPackyRefPath / isPackyUrl", () => {
   it("packyapi 域名", () => {
     expect(isPackyUrl("https://packyapi.com/api/pricing")).toBe(true);
     expect(isPackyUrl("https://www.packyapi.com/docs")).toBe(true);
+    expect(isPackyUrl("https://docs.packyapi.com/docs/token/2-group.html")).toBe(true);
     expect(isPackyUrl("https://packyapi.com.evil.com/x")).toBe(false);
+    expect(isPackyUrl("https://notpackyapi.com/x")).toBe(false);
     expect(isPackyUrl("not-a-url")).toBe(false);
   });
 });

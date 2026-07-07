@@ -16,7 +16,7 @@ export function sdkEnv(base: Record<string, string | undefined> = process.env): 
 }
 
 export interface AgentDeps {
-  model: string;
+  // 模型不在此传:由 CLAUDE_CONFIG_DIR/settings.json 的 env.ANTHROPIC_MODEL 决定(见 run 内注释)
   systemPrompt: string;
   // 按消息构建工具服务器(kb/order)
   makeToolServer: (ctx: ToolContext) => unknown;
@@ -120,11 +120,12 @@ export function isPackyRefPath(path: string): boolean {
   return /\/packyapi\/(.*\/)?references\/[^/]+\.md$/.test(path);
 }
 
-// /packy-docs:WebFetch 仅放行 packyapi.com 域名,防 SSRF / 数据外带
+// /packy-docs:WebFetch 仅放行 packyapi.com 及其子域(docs. 等),防 SSRF / 数据外带
+// endsWith(".packyapi.com") 只认真子域,"packyapi.com.evil.com" 结尾是 .evil.com → 拒
 export function isPackyUrl(url: string): boolean {
   try {
     const h = new URL(url).hostname.toLowerCase();
-    return h === "packyapi.com" || h === "www.packyapi.com";
+    return h === "packyapi.com" || h.endsWith(".packyapi.com");
   } catch {
     return false;
   }
