@@ -2,6 +2,12 @@
 
 基于 Claude Agent SDK 的 OneBot(QQ)群聊客服 Agent。通过正向 WebSocket 连接 NapCat 收发消息,支持知识库检索(RAG)、多轮记忆、业务 tool 调用与转人工,并带一个 Next.js 管理后台。
 
+除即时应答外,还有三条旁路后台链路持续自演进:
+
+- **被动反思**:定时扫描已结束会话,从人工回复里沉淀问答要点为反思条目,回填知识库。
+- **反思压缩**:定时把历史反思条目做近义合并、删除被基础文档覆盖或矛盾的旧条目;按快照 id 删除,避免与并发新增反思相互覆盖。
+- **主动补位**:生效群里有人提问却久无人应答时,agent 主动补位——仅在知识库有确切依据且有把握时才作答,否则沉默。
+
 技术栈:Next.js 16 + React 19 + shadcn/ui + better-sqlite3(sqlite-vec 向量索引)+ `@anthropic-ai/claude-agent-sdk`。
 
 ## 架构
@@ -21,6 +27,9 @@
    - `BOT_QQ` / `ADMIN_GROUP_ID`:机器人 QQ 号与转人工通知的管理群号。
    - `HANDOFF_TIMEOUT_MIN`:转人工超时分钟数。
    - `DB_PATH`:SQLite(含 sqlite-vec 向量索引)数据库文件路径。
+   - **被动反思**(均有默认值,可不填):`REFLECT_SCAN_MS`(扫描周期,默认 5 分钟)、`REFLECT_LOOKBACK_MS`(回看窗口,默认 2 小时)、`REFLECT_SETTLE_MS`(会话静置多久才提炼,默认 10 分钟)、`REFLECT_WINDOW_MAX`(单次最多提炼消息数,默认 60)。
+   - **反思压缩**:`REFLECT_COMPACT_MS`(压缩周期,默认 24 小时,置 `0` 关闭)、`REFLECT_COMPACT_MIN_ENTRIES`(不足此条数不压缩,默认 10)。
+   - **主动补位**:`PROACTIVE_ENABLED`(设为 `true` 开启,默认关闭)、`PROACTIVE_SCAN_MS`(扫描周期,默认 1 分钟)、`PROACTIVE_SILENCE_MS`(久无人应答阈值,默认 3 分钟)、`PROACTIVE_MAX_PER_SCAN`(单轮最多补位条数,默认 2)。
 
 2. **灌知识库**
 
@@ -83,9 +92,12 @@ pnpm pm:disable   # 移除 systemd 自启
 | `/admin/config` | 配置(OneBot / Claude SDK / 存储),保存即热重载 |
 | `/admin/kb` | 知识库管理与向量摄入 |
 | `/admin/sessions` | 历史会话对话记录、一键重开 |
-| `/admin/reflection` | 被动反思 |
+| `/admin/reflection` | 被动反思:从人工回复沉淀的知识条目(压缩后同库) |
+| `/admin/proactive` | 主动补位:无人应答兜底记录 |
 | `/admin/tickets` | 转人工工单 |
 | `/admin/groups` | 生效群白名单 |
+| `/admin/capabilities` | Agent 运行时能力:插件 / 技能 / MCP server / 工具门控 |
+| `/admin/plugins` | 插件安装 / 更新 / 启停(操作后 agent 自动重载) |
 | `/admin/logs` | 运行日志 |
 
 ## 开发
