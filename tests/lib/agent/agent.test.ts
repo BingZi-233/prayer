@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { Agent, isPackyCommand, isPackyRefPath, isPackyUrl, isToolAllowed, sdkEnv } from "@/lib/agent/agent";
+import { Agent, isToolAllowed, sdkEnv } from "@/lib/agent/agent";
 
 // 模拟 SDK query:产出 init(带 session_id)+ 一条 assistant 文本
 async function* fakeQuery(_args: any) {
@@ -174,63 +174,22 @@ describe("Agent.run env", () => {
 });
 
 describe("isToolAllowed", () => {
-  it("白名单工具放行:cs kb_search + packyapi + WebSearch + Skill", () => {
+  it("白名单工具放行:cs kb_search + packyapi + WebSearch + WebFetch + Skill", () => {
     expect(isToolAllowed("mcp__plugin_cs_cs__kb_search", {})).toBe(true);
     expect(isToolAllowed("mcp__plugin_packyapi_packyapi__packy", {})).toBe(true);
     expect(isToolAllowed("WebSearch", {})).toBe(true);
+    expect(isToolAllowed("WebFetch", { url: "https://evil.com/x" })).toBe(true);
     expect(isToolAllowed("Skill", { command: "packyapi" })).toBe(true);
   });
-  it("Bash 仅放行 packy 脚本", () => {
-    expect(isToolAllowed("Bash", { command: "node /a/packy.ts models" })).toBe(true);
+  it("Bash / Read 整体禁用", () => {
+    expect(isToolAllowed("Bash", { command: "node /a/packy.ts models" })).toBe(false);
     expect(isToolAllowed("Bash", { command: "rm -rf /" })).toBe(false);
-    expect(isToolAllowed("Bash", { command: "node /a/packy.ts; rm -rf /" })).toBe(false);
-  });
-  it("Read 仅放行 packy references,WebFetch 仅放行 packyapi.com", () => {
-    expect(isToolAllowed("Read", { file_path: "/x/plugins/packyapi/skills/packyapi/references/docs-map.md" })).toBe(true);
+    expect(isToolAllowed("Read", { file_path: "/x/plugins/packyapi/skills/packyapi/references/docs-map.md" })).toBe(false);
     expect(isToolAllowed("Read", { file_path: "/etc/passwd" })).toBe(false);
-    expect(isToolAllowed("Read", { file_path: "./data/claude-config/settings.json" })).toBe(false);
-    expect(isToolAllowed("WebFetch", { url: "https://www.packyapi.com/docs/x" })).toBe(true);
-    expect(isToolAllowed("WebFetch", { url: "https://evil.com/x" })).toBe(false);
   });
   it("其余工具拒绝", () => {
     expect(isToolAllowed("Write", { file_path: "/x" })).toBe(false);
     expect(isToolAllowed("Task", {})).toBe(false);
     expect(isToolAllowed("Edit", { file_path: "/x" })).toBe(false);
-  });
-});
-
-describe("isPackyRefPath / isPackyUrl", () => {
-  it("references 路径", () => {
-    expect(isPackyRefPath("/a/packyapi/0.1.0/skills/packyapi/references/docs-map.md")).toBe(true);
-    expect(isPackyRefPath("/a/packyapi/references/pricing-api.md")).toBe(true);
-    expect(isPackyRefPath("/a/packyapi/scripts/packy.ts")).toBe(false);
-    expect(isPackyRefPath("/a/other/references/x.md")).toBe(false);
-  });
-  it("packyapi 域名", () => {
-    expect(isPackyUrl("https://packyapi.com/api/pricing")).toBe(true);
-    expect(isPackyUrl("https://www.packyapi.com/docs")).toBe(true);
-    expect(isPackyUrl("https://docs.packyapi.com/docs/token/2-group.html")).toBe(true);
-    expect(isPackyUrl("https://packyapi.com.evil.com/x")).toBe(false);
-    expect(isPackyUrl("https://notpackyapi.com/x")).toBe(false);
-    expect(isPackyUrl("not-a-url")).toBe(false);
-  });
-});
-
-describe("isPackyCommand", () => {
-  it("放行正常 packy 查询", () => {
-    expect(isPackyCommand('node "/root/.claude/plugins/packyapi/scripts/packy.ts" models --endpoint anthropic')).toBe(true);
-    expect(isPackyCommand("node /a/b/packy.ts price claude --group cc")).toBe(true);
-  });
-  it("拒绝 shell 链接 / 重定向 / 子命令(防注入)", () => {
-    expect(isPackyCommand("node /a/packy.ts models; rm -rf /")).toBe(false);
-    expect(isPackyCommand("node /a/packy.ts && cat /etc/passwd")).toBe(false);
-    expect(isPackyCommand("node /a/packy.ts `whoami`")).toBe(false);
-    expect(isPackyCommand("node /a/packy.ts $(id)")).toBe(false);
-    expect(isPackyCommand("node /a/packy.ts models > /tmp/x")).toBe(false);
-  });
-  it("拒绝非 packy 命令", () => {
-    expect(isPackyCommand("node /a/other.ts")).toBe(false);
-    expect(isPackyCommand("rm -rf /")).toBe(false);
-    expect(isPackyCommand("cat packy.ts")).toBe(false);
   });
 });

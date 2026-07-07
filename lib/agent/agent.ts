@@ -111,55 +111,31 @@ const DEFAULT_SYSTEM = `你是 PackyAPI 的官方在线客服,通过 QQ 群与�
 // 放行它模型才能按 skill 描述自动触发 packyapi 查价,而非退到 Bash 兜底。
 export const CS_KB_TOOL = "mcp__plugin_cs_cs__kb_search";
 export const PACKY_TOOL = "mcp__plugin_packyapi_packyapi__packy";
-export const TOOL_ALLOWLIST = new Set<string>([CS_KB_TOOL, PACKY_TOOL, "WebSearch", "Skill"]);
+// WebSearch / WebFetch 无条件放行(联网检索/取页);Bash 整体禁用(见 isToolAllowed 无 Bash 分支)。
+export const TOOL_ALLOWLIST = new Set<string>([
+  CS_KB_TOOL,
+  PACKY_TOOL,
+  "WebSearch",
+  "WebFetch",
+  "Skill",
+]);
 
 // Agent 降级兜底文案:maxTurns/CLI 出错且无累积文本时返回。主动路径据此判为非答案 → 沉默。
 export const AGENT_FALLBACK_TEXT = "(处理超出步数上限或出错,请换个说法或稍后再试)";
 
-// 仅放行 PackyAPI 查询脚本(node .../packy.ts <子命令>),拒绝任何 shell 链接/重定向,
-// 防止面向 QQ 用户的 bot 被 prompt-injection 诱导执行任意命令。
-export function isPackyCommand(cmd: string): boolean {
-  const c = cmd.trim();
-  if (/[;&|`\n\r><]/.test(c) || c.includes("$(")) return false; // 禁 shell 链接/子命令/重定向
-  return /^node\s+"?[^"]*\/packy\.ts"?(\s|$)/.test(c);
-}
-
-// /packy-docs:仅放行读 packyapi skill 的 references/*.md(docs-map 等),不给任意文件读
-export function isPackyRefPath(path: string): boolean {
-  return /\/packyapi\/(.*\/)?references\/[^/]+\.md$/.test(path);
-}
-
-// /packy-docs:WebFetch 仅放行 packyapi.com 及其子域(docs. 等),防 SSRF / 数据外带
-// endsWith(".packyapi.com") 只认真子域,"packyapi.com.evil.com" 结尾是 .evil.com → 拒
-export function isPackyUrl(url: string): boolean {
-  try {
-    const h = new URL(url).hostname.toLowerCase();
-    return h === "packyapi.com" || h.endsWith(".packyapi.com");
-  } catch {
-    return false;
-  }
-}
-
-// 权限判定:白名单命中 → 放行;Bash/Read/WebFetch 仅限 packy 用途;其余拒绝
-export function isToolAllowed(toolName: string, input: Record<string, unknown>): boolean {
-  if (TOOL_ALLOWLIST.has(toolName)) return true;
-  if (toolName === "Bash") return isPackyCommand(String(input.command ?? ""));
-  if (toolName === "Read") return isPackyRefPath(String(input.file_path ?? ""));
-  if (toolName === "WebFetch") return isPackyUrl(String(input.url ?? ""));
-  return false;
+// 权限判定:白名单命中 → 放行;Bash / Read 整体禁用;其余一律拒绝
+export function isToolAllowed(toolName: string, _input: Record<string, unknown>): boolean {
+  return TOOL_ALLOWLIST.has(toolName);
 }
 
 // 拒因 message:引导模型停止重试、改走合规路径,避免反复撞被拒工具烧光 maxTurns
 export function denyMessage(toolName: string): string {
   switch (toolName) {
     case "Bash":
-      return "Bash 仅能执行 PackyAPI 查询脚本,不接受其他命令。请勿再尝试变体,改用 kb_search 或 packyapi 技能获取信息。";
     case "Read":
-      return "Read 仅能读取 packyapi 技能的 references 文档,不能读任意文件。请勿再尝试其他路径,改用 kb_search。";
-    case "WebFetch":
-      return "WebFetch 仅能访问 packyapi.com。请勿再尝试其他地址,改用 kb_search 或 packyapi 技能。";
+      return `${toolName} 已禁用。改用 kb_search、packyapi 技能,或 WebSearch / WebFetch 获取信息。`;
     default:
-      return `无 ${toolName} 工具可用。请改用 kb_search 或 packyapi 技能,勿再尝试此工具。`;
+      return `无 ${toolName} 工具可用。请改用 kb_search、packyapi 技能或 WebSearch / WebFetch。`;
   }
 }
 
