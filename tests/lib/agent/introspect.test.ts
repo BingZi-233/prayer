@@ -154,3 +154,17 @@ describe("probeCapabilities 缓存", () => {
     expect(calls).toBe(2);
   });
 });
+
+describe("probeCapabilities 零 token", () => {
+  it("探针用流式空输入(async iterable),不发字符串 prompt —— 防误触发模型回合", async () => {
+    let capturedPrompt: unknown;
+    await probeCapabilities(cfg, {
+      queryFn: ((params: any) => { capturedPrompt = params.prompt; return fakeQuery(); }) as any,
+      makeToolServer: () => ({}),
+      refresh: true,
+      now: () => 1,
+    });
+    expect(typeof capturedPrompt).not.toBe("string");
+    expect(typeof (capturedPrompt as any)?.[Symbol.asyncIterator]).toBe("function");
+  });
+});

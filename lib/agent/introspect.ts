@@ -122,7 +122,14 @@ async function probeUncached(cfg: AppConfig, opts: ProbeOptions = {}): Promise<C
   const toolServer = opts.makeToolServer ? opts.makeToolServer() : {};
 
   const q = queryFn({
-    prompt: "probe",
+    // 流式空输入:永不产出 user 消息 —— CLI 仍完成 init(控制方法可用),但无 user turn →
+    // 不派发模型调用 → 零 token(不依赖 abort 抢在模型请求之前的竞态)。待 abort 时结束输入流。
+    prompt: (async function* () {
+      await new Promise<void>((r) => {
+        if (abortController.signal.aborted) return r();
+        abortController.signal.addEventListener("abort", () => r(), { once: true });
+      });
+    })() as any,
     options: {
       mcpServers: { cs: toolServer as any },
       plugins: pluginPaths.map((p) => ({ type: "local" as const, path: p, skipMcpDiscovery: true })),
