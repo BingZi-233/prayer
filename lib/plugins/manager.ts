@@ -43,4 +43,53 @@ export class PluginManager {
     const { stdout } = await this.run(["plugin", "list", "--json"]);
     return JSON.parse(stdout) as PluginInfo[];
   }
+
+  private async mutate(args: string[]): Promise<CliResult> {
+    try {
+      const { stdout } = await this.run(args);
+      return { ok: true, stdout: stdout.trim() };
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    }
+  }
+
+  private assertRef(ref: string): void {
+    if (!isValidPluginRef(ref)) throw new Error(`非法插件引用: ${ref}`);
+  }
+
+  async install(name: string, marketplace: string): Promise<CliResult> {
+    this.assertRef(name);
+    this.assertRef(marketplace);
+    return this.mutate(["plugin", "install", `${name}@${marketplace}`, "--scope", "user"]);
+  }
+
+  async uninstall(id: string): Promise<CliResult> {
+    this.assertRef(id);
+    return this.mutate(["plugin", "uninstall", id, "--scope", "user"]);
+  }
+
+  async enable(id: string): Promise<CliResult> {
+    this.assertRef(id);
+    return this.mutate(["plugin", "enable", id, "--scope", "user"]);
+  }
+
+  async disable(id: string): Promise<CliResult> {
+    this.assertRef(id);
+    return this.mutate(["plugin", "disable", id, "--scope", "user"]);
+  }
+
+  async update(id: string): Promise<CliResult> {
+    this.assertRef(id);
+    return this.mutate(["plugin", "update", id, "--scope", "user"]);
+  }
+
+  // github: "owner/repo";directory: 绝对路径。两者都只允许安全字符 + 绝对路径校验
+  async addMarketplace(source: string): Promise<CliResult> {
+    const isAbs = source.startsWith("/");
+    if (!isAbs && !/^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/.test(source)) {
+      throw new Error(`非法 marketplace 源: ${source}`);
+    }
+    if (isAbs && /[;&|`$\n\r><]/.test(source)) throw new Error(`非法路径: ${source}`);
+    return this.mutate(["plugin", "marketplace", "add", source]);
+  }
 }
