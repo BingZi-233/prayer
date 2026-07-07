@@ -17,18 +17,38 @@ import {
 } from "@/components/ui/sidebar";
 import { useLive } from "@/components/live-provider";
 
-const nav = [
-  { href: "/admin", label: "运行状态", icon: Activity },
-  { href: "/admin/config", label: "配置", icon: Settings },
-  { href: "/admin/kb", label: "知识库", icon: BookOpen },
-  { href: "/admin/sessions", label: "会话", icon: MessagesSquare, badge: "human" as const },
-  { href: "/admin/reflection", label: "反思", icon: Brain },
-  { href: "/admin/proactive", label: "主动回复", icon: Zap },
-  { href: "/admin/tickets", label: "工单", icon: Ticket, badge: "tickets" as const },
-  { href: "/admin/groups", label: "生效群", icon: Users },
-  { href: "/admin/capabilities", label: "能力", icon: Boxes },
-  { href: "/admin/plugins", label: "插件", icon: Puzzle },
-  { href: "/admin/logs", label: "运行日志", icon: ScrollText },
+const navGroups = [
+  {
+    label: "监控",
+    items: [
+      { href: "/admin", label: "运行状态", icon: Activity },
+      { href: "/admin/logs", label: "运行日志", icon: ScrollText },
+    ],
+  },
+  {
+    label: "客服运营",
+    items: [
+      { href: "/admin/sessions", label: "会话", icon: MessagesSquare, badge: "human" as const },
+      { href: "/admin/tickets", label: "工单", icon: Ticket, badge: "tickets" as const },
+      { href: "/admin/proactive", label: "主动回复", icon: Zap },
+    ],
+  },
+  {
+    label: "知识",
+    items: [
+      { href: "/admin/kb", label: "知识库", icon: BookOpen },
+      { href: "/admin/reflection", label: "反思", icon: Brain },
+    ],
+  },
+  {
+    label: "系统",
+    items: [
+      { href: "/admin/config", label: "配置", icon: Settings },
+      { href: "/admin/groups", label: "生效群", icon: Users },
+      { href: "/admin/capabilities", label: "能力", icon: Boxes },
+      { href: "/admin/plugins", label: "插件", icon: Puzzle },
+    ],
+  },
 ];
 
 export function AppSidebar() {
@@ -48,32 +68,35 @@ export function AppSidebar() {
         </div>
       </SidebarHeader>
       <SidebarContent>
-        <SidebarGroup>
-          <SidebarGroupLabel>导航</SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {nav.map((n) => {
-                const active = n.href === "/admin" ? pathname === n.href : pathname.startsWith(n.href);
-                return (
-                  <SidebarMenuItem key={n.href}>
-                    <SidebarMenuButton asChild isActive={active} tooltip={n.label}>
-                      <Link href={n.href}>
-                        <n.icon />
-                        <span>{n.label}</span>
-                      </Link>
-                    </SidebarMenuButton>
-                    {n.badge === "tickets" && (overview?.openTickets ?? 0) > 0 && (
-                      <SidebarMenuBadge>{overview!.openTickets}</SidebarMenuBadge>
-                    )}
-                    {n.badge === "human" && (overview?.humanSessions ?? 0) > 0 && (
-                      <SidebarMenuBadge className="text-destructive">{overview!.humanSessions}</SidebarMenuBadge>
-                    )}
-                  </SidebarMenuItem>
-                );
-              })}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
+        {navGroups.map((group) => (
+          <SidebarGroup key={group.label}>
+            <SidebarGroupLabel>{group.label}</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {group.items.map((n) => {
+                  const active = n.href === "/admin" ? pathname === n.href : pathname.startsWith(n.href);
+                  const badge = "badge" in n ? n.badge : undefined;
+                  return (
+                    <SidebarMenuItem key={n.href}>
+                      <SidebarMenuButton asChild isActive={active} tooltip={n.label}>
+                        <Link href={n.href}>
+                          <n.icon />
+                          <span>{n.label}</span>
+                        </Link>
+                      </SidebarMenuButton>
+                      {badge === "tickets" && (overview?.openTickets ?? 0) > 0 && (
+                        <SidebarMenuBadge>{overview!.openTickets}</SidebarMenuBadge>
+                      )}
+                      {badge === "human" && (overview?.humanSessions ?? 0) > 0 && (
+                        <SidebarMenuBadge className="text-destructive">{overview!.humanSessions}</SidebarMenuBadge>
+                      )}
+                    </SidebarMenuItem>
+                  );
+                })}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        ))}
       </SidebarContent>
     </Sidebar>
   );
