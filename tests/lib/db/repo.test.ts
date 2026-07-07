@@ -185,6 +185,16 @@ describe("searchBaseKb", () => {
     expect(hits).toHaveLength(1);
     expect(hits[0].content).toBe("基础文档内容");
   });
+
+  it("反思聚集也能凑够 k 条基础条目", () => {
+    // 同一向量下 5 条反思 + 3 条基础;plain k=3 会被反思占满返回 0 条基础
+    const vec = () => new Float32Array([1, 0, 0]);
+    for (let i = 0; i < 5; i++) repo.insertKbEntry("human-reflection", `反思${i}`, `human-reflection:1:${i}`, vec());
+    for (let i = 0; i < 3; i++) repo.insertKbEntry("faq/f.md", `基础${i}`, "faq/f.md", vec());
+    const hits = repo.searchBaseKb(vec(), 3);
+    expect(hits).toHaveLength(3);
+    expect(hits.every((h) => h.content.startsWith("基础"))).toBe(true);
+  });
 });
 
 describe("repo 主动兜底支持", () => {
