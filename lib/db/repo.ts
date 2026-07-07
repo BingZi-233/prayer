@@ -336,6 +336,26 @@ export class Repo {
     return [];
   }
 
+  // 整体替换反思库(压缩整理用):单事务删全部 human-reflection chunk+vec,再逐条插入整理结果。
+  // source 统一 human-reflection:0:{ts}(gid 0 = 已压缩,全局归属)。空 entries 由调用方安全底线拦截。
+  replaceReflectionEntries(
+    entries: { content: string; embedding: Float32Array }[],
+    sourceTs: number
+  ): void {
+    this.db.transaction(() => {
+      this.db
+        .prepare(
+          "DELETE FROM kb_vec WHERE chunk_id IN (SELECT id FROM kb_chunks WHERE doc = 'human-reflection')"
+        )
+        .run();
+      this.db.prepare("DELETE FROM kb_chunks WHERE doc = 'human-reflection'").run();
+      for (const e of entries) {
+        const id = this.insertKbChunk("human-reflection", e.content, `human-reflection:0:${sourceTs}`);
+        this.insertKbVec(id, e.embedding);
+      }
+    })();
+  }
+
   getConfigRow(key: string): string | undefined {
     const row = this.db.prepare("SELECT value FROM config WHERE key = ?").get(key) as
       | { value: string }

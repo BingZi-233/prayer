@@ -197,6 +197,26 @@ describe("searchBaseKb", () => {
   });
 });
 
+describe("replaceReflectionEntries", () => {
+  it("删旧 human-reflection + 插新,不动基础文档,向量数一致", () => {
+    const vec = () => new Float32Array([1, 0, 0]);
+    repo.insertKbEntry("faq/x.md", "基础", "faq/x.md", vec());
+    repo.insertKbEntry("human-reflection", "旧1", "human-reflection:100:1", vec());
+    repo.insertKbEntry("human-reflection", "旧2", "human-reflection:100:2", vec());
+
+    repo.replaceReflectionEntries([{ content: "新条", embedding: vec() }], 12345);
+
+    const refs = repo.reflectionEntries();
+    expect(refs).toHaveLength(1);
+    expect(refs[0].content).toBe("新条");
+    expect(refs[0].groupId).toBe(0); // source = human-reflection:0:12345
+    expect(refs[0].ts).toBe(12345);
+    expect(repo.searchBaseKb(vec(), 5)).toHaveLength(1); // 基础文档仍在
+    const t = repo.kbTotals();
+    expect(t.chunks).toBe(t.vecs); // 无孤儿
+  });
+});
+
 describe("repo 主动兜底支持", () => {
   const mk = () => new Repo(openDb(":memory:"));
 
