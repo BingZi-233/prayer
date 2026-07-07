@@ -22,7 +22,7 @@
    cp .env.example .env
    ```
 
-   - `ANTHROPIC_BASE_URL` / `ANTHROPIC_AUTH_TOKEN` / `ANTHROPIC_MODEL`:PackyAPI(Claude 中转)凭证与模型名。
+   - `CLAUDE_CONFIG_DIR`:Claude Agent SDK 配置目录(默认 `./data/claude-config`)。**模型与中转凭证不放 `.env`**,而是写在此目录的 `settings.json` 的 `env` 块(`ANTHROPIC_MODEL` / `ANTHROPIC_BASE_URL` / `ANTHROPIC_AUTH_TOKEN`)——运行时会剥离进程继承的 `ANTHROPIC_*`,只认这里的配置。管理后台不读写这三项,需直接编辑该文件。
    - `ONEBOT_WS_URL` / `ONEBOT_ACCESS_TOKEN`:NapCat 正向 WS server 地址与鉴权 token。
    - `BOT_QQ` / `ADMIN_GROUP_ID`:机器人 QQ 号与转人工通知的管理群号。
    - `HANDOFF_TIMEOUT_MIN`:转人工超时分钟数。

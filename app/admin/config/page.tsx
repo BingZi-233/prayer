@@ -30,7 +30,6 @@ interface Cfg {
   handoffTimeoutMin: number;
   dbPath: string;
   claudeConfigDir: string;
-  model: string;
   enabledGroups: number[];
   reflectScanMs: number;
   reflectLookbackMs: number;
@@ -40,9 +39,6 @@ interface Cfg {
   proactiveScanMs: number;
   proactiveSilenceMs: number;
   proactiveMaxPerScan: number;
-  // SDK 凭证:存 CLAUDE_CONFIG_DIR/settings.json,非 AppConfig
-  sdkBaseUrl: string;
-  sdkAuthToken: string;
 }
 
 const NUM_KEYS: (keyof Cfg)[] = [
@@ -92,9 +88,6 @@ export default function ConfigPage() {
     const payload: Partial<Cfg> = { ...cfg };
     if (typeof payload.onebotAccessToken === "string" && payload.onebotAccessToken.includes("•")) {
       delete payload.onebotAccessToken;
-    }
-    if (typeof payload.sdkAuthToken === "string" && payload.sdkAuthToken.includes("•")) {
-      delete payload.sdkAuthToken;
     }
     try {
       const r = await fetch("/api/config", {
@@ -259,29 +252,17 @@ export default function ConfigPage() {
             <Card>
               <CardHeader>
                 <CardTitle>Claude Agent SDK</CardTitle>
-                <CardDescription>模型、中转凭证与配置目录。Base URL / Auth Token 写入配置目录的 settings.json,无需再设环境变量。</CardDescription>
+                <CardDescription>
+                  模型、Base URL、Auth Token 等 SDK 凭证不由本程序管理,请直接编辑配置目录下的 settings.json
+                  的 env 块(ANTHROPIC_MODEL / ANTHROPIC_BASE_URL / ANTHROPIC_AUTH_TOKEN)。
+                </CardDescription>
               </CardHeader>
               <CardContent>
                 <FieldGroup>
                   <Field>
-                    <FieldLabel htmlFor="model">模型</FieldLabel>
-                    <Input id="model" value={cfg.model} placeholder="claude-sonnet-5" onChange={(e) => upd("model", e.target.value)} />
-                    <FieldDescription>Agent 模型 ID,写入配置目录 settings.json 的 env.ANTHROPIC_MODEL。留空则用 SDK 内置默认。</FieldDescription>
-                  </Field>
-                  <Field>
-                    <FieldLabel htmlFor="sdkBaseUrl">Base URL</FieldLabel>
-                    <Input id="sdkBaseUrl" value={cfg.sdkBaseUrl} placeholder="https://www.packyapi.com" onChange={(e) => upd("sdkBaseUrl", e.target.value)} />
-                    <FieldDescription>中转 API 地址(ANTHROPIC_BASE_URL)。</FieldDescription>
-                  </Field>
-                  <Field>
-                    <FieldLabel htmlFor="sdkAuthToken">Auth Token</FieldLabel>
-                    <Input id="sdkAuthToken" value={cfg.sdkAuthToken} placeholder="留空不修改" onChange={(e) => upd("sdkAuthToken", e.target.value)} />
-                    <FieldDescription>中转鉴权令牌(ANTHROPIC_AUTH_TOKEN)。已保存以掩码显示,留空或不改则保留原值。</FieldDescription>
-                  </Field>
-                  <Field>
                     <FieldLabel htmlFor="claudeConfigDir">CLAUDE_CONFIG_DIR</FieldLabel>
                     <Input id="claudeConfigDir" value={cfg.claudeConfigDir} placeholder="./data/claude-config" onChange={(e) => upd("claudeConfigDir", e.target.value)} />
-                    <FieldDescription>SDK 认证与配置目录,上面的凭证即写入此目录的 settings.json。</FieldDescription>
+                    <FieldDescription>SDK 认证与配置目录。模型与中转凭证在此目录的 settings.json 内维护,本程序不读写这些字段。</FieldDescription>
                   </Field>
                 </FieldGroup>
               </CardContent>
