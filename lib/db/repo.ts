@@ -317,6 +317,21 @@ export class Repo {
     return rows;
   }
 
+  // 只在基础文档(doc != human-reflection)里做向量近邻,供压缩整理取权威上下文。
+  // vec0 KNN 需固定 k;doc 过滤在 join 后生效,故取 k*4 再过滤截断,避免被反思条目挤占额度。
+  searchBaseKb(query: Float32Array, k: number): KbHit[] {
+    const rows = this.db
+      .prepare(
+        `SELECT c.id, c.content, c.source, v.distance
+         FROM kb_vec v JOIN kb_chunks c ON c.id = v.chunk_id
+         WHERE v.embedding MATCH ? AND k = ?
+           AND c.doc != 'human-reflection'
+         ORDER BY v.distance`
+      )
+      .all(Buffer.from(query.buffer), k * 4) as KbHit[];
+    return rows.slice(0, k);
+  }
+
   getConfigRow(key: string): string | undefined {
     const row = this.db.prepare("SELECT value FROM config WHERE key = ?").get(key) as
       | { value: string }

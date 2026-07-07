@@ -177,6 +177,16 @@ describe("Repo reflection stats", () => {
   });
 });
 
+describe("searchBaseKb", () => {
+  it("只返回非 human-reflection 条目", () => {
+    repo.insertKbEntry("faq/x.md", "基础文档内容", "faq/x.md", new Float32Array([1, 0, 0]));
+    repo.insertKbEntry("human-reflection", "反思内容", "human-reflection:100:1", new Float32Array([1, 0, 0]));
+    const hits = repo.searchBaseKb(new Float32Array([1, 0, 0]), 5);
+    expect(hits).toHaveLength(1);
+    expect(hits[0].content).toBe("基础文档内容");
+  });
+});
+
 describe("repo 主动兜底支持", () => {
   const mk = () => new Repo(openDb(":memory:"));
 
