@@ -74,18 +74,24 @@ describe("runCompact", () => {
   it("安全底线:非法 JSON → 保留旧库", async () => {
     seedReflections(5);
     const err = new Promise<any>((res) => bus.once("error.occurred", res));
+    const spy = vi.fn();
+    bus.on("action.send", spy);
     await runCompact(opts({ queryFn: fakeQuery("抱歉无法处理") as never }));
     expect((await err).scope).toBe("reflection-compact");
     expect(repo.reflectionEntries()).toHaveLength(5);
+    expect(spy).not.toHaveBeenCalled();
   });
 
   it("安全底线:条目暴涨(> 输入 ×1.5)→ 保留旧库", async () => {
     seedReflections(4);
     const arr = JSON.stringify(Array.from({ length: 7 }, (_, i) => ({ faq: `x${i}` })));
     const err = new Promise<any>((res) => bus.once("error.occurred", res));
+    const spy = vi.fn();
+    bus.on("action.send", spy);
     await runCompact(opts({ queryFn: fakeQuery(arr) as never }));
     expect((await err).scope).toBe("reflection-compact");
     expect(repo.reflectionEntries()).toHaveLength(4);
+    expect(spy).not.toHaveBeenCalled();
   });
 });
 
