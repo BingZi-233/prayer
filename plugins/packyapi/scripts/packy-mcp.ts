@@ -155,18 +155,34 @@ const server = new McpServer({ name: "packyapi", version: "0.2.0" });
 server.registerTool(
   "packy",
   {
-    title: "PackyAPI 查询",
+    title: "PackyAPI 价格/模型查询",
     description:
-      "查 PackyAPI(Claude/OpenAI/Gemini 中转平台)模型价格、可用模型 ID、分组倍率、单模型原始数据。走公开 JSON API,省 token、精确。",
+      "查询 PackyAPI(Claude/OpenAI/Gemini 兼容的 AI API 中转平台)的模型价格、可用模型 ID、分组倍率与单模型原始数据。底层读公开 JSON /api/pricing,本地计价,输出极简结构化文本 —— 比抓 HTML 页面省 token 且精确。按 action 分四种查询,配合可选参数过滤。价格单位 $/1M tokens。",
     inputSchema: {
       action: z
         .enum(["price", "models", "groups", "raw"])
-        .describe("price=计价 / models=列模型ID / groups=分组倍率 / raw=单模型原始JSON"),
-      keyword: z.string().optional().describe("price:模型名关键词过滤(给了则列该模型所有可用分组)"),
-      group: z.string().optional().describe("price/models:锁定单个分组(如 cc、cc-sale)"),
-      endpoint: z.string().optional().describe("models:按端点过滤(anthropic/openai/gemini)"),
-      base: z.number().optional().describe("price:计价 base,默认 2($0.002/1K)"),
-      model: z.string().optional().describe("raw:模型 ID(必填)"),
+        .describe(
+          "查询类型:price=计价($/1M tokens,含 input/output/cache) / models=列可用模型 ID / groups=列全部分组倍率与说明 / raw=单模型完整原始 JSON"
+        ),
+      keyword: z
+        .string()
+        .optional()
+        .describe(
+          "仅 price:按模型名子串过滤(不区分大小写);给了则列该模型在各可用分组下的价格,未给则默认只列 cc 组"
+        ),
+      group: z
+        .string()
+        .optional()
+        .describe("仅 price/models:锁定单个分组(如 cc、cc-sale),用 action=groups 可查全部分组名"),
+      endpoint: z
+        .string()
+        .optional()
+        .describe("仅 models:按端点类型过滤,取值 anthropic / openai / gemini"),
+      base: z
+        .number()
+        .optional()
+        .describe("仅 price:计价 base 系数,默认 2(即 $0.002/1K);input$ = model_ratio×group_ratio×base"),
+      model: z.string().optional().describe("仅 raw:精确模型 ID(必填,须与 models 列出的完全一致)"),
     },
   },
   async ({ action, keyword, group, endpoint, base, model }) => {

@@ -57,9 +57,13 @@ async function main(): Promise<void> {
   server.registerTool(
     "kb_search",
     {
-      title: "知识库检索",
+      title: "客服知识库语义检索",
       description: KB_TOOL_DESC,
-      inputSchema: { query: z.string().describe("用户问题或检索关键词") },
+      inputSchema: {
+        query: z
+          .string()
+          .describe("用户问题或检索关键词;用完整自然语言句子(而非零散关键词)命中更准"),
+      },
     },
     async ({ query }: { query: string }) => ({
       content: [{ type: "text" as const, text: await runKbSearch(repo as never, embed, query) }],
