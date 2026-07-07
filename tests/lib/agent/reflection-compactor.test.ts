@@ -141,3 +141,31 @@ describe("validateCompacted", () => {
     expect(validateCompacted('[{"faq":"a"},{"faq":"  "},{"faq":""}]', 3)).toEqual(["a"]);
   });
 });
+
+describe("registerReflectionCompactor 防重入", () => {
+  it("上一轮未结束时下一 tick 跳过", async () => {
+    const { registerReflectionCompactor } = await import("@/lib/agent/reflection-compactor");
+    vi.useFakeTimers();
+    try {
+      seedReflections(5);
+      let release!: () => void;
+      const gate = new Promise<void>((r) => (release = r));
+      const qf = vi.fn(() =>
+        (async function* () {
+          await gate;
+          yield { type: "assistant", message: { content: [{ type: "text", text: "[]" }] } };
+        })()
+      );
+      const stop = registerReflectionCompactor(opts({ compactMs: 1000, queryFn: qf as never }));
+      await vi.advanceTimersByTimeAsync(1000); // tick1:启动,卡 gate
+      expect(qf).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(1000); // tick2:running=true → 跳过
+      expect(qf).toHaveBeenCalledTimes(1);
+      release();
+      await vi.advanceTimersByTimeAsync(0);
+      stop();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

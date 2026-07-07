@@ -136,4 +136,18 @@ export async function runCompact(deps: ReflectionCompactorDeps): Promise<void> {
   }
 }
 
-// Task 5 补 registerReflectionCompactor(定时器 + 防重入)
+// 监听式装配:定时压缩,返回 teardown。旁路观察者,失败不阻断主链路。
+export function registerReflectionCompactor(deps: ReflectionCompactorDeps): () => void {
+  const compactMs = deps.compactMs ?? 86_400_000;
+  let running = false; // 防重入:上一轮未结束则跳过本次触发
+  const timer = setInterval(() => {
+    if (running) return;
+    running = true;
+    void runCompact(deps)
+      .catch((err) => bus.emit("error.occurred", { scope: "reflection-compact", err }))
+      .finally(() => {
+        running = false;
+      });
+  }, compactMs);
+  return () => clearInterval(timer);
+}
