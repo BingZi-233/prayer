@@ -120,6 +120,18 @@ describe("runCompact", () => {
     expect((await err).scope).toBe("reflection-compact");
     expect(repo.reflectionEntries()).toHaveLength(5);
   });
+
+  it("对已压缩集(gid 0)再跑一轮不报错,产出替换成功", async () => {
+    // 首轮:5 → 2
+    seedReflections(5);
+    await runCompact(opts({ queryFn: fakeQuery('[{"faq":"甲"},{"faq":"乙"}]') as never }));
+    expect(repo.reflectionEntries()).toHaveLength(2);
+    // 次轮:2 条(< minEntries 3)→ 跳过,不变
+    const qf = vi.fn(fakeQuery('[{"faq":"甲"}]'));
+    await runCompact(opts({ queryFn: qf as never, minEntries: 3 }));
+    expect(qf).not.toHaveBeenCalled();
+    expect(repo.reflectionEntries()).toHaveLength(2);
+  });
 });
 
 describe("validateCompacted", () => {
