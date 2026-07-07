@@ -1,92 +1,67 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { Users } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { RelativeTime } from "@/components/relative-time";
-import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from "@/components/ui/empty";
+import { PageHeader } from "@/components/admin/page-header";
+import { SectionCard } from "@/components/admin/section-card";
+import { DataState } from "@/components/admin/data-state";
+import { usePolling } from "@/components/admin/use-polling";
+import { useGroupNames } from "@/lib/group-name";
 
 interface Row { groupId: number; enabled: boolean; messageCount: number; lastTs: number; cursor: number; sedimentedCount: number; }
 
 export default function GroupsPage() {
-  const [rows, setRows] = useState<Row[]>([]);
-  const [names, setNames] = useState<Record<number, string>>({});
+  const { data, error, loading, refresh } = usePolling<Row[]>("/api/groups/activity");
+  const { name } = useGroupNames();
 
-  async function load() {
-    try {
-      const r = await fetch("/api/groups/activity").then((x) => x.json());
-      if (r.ok) setRows(r.data);
-    } catch {
-      /* 静默 */
-    }
-  }
-  async function loadNames() {
-    try {
-      const r = await fetch("/api/onebot/groups").then((x) => x.json());
-      if (r.ok) setNames(Object.fromEntries((r.data as { groupId: number; groupName: string }[]).map((g) => [g.groupId, g.groupName])));
-    } catch {
-      /* bot 断连 → 回退裸 id */
-    }
-  }
-  useEffect(() => {
-    load();
-    loadNames();
-    const t = setInterval(load, 3000);
-    return () => clearInterval(t);
-  }, []);
-
-  const name = (gid: number) => names[gid] ?? String(gid);
+  const rows = data ?? [];
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold tracking-tight">生效群</h1>
-        <p className="text-muted-foreground text-sm">生效群与有活动的群的运行概览(每 3 秒刷新)。</p>
-      </div>
+      <PageHeader title="生效群" description="生效群与有活动的群的运行概览。" />
 
-      <Card>
-        <CardHeader><CardTitle className="flex items-center gap-2 text-sm"><Users className="size-4" />群活动</CardTitle></CardHeader>
-        <CardContent>
-          {rows.length === 0 ? (
-            <Empty>
-              <EmptyHeader>
-                <EmptyMedia variant="icon"><Users /></EmptyMedia>
-                <EmptyTitle>暂无群活动</EmptyTitle>
-                <EmptyDescription>生效群产生消息后会在此展示。</EmptyDescription>
-              </EmptyHeader>
-            </Empty>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>群</TableHead>
-                  <TableHead>生效</TableHead>
-                  <TableHead className="text-right">消息量</TableHead>
-                  <TableHead>最近活动</TableHead>
-                  <TableHead>反思进度</TableHead>
-                  <TableHead className="text-right">已沉淀</TableHead>
+      <SectionCard title="群活动" icon={Users}>
+        <DataState
+          loading={loading}
+          error={error}
+          empty={rows.length === 0}
+          onRetry={refresh}
+          emptyIcon={Users}
+          emptyTitle="暂无群活动"
+          emptyDescription="生效群产生消息后会在此展示。"
+          skeleton={<Skeleton className="h-40 w-full" />}
+        >
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>群</TableHead>
+                <TableHead>生效</TableHead>
+                <TableHead className="text-right">消息量</TableHead>
+                <TableHead>最近活动</TableHead>
+                <TableHead>反思进度</TableHead>
+                <TableHead className="text-right">已沉淀</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {rows.map((r) => (
+                <TableRow key={r.groupId}>
+                  <TableCell className="font-medium">{name(r.groupId)}</TableCell>
+                  <TableCell>
+                    <Badge variant={r.enabled ? "default" : "secondary"}>{r.enabled ? "生效" : "未生效"}</Badge>
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">{r.messageCount}</TableCell>
+                  <TableCell className="text-muted-foreground"><RelativeTime ts={r.lastTs} /></TableCell>
+                  <TableCell className="text-muted-foreground"><RelativeTime ts={r.cursor} /></TableCell>
+                  <TableCell className="text-right tabular-nums">{r.sedimentedCount}</TableCell>
                 </TableRow>
-              </TableHeader>
-              <TableBody>
-                {rows.map((r) => (
-                  <TableRow key={r.groupId}>
-                    <TableCell className="font-medium">{name(r.groupId)}</TableCell>
-                    <TableCell>
-                      <Badge variant={r.enabled ? "default" : "secondary"}>{r.enabled ? "生效" : "未生效"}</Badge>
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">{r.messageCount}</TableCell>
-                    <TableCell className="text-muted-foreground"><RelativeTime ts={r.lastTs} /></TableCell>
-                    <TableCell className="text-muted-foreground"><RelativeTime ts={r.cursor} /></TableCell>
-                    <TableCell className="text-right tabular-nums">{r.sedimentedCount}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
-        </CardContent>
-      </Card>
+              ))}
+            </TableBody>
+          </Table>
+        </DataState>
+      </SectionCard>
     </div>
   );
 }

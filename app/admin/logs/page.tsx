@@ -3,19 +3,16 @@
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { ScrollText, Copy, Pause, Play } from "lucide-react";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { ScrollText, Copy, Pause, Play, SearchX } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from "@/components/ui/empty";
+import { Skeleton } from "@/components/ui/skeleton";
+import { PageHeader } from "@/components/admin/page-header";
+import { SectionCard } from "@/components/admin/section-card";
+import { DataState, EmptyState } from "@/components/admin/data-state";
+import { usePolling } from "@/components/admin/use-polling";
 
 interface Log {
   ts: number;
@@ -35,26 +32,12 @@ const ANSI = /\x1b\[[0-9;]*m/g;
 const stripAnsi = (s: string) => s.replace(ANSI, "");
 
 export default function LogsPage() {
-  const [logs, setLogs] = useState<Log[]>([]);
+  const { data, error, loading, refresh } = usePolling<Log[]>("/api/logs");
+  const logs = data ?? [];
   const [levels, setLevels] = useState<Set<string>>(new Set(["info", "warn", "error"]));
   const [query, setQuery] = useState("");
   const [paused, setPaused] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
-
-  async function load() {
-    try {
-      const r = await fetch("/api/logs").then((x) => x.json());
-      if (r.ok) setLogs(r.data);
-    } catch {
-      /* 轮询失败静默 */
-    }
-  }
-
-  useEffect(() => {
-    load();
-    const t = setInterval(load, 3000);
-    return () => clearInterval(t);
-  }, []);
 
   const shown = logs
     .map((l) => ({ ...l, msg: stripAnsi(l.msg) }))
@@ -83,19 +66,17 @@ export default function LogsPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold tracking-tight">运行日志</h1>
-        <p className="text-muted-foreground text-sm">进程内环形缓冲,最近 500 条(每 3 秒刷新,重启后清空)。</p>
-      </div>
+      <PageHeader
+        title="运行日志"
+        description="进程内环形缓冲,最近 500 条,重启后清空。"
+      />
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-sm">
-            <ScrollText className="size-4" />
-            日志
-          </CardTitle>
-          <CardDescription>{shown.length} / {logs.length} 条</CardDescription>
-          <div className="flex flex-wrap items-center gap-2 pt-2">
+      <SectionCard
+        icon={ScrollText}
+        title="日志"
+        description={`${shown.length} / ${logs.length} 条`}
+        action={
+          <div className="flex flex-wrap items-center gap-2">
             {(["info", "warn", "error"] as const).map((lv) => (
               <Badge
                 key={lv}
@@ -120,23 +101,26 @@ export default function LogsPage() {
               <Copy /> 复制
             </Button>
           </div>
-        </CardHeader>
-        <CardContent>
-          {logs.length === 0 ? (
-            <Empty>
-              <EmptyHeader>
-                <EmptyMedia variant="icon"><ScrollText /></EmptyMedia>
-                <EmptyTitle>暂无日志</EmptyTitle>
-                <EmptyDescription>Agent 运行后会输出日志。</EmptyDescription>
-              </EmptyHeader>
-            </Empty>
-          ) : shown.length === 0 ? (
-            <p className="text-muted-foreground p-3 text-sm">无匹配日志。</p>
+        }
+      >
+        <DataState
+          loading={loading}
+          error={error}
+          empty={logs.length === 0}
+          onRetry={refresh}
+          emptyIcon={ScrollText}
+          emptyTitle="暂无日志"
+          emptyDescription="Agent 运行后会输出日志。"
+          skeleton={<Skeleton className="h-[520px] w-full" />}
+        >
+          {shown.length === 0 ? (
+            <EmptyState icon={SearchX} title="无匹配日志" description="调整级别过滤或搜索关键词。" />
           ) : (
             <ScrollArea className="bg-muted/40 h-[520px] rounded-md">
               <div className="flex flex-col gap-0.5 p-3 font-mono text-xs">
                 {shown.map((l, i) => (
                   <div key={i} className={cn("flex gap-2", LOG_COLOR[l.level])}>
+                    {/* 日志行需精确到秒,保留绝对时间;相对时间会把同分钟内的多条都显示为「刚刚」 */}
                     <span className="text-muted-foreground shrink-0">{new Date(l.ts).toLocaleTimeString()}</span>
                     <span className="shrink-0 uppercase">[{l.level}]</span>
                     <span className="break-all whitespace-pre-wrap">{l.msg}</span>
@@ -146,8 +130,8 @@ export default function LogsPage() {
               </div>
             </ScrollArea>
           )}
-        </CardContent>
-      </Card>
+        </DataState>
+      </SectionCard>
     </div>
   );
 }

@@ -5,16 +5,9 @@ import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { MessagesSquare, RefreshCw, Wrench, UserRound, RotateCcw, TriangleAlert } from "lucide-react";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
-import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from "@/components/ui/empty";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Bubble, BubbleContent } from "@/components/ui/bubble";
 import { Message, MessageContent } from "@/components/ui/message";
 import {
@@ -38,11 +31,15 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { PageHeader } from "@/components/admin/page-header";
+import { SectionCard } from "@/components/admin/section-card";
+import { DataState, EmptyState } from "@/components/admin/data-state";
 import { useGroupNames, useMemberNames } from "@/lib/group-name";
 
 interface Sess { key: string; sessionId: string | null; humanMode: boolean; humanSince: number | null; lastQuestion: string | null; updatedAt: number; }
 interface Msg { role: string; text?: string; tool?: string; input?: string; result?: string; }
 
+// 人工接管时长的内联标签("人工 5 分钟"),非时间戳展示 → 不走 RelativeTime
 function since(ts: number | null): string {
   if (!ts) return "";
   const min = Math.floor((Date.now() - ts) / 60000);
@@ -59,7 +56,7 @@ export default function SessionsPage() {
 }
 
 function SessionsInner() {
-  const [sessions, setSessions] = useState<Sess[]>([]);
+  const [sessions, setSessions] = useState<Sess[] | null>(null);
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [active, setActive] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -68,7 +65,7 @@ function SessionsInner() {
   // 三步确认:0 关闭,1/2/3 逐级确认弹窗
   const [confirmStep, setConfirmStep] = useState(0);
   const { name } = useGroupNames();
-  const memberName = useMemberNames(sessions.map((s) => s.key));
+  const memberName = useMemberNames((sessions ?? []).map((s) => s.key));
   const params = useSearchParams();
   const [query, setQuery] = useState("");
   const [humanOnly, setHumanOnly] = useState(params.get("human") === "1");
@@ -93,7 +90,7 @@ function SessionsInner() {
   // URL ?key=... → 自动打开对应会话
   useEffect(() => {
     const key = params.get("key");
-    if (!key) return;
+    if (!key || !sessions) return;
     const s = sessions.find((x) => x.key === key);
     if (s && active !== s.key) open(s);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -141,7 +138,7 @@ function SessionsInner() {
   // 三步确认文案(逐级加重),第三步 CTA 执行重开
   const confirmSteps = [
     {
-      title: `重开全部 ${sessions.length} 个会话?`,
+      title: `重开全部 ${sessions?.length ?? 0} 个会话?`,
       desc: "每个会话下条消息将各自开启全新对话,历史记录仍保留可查。",
       cta: "继续",
     },
@@ -180,7 +177,8 @@ function SessionsInner() {
     }
   }
 
-  const shown = sessions
+  const list = sessions ?? [];
+  const shown = list
     .filter((s) => (humanOnly ? s.humanMode : true))
     .filter((s) => {
       if (!query.trim()) return true;
@@ -196,103 +194,105 @@ function SessionsInner() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex items-start justify-between gap-4">
-        <div className="flex flex-col gap-1">
-          <h1 className="text-2xl font-semibold tracking-tight">会话</h1>
-          <p className="text-muted-foreground text-sm">查看历史会话的对话记录(读自 Claude SDK transcript)。</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button
-            variant="destructive"
-            onClick={() => setConfirmStep(1)}
-            disabled={resetting || sessions.length === 0}
-          >
-            {resetting ? <Spinner data-icon="inline-start" /> : <RotateCcw data-icon="inline-start" />}
-            {resetting ? "重开中…" : "全部重开"}
-          </Button>
-          <Button variant="secondary" onClick={refresh} disabled={refreshing}>
-            {refreshing ? <Spinner data-icon="inline-start" /> : <RefreshCw data-icon="inline-start" />}
-            {refreshing ? "刷新中…" : "刷新"}
-          </Button>
-        </div>
-      </div>
+      <PageHeader
+        title="会话"
+        description="查看历史会话的对话记录(读自 Claude SDK transcript)。"
+        actions={
+          <>
+            <Button
+              variant="destructive"
+              onClick={() => setConfirmStep(1)}
+              disabled={resetting || list.length === 0}
+            >
+              {resetting ? <Spinner data-icon="inline-start" /> : <RotateCcw data-icon="inline-start" />}
+              {resetting ? "重开中…" : "全部重开"}
+            </Button>
+            <Button variant="secondary" onClick={refresh} disabled={refreshing}>
+              {refreshing ? <Spinner data-icon="inline-start" /> : <RefreshCw data-icon="inline-start" />}
+              {refreshing ? "刷新中…" : "刷新"}
+            </Button>
+          </>
+        }
+      />
 
       <div className="grid gap-4 lg:grid-cols-[300px_1fr]">
-        <Card className="h-fit">
-          <CardHeader>
-            <CardTitle className="text-sm">会话列表</CardTitle>
-            <CardDescription>{shown.length} / {sessions.length} 个会话</CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-2">
-            <Input
-              placeholder="搜索群名 / QQ / 问题…"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              className="h-8 text-xs"
-            />
-            <label className="flex cursor-pointer items-center gap-2 text-xs">
-              <Checkbox checked={humanOnly} onCheckedChange={(v) => setHumanOnly(!!v)} />
-              仅看人工会话
-            </label>
-            {shown.length === 0 ? (
-              <p className="text-muted-foreground text-sm">{sessions.length === 0 ? "暂无会话。" : "无匹配会话。"}</p>
-            ) : (
-              <div className="flex flex-col gap-1">
-                {shown.map((sess) => (
-                  <button
-                    key={sess.key}
-                    onClick={() => open(sess)}
-                    disabled={!sess.sessionId}
-                    className={cn(
-                      "hover:bg-muted flex flex-col gap-1 rounded-md px-2 py-1.5 text-left text-xs disabled:opacity-50",
-                      active === sess.key && "bg-muted",
+        <SectionCard
+          title="会话列表"
+          description={`${shown.length} / ${list.length} 个会话`}
+          className="h-fit"
+          contentClassName="flex flex-col gap-2"
+        >
+          <Input
+            placeholder="搜索群名 / QQ / 问题…"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            className="h-8 text-xs"
+          />
+          <label className="flex cursor-pointer items-center gap-2 text-xs">
+            <Checkbox checked={humanOnly} onCheckedChange={(v) => setHumanOnly(!!v)} />
+            仅看人工会话
+          </label>
+          <DataState
+            loading={sessions === null}
+            empty={shown.length === 0}
+            emptyIcon={MessagesSquare}
+            emptyTitle={list.length === 0 ? "暂无会话" : "无匹配会话"}
+            emptyDescription={list.length === 0 ? "生效群产生对话后会在此出现。" : "调整搜索或筛选条件。"}
+            skeleton={<Skeleton className="h-32 w-full" />}
+          >
+            <div className="flex flex-col gap-1">
+              {shown.map((sess) => (
+                <button
+                  key={sess.key}
+                  onClick={() => open(sess)}
+                  disabled={!sess.sessionId}
+                  className={cn(
+                    "hover:bg-muted flex flex-col gap-1 rounded-md px-2 py-1.5 text-left text-xs disabled:opacity-50",
+                    active === sess.key && "bg-muted",
+                  )}
+                >
+                  <span className="flex items-center justify-between gap-2">
+                    <span className="truncate" title={sess.key}>{keyLabel(sess.key)}</span>
+                    {sess.humanMode && (
+                      <Badge variant="destructive" className="shrink-0 gap-1">
+                        <UserRound className="size-3" />
+                        人工{sess.humanSince ? ` ${since(sess.humanSince)}` : ""}
+                      </Badge>
                     )}
-                  >
-                    <span className="flex items-center justify-between gap-2">
-                      <span className="truncate" title={sess.key}>{keyLabel(sess.key)}</span>
-                      {sess.humanMode && (
-                        <Badge variant="destructive" className="shrink-0 gap-1">
-                          <UserRound className="size-3" />
-                          人工{sess.humanSince ? ` ${since(sess.humanSince)}` : ""}
-                        </Badge>
-                      )}
-                    </span>
-                    {sess.lastQuestion && (
-                      <span className="text-muted-foreground truncate">Q: {sess.lastQuestion}</span>
-                    )}
-                  </button>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+                  </span>
+                  {sess.lastQuestion && (
+                    <span className="text-muted-foreground truncate">Q: {sess.lastQuestion}</span>
+                  )}
+                </button>
+              ))}
+            </div>
+          </DataState>
+        </SectionCard>
 
-        <Card className="flex h-[560px] flex-col overflow-hidden">
-          <CardHeader className="flex flex-row items-center justify-between gap-2 space-y-0">
-            <CardTitle className="text-sm" title={active ?? undefined}>{active ? `对话:${keyLabel(active)}` : "对话"}</CardTitle>
-            {active && (
-              <Button variant="ghost" size="icon-sm" onClick={refresh} disabled={refreshing} title="刷新对话">
-                {refreshing ? <Spinner /> : <RefreshCw />}
-                <span className="sr-only">刷新对话</span>
-              </Button>
-            )}
-          </CardHeader>
-          <CardContent className="min-h-0 flex-1 p-0">
-            {!active ? (
-              <Empty className="h-full">
-                <EmptyHeader>
-                  <EmptyMedia variant="icon">
-                    <MessagesSquare />
-                  </EmptyMedia>
-                  <EmptyTitle>未选择会话</EmptyTitle>
-                  <EmptyDescription>从左侧选择一个会话查看其对话记录。</EmptyDescription>
-                </EmptyHeader>
-              </Empty>
-            ) : loading ? (
-              <p className="text-muted-foreground p-4 text-sm">加载中…</p>
-            ) : msgs.length === 0 ? (
-              <p className="text-muted-foreground p-4 text-sm">无 transcript(session 文件未找到或为空)。</p>
-            ) : (
+        <SectionCard
+          title={
+            <span className="truncate" title={active ?? undefined}>
+              {active ? `对话:${keyLabel(active)}` : "对话"}
+            </span>
+          }
+          className="flex h-[560px] flex-col overflow-hidden"
+          contentClassName="min-h-0 flex-1 p-0"
+        >
+          {!active ? (
+            <EmptyState
+              icon={MessagesSquare}
+              title="未选择会话"
+              description="从左侧选择一个会话查看其对话记录。"
+            />
+          ) : (
+            <DataState
+              loading={loading}
+              empty={msgs.length === 0}
+              emptyIcon={MessagesSquare}
+              emptyTitle="无 transcript"
+              emptyDescription="session 文件未找到或为空。"
+              skeleton={<Skeleton className="m-4 h-40" />}
+            >
               <MessageScrollerProvider>
                 <MessageScroller>
                   <MessageScrollerViewport>
@@ -345,16 +345,16 @@ function SessionsInner() {
                   </MessageScrollerViewport>
                 </MessageScroller>
               </MessageScrollerProvider>
-            )}
-          </CardContent>
-        </Card>
+            </DataState>
+          )}
+        </SectionCard>
       </div>
 
       <AlertDialog open={confirmStep > 0} onOpenChange={(o) => !o && setConfirmStep(0)}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle className="flex items-center gap-2">
-              <TriangleAlert className="size-5 text-destructive" />
+              <TriangleAlert className="text-destructive size-5" />
               {confirmSteps[confirmStep - 1]?.title}
             </AlertDialogTitle>
             <AlertDialogDescription>{confirmSteps[confirmStep - 1]?.desc}</AlertDialogDescription>

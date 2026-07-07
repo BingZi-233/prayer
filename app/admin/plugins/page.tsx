@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Puzzle, Plus, RefreshCw, Trash2 } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Puzzle, Plus, RotateCw, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -10,7 +9,9 @@ import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from "@/components/ui/empty";
+import { PageHeader } from "@/components/admin/page-header";
+import { SectionCard } from "@/components/admin/section-card";
+import { EmptyState, ErrorState } from "@/components/admin/data-state";
 
 interface Plugin { id: string; version: string; scope: string; enabled: boolean; installPath: string; }
 
@@ -47,84 +48,74 @@ export default function PluginsPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold tracking-tight">插件</h1>
-        <p className="text-muted-foreground text-sm">安装 / 更新 / 启停插件,操作后 agent 自动重载生效。</p>
-      </div>
+      <PageHeader
+        title="插件"
+        description="安装 / 更新 / 启停插件,操作后 agent 自动重载生效。"
+      />
 
-      {err && <div className="text-destructive text-sm">{err}</div>}
+      {err && <ErrorState description={err} onRetry={load} />}
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2"><Plus className="size-4" />添加插件</CardTitle>
-          <CardDescription>GitHub 传 owner/repo,本地目录传绝对路径;marketplace 名与插件名见其 marketplace.json。</CardDescription>
-        </CardHeader>
-        <CardContent className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <div className="flex flex-col gap-1.5">
-            <Label>来源</Label>
-            <Select value={form.source} onValueChange={(v) => setForm({ ...form, source: v })}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="github">GitHub</SelectItem>
-                <SelectItem value="directory">本地目录</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <Label>{form.source === "github" ? "owner/repo" : "绝对路径"}</Label>
-            <Input value={form.repoOrPath} onChange={(e) => setForm({ ...form, repoOrPath: e.target.value })} />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <Label>marketplace 名</Label>
-            <Input value={form.marketplaceName} onChange={(e) => setForm({ ...form, marketplaceName: e.target.value })} />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <Label>插件名</Label>
-            <Input value={form.pluginName} onChange={(e) => setForm({ ...form, pluginName: e.target.value })} />
-          </div>
-          <div className="sm:col-span-2 lg:col-span-4">
-            <Button onClick={install} disabled={busy || !form.repoOrPath || !form.marketplaceName || !form.pluginName}>安装</Button>
-          </div>
-        </CardContent>
-      </Card>
+      <SectionCard
+        title="添加插件"
+        icon={Plus}
+        description="GitHub 传 owner/repo,本地目录传绝对路径;marketplace 名与插件名见其 marketplace.json。"
+        contentClassName="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"
+      >
+        <div className="flex flex-col gap-1.5">
+          <Label>来源</Label>
+          <Select value={form.source} onValueChange={(v) => setForm({ ...form, source: v })}>
+            <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="github">GitHub</SelectItem>
+              <SelectItem value="directory">本地目录</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <Label>{form.source === "github" ? "owner/repo" : "绝对路径"}</Label>
+          <Input value={form.repoOrPath} onChange={(e) => setForm({ ...form, repoOrPath: e.target.value })} />
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <Label>marketplace 名</Label>
+          <Input value={form.marketplaceName} onChange={(e) => setForm({ ...form, marketplaceName: e.target.value })} />
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <Label>插件名</Label>
+          <Input value={form.pluginName} onChange={(e) => setForm({ ...form, pluginName: e.target.value })} />
+        </div>
+        <div className="sm:col-span-2 lg:col-span-4">
+          <Button onClick={install} disabled={busy || !form.repoOrPath || !form.marketplaceName || !form.pluginName}>安装</Button>
+        </div>
+      </SectionCard>
 
-      <Card>
-        <CardHeader><CardTitle>已装插件</CardTitle></CardHeader>
-        <CardContent>
-          {plugins.length === 0 ? (
-            <Empty>
-              <EmptyHeader>
-                <EmptyMedia variant="icon"><Puzzle /></EmptyMedia>
-                <EmptyTitle>暂无插件</EmptyTitle>
-                <EmptyDescription>用上方表单安装。</EmptyDescription>
-              </EmptyHeader>
-            </Empty>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>ID</TableHead><TableHead>版本</TableHead><TableHead>scope</TableHead>
-                  <TableHead>启用</TableHead><TableHead className="text-right">操作</TableHead>
+      <SectionCard title="已装插件" description="当前安装的插件,可启停、更新或卸载。">
+        {plugins.length === 0 ? (
+          <EmptyState icon={Puzzle} title="暂无插件" description="用上方表单安装。" />
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>ID</TableHead><TableHead>版本</TableHead><TableHead>scope</TableHead>
+                <TableHead>启用</TableHead><TableHead className="text-right">操作</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {plugins.map((p) => (
+                <TableRow key={p.id}>
+                  <TableCell className="font-mono text-xs">{p.id}</TableCell>
+                  <TableCell><Badge variant="secondary">{p.version}</Badge></TableCell>
+                  <TableCell>{p.scope}</TableCell>
+                  <TableCell><Switch checked={p.enabled} disabled={busy} onCheckedChange={() => toggle(p)} /></TableCell>
+                  <TableCell className="flex justify-end gap-2">
+                    <Button size="sm" variant="outline" disabled={busy} onClick={() => update(p)} aria-label="更新插件" title="更新"><RotateCw className="size-3.5" /></Button>
+                    <Button size="sm" variant="outline" disabled={busy} onClick={() => remove(p)} aria-label="卸载插件" title="卸载"><Trash2 className="size-3.5" /></Button>
+                  </TableCell>
                 </TableRow>
-              </TableHeader>
-              <TableBody>
-                {plugins.map((p) => (
-                  <TableRow key={p.id}>
-                    <TableCell className="font-mono text-xs">{p.id}</TableCell>
-                    <TableCell><Badge variant="secondary">{p.version}</Badge></TableCell>
-                    <TableCell>{p.scope}</TableCell>
-                    <TableCell><Switch checked={p.enabled} disabled={busy} onCheckedChange={() => toggle(p)} /></TableCell>
-                    <TableCell className="flex justify-end gap-2">
-                      <Button size="sm" variant="outline" disabled={busy} onClick={() => update(p)}><RefreshCw className="size-3.5" /></Button>
-                      <Button size="sm" variant="outline" disabled={busy} onClick={() => remove(p)}><Trash2 className="size-3.5" /></Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
-        </CardContent>
-      </Card>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+      </SectionCard>
     </div>
   );
 }
