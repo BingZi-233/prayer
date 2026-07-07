@@ -35,6 +35,8 @@ const cfg: AppConfig = {
   reflectLookbackMs: 7200000,
   reflectSettleMs: 600000,
   reflectWindowMax: 60,
+  reflectCompactMs: 86_400_000,
+  reflectCompactMinEntries: 10,
 };
 
 // 构造带控制方法的 fake Query(async generator + 控制方法)
