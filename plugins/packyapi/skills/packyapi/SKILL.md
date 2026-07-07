@@ -10,23 +10,27 @@ PackyAPI = AI API 聚合中转平台(`https://www.packyapi.com`),Anthropic/OpenA
 
 ## 铁律:优先 API,不抓 HTML
 
-- 价格 / 模型 / 分组 → 一律用脚本读公开 JSON `https://www.packyapi.com/api/pricing`。
+- 价格 / 模型 / 分组 → 一律用 MCP 工具 `packy`,底层读公开 JSON `https://www.packyapi.com/api/pricing`。
 - 仅当需要**文档正文**(教程步骤、FAQ)时,才 WebFetch,且只抓 `references/docs-map.md` 里定位到的**单个** URL。
 
-## 命令
+## MCP 工具 `packy`
 
-- `/packy-price [关键词] [--group cc]` — 计价($/1M tokens);给关键词自动列该模型全部可用分组,`--group` 锁单组。
-- `/packy-models [--endpoint anthropic] [--group cc]` — 列可用模型 ID。
-- `/packy-docs <主题>` — 定位并读单个文档页。
+本 plugin 内置 MCP server(`packyapi`),暴露单工具 `packy`。直接调用,无需手动跑脚本:
 
-底层脚本为 TypeScript,Node(v22.6+/24)原生 strip 直跑,零依赖。`${CLAUDE_PLUGIN_ROOT}` 为本 plugin 根:
+| action | 参数 | 作用 |
+|---|---|---|
+| `price` | `keyword?` `group?` `base?` | 计价($/1M tokens);给 `keyword` 自动列该模型全部可用分组,`group` 锁单组 |
+| `models` | `endpoint?` `group?` | 列可用模型 ID |
+| `groups` | — | 分组倍率与说明 |
+| `raw` | `model`(必填) | 单模型原始 JSON |
 
-```bash
-node "${CLAUDE_PLUGIN_ROOT}/scripts/packy.ts" price [关键词] [--group cc] [--base 2]
-node "${CLAUDE_PLUGIN_ROOT}/scripts/packy.ts" models [--endpoint anthropic] [--group cc]
-node "${CLAUDE_PLUGIN_ROOT}/scripts/packy.ts" groups
-node "${CLAUDE_PLUGIN_ROOT}/scripts/packy.ts" raw <model>
-```
+示例调用参数:
+- 查 claude 各组价:`{ "action": "price", "keyword": "claude" }`
+- 锁 cc 组全表:`{ "action": "price", "group": "cc" }`
+- 列 anthropic 端点模型:`{ "action": "models", "endpoint": "anthropic" }`
+- 单模型原始:`{ "action": "raw", "model": "claude-opus-4-8" }`
+
+Server 为 TypeScript,Node(v22.6+/24)原生 strip 直跑;依赖 `@modelcontextprotocol/sdk`(repo 根 node_modules)。
 
 ## 配置 Claude Agent SDK / Claude Code(走 PackyAPI)
 
@@ -35,7 +39,7 @@ ANTHROPIC_BASE_URL=https://www.packyapi.com
 ANTHROPIC_AUTH_TOKEN=<在「令牌管理」建的 token,选 cc 组>
 ```
 
-SDK/CLI 原生读这两个 env → 无需改代码。模型 ID 用 `/packy-models --endpoint anthropic` 查最新。
+SDK/CLI 原生读这两个 env → 无需改代码。模型 ID 用 `packy` 工具 `{ action: "models", endpoint: "anthropic" }` 查最新。
 anthropic 端点路径:`/v1/messages`。
 
 ## 参考
