@@ -145,8 +145,15 @@ export async function runScan(deps: ReflectionPollerDeps): Promise<void> {
 export function registerReflectionPoller(deps: ReflectionPollerDeps): () => void {
   const d = resolve(deps);
   const scanMs = deps.scanMs ?? 300_000;
+  let running = false; // 防重入:上一轮未结束则跳过本次触发,避免同群游标推进前被重复判定/沉淀
   const timer = setInterval(() => {
-    void scanOnce(d).catch((err) => bus.emit("error.occurred", { scope: "reflection", err }));
+    if (running) return;
+    running = true;
+    void scanOnce(d)
+      .catch((err) => bus.emit("error.occurred", { scope: "reflection", err }))
+      .finally(() => {
+        running = false;
+      });
   }, scanMs);
   return () => clearInterval(timer);
 }

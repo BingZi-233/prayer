@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import { openDb } from "@/lib/db/index";
 import { Repo } from "@/lib/db/repo";
 import { bus } from "@/lib/bus";
-import { runScan } from "@/lib/agent/reflection-poller";
+import { runScan, registerReflectionPoller } from "@/lib/agent/reflection-poller";
 
 let repo: Repo;
 const embed = async () => new Float32Array([1, 0, 0]); // 与 openDb(:memory:,3) 一致
@@ -155,5 +155,31 @@ describe("reflection-poller runScan", () => {
     await runScan(opts({ enabledGroups: [], queryFn: qf as never }));
     expect(qf).not.toHaveBeenCalled();
     expect(repo.groupReflectCursor(100)).toBe(0);
+  });
+
+  it("防重入:上一轮扫描未结束时,下一 tick 跳过,不重复判定", async () => {
+    vi.useFakeTimers();
+    try {
+      seed(100, 201, "admin", "答案", NOW - 4000);
+      let release!: () => void;
+      const gate = new Promise<void>((r) => (release = r));
+      // 卡在 gate 的慢 query:模拟单轮扫描耗时超过 scanMs
+      const qf = vi.fn(() =>
+        (async function* () {
+          await gate;
+          yield { type: "assistant", message: { content: [{ type: "text", text: "[]" }] } };
+        })()
+      );
+      const stop = registerReflectionPoller(opts({ scanMs: 1000, queryFn: qf as never }));
+      await vi.advanceTimersByTimeAsync(1000); // tick1:启动扫描,卡在 gate
+      expect(qf).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(1000); // tick2:running=true → 跳过
+      expect(qf).toHaveBeenCalledTimes(1); // 无守卫时此处会变 2
+      release();
+      await vi.advanceTimersByTimeAsync(0); // flush:tick1 收尾,running=false
+      stop();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
