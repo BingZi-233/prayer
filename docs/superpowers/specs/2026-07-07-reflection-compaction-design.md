@@ -84,7 +84,7 @@ setInterval(compactMs) ── registerReflectionCompactor (running 防重入)
 
 - 压缩后 source 统一 `human-reflection:0:{ts}`，`reflectionEntries()` 正则 `human-reflection:(\d+):(\d+)` 仍匹配(gid=0)。管理页/统计将该批显示为 groupId 0（已压缩，全局归属）。
 - 下一轮压缩把上一轮产物当普通反思再整理，天然幂等：稳定后无可合并/删除则产出≈输入，`replaceReflectionEntries` 重写同内容(可接受；或可加“无变化则跳过”优化，非必须)。
-- 与 reflection-poller 并发：两者都是旁路、各自 `running` 门。compactor 整体替换 human-reflection 期间，poller 可能正好 `insertKbEntry` 追加一条 —— 事务隔离下最坏是那条新反思未纳入本轮整理，下一轮补上，无数据损坏。
+- 与 reflection-poller 并发：两者都是旁路、各自 `running` 门。compactor 整体替换 human-reflection 期间，poller 可能正好 `insertKbEntry` 追加一条 —— `replaceReflectionEntries` 只按快照 id 删除（不按 doc），故该新增条目不会被误删，未纳入本轮整理，下一轮补上。
 
 ## 错误处理
 

@@ -336,19 +336,20 @@ export class Repo {
     return [];
   }
 
-  // 整体替换反思库(压缩整理用):单事务删全部 human-reflection chunk+vec,再逐条插入整理结果。
-  // source 统一 human-reflection:0:{ts}(gid 0 = 已压缩,全局归属)。空 entries 由调用方安全底线拦截。
+  // 整体替换反思库(压缩整理用):单事务只删“快照内”的 human-reflection 条目(按 id,不按 doc),
+  // 再插入整理结果 —— 避免删掉压缩 await 期间 poller 并发新增的条目(那些会永久丢失,因 poller 游标已推进、源消息已剪枝)。
+  // source 统一 human-reflection:0:{ts}(gid 0 = 已压缩,全局归属)。
   replaceReflectionEntries(
+    oldIds: number[],
     entries: { content: string; embedding: Float32Array }[],
     sourceTs: number
   ): void {
     this.db.transaction(() => {
-      this.db
-        .prepare(
-          "DELETE FROM kb_vec WHERE chunk_id IN (SELECT id FROM kb_chunks WHERE doc = 'human-reflection')"
-        )
-        .run();
-      this.db.prepare("DELETE FROM kb_chunks WHERE doc = 'human-reflection'").run();
+      if (oldIds.length) {
+        const ph = oldIds.map(() => "?").join(",");
+        this.db.prepare(`DELETE FROM kb_vec WHERE chunk_id IN (${ph})`).run(...oldIds);
+        this.db.prepare(`DELETE FROM kb_chunks WHERE id IN (${ph})`).run(...oldIds);
+      }
       for (const e of entries) {
         const id = this.insertKbChunk("human-reflection", e.content, `human-reflection:0:${sourceTs}`);
         this.insertKbVec(id, e.embedding);

@@ -124,7 +124,7 @@ export async function runCompact(deps: ReflectionCompactorDeps): Promise<void> {
 
     const withVec: { content: string; embedding: Float32Array }[] = [];
     for (const faq of faqs) withVec.push({ content: faq, embedding: await d.embed(faq) });
-    d.repo.replaceReflectionEntries(withVec, d.now());
+    d.repo.replaceReflectionEntries(entries.map((e) => e.id), withVec, d.now());
 
     bus.emit("action.send", {
       action: "send_group_msg",
