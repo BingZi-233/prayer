@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { maskSecret, mergeSecret, writeSettings, readSettings } from "@/lib/settings-writer";
+import { maskSecret, mergeSecret, writeSettingsRaw, readSettings } from "@/lib/settings-writer";
 
 describe("maskSecret", () => {
   it("空值返回空", () => expect(maskSecret("")).toBe(""));
@@ -20,7 +20,7 @@ describe("mergeSecret", () => {
 describe("settings.json 读写", () => {
   it("写入合法 JSON 再读回", () => {
     const dir = mkdtempSync(join(tmpdir(), "cfg-"));
-    writeSettings(dir, { env: { ANTHROPIC_MODEL: "claude-sonnet-5" } });
+    writeSettingsRaw(dir, JSON.stringify({ env: { ANTHROPIC_MODEL: "claude-sonnet-5" } }));
     const raw = readFileSync(join(dir, "settings.json"), "utf8");
     expect(JSON.parse(raw).env.ANTHROPIC_MODEL).toBe("claude-sonnet-5");
     expect(readSettings(dir)?.env?.ANTHROPIC_MODEL).toBe("claude-sonnet-5");
@@ -28,8 +28,8 @@ describe("settings.json 读写", () => {
 
   it("目录不存在时自动创建", () => {
     const dir = join(mkdtempSync(join(tmpdir(), "cfg-")), "nested");
-    writeSettings(dir, { model: "x" });
-    expect(readSettings(dir)?.model).toBe("x");
+    writeSettingsRaw(dir, JSON.stringify({ env: { ANTHROPIC_MODEL: "x" } }));
+    expect(readSettings(dir)?.env?.ANTHROPIC_MODEL).toBe("x");
   });
 
   it("读不存在的 settings 返回 null", () => {
@@ -48,5 +48,3 @@ describe("settings.json 读写", () => {
     expect(readSettings(dir)).toBeNull();
   });
 });
-
-import { writeSettingsRaw } from "@/lib/settings-writer";
