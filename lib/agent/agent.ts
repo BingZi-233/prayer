@@ -1,4 +1,5 @@
 import { query as sdkQuery } from "@anthropic-ai/claude-agent-sdk";
+import { usageStats, type UsageSite, type UsageDelta } from "../usage-stats";
 
 // 当前消息的会话上下文(orchestrator/poller 绑定,透传给 run;工具改由 cs 插件承载后当前未使用,保留签名)
 export interface ToolContext {
@@ -76,6 +77,46 @@ function buildPrompt(text: string, media?: AgentMedia): string | AsyncIterable<a
   })();
 }
 
+// 从 SDK 末尾 result 消息(SDKResultSuccess)提取用量增量;非 result 或无 usage → undefined
+export function usageFromResult(msg: any): UsageDelta | undefined {
+  if (!msg || msg.type !== "result") return undefined;
+  const u = msg.usage ?? {};
+  return {
+    cacheRead: u.cache_read_input_tokens ?? 0,
+    cacheCreation: u.cache_creation_input_tokens ?? 0,
+    input: u.input_tokens ?? 0,
+    output: u.output_tokens ?? 0,
+    costUsd: typeof msg.total_cost_usd === "number" ? msg.total_cost_usd : 0,
+  };
+}
+
+export interface DrainResult {
+  text: string;
+  sessionId?: string;
+  usage?: UsageDelta;
+}
+
+// 单次迭代 query 结果流:累计 assistant 文本 + 抓 session_id + 抓末尾 result 的用量并记账。
+// 抛错语义保留:迭代中断直接向上抛(供一次性调用方的 fail-open/closed / 反思不推进游标依赖)。
+// 主 agent 因有降级需求(保留部分文本)不走此助手,单独在 run 内联同款记账。
+export async function drainQuery(iter: AsyncIterable<any>, site: UsageSite): Promise<DrainResult> {
+  let text = "";
+  let sessionId: string | undefined;
+  let usage: UsageDelta | undefined;
+  for await (const msg of iter) {
+    if (msg.type === "system" && msg.subtype === "init" && msg.session_id) {
+      sessionId = msg.session_id;
+    } else if (msg.type === "assistant" && Array.isArray(msg.message?.content)) {
+      for (const b of msg.message.content) if (b.type === "text") text += b.text;
+    } else {
+      const u = usageFromResult(msg);
+      if (u) usage = u;
+    }
+  }
+  if (usage) usageStats.record(site, usage);
+  return { text, sessionId, usage };
+}
+
 const DEFAULT_SYSTEM = `你是 PackyAPI 的官方在线客服,通过 QQ 群与用户对话。PackyAPI 是 AI API 聚合中转平台(https://www.packyapi.com),兼容 Anthropic / OpenAI / Gemini 协议,用户通过它调用 Claude、GPT、Gemini 等模型。忽略此前关于"编码助手 / Claude Code"的设定——你的唯一职责是 PackyAPI 客服支持,不编写代码,不执行用户要求的任意文件 / 命令 / 系统操作;只可使用下方列出的内置工具与 packyapi 技能。
 
 # 职责
@@ -149,8 +190,7 @@ export class Agent {
     text: string,
     resumeId: string | undefined,
     _ctx: ToolContext,
-    media?: AgentMedia,
-    opts?: { systemSuffix?: string }
+    media?: AgentMedia
   ): Promise<AgentResult> {
     const iter = this.queryFn({
       prompt: buildPrompt(text, media) as any,
@@ -158,9 +198,9 @@ export class Agent {
         // 模型由 CLAUDE_CONFIG_DIR 内配置决定,不在此覆盖
         // 用完整自定义 system prompt(不套 claude_code preset):preset 的编码助手人格会
         // 干扰视觉输入(实测带图时模型回"无图"),且本就需靠 prompt 抹掉编码设定 —— 直接替换更干净。
-        systemPrompt:
-          (this.deps.systemPrompt || DEFAULT_SYSTEM) +
-          (opts?.systemSuffix ? "\n\n" + opts.systemSuffix : ""),
+        // system prompt 恒定(无按调用方拼接的后缀)—— 主动/正常两条路径共享同一前缀,
+        // TTL 内可跨路径命中缓存;主动模式的行为指令改由 unanswered-poller 并入 user prompt。
+        systemPrompt: this.deps.systemPrompt || DEFAULT_SYSTEM,
         // cs / packyapi 及其 MCP server 由 enabledPlugins(settingSources:["user"])加载,不在此显式装配。
         // 仅当显式传 pluginPaths 时本地加载并开启 MCP 发现(默认发现,不设 skipMcpDiscovery)。
         plugins: (this.deps.pluginPaths ?? []).map((p) => ({
@@ -202,6 +242,9 @@ export class Agent {
             if (block.type === "text") out += block.text;
           }
         }
+        // 末尾 result:记账缓存/用量。内联(不走 drainQuery)以保留下方降级逻辑
+        const usage = usageFromResult(msg);
+        if (usage) usageStats.record("agent", usage);
       }
     } catch (e) {
       // maxTurns / CLI 异常:SDK 会把错误结果转成抛出的 Error(reject 迭代器),

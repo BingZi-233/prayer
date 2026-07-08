@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
-import { Activity, Plug, Users, RotateCw, TriangleAlert, Clock, LifeBuoy, ShieldCheck, Brain, MessagesSquare, UserRound, ArrowUpRight } from "lucide-react";
+import { Activity, Plug, Users, RotateCw, TriangleAlert, Clock, LifeBuoy, ShieldCheck, Brain, MessagesSquare, UserRound, ArrowUpRight, Gauge } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
@@ -35,6 +35,11 @@ interface Status {
 }
 interface Sess { key: string; sessionId: string | null; humanMode: boolean; lastQuestion: string | null; updatedAt: number; }
 interface Entry { id: number; content: string; groupId: number | null; ts: number | null; }
+interface UsageRow { site: string; label: string; count: number; cacheRead: number; cacheCreation: number; input: number; output: number; costUsd: number; hitRatio: number; }
+interface Usage { rows: UsageRow[]; total: UsageRow; }
+
+const pct = (r: number) => `${Math.round(r * 100)}%`;
+const kfmt = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n));
 
 const STATE_LABEL: Record<string, string> = {
   running: "运行中",
@@ -55,20 +60,23 @@ export default function StatusPage() {
   const [ov, setOv] = useState<{ enabledGroups: number; reflectionCount: number; openTickets: number; humanSessions: number } | null>(null);
   const [sessions, setSessions] = useState<Sess[] | null>(null);
   const [entries, setEntries] = useState<Entry[] | null>(null);
+  const [usage, setUsage] = useState<Usage | null>(null);
   const { label, name } = useGroupNames();
 
   async function load() {
     try {
-      const [st, o, se, rf] = await Promise.all([
+      const [st, o, se, rf, ug] = await Promise.all([
         fetch("/api/status").then((x) => x.json()),
         fetch("/api/overview").then((x) => x.json()),
         fetch("/api/sessions").then((x) => x.json()),
         fetch("/api/reflection").then((x) => x.json()),
+        fetch("/api/usage").then((x) => x.json()),
       ]);
       if (st.ok) setS(st.data);
       if (o.ok) setOv(o.data);
       if (se.ok) setSessions(se.data);
       if (rf.ok) setEntries(rf.data.entries);
+      if (ug.ok) setUsage(ug.data);
     } catch {
       /* 轮询失败静默 */
     }
@@ -172,7 +180,53 @@ export default function StatusPage() {
         <StatCard icon={Users} label="活动会话" loading={!s} value={s?.sessionCount} />
         <StatCard icon={ShieldCheck} label="生效群" loading={!s} value={ov?.enabledGroups} />
         <StatCard icon={Brain} label="沉淀知识" loading={!s} value={ov?.reflectionCount} />
+        <StatCard
+          icon={Gauge}
+          label="缓存命中(本次运行)"
+          loading={!usage}
+          value={usage ? (usage.total.count > 0 ? pct(usage.total.hitRatio) : "—") : null}
+        />
       </StatGrid>
+
+      {usage && usage.rows.length > 0 && (
+        <SectionCard
+          title="LLM 用量 / 缓存命中"
+          icon={Gauge}
+          description="本次进程运行以来按调用点统计;缓存命中率 = 命中 /(命中+写入+未缓存)。重启清零。"
+        >
+          <div className="overflow-auto">
+            <table className="w-full text-sm">
+              <thead className="text-muted-foreground text-xs">
+                <tr className="border-b [&>th]:px-2 [&>th]:py-1.5 [&>th]:text-right [&>th:first-child]:text-left">
+                  <th>调用点</th><th>次数</th><th>命中率</th><th>命中/写入(tok)</th><th>未缓存(tok)</th><th>输出(tok)</th><th>成本($)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {usage.rows.map((r) => (
+                  <tr key={r.site} className="border-b [&>td]:px-2 [&>td]:py-1.5 [&>td]:text-right [&>td:first-child]:text-left">
+                    <td className="font-medium">{r.label}</td>
+                    <td>{r.count}</td>
+                    <td><Badge variant={r.hitRatio >= 0.8 ? "default" : "secondary"}>{pct(r.hitRatio)}</Badge></td>
+                    <td>{kfmt(r.cacheRead)} / {kfmt(r.cacheCreation)}</td>
+                    <td>{kfmt(r.input)}</td>
+                    <td>{kfmt(r.output)}</td>
+                    <td>{r.costUsd.toFixed(4)}</td>
+                  </tr>
+                ))}
+                <tr className="[&>td]:px-2 [&>td]:py-1.5 [&>td]:text-right [&>td:first-child]:text-left font-medium">
+                  <td>合计</td>
+                  <td>{usage.total.count}</td>
+                  <td>{pct(usage.total.hitRatio)}</td>
+                  <td>{kfmt(usage.total.cacheRead)} / {kfmt(usage.total.cacheCreation)}</td>
+                  <td>{kfmt(usage.total.input)}</td>
+                  <td>{kfmt(usage.total.output)}</td>
+                  <td>{usage.total.costUsd.toFixed(4)}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </SectionCard>
+      )}
 
       <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-2">
         <SectionCard

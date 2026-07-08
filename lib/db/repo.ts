@@ -246,15 +246,82 @@ export class Repo {
       .all() as { groupId: number; count: number; lastTs: number }[];
   }
 
-  // 反思沉淀的知识条目(doc='human-reflection');source 格式 human-reflection:{gid}:{ts},畸形回退 null
-  reflectionEntries(): { id: number; content: string; groupId: number | null; ts: number | null }[] {
+  // 反思沉淀的知识条目(doc='human-reflection');source 格式 human-reflection:{gid}:{ts},畸形回退 null。
+  // LEFT JOIN reflection_meta 带出来源问答(整理后条目 gid=0、无 meta → question/answer 为 null)
+  reflectionEntries(): {
+    id: number;
+    content: string;
+    groupId: number | null;
+    ts: number | null;
+    question: string | null;
+    answer: string | null;
+  }[] {
     const rows = this.db
-      .prepare("SELECT id, content, source FROM kb_chunks WHERE doc = 'human-reflection' ORDER BY id DESC")
-      .all() as { id: number; content: string; source: string | null }[];
+      .prepare(
+        `SELECT c.id, c.content, c.source, m.question, m.answer
+         FROM kb_chunks c LEFT JOIN reflection_meta m ON m.chunk_id = c.id
+         WHERE c.doc = 'human-reflection' ORDER BY c.id DESC`
+      )
+      .all() as { id: number; content: string; source: string | null; question: string | null; answer: string | null }[];
     return rows.map((r) => {
       const m = /^human-reflection:(\d+):(\d+)$/.exec(r.source ?? "");
-      return { id: r.id, content: r.content, groupId: m ? Number(m[1]) : null, ts: m ? Number(m[2]) : null };
+      return {
+        id: r.id,
+        content: r.content,
+        groupId: m ? Number(m[1]) : null,
+        ts: m ? Number(m[2]) : null,
+        question: r.question,
+        answer: r.answer,
+      };
     });
+  }
+
+  // 记录一条沉淀的来源问答(chunk_id 对应 kb_chunks.id)。poller 沉淀后调用。
+  insertReflectionMeta(chunkId: number, groupId: number, question: string, answer: string): void {
+    this.db
+      .prepare(
+        "INSERT OR REPLACE INTO reflection_meta (chunk_id, group_id, question, answer) VALUES (?, ?, ?, ?)"
+      )
+      .run(chunkId, groupId, question, answer);
+  }
+
+  // 最近 N 次整理记录(倒序),before/after 内容内联(解析 JSON)
+  recentCompactions(limit: number): {
+    id: number;
+    ts: number;
+    beforeCount: number;
+    afterCount: number;
+    before: string[];
+    after: string[];
+  }[] {
+    const rows = this.db
+      .prepare(
+        "SELECT id, ts, before_count, after_count, before_json, after_json FROM reflect_compactions ORDER BY ts DESC LIMIT ?"
+      )
+      .all(limit) as {
+      id: number;
+      ts: number;
+      before_count: number;
+      after_count: number;
+      before_json: string;
+      after_json: string;
+    }[];
+    const parse = (s: string): string[] => {
+      try {
+        const v = JSON.parse(s);
+        return Array.isArray(v) ? v : [];
+      } catch {
+        return [];
+      }
+    };
+    return rows.map((r) => ({
+      id: r.id,
+      ts: r.ts,
+      beforeCount: r.before_count,
+      afterCount: r.after_count,
+      before: parse(r.before_json),
+      after: parse(r.after_json),
+    }));
   }
 
   seenMessage(messageId: number): boolean {
@@ -339,21 +406,31 @@ export class Repo {
   // 整体替换反思库(压缩整理用):单事务只删“快照内”的 human-reflection 条目(按 id,不按 doc),
   // 再插入整理结果 —— 避免删掉压缩 await 期间 poller 并发新增的条目(那些会永久丢失,因 poller 游标已推进、源消息已剪枝)。
   // source 统一 human-reflection:0:{ts}(gid 0 = 已压缩,全局归属)。
+  // beforeContents/afterContents:整理前后条目文本快照,事务内记入 reflect_compactions 供 web 追溯差异
   replaceReflectionEntries(
     oldIds: number[],
     entries: { content: string; embedding: Float32Array }[],
-    sourceTs: number
+    sourceTs: number,
+    beforeContents: string[] = [],
+    afterContents: string[] = []
   ): void {
     this.db.transaction(() => {
       if (oldIds.length) {
         const ph = oldIds.map(() => "?").join(",");
         this.db.prepare(`DELETE FROM kb_vec WHERE chunk_id IN (${ph})`).run(...oldIds);
         this.db.prepare(`DELETE FROM kb_chunks WHERE id IN (${ph})`).run(...oldIds);
+        // 删被替换 chunk 的来源 meta,避免孤儿(整理后条目 gid=0、无 meta)
+        this.db.prepare(`DELETE FROM reflection_meta WHERE chunk_id IN (${ph})`).run(...oldIds);
       }
       for (const e of entries) {
         const id = this.insertKbChunk("human-reflection", e.content, `human-reflection:0:${sourceTs}`);
         this.insertKbVec(id, e.embedding);
       }
+      this.db
+        .prepare(
+          "INSERT INTO reflect_compactions (ts, before_count, after_count, before_json, after_json) VALUES (?, ?, ?, ?, ?)"
+        )
+        .run(sourceTs, beforeContents.length, afterContents.length, JSON.stringify(beforeContents), JSON.stringify(afterContents));
     })();
   }
 

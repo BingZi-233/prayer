@@ -61,6 +61,9 @@ describe("reflection-poller runScan", () => {
     expect(hits[0].content).toContain("退款");
     expect(hits[0].source).toContain("human-reflection:100:");
     expect(repo.groupReflectCursor(100)).toBe(NOW - 1000); // until = now - settle
+    // 落来源问答:reflectionEntries 带出 question/answer
+    const entry = repo.reflectionEntries().find((r) => r.groupId === 100)!;
+    expect(entry).toMatchObject({ question: "退款多久到账", answer: "3个工作日" });
   });
 
   it("effective=false → 不入库不通知", async () => {

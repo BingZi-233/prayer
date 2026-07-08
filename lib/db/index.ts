@@ -66,6 +66,22 @@ function migrate(db: Database.Database, dim: number): void {
       created_at INTEGER NOT NULL DEFAULT (unixepoch('subsec') * 1000)
     );
     CREATE INDEX IF NOT EXISTS idx_pr_time ON proactive_replies(created_at);
+    CREATE TABLE IF NOT EXISTS reflect_compactions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      ts INTEGER NOT NULL,
+      before_count INTEGER NOT NULL,
+      after_count INTEGER NOT NULL,
+      before_json TEXT NOT NULL,
+      after_json TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_rc_ts ON reflect_compactions(ts);
+    CREATE TABLE IF NOT EXISTS reflection_meta (
+      chunk_id INTEGER PRIMARY KEY,
+      group_id INTEGER,
+      question TEXT,
+      answer TEXT,
+      created_at INTEGER NOT NULL DEFAULT (unixepoch('subsec') * 1000)
+    );
   `);
   // 旧库补列(resume_id 拆分自 session_id);新库已含,重复加列报错忽略。
   // 回填仅在首次加列时执行(ALTER 成功后),旧 session_id 兼作续接指针,保持既有 resume 行为;

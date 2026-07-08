@@ -32,9 +32,12 @@ export async function GET(): Promise<NextResponse> {
         lookbackMs: cfg.reflectLookbackMs,
         settleMs: cfg.reflectSettleMs,
         windowMax: cfg.reflectWindowMax,
+        compactMs: cfg.reflectCompactMs,
+        compactMinEntries: cfg.reflectCompactMinEntries,
       },
       groups,
       entries,
+      compactions: repo.recentCompactions(30),
     }));
   } catch (err) {
     return NextResponse.json(fail(err instanceof Error ? err.message : String(err)), { status: 500 });

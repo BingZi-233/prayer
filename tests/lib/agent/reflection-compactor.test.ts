@@ -60,6 +60,23 @@ describe("runCompact", () => {
     expect(refs.every((r) => r.groupId === 0 && r.ts === 7_000_000)).toBe(true);
   });
 
+  it("整理成功 → 写入 reflect_compactions 记录(before/after 快照)", async () => {
+    seedReflections(5);
+    await runCompact(opts({ queryFn: fakeQuery('[{"faq":"合并A"},{"faq":"合并B"}]') as never }));
+    const recs = repo.recentCompactions(10);
+    expect(recs).toHaveLength(1);
+    expect(recs[0]).toMatchObject({ ts: 7_000_000, beforeCount: 5, afterCount: 2 });
+    expect(recs[0].before.sort()).toEqual(["反思0", "反思1", "反思2", "反思3", "反思4"]);
+    expect(recs[0].after.sort()).toEqual(["合并A", "合并B"]);
+  });
+
+  it("整理失败(空集)→ 不写整理记录", async () => {
+    seedReflections(5);
+    bus.on("error.occurred", () => {});
+    await runCompact(opts({ queryFn: fakeQuery("[]") as never }));
+    expect(repo.recentCompactions(10)).toHaveLength(0);
+  });
+
   it("安全底线:空数组 → 保留旧库 + emit error,不替换", async () => {
     seedReflections(5);
     const err = new Promise<any>((res) => bus.once("error.occurred", res));

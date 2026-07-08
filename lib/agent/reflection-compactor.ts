@@ -2,7 +2,7 @@ import { query as sdkQuery } from "@anthropic-ai/claude-agent-sdk";
 import { bus } from "../bus";
 import type { Repo } from "../db/repo";
 import { embed as defaultEmbed } from "../tools/embed";
-import { sdkEnv } from "./agent";
+import { sdkEnv, drainQuery } from "./agent";
 
 export interface ReflectionCompactorDeps {
   repo: Repo;
@@ -59,16 +59,6 @@ function extractJsonArray(s: string): unknown {
   }
 }
 
-async function collectText(iter: unknown): Promise<string> {
-  let out = "";
-  for await (const msg of iter as AsyncIterable<any>) {
-    if (msg.type === "assistant" && Array.isArray(msg.message?.content)) {
-      for (const b of msg.message.content) if (b.type === "text") out += b.text;
-    }
-  }
-  return out;
-}
-
 // 安全底线:解析 + 校验 LLM 产出。返回整理后 faq 列表;任一异常返回 null(调用方保留旧库)。
 export function validateCompacted(raw: string, inputCount: number): string[] | null {
   const parsed = extractJsonArray(raw);
@@ -99,18 +89,21 @@ export async function runCompact(deps: ReflectionCompactorDeps): Promise<void> {
     const refBlock = entries.map((e, i) => `[${i + 1}] ${e.content}`).join("\n");
     const prompt = `【权威基础文档片段】\n${baseBlock || "(无)"}\n\n【现有反思条目】\n${refBlock}`;
 
-    const out = await collectText(
+    const { text: out } = await drainQuery(
       d.queryFn({
         prompt,
         options: {
           systemPrompt: COMPACT_SYSTEM,
+          // maxTurns:1 的 JSON 整理任务,关思考省成本/延迟;单次覆盖全局 alwaysThinkingEnabled
+          thinking: { type: "disabled" },
           canUseTool: async () => ({ behavior: "deny" as const, message: "压缩阶段不使用工具" }),
           maxTurns: 1,
           permissionMode: "default",
           settingSources: ["user"],
           env: sdkEnv(),
         } as never,
-      })
+      }) as AsyncIterable<any>,
+      "compact"
     );
 
     const faqs = validateCompacted(out, entries.length);
@@ -124,7 +117,14 @@ export async function runCompact(deps: ReflectionCompactorDeps): Promise<void> {
 
     const withVec: { content: string; embedding: Float32Array }[] = [];
     for (const faq of faqs) withVec.push({ content: faq, embedding: await d.embed(faq) });
-    d.repo.replaceReflectionEntries(entries.map((e) => e.id), withVec, d.now());
+    // 传 before/after 文本快照 → 事务内记入 reflect_compactions,供 web「整理记录」追溯差异
+    d.repo.replaceReflectionEntries(
+      entries.map((e) => e.id),
+      withVec,
+      d.now(),
+      entries.map((e) => e.content),
+      faqs
+    );
 
     bus.emit("action.send", {
       action: "send_group_msg",

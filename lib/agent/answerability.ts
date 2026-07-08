@@ -1,5 +1,5 @@
 import { query as sdkQuery } from "@anthropic-ai/claude-agent-sdk";
-import { sdkEnv } from "./agent";
+import { sdkEnv, drainQuery } from "./agent";
 
 // 主动兜底的可答性判官:判定一条群消息是否为「值得客服主动补位回答的 PackyAPI 产品咨询」。
 // 与 intent.ts 相反,fail-CLOSED:出错/无法解析 → false(主动插话宁可少发)。
@@ -23,16 +23,6 @@ const SYSTEM = `你是 PackyAPI 客服系统的「主动兜底可答性」判官
 只输出一个 JSON 对象,不要额外文字,不要 Markdown 代码块:
 {"answer":true} 或 {"answer":false}`;
 
-async function collectText(iter: unknown): Promise<string> {
-  let out = "";
-  for await (const msg of iter as AsyncIterable<any>) {
-    if (msg.type === "assistant" && Array.isArray(msg.message?.content)) {
-      for (const b of msg.message.content) if (b.type === "text") out += b.text;
-    }
-  }
-  return out;
-}
-
 function parseAnswer(s: string): boolean {
   const m = s.match(/\{[\s\S]*\}/);
   if (!m) return false;
@@ -52,18 +42,21 @@ export function makeAnswerabilityClassifier(deps: AnswerabilityDeps = {}): Answe
   return async (text: string): Promise<boolean> => {
     if (!text.trim()) return false;
     try {
-      const out = await collectText(
+      const { text: out } = await drainQuery(
         queryFn({
           prompt: wrapUserText(text),
           options: {
             systemPrompt: SYSTEM,
+            // maxTurns:1 的 JSON 判定任务,关思考省成本/延迟;单次覆盖全局 alwaysThinkingEnabled
+            thinking: { type: "disabled" },
             canUseTool: async () => ({ behavior: "deny" as const, message: "判定阶段不使用工具" }),
             maxTurns: 1,
             permissionMode: "default",
             settingSources: ["user"],
             env: sdkEnv(),
           } as never,
-        })
+        }) as AsyncIterable<any>,
+        "answerability"
       );
       return parseAnswer(out);
     } catch {

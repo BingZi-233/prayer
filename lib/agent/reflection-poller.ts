@@ -2,7 +2,7 @@ import { query as sdkQuery } from "@anthropic-ai/claude-agent-sdk";
 import { bus } from "../bus";
 import type { Repo } from "../db/repo";
 import { embed as defaultEmbed } from "../tools/embed";
-import { sdkEnv } from "./agent";
+import { sdkEnv, drainQuery } from "./agent";
 
 export interface ReflectionPollerDeps {
   repo: Repo;
@@ -55,16 +55,6 @@ function label(role: string | null): string {
   return role === "owner" || role === "admin" ? "客服" : "用户";
 }
 
-async function collectText(iter: unknown): Promise<string> {
-  let out = "";
-  for await (const msg of iter as AsyncIterable<any>) {
-    if (msg.type === "assistant" && Array.isArray(msg.message?.content)) {
-      for (const b of msg.message.content) if (b.type === "text") out += b.text;
-    }
-  }
-  return out;
-}
-
 function resolve(deps: ReflectionPollerDeps): Resolved {
   return {
     repo: deps.repo,
@@ -101,11 +91,13 @@ async function scanOnce(d: Resolved): Promise<void> {
         .map((m) => `[ts=${m.createdAt}][${label(m.senderRole)} ${m.userId}] ${m.text}`)
         .join("\n");
       const prompt = `已沉降时间区间(只判定此区间内客服发言):(${cursor}, ${until}]\n\n对话记录:\n${transcript}`;
-      const out = await collectText(
+      const { text: out } = await drainQuery(
         d.queryFn({
           prompt,
           options: {
             systemPrompt: REFLECT_SYSTEM,
+            // maxTurns:1 的 JSON 抽取任务,关思考省成本/延迟;单次覆盖全局 alwaysThinkingEnabled
+            thinking: { type: "disabled" },
             canUseTool: async () => ({ behavior: "deny" as const, message: "反思阶段不使用工具" }),
             maxTurns: 1,
             // 同 agent.ts:防 settings 里的 bypassPermissions 把 canUseTool 短路掉
@@ -114,12 +106,20 @@ async function scanOnce(d: Resolved): Promise<void> {
             // 与 agent 一致:剥继承 ANTHROPIC_*,用 CLAUDE_CONFIG_DIR/settings.json 的 env
             env: sdkEnv(),
           } as never,
-        })
+        }) as AsyncIterable<any>,
+        "reflect"
       );
       for (const it of extractJsonArray(out)) {
         if (!it || it.effective !== true || typeof it.faq !== "string" || !it.faq.trim()) continue;
         const faq = it.faq.trim();
-        d.repo.insertKbEntry("human-reflection", faq, `human-reflection:${groupId}:${d.now()}`, await d.embed(faq));
+        const chunkId = d.repo.insertKbEntry("human-reflection", faq, `human-reflection:${groupId}:${d.now()}`, await d.embed(faq));
+        // 落来源问答(供 web 追溯这条沉淀从哪次人工问答来);question/answer 缺失回退空串
+        d.repo.insertReflectionMeta(
+          chunkId,
+          groupId,
+          typeof it.question === "string" ? it.question : "",
+          typeof it.answer === "string" ? it.answer : ""
+        );
         bus.emit("action.send", {
           action: "send_group_msg",
           groupId: d.adminGroupId,

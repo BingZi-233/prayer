@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { Agent, isToolAllowed, sdkEnv } from "@/lib/agent/agent";
+import { usageStats } from "@/lib/usage-stats";
 
 // 模拟 SDK query:产出 init(带 session_id)+ 一条 assistant 文本
 async function* fakeQuery(_args: any) {
@@ -98,8 +99,8 @@ describe("Agent.run", () => {
   });
 });
 
-describe("Agent.run systemSuffix", () => {
-  it("传 systemSuffix → 拼接进 systemPrompt", async () => {
+describe("Agent.run systemPrompt", () => {
+  it("systemPrompt 恒定 = deps.systemPrompt(无按调用拼接的后缀 → 主动/正常路径共享前缀)", async () => {
     let captured: any;
     const queryFn = ((args: any) => {
       captured = args;
@@ -107,28 +108,40 @@ describe("Agent.run systemSuffix", () => {
         yield { type: "assistant", message: { content: [{ type: "text", text: "ok" }] } };
       })();
     }) as any;
-    const agent = new Agent({
-      systemPrompt: "BASE",
-      queryFn,
-    });
-    await agent.run("hi", undefined, { sessionKey: "1:2", groupId: 1, userId: 2 }, undefined, {
-      systemSuffix: "SENTINEL_RULE",
-    });
-    expect(captured.options.systemPrompt).toContain("BASE");
-    expect(captured.options.systemPrompt).toContain("SENTINEL_RULE");
-  });
-
-  it("不传 opts → systemPrompt 不含额外后缀(行为不变)", async () => {
-    let captured: any;
-    const queryFn = ((args: any) => {
-      captured = args;
-      return (async function* () {
-        yield { type: "assistant", message: { content: [{ type: "text", text: "ok" }] } };
-      })();
-    }) as any;
-    const agent = new Agent({systemPrompt: "BASE", queryFn });
+    const agent = new Agent({ systemPrompt: "BASE", queryFn });
     await agent.run("hi", undefined, { sessionKey: "1:2", groupId: 1, userId: 2 });
     expect(captured.options.systemPrompt).toBe("BASE");
+  });
+});
+
+describe("Agent.run 用量记账", () => {
+  it("末尾 result.usage → 记入 usageStats 的 agent 站点", async () => {
+    usageStats.reset();
+    const q = async function* () {
+      yield { type: "system", subtype: "init", session_id: "s" };
+      yield { type: "assistant", message: { content: [{ type: "text", text: "hi" }] } };
+      yield {
+        type: "result",
+        subtype: "success",
+        total_cost_usd: 0.01,
+        usage: {
+          input_tokens: 100,
+          output_tokens: 20,
+          cache_read_input_tokens: 300,
+          cache_creation_input_tokens: 50,
+        },
+      };
+    };
+    const agent = new Agent({ systemPrompt: "s", queryFn: q as any });
+    await agent.run("hi", undefined, { sessionKey: "1:2", groupId: 1, userId: 2 });
+    expect(usageStats.snapshot().agent).toMatchObject({
+      count: 1,
+      input: 100,
+      output: 20,
+      cacheRead: 300,
+      cacheCreation: 50,
+      costUsd: 0.01,
+    });
   });
 });
 

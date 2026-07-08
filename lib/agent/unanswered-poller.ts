@@ -98,13 +98,13 @@ async function scanOnce(d: Resolved): Promise<void> {
         if (upd !== undefined && upd > questionTs) continue;
         // 门1:可答性
         if (!(await d.classify(text))) continue;
-        // 门2:复用主链路 agent,带哨兵
+        // 门2:复用主链路 agent,带哨兵。
+        // 主动模式指令并入 user prompt(而非 system 后缀):使主动/正常两路径 system 前缀恒等,
+        // TTL 内可跨路径命中缓存(~1.5k token 的 system 只需写一次)。行为等价(单轮指令)。
         const result = await d.agent.run(
-          text,
+          `${PROACTIVE_SUFFIX}\n\n${text}`,
           d.store.resumeId(key),
-          { sessionKey: key, groupId, userId },
-          undefined,
-          { systemSuffix: PROACTIVE_SUFFIX }
+          { sessionKey: key, groupId, userId }
         );
         if (!isAnswer(result.text)) continue; // 哨兵/空 → 沉默
         if (result.sessionId) d.store.remember(key, result.sessionId);

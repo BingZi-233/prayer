@@ -1,5 +1,5 @@
 import { query as sdkQuery } from "@anthropic-ai/claude-agent-sdk";
-import { sdkEnv } from "./agent";
+import { sdkEnv, drainQuery } from "./agent";
 
 // 面向 QQ 用户客服 bot 的入站意图分类。只用于在 orchestrator 前置硬拦「套取类」滥用:
 //   bulk_export —— 索要整库/大批量导出(全部售后/订单/模型/计费、指定超长字数)
@@ -45,16 +45,6 @@ normal:其余一切,包括正常客服问题、闲聊、无关请求、让你写
 {"intent":"normal"}
 或 {"intent":"bulk_export"} 或 {"intent":"meta_probe"}`;
 
-async function collectText(iter: unknown): Promise<string> {
-  let out = "";
-  for await (const msg of iter as AsyncIterable<any>) {
-    if (msg.type === "assistant" && Array.isArray(msg.message?.content)) {
-      for (const b of msg.message.content) if (b.type === "text") out += b.text;
-    }
-  }
-  return out;
-}
-
 function parseIntent(s: string): Intent {
   const m = s.match(/\{[\s\S]*\}/);
   if (!m) return "normal";
@@ -80,11 +70,14 @@ export function makeIntentClassifier(deps: IntentClassifierDeps = {}): IntentCla
   return async (text: string): Promise<Intent> => {
     if (!text.trim()) return "normal";
     try {
-      const out = await collectText(
+      const { text: out } = await drainQuery(
         queryFn({
           prompt: wrapUserText(text),
           options: {
             systemPrompt: INTENT_SYSTEM,
+            // maxTurns:1 的 JSON 分类任务,思考纯浪费(延迟+输出 token+计费推理)。
+            // 单次覆盖 settings.json 的全局 alwaysThinkingEnabled。
+            thinking: { type: "disabled" },
             canUseTool: async () => ({ behavior: "deny" as const, message: "分类阶段不使用工具" }),
             maxTurns: 1,
             // 同 agent.ts:防 settings 里的 bypassPermissions 把 canUseTool 短路掉
@@ -93,7 +86,8 @@ export function makeIntentClassifier(deps: IntentClassifierDeps = {}): IntentCla
             // 与 agent/反思一致:剥继承 ANTHROPIC_*,用 CLAUDE_CONFIG_DIR/settings.json 的 env
             env: sdkEnv(),
           } as never,
-        })
+        }) as AsyncIterable<any>,
+        "intent"
       );
       return parseIntent(out);
     } catch {
