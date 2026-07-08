@@ -2,12 +2,13 @@ import { describe, it, expect } from "vitest";
 import { buildToolPolicy } from "@/lib/agent/introspect";
 
 describe("buildToolPolicy", () => {
-  it("allowlist 含 kb_search / WebSearch / WebFetch / Skill,gated 含 Bash/Read", () => {
+  it("allowlist 含 kb_search / packyapi / Skill(无 WebSearch/WebFetch),gated 含 Bash/Read", () => {
     const p = buildToolPolicy();
     expect(p.allowlist).toContain("mcp__plugin_cs_cs__kb_search");
-    expect(p.allowlist).toContain("WebSearch");
-    expect(p.allowlist).toContain("WebFetch");
+    expect(p.allowlist).toContain("mcp__plugin_packyapi_packyapi__packy");
     expect(p.allowlist).toContain("Skill");
+    expect(p.allowlist).not.toContain("WebSearch");
+    expect(p.allowlist).not.toContain("WebFetch");
     const tools = p.gated.map((g) => g.tool);
     expect(tools).toEqual(["Bash", "Read"]);
     for (const g of p.gated) expect(g.constraint).toContain("禁用");

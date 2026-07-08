@@ -187,18 +187,19 @@ describe("Agent.run env", () => {
 });
 
 describe("isToolAllowed", () => {
-  it("白名单工具放行:cs kb_search + packyapi + WebSearch + WebFetch + Skill", () => {
+  it("白名单工具放行:cs kb_search + packyapi + Skill", () => {
     expect(isToolAllowed("mcp__plugin_cs_cs__kb_search", {})).toBe(true);
     expect(isToolAllowed("mcp__plugin_packyapi_packyapi__packy", {})).toBe(true);
-    expect(isToolAllowed("WebSearch", {})).toBe(true);
-    expect(isToolAllowed("WebFetch", { url: "https://evil.com/x" })).toBe(true);
     expect(isToolAllowed("Skill", { command: "packyapi" })).toBe(true);
   });
-  it("Bash / Read 整体禁用", () => {
+  it("Bash / Read / WebSearch / WebFetch 禁用", () => {
     expect(isToolAllowed("Bash", { command: "node /a/packy.ts models" })).toBe(false);
     expect(isToolAllowed("Bash", { command: "rm -rf /" })).toBe(false);
     expect(isToolAllowed("Read", { file_path: "/x/plugins/packyapi/skills/packyapi/references/docs-map.md" })).toBe(false);
     expect(isToolAllowed("Read", { file_path: "/etc/passwd" })).toBe(false);
+    // 联网工具已禁(整页正文入 context,无缓存下每 turn 重发放大成本)
+    expect(isToolAllowed("WebSearch", {})).toBe(false);
+    expect(isToolAllowed("WebFetch", { url: "https://evil.com/x" })).toBe(false);
   });
   it("其余工具拒绝", () => {
     expect(isToolAllowed("Write", { file_path: "/x" })).toBe(false);

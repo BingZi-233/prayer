@@ -148,16 +148,15 @@ const DEFAULT_SYSTEM = `你是 PackyAPI 的官方在线客服,通过 QQ 群与�
 // 工具白名单:无条件放行的工具名。
 // 插件 MCP 工具名由 SDK 拼作 mcp__plugin_<插件名>_<server名>__<工具名>(冒号→下划线);
 // 实测:cs 插件 → mcp__plugin_cs_cs__kb_search;packyapi 插件 → mcp__plugin_packyapi_packyapi__packy。
-// Skill 仅加载 skill 正文(markdown 指令),真实动作仍受 Bash/Read/WebFetch 白名单约束;
+// Skill 仅加载 skill 正文(markdown 指令),真实动作仍受白名单约束;
 // 放行它模型才能按 skill 描述自动触发 packyapi 查价,而非退到 Bash 兜底。
 export const CS_KB_TOOL = "mcp__plugin_cs_cs__kb_search";
 export const PACKY_TOOL = "mcp__plugin_packyapi_packyapi__packy";
-// WebSearch / WebFetch 无条件放行(联网检索/取页);Bash 整体禁用(见 isToolAllowed 无 Bash 分支)。
+// WebSearch / WebFetch 禁用:整页正文/检索结果塞进 context,无缓存下每 turn 重发放大成本
+// (排查见 [[prayer-llm-cache-cost]]);产品信息走 kb_search / packyapi 技能。Bash / Read 亦禁用。
 export const TOOL_ALLOWLIST = new Set<string>([
   CS_KB_TOOL,
   PACKY_TOOL,
-  "WebSearch",
-  "WebFetch",
   "Skill",
 ]);
 
@@ -174,9 +173,9 @@ export function denyMessage(toolName: string): string {
   switch (toolName) {
     case "Bash":
     case "Read":
-      return `${toolName} 已禁用。改用 kb_search、packyapi 技能,或 WebSearch / WebFetch 获取信息。`;
+      return `${toolName} 已禁用。改用 kb_search 或 packyapi 技能获取信息。`;
     default:
-      return `无 ${toolName} 工具可用。请改用 kb_search、packyapi 技能或 WebSearch / WebFetch。`;
+      return `无 ${toolName} 工具可用。请改用 kb_search 或 packyapi 技能。`;
   }
 }
 
