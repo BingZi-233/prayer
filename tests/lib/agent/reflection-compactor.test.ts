@@ -198,3 +198,61 @@ describe("registerReflectionCompactor 防重入", () => {
     }
   });
 });
+
+describe("registerReflectionCompactor 到期判定 + 持久游标(修复重启清零)", () => {
+  it("首刷:装配后延迟 firstDelayMs 到期即跑一次(不必等满 scanMs)", async () => {
+    const { registerReflectionCompactor } = await import("@/lib/agent/reflection-compactor");
+    vi.useFakeTimers();
+    try {
+      seedReflections(5);
+      const qf = vi.fn(fakeQuery('[{"faq":"甲"},{"faq":"乙"}]'));
+      // compactMs 大(1h),但 compactAt=0 → now-0 已到期;首刷延迟 50ms
+      const stop = registerReflectionCompactor(
+        opts({ compactMs: 3_600_000, scanMs: 3_600_000, firstDelayMs: 50, queryFn: qf as never })
+      );
+      await vi.advanceTimersByTimeAsync(50);
+      expect(qf).toHaveBeenCalledTimes(1);
+      stop();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("未到期:now-compactAt < compactMs → 跳过不跑", async () => {
+    const { registerReflectionCompactor } = await import("@/lib/agent/reflection-compactor");
+    vi.useFakeTimers();
+    try {
+      seedReflections(5);
+      repo.setCompactAt(7_000_000 - 500); // 距 now(7_000_000)仅 500 < compactMs 1000
+      const qf = vi.fn(fakeQuery("[]"));
+      const stop = registerReflectionCompactor(
+        opts({ compactMs: 1000, scanMs: 1000, firstDelayMs: 10, queryFn: qf as never })
+      );
+      await vi.advanceTimersByTimeAsync(2000);
+      expect(qf).not.toHaveBeenCalled();
+      stop();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("重启补跑:游标陈旧(距 now ≥ compactMs)→ 到期跑,并推进游标到 now", async () => {
+    const { registerReflectionCompactor } = await import("@/lib/agent/reflection-compactor");
+    vi.useFakeTimers();
+    try {
+      seedReflections(5);
+      repo.setCompactAt(7_000_000 - 5000); // 陈旧游标,> compactMs 1000
+      const qf = vi.fn(fakeQuery('[{"faq":"甲"},{"faq":"乙"}]'));
+      const stop = registerReflectionCompactor(
+        opts({ compactMs: 1000, scanMs: 1000, firstDelayMs: 10, queryFn: qf as never })
+      );
+      await vi.advanceTimersByTimeAsync(10); // 首刷即到期
+      expect(qf).toHaveBeenCalledTimes(1);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(repo.compactAt()).toBe(7_000_000); // 无论成败游标推进到 now
+      stop();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

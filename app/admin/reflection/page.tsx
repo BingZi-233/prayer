@@ -1,10 +1,24 @@
 "use client";
 
-import { Brain, Clock, Layers, GitCompareArrows, Timer, Gauge } from "lucide-react";
+import { useState } from "react";
+import { toast } from "sonner";
+import { Brain, Clock, Layers, GitCompareArrows, Timer, Gauge, Wand2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Spinner } from "@/components/ui/spinner";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import { RelativeTime } from "@/components/relative-time";
 import { PageHeader } from "@/components/admin/page-header";
 import { StatCard, StatGrid } from "@/components/admin/stat";
@@ -41,12 +55,60 @@ function diff(before: string[], after: string[]) {
 export default function ReflectionPage() {
   const { data: d, error, loading, refresh } = usePolling<Data>("/api/reflection");
   const { name } = useGroupNames();
+  const [busy, setBusy] = useState(false);
   const entryCount = d?.entries.length ?? 0;
   const willCompact = d ? entryCount >= d.config.compactMinEntries : false;
 
+  async function compact() {
+    setBusy(true);
+    try {
+      const r = await fetch("/api/reflection/compact", { method: "POST" }).then((x) => x.json());
+      if (r.ok) {
+        toast.success(r.data.ran ? `已整理:${r.data.before} → ${r.data.after} 条` : "整理完成:无变化(未达阈值或结果不变)");
+      } else {
+        toast.error(`整理失败:${r.error}`);
+      }
+    } catch (e) {
+      toast.error(`整理失败:${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      await refresh();
+      setBusy(false);
+    }
+  }
+
   return (
     <div className="flex flex-col gap-6">
-      <PageHeader title="反思" description="被动反思:从人工回复沉淀知识回填知识库,并定期整理合并。" />
+      <PageHeader
+        title="反思"
+        description="被动反思:从人工回复沉淀知识回填知识库,并定期整理合并。"
+        actions={
+          <Dialog>
+            <DialogTrigger asChild>
+              <Button disabled={busy || !willCompact}>
+                {busy ? <Spinner data-icon="inline-start" /> : <Wand2 data-icon="inline-start" />}
+                {busy ? "整理中…" : "立即整理"}
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>立即整理反思条目</DialogTitle>
+                <DialogDescription>
+                  对当前 {entryCount} 条沉淀条目做一次近义合并/去冗整理,结果整体替换旧条目并留档。
+                  整理由 LLM 执行,可能耗时数十秒。
+                </DialogDescription>
+              </DialogHeader>
+              <DialogFooter>
+                <DialogClose asChild>
+                  <Button variant="outline">取消</Button>
+                </DialogClose>
+                <DialogClose asChild>
+                  <Button onClick={compact} disabled={busy}>确认整理</Button>
+                </DialogClose>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        }
+      />
 
       <StatGrid>
         <StatCard icon={Clock} label="扫描周期" value={d ? min(d.config.scanMs) : "—"} loading={loading} />

@@ -1,5 +1,6 @@
 import { query as sdkQuery } from "@anthropic-ai/claude-agent-sdk";
 import { bus } from "../bus";
+import { logger } from "../logger";
 import type { Repo } from "../db/repo";
 import { embed as defaultEmbed } from "../tools/embed";
 import { sdkEnv, drainQuery } from "./agent";
@@ -8,6 +9,10 @@ export interface ReflectionCompactorDeps {
   repo: Repo;
   adminGroupId: number;
   compactMs?: number;
+  // 到期检查周期:每隔 scanMs 看一次 now-compactAt 是否 ≥ compactMs。缺省 min(compactMs, 1h)
+  scanMs?: number;
+  // 装配后首次到期检查的延迟,给 boot 让路。缺省 30s
+  firstDelayMs?: number;
   minEntries?: number;
   baseContextK?: number;
   embed?: (text: string) => Promise<Float32Array>;
@@ -136,18 +141,32 @@ export async function runCompact(deps: ReflectionCompactorDeps): Promise<void> {
   }
 }
 
-// 监听式装配:定时压缩,返回 teardown。旁路观察者,失败不阻断主链路。
+// 监听式装配:扫描式定时压缩 + 持久游标,返回 teardown。旁路观察者,失败不阻断主链路。
+// 修复:旧版纯 setInterval(24h) 无首刷、无持久化,pm2 重启/热重载每次清零倒计时 → 整理永不触发。
+// 新版按 config 持久游标 reflect_compact_at 判到期,重启后仍能补跑;并在装配后延迟首刷一次。
 export function registerReflectionCompactor(deps: ReflectionCompactorDeps): () => void {
   const compactMs = deps.compactMs ?? 86_400_000;
+  const scanMs = deps.scanMs ?? Math.min(compactMs, 3_600_000);
+  const now = deps.now ?? (() => Date.now());
+  const repo = deps.repo;
   let running = false; // 防重入:上一轮未结束则跳过本次触发
-  const timer = setInterval(() => {
+  const tick = () => {
     if (running) return;
+    if (now() - repo.compactAt() < compactMs) return; // 未到期
     running = true;
+    logger.log("info", "[reflection-compact] due, running");
     void runCompact(deps)
       .catch((err) => bus.emit("error.occurred", { scope: "reflection-compact", err }))
       .finally(() => {
+        // 无论成败推进游标:到期即消费一个周期,失败下周期重试,避免每 scanMs 反复打 LLM
+        repo.setCompactAt(now());
         running = false;
       });
-  }, compactMs);
-  return () => clearInterval(timer);
+  };
+  const timer = setInterval(tick, scanMs);
+  const kick = setTimeout(tick, deps.firstDelayMs ?? 30_000); // leading-edge:装配后先检一次
+  return () => {
+    clearInterval(timer);
+    clearTimeout(kick);
+  };
 }

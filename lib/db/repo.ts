@@ -231,6 +231,16 @@ export class Repo {
     this.setConfigRow(`reflect_cursor:${groupId}`, String(ts));
   }
 
+  // 全局反思整理游标(上次整理完成时间戳),复用 config 表。
+  // 持久化 → 进程重启/热重载后按 now-cursor 到期判定补跑,不随内存定时器清零(修复整理永不触发)。
+  compactAt(): number {
+    return Number(this.getConfigRow("reflect_compact_at") ?? "0");
+  }
+
+  setCompactAt(ts: number): void {
+    this.setConfigRow("reflect_compact_at", String(ts));
+  }
+
   // 每群反思游标(config key = reflect_cursor:{gid}),供反思/群活动页展示进度
   reflectCursors(): { groupId: number; cursor: number }[] {
     const rows = this.db
