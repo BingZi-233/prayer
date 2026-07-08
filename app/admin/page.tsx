@@ -170,7 +170,6 @@ export default function StatusPage() {
           value={s ? <Badge variant={s.wsConnected ? "default" : "secondary"}>{s.wsConnected ? "已连接" : "断开"}</Badge> : null}
         />
         <StatCard icon={Users} label="活动会话" loading={!s} value={s?.sessionCount} />
-        <StatCard icon={LifeBuoy} label="转人工/工单" loading={!s} value={s?.handoffQueue} />
         <StatCard icon={ShieldCheck} label="生效群" loading={!s} value={ov?.enabledGroups} />
         <StatCard icon={Brain} label="沉淀知识" loading={!s} value={ov?.reflectionCount} />
       </StatGrid>
