@@ -1,5 +1,5 @@
 import { readdirSync, existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
 export interface TranscriptMsg {
   role: "user" | "assistant" | "tool";
@@ -119,15 +119,16 @@ export function parseTranscript(jsonl: string): TranscriptMsg[] {
 }
 
 export function findTranscript(configDir: string, sessionId: string): string | null {
-  const root = join(configDir, "projects");
-  if (!existsSync(root)) return null;
+  // configDir 为运行时配置(常在项目外)。fs 参数加 turbopackIgnore,避免 NFT 把整仓 trace 进来。
+  const root = join(resolve(configDir), "projects");
+  if (!existsSync(/* turbopackIgnore: true */ root)) return null;
   const target = `${sessionId}.jsonl`;
   const stack = [root];
   while (stack.length) {
     const dir = stack.pop()!;
     let entries;
     try {
-      entries = readdirSync(dir, { withFileTypes: true });
+      entries = readdirSync(/* turbopackIgnore: true */ dir, { withFileTypes: true });
     } catch {
       continue;
     }
@@ -143,5 +144,5 @@ export function findTranscript(configDir: string, sessionId: string): string | n
 export function readTranscript(configDir: string, sessionId: string): TranscriptMsg[] {
   const p = findTranscript(configDir, sessionId);
   if (!p) return [];
-  return parseTranscript(readFileSync(p, "utf8"));
+  return parseTranscript(readFileSync(/* turbopackIgnore: true */ p, "utf8"));
 }
