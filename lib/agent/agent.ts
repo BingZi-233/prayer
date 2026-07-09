@@ -152,20 +152,20 @@ const DEFAULT_SYSTEM = `你是 PackyAPI 的官方在线客服,通过 QQ 群与�
 // 放行它模型才能按 skill 描述自动触发 packyapi 查价,而非退到 Bash 兜底。
 export const CS_KB_TOOL = "mcp__plugin_cs_cs__kb_search";
 export const PACKY_TOOL = "mcp__plugin_packyapi_packyapi__packy";
-// WebSearch / WebFetch 禁用:整页正文/检索结果塞进 context,无缓存下每 turn 重发放大成本
-// (排查见 [[prayer-llm-cache-cost]]);产品信息走 kb_search / packyapi 技能。Bash / Read 亦禁用。
+// 所有 MCP 工具(名以 mcp__ 前缀)统一由 isToolAllowed 无条件放行 —— 插件新增 server/工具无需改此处。
+// 本 Set 只留非 MCP 的显式放行项。WebSearch / WebFetch 禁用:整页正文/检索结果塞进 context,
+// 无缓存下每 turn 重发放大成本(排查见 [[prayer-llm-cache-cost]])。Bash / Read 亦禁用。
 export const TOOL_ALLOWLIST = new Set<string>([
-  CS_KB_TOOL,
-  PACKY_TOOL,
   "Skill",
 ]);
 
 // Agent 降级兜底文案:maxTurns/CLI 出错且无累积文本时返回。主动路径据此判为非答案 → 沉默。
 export const AGENT_FALLBACK_TEXT = "(处理超出步数上限或出错,请换个说法或稍后再试)";
 
-// 权限判定:白名单命中 → 放行;Bash / Read 整体禁用;其余一律拒绝
+// 权限判定:所有 MCP 工具(mcp__ 前缀)无条件放行 —— 插件 MCP 均为受控只读查询,
+// 新增 server/工具免改白名单;再叠加非 MCP 的显式放行项(Skill)。Bash/Read/Web* 等宿主工具一律拒绝。
 export function isToolAllowed(toolName: string, _input: Record<string, unknown>): boolean {
-  return TOOL_ALLOWLIST.has(toolName);
+  return toolName.startsWith("mcp__") || TOOL_ALLOWLIST.has(toolName);
 }
 
 // 拒因 message:引导模型停止重试、改走合规路径,避免反复撞被拒工具烧光 maxTurns

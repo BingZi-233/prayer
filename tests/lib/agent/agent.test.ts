@@ -192,6 +192,10 @@ describe("isToolAllowed", () => {
     expect(isToolAllowed("mcp__plugin_packyapi_packyapi__packy", {})).toBe(true);
     expect(isToolAllowed("Skill", { command: "packyapi" })).toBe(true);
   });
+  it("所有 MCP 工具(mcp__ 前缀)无条件放行 —— 新增 server/工具免改白名单", () => {
+    expect(isToolAllowed("mcp__plugin_foo_bar__anything", {})).toBe(true);
+    expect(isToolAllowed("mcp__whatever", {})).toBe(true);
+  });
   it("Bash / Read / WebSearch / WebFetch 禁用", () => {
     expect(isToolAllowed("Bash", { command: "node /a/packy.ts models" })).toBe(false);
     expect(isToolAllowed("Bash", { command: "rm -rf /" })).toBe(false);

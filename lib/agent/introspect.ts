@@ -42,7 +42,7 @@ export interface Capabilities {
 // SDK 不上报本 host 的白名单,故在此静态描述。
 export function buildToolPolicy(): CapabilityToolPolicy {
   return {
-    allowlist: [...TOOL_ALLOWLIST],
+    allowlist: ["mcp__* — 所有插件 MCP 工具", ...TOOL_ALLOWLIST],
     gated: [
       { tool: "Bash", constraint: "整体禁用,不接受任何命令" },
       { tool: "Read", constraint: "整体禁用,不读任何文件" },
