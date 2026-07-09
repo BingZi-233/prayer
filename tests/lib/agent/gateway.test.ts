@@ -11,7 +11,7 @@ const BOT = 555;
 beforeEach(() => {
   bus.removeAllListeners();
   repo = new Repo(openDb(":memory:"));
-  registerGateway({ repo, botQQ: BOT, adminGroupId: 999, enabledGroups: [1] });
+  registerGateway({ repo, botQQ: BOT, adminGroupId: 999, enabledGroups: [1], supportUrl: "https://example.com" });
 });
 
 function collectQualified(): Promise<QualifiedMessage> {
@@ -26,6 +26,14 @@ describe("gateway", () => {
     expect(q.sessionKey).toBe("1:2");
     expect(q.text).toBe("订单在哪");
     expect(q.messageId).toBe(10); // 透传触发消息 id,供回复引用
+  });
+
+  it("写入 lastQuestion 供会话列表预览", async () => {
+    const p = collectQualified();
+    bus.emit("message.received", { groupId: 1, userId: 2, messageId: 101, rawText: "多少钱", atList: [BOT] });
+    await p;
+    const s = repo.listSessions().find((x) => x.key === "1:2");
+    expect(s?.lastQuestion).toBe("多少钱");
   });
 
   it("纯图消息(无文本)@bot 也放行,并透传 images/quoted/forwarded", async () => {
@@ -87,6 +95,23 @@ describe("gateway", () => {
     expect(q.text).toBe("怎么重置密码");
   });
 
+  it("@bot 人工 → handoff.requested", async () => {
+    const p = new Promise<any>((res) => bus.once("handoff.requested", res));
+    bus.emit("message.received", { groupId: 1, userId: 2, messageId: 50, rawText: "人工", atList: [BOT] });
+    const h = await p;
+    expect(h.sessionKey).toBe("1:2");
+    expect(h.groupId).toBe(1);
+  });
+
+  it("human-mode 会话丢弃 qualified", async () => {
+    repo.setHumanMode("1:2", true);
+    const spy = vi.fn();
+    bus.on("message.qualified", spy);
+    bus.emit("message.received", { groupId: 1, userId: 2, messageId: 51, rawText: "还在吗", atList: [BOT] });
+    await new Promise((r) => setTimeout(r, 30));
+    expect(spy).not.toHaveBeenCalled();
+  });
+
   it("管理群 !reset <key> → 清 resumeId 并回确认", async () => {
     repo.setSessionId("1:2", "sid-old");
     const p = new Promise<any>((res) => bus.once("action.send", res));
@@ -96,6 +121,14 @@ describe("gateway", () => {
     expect(a.text).toContain("1:2");
     expect(repo.getResumeId("1:2")).toBeUndefined(); // 续接指针已清
     expect(repo.getSessionId("1:2")).toBe("sid-old"); // 展示指针保留
+  });
+
+  it("管理群 !resume <key> → handoff.resumed", async () => {
+    const p = new Promise<any>((res) => bus.once("handoff.resumed", res));
+    bus.emit("message.received", { groupId: 999, userId: 7, messageId: 23, rawText: "!resume 1:2", atList: [BOT] });
+    const h = await p;
+    expect(h.sessionKey).toBe("1:2");
+    expect(h.by).toBe("admin");
   });
 
   it("非生效群 @bot 不触发", async () => {
@@ -113,5 +146,13 @@ describe("gateway", () => {
     const a = await p;
     expect(a.groupId).toBe(999);
     expect(repo.getResumeId("1:2")).toBeUndefined();
+  });
+
+  it("帮助关键词回用法", async () => {
+    const p = new Promise<any>((res) => bus.once("action.send", res));
+    bus.emit("message.received", { groupId: 1, userId: 2, messageId: 60, rawText: "帮助", atList: [BOT] });
+    const a = await p;
+    expect(a.text).toContain("@我");
+    expect(a.text).toContain("example.com");
   });
 });

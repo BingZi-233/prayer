@@ -27,7 +27,6 @@ function mcpVariant(s: string): "default" | "secondary" | "destructive" {
   return "secondary";
 }
 
-// 页内复用:插件/技能/MCP server 三处近乎一致的条目外壳(名 + 徽标 + 副内容)。
 function CapItem({ title, badge, children }: { title: ReactNode; badge?: ReactNode; children?: ReactNode }) {
   return (
     <div className="flex flex-col gap-1.5 rounded-md border p-3">
@@ -38,6 +37,30 @@ function CapItem({ title, badge, children }: { title: ReactNode; badge?: ReactNo
       {children}
     </div>
   );
+}
+
+/** 运营可读摘要:从插件/MCP 工具名推断能做什么 */
+function humanSummary(caps: Capabilities): { can: string[]; cannot: string[] } {
+  const toolNames = caps.mcpServers.flatMap((m) => m.tools.map((t) => t.name.toLowerCase()));
+  const all = toolNames.join(" ");
+  const can: string[] = [];
+  const cannot = [
+    "查询个人订单 / 到账 / 退款",
+    "账号封禁解封",
+    "代写代码或执行任意系统命令",
+  ];
+  if (all.includes("kb") || all.includes("search") || caps.plugins.some((p) => p.name.includes("cs"))) {
+    can.push("知识库问答(产品 FAQ / 接入文档)");
+  }
+  if (all.includes("packy") || caps.plugins.some((p) => p.name.includes("packy"))) {
+    can.push("实时查价 / 可用模型");
+  }
+  if (caps.skills.length) {
+    can.push(...caps.skills.slice(0, 4).map((s) => `技能: ${s.name}`));
+  }
+  if (can.length === 0) can.push("当前未探测到可用业务工具");
+  can.push("转人工(用户发「人工」建工单)");
+  return { can, cannot };
 }
 
 export default function CapabilitiesPage() {
@@ -61,12 +84,13 @@ export default function CapabilitiesPage() {
   useEffect(() => { load(); }, []);
 
   const gatedCount = caps ? caps.toolPolicy.allowlist.length + caps.toolPolicy.gated.length : 0;
+  const summary = caps ? humanSummary(caps) : null;
 
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
         title="能力"
-        description="Agent 运行时持有的插件、技能、MCP server 与工具门控(经 SDK 上报)。"
+        description="Agent 运行时持有的插件、技能、MCP server 与工具门控。"
         actions={
           <Button onClick={() => load(true)} disabled={busy}>
             {busy ? <Spinner data-icon="inline-start" /> : <RotateCw data-icon="inline-start" />}
@@ -79,6 +103,29 @@ export default function CapabilitiesPage() {
 
       {!caps && !err && <Skeleton className="h-72 w-full" />}
 
+      {caps && summary && (
+        <SectionCard title="运营摘要" description="给非工程师看的人话能力边界。">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div>
+              <p className="mb-2 text-sm font-medium text-green-700 dark:text-green-400">当前能</p>
+              <ul className="text-muted-foreground flex flex-col gap-1 text-sm">
+                {summary.can.map((x) => (
+                  <li key={x}>· {x}</li>
+                ))}
+              </ul>
+            </div>
+            <div>
+              <p className="mb-2 text-sm font-medium text-red-700 dark:text-red-400">当前不能</p>
+              <ul className="text-muted-foreground flex flex-col gap-1 text-sm">
+                {summary.cannot.map((x) => (
+                  <li key={x}>· {x}</li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </SectionCard>
+      )}
+
       {caps && (
         <Tabs defaultValue="plugins">
           <TabsList>
@@ -89,7 +136,7 @@ export default function CapabilitiesPage() {
           </TabsList>
 
           <TabsContent value="plugins">
-            <SectionCard title="插件" description="本地加载的 plugin(skills/commands)。" contentClassName="flex flex-col gap-3">
+            <SectionCard title="插件" description="本地加载的 plugin。" contentClassName="flex flex-col gap-3">
               {caps.plugins.length === 0 ? (
                 <EmptyState icon={Puzzle} title="无插件" description="Agent 未加载任何本地 plugin。" />
               ) : (

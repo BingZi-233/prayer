@@ -23,6 +23,11 @@ const cfg: AppConfig = {
   reflectCompactMinEntries: 10,
   reflectNotifyAdmin: true,
   resumeTtlMs: 300000,
+  supportUrl: "https://www.packyapi.com",
+  ackEnabled: true,
+  maxReplyChars: 900,
+  usageBudgetUsd: 0,
+  groupPolicies: {},
 };
 
 function fakeBuilders(overrides: Partial<RuntimeBuilders> = {}): RuntimeBuilders {

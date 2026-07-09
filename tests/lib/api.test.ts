@@ -23,6 +23,11 @@ const cfg: AppConfig = {
   proactiveScanMs: 60000,
   proactiveSilenceMs: 180000,
   proactiveMaxPerScan: 2,
+  supportUrl: "https://www.packyapi.com",
+  ackEnabled: true,
+  maxReplyChars: 900,
+  usageBudgetUsd: 0,
+  groupPolicies: {},
 };
 
 describe("api helpers", () => {

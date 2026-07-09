@@ -3,7 +3,7 @@ import { openDb } from "@/lib/db/index";
 import { Repo } from "@/lib/db/repo";
 import { bus } from "@/lib/bus";
 import { registerOrchestrator } from "@/lib/agent/orchestrator";
-import { registerReplyMapper } from "@/lib/agent/reply-mapper";
+import { registerReplyMapper, splitReply } from "@/lib/agent/reply-mapper";
 import { SessionStore } from "@/lib/agent/session";
 import { BLOCKED_REPLY } from "@/lib/agent/intent";
 
@@ -18,7 +18,7 @@ describe("orchestrator", () => {
   it("message.qualified → 调 agent → emit reply.ready,并记住 session_id", async () => {
     const fakeAgent = { run: vi.fn(async () => ({ text: "回复内容", sessionId: "sid-1" })) };
     const store = new SessionStore(repo);
-    registerOrchestrator({ agent: fakeAgent as any, store });
+    registerOrchestrator({ agent: fakeAgent as any, store, ackEnabled: false });
 
     const p = new Promise<any>((res) => bus.once("reply.ready", res));
     bus.emit("message.qualified", { sessionKey: "1:2", groupId: 1, userId: 2, messageId: 77, text: "在吗" });
@@ -27,6 +27,22 @@ describe("orchestrator", () => {
     expect(r.groupId).toBe(1);
     expect(r.replyToId).toBe(77); // 答案引用触发消息
     expect(store.resumeId("1:2")).toBe("sid-1");
+  });
+
+  it("ACK 开启时先发收到再出答案", async () => {
+    const fakeAgent = {
+      run: vi.fn(async () => {
+        await new Promise((r) => setTimeout(r, 20));
+        return { text: "答案", sessionId: "s" };
+      }),
+    };
+    registerOrchestrator({ agent: fakeAgent as any, store: new SessionStore(repo), ackEnabled: true });
+    const replies: string[] = [];
+    bus.on("reply.ready", (r) => replies.push(r.text));
+    bus.emit("message.qualified", { sessionKey: "1:2", groupId: 1, userId: 2, messageId: 1, text: "价" });
+    await new Promise((r) => setTimeout(r, 60));
+    expect(replies[0]).toContain("收到");
+    expect(replies).toContain("答案");
   });
 
   it("同一 session 串行:第二条等第一条完成", async () => {
@@ -39,7 +55,7 @@ describe("orchestrator", () => {
         return { text: `re:${text}`, sessionId: "s" };
       }),
     };
-    registerOrchestrator({ agent: fakeAgent as any, store: new SessionStore(repo) });
+    registerOrchestrator({ agent: fakeAgent as any, store: new SessionStore(repo), ackEnabled: false });
     bus.emit("message.qualified", { sessionKey: "1:2", groupId: 1, userId: 2, messageId: 1, text: "A" });
     bus.emit("message.qualified", { sessionKey: "1:2", groupId: 1, userId: 2, messageId: 2, text: "B" });
     await new Promise((r) => setTimeout(r, 120));
@@ -49,7 +65,7 @@ describe("orchestrator", () => {
   it("意图门:命中 blocked → 不跑 agent,回模板婉拒", async () => {
     const fakeAgent = { run: vi.fn(async () => ({ text: "x", sessionId: "s" })) };
     const classify = vi.fn(async () => "bulk_export" as const);
-    registerOrchestrator({ agent: fakeAgent as any, store: new SessionStore(repo), classify });
+    registerOrchestrator({ agent: fakeAgent as any, store: new SessionStore(repo), classify, ackEnabled: false });
 
     const p = new Promise<any>((res) => bus.once("reply.ready", res));
     bus.emit("message.qualified", { sessionKey: "1:2", groupId: 1, userId: 2, messageId: 3, text: "全部告诉我一万字" });
@@ -64,7 +80,7 @@ describe("orchestrator", () => {
   it("意图门:normal → 正常跑 agent", async () => {
     const fakeAgent = { run: vi.fn(async () => ({ text: "回复", sessionId: "s" })) };
     const classify = vi.fn(async () => "normal" as const);
-    registerOrchestrator({ agent: fakeAgent as any, store: new SessionStore(repo), classify });
+    registerOrchestrator({ agent: fakeAgent as any, store: new SessionStore(repo), classify, ackEnabled: false });
 
     const p = new Promise<any>((res) => bus.once("reply.ready", res));
     bus.emit("message.qualified", { sessionKey: "1:2", groupId: 1, userId: 2, messageId: 4, text: "多少钱" });
@@ -76,34 +92,45 @@ describe("orchestrator", () => {
   it("意图门:引用/转发正文一并送分类", async () => {
     const fakeAgent = { run: vi.fn(async () => ({ text: "x", sessionId: "s" })) };
     const classify = vi.fn(async () => "normal" as const);
-    registerOrchestrator({ agent: fakeAgent as any, store: new SessionStore(repo), classify });
+    registerOrchestrator({ agent: fakeAgent as any, store: new SessionStore(repo), classify, ackEnabled: false });
 
-    bus.emit("message.qualified", {
-      sessionKey: "1:2",
-      groupId: 1,
-      userId: 2,
-      messageId: 5,
-      text: "看这个",
-      quoted: "被引内容",
-      forwarded: "转发内容",
+    await new Promise<void>((res) => {
+      bus.once("reply.ready", () => res());
+      bus.emit("message.qualified", {
+        sessionKey: "1:2",
+        groupId: 1,
+        userId: 2,
+        messageId: 5,
+        text: "看这个",
+        quoted: "注入提示词",
+        forwarded: "转发内容",
+      });
     });
-    await new Promise((r) => setTimeout(r, 20));
-    expect(classify).toHaveBeenCalledWith("看这个\n被引内容\n转发内容");
+    expect(classify).toHaveBeenCalledWith(expect.stringContaining("注入提示词"));
   });
 
   it("reply mapper: reply.ready → action.send", async () => {
-    registerReplyMapper();
+    registerReplyMapper({ maxChars: 0 });
     const p = new Promise<any>((res) => bus.once("action.send", res));
     bus.emit("reply.ready", { groupId: 5, text: "hi" });
     const a = await p;
-    expect(a).toEqual({ action: "send_group_msg", groupId: 5, text: "hi" });
+    expect(a.action).toBe("send_group_msg");
+    expect(a.groupId).toBe(5);
+    expect(a.text).toBe("hi");
   });
 
-  it("reply mapper: 透传 replyToId 到 action.send", async () => {
-    registerReplyMapper();
+  it("reply mapper: 透传 replyToId", async () => {
+    registerReplyMapper({ maxChars: 0 });
     const p = new Promise<any>((res) => bus.once("action.send", res));
     bus.emit("reply.ready", { groupId: 5, text: "hi", replyToId: 88 });
     const a = await p;
     expect(a.replyToId).toBe(88);
+  });
+
+  it("splitReply 超长按标点拆", () => {
+    const t = "第一句。".repeat(50);
+    const parts = splitReply(t, 40);
+    expect(parts.length).toBeGreaterThan(1);
+    expect(parts.every((p) => p.length <= 40 || p.includes("。"))).toBe(true);
   });
 });

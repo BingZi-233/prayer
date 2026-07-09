@@ -82,6 +82,27 @@ function migrate(db: Database.Database, dim: number): void {
       answer TEXT,
       created_at INTEGER NOT NULL DEFAULT (unixepoch('subsec') * 1000)
     );
+    CREATE TABLE IF NOT EXISTS resolution_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      kind TEXT NOT NULL,
+      session_key TEXT,
+      group_id INTEGER,
+      user_id INTEGER,
+      detail TEXT,
+      created_at INTEGER NOT NULL DEFAULT (unixepoch('subsec') * 1000)
+    );
+    CREATE INDEX IF NOT EXISTS idx_re_kind_time ON resolution_events(kind, created_at);
+    CREATE TABLE IF NOT EXISTS usage_daily (
+      day TEXT NOT NULL,
+      site TEXT NOT NULL,
+      count INTEGER NOT NULL DEFAULT 0,
+      cache_read INTEGER NOT NULL DEFAULT 0,
+      cache_creation INTEGER NOT NULL DEFAULT 0,
+      input INTEGER NOT NULL DEFAULT 0,
+      output INTEGER NOT NULL DEFAULT 0,
+      cost_usd REAL NOT NULL DEFAULT 0,
+      PRIMARY KEY (day, site)
+    );
   `);
   // 旧库补列(resume_id 拆分自 session_id);新库已含,重复加列报错忽略。
   // 回填仅在首次加列时执行(ALTER 成功后),旧 session_id 兼作续接指针,保持既有 resume 行为;
@@ -101,6 +122,18 @@ function migrate(db: Database.Database, dim: number): void {
   // 旧库补 message_id(主动回复引用原消息用);旧行为 NULL → 不引用,退化纯文本。重复加列报错忽略
   try {
     db.exec("ALTER TABLE group_messages ADD COLUMN message_id INTEGER");
+  } catch {
+    /* 列已存在 */
+  }
+  // 主动补位质检:null=未评 / ok / bad
+  try {
+    db.exec("ALTER TABLE proactive_replies ADD COLUMN quality TEXT");
+  } catch {
+    /* 列已存在 */
+  }
+  // 反思审核:pending / approved / rejected;旧数据默认 approved(已在用)
+  try {
+    db.exec("ALTER TABLE reflection_meta ADD COLUMN status TEXT NOT NULL DEFAULT 'pending'");
   } catch {
     /* 列已存在 */
   }

@@ -46,10 +46,46 @@ export interface ErrorOccurred {
   groupId?: number;
 }
 
+export interface HandoffRequested {
+  sessionKey: string;
+  groupId: number;
+  userId: number;
+  lastQuestion: string;
+  // 触发来源:用户关键词 / 管理群命令 / 系统(错误兜底)
+  reason?: "user" | "admin" | "system";
+}
+
+export interface HandoffResumed {
+  sessionKey: string;
+  // 谁恢复:超时 / 管理群 !resume / 后台关工单
+  by?: "timeout" | "admin" | "ticket";
+}
+
+export type ResolutionKind =
+  | "auto" // 主链路自动答复
+  | "ack" // 即时 ACK(不计入解决率分母)
+  | "blocked" // 意图拦截
+  | "error" // 错误兜底
+  | "proactive" // 主动补位
+  | "proactive_silent" // 主动路径沉默
+  | "handoff" // 转人工
+  | "reset"; // 用户重置
+
+export interface ResolutionRecorded {
+  kind: ResolutionKind;
+  sessionKey?: string;
+  groupId?: number;
+  userId?: number;
+  detail?: string;
+}
+
 export interface EventMap {
   "message.received": IncomingMessage;
   "message.qualified": QualifiedMessage;
   "reply.ready": ReplyReady;
   "action.send": ActionSend;
   "error.occurred": ErrorOccurred;
+  "handoff.requested": HandoffRequested;
+  "handoff.resumed": HandoffResumed;
+  "resolution.recorded": ResolutionRecorded;
 }

@@ -2,6 +2,16 @@ import type { Repo } from "./db/repo";
 
 const KEY = "app";
 
+/** 单群策略覆盖(未写字段回退全局配置) */
+export interface GroupPolicy {
+  /** 覆盖全局 proactiveEnabled;undefined = 跟全局 */
+  proactiveEnabled?: boolean;
+  /** 覆盖全局 proactiveSilenceMs */
+  proactiveSilenceMs?: number;
+  /** 转人工时是否抄送管理群;默认 true */
+  notifyAdminOnHandoff?: boolean;
+}
+
 export interface AppConfig {
   onebotWsUrl: string;
   onebotAccessToken: string;
@@ -25,6 +35,16 @@ export interface AppConfig {
   proactiveScanMs: number;
   proactiveSilenceMs: number;
   proactiveMaxPerScan: number;
+  /** 办不了事务时引导的固定链接(官网/工单) */
+  supportUrl: string;
+  /** @ 后是否先发「收到,正在查」ACK。默认开 */
+  ackEnabled: boolean;
+  /** 单条回复字数上限,超出则拆条;0 = 不拆。默认 900 */
+  maxReplyChars: number;
+  /** 用量日预算(USD),超阈告警管理群;0 = 不告警 */
+  usageBudgetUsd: number;
+  /** 按群策略覆盖,key 为群号字符串 */
+  groupPolicies: Record<string, GroupPolicy>;
 }
 
 function seedFromEnv(env: Record<string, string | undefined>): AppConfig {
@@ -52,6 +72,11 @@ function seedFromEnv(env: Record<string, string | undefined>): AppConfig {
     proactiveScanMs: Number(env.PROACTIVE_SCAN_MS ?? "60000"),
     proactiveSilenceMs: Number(env.PROACTIVE_SILENCE_MS ?? "180000"),
     proactiveMaxPerScan: Number(env.PROACTIVE_MAX_PER_SCAN ?? "2"),
+    supportUrl: env.SUPPORT_URL ?? "https://www.packyapi.com",
+    ackEnabled: env.ACK_ENABLED !== "false",
+    maxReplyChars: Number(env.MAX_REPLY_CHARS ?? "900"),
+    usageBudgetUsd: Number(env.USAGE_BUDGET_USD ?? "0"),
+    groupPolicies: {},
   };
 }
 
@@ -74,4 +99,18 @@ export function setConfig(repo: Repo, patch: Partial<AppConfig>): AppConfig {
   const next = { ...current, ...patch };
   repo.setConfigRow(KEY, JSON.stringify(next));
   return next;
+}
+
+/** 解析某群是否启用主动补位(群策略覆盖全局) */
+export function isProactiveEnabledForGroup(cfg: AppConfig, groupId: number): boolean {
+  const p = cfg.groupPolicies[String(groupId)];
+  if (p?.proactiveEnabled !== undefined) return p.proactiveEnabled;
+  return cfg.proactiveEnabled;
+}
+
+/** 解析某群静默阈值 */
+export function silenceMsForGroup(cfg: AppConfig, groupId: number): number {
+  const p = cfg.groupPolicies[String(groupId)];
+  if (p?.proactiveSilenceMs !== undefined) return p.proactiveSilenceMs;
+  return cfg.proactiveSilenceMs;
 }

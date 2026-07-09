@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { toast } from "sonner";
-import { Brain, Clock, Layers, GitCompareArrows, Timer, Gauge, Wand2 } from "lucide-react";
+import { Brain, Clock, Layers, GitCompareArrows, Timer, Gauge, Wand2, Check, X, FileUp } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
@@ -28,7 +28,15 @@ import { usePolling } from "@/components/admin/use-polling";
 import { useGroupNames } from "@/lib/group-name";
 
 interface GroupRow { groupId: number; cursor: number; lagMs: number | null; bufferCount: number; sedimentedCount: number; }
-interface Entry { id: number; content: string; groupId: number | null; ts: number | null; question: string | null; answer: string | null; }
+interface Entry {
+  id: number;
+  content: string;
+  groupId: number | null;
+  ts: number | null;
+  question: string | null;
+  answer: string | null;
+  status?: "pending" | "approved" | "rejected";
+}
 interface Compaction { id: number; ts: number; beforeCount: number; afterCount: number; before: string[]; after: string[]; }
 interface Data {
   config: { scanMs: number; lookbackMs: number; settleMs: number; windowMax: number; compactMs: number; compactMinEntries: number };
@@ -40,8 +48,6 @@ interface Data {
 const min = (ms: number) => `${Math.round(ms / 60000)} 分`;
 const hr = (ms: number) => (ms >= 3600000 ? `${(ms / 3600000).toFixed(ms % 3600000 ? 1 : 0)} 时` : min(ms));
 
-// before/after 集合比对(精确同文):保留=交集、移除=before 独有、新增/合并=after 独有。
-// LLM 会改写文本,故为近似 —— 被合并改写的旧条目会落进「移除」,合并结果落进「新增」。
 function diff(before: string[], after: string[]) {
   const a = new Set(after);
   const b = new Set(before);
@@ -56,8 +62,10 @@ export default function ReflectionPage() {
   const { data: d, error, loading, refresh } = usePolling<Data>("/api/reflection");
   const { name } = useGroupNames();
   const [busy, setBusy] = useState(false);
+  const [acting, setActing] = useState<number | null>(null);
   const entryCount = d?.entries.length ?? 0;
   const willCompact = d ? entryCount >= d.config.compactMinEntries : false;
+  const pendingCount = d?.entries.filter((e) => (e.status ?? "pending") === "pending").length ?? 0;
 
   async function compact() {
     setBusy(true);
@@ -76,11 +84,31 @@ export default function ReflectionPage() {
     }
   }
 
+  async function act(id: number, action: "approve" | "reject" | "promote") {
+    setActing(id);
+    try {
+      const r = await fetch("/api/reflection", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id, action }),
+      }).then((x) => x.json());
+      if (r.ok) {
+        if (action === "promote") toast.success(`已升格到 docs/kb/${r.data.file}`);
+        else toast.success(action === "approve" ? "已通过" : "已驳回");
+        await refresh();
+      } else toast.error(r.error || "操作失败");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : String(e));
+    } finally {
+      setActing(null);
+    }
+  }
+
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
         title="反思"
-        description="被动反思:从人工回复沉淀知识回填知识库,并定期整理合并。"
+        description={`被动反思:从人工回复沉淀知识。待审核 ${pendingCount} 条。`}
         actions={
           <Dialog>
             <DialogTrigger asChild>
@@ -93,8 +121,7 @@ export default function ReflectionPage() {
               <DialogHeader>
                 <DialogTitle>立即整理反思条目</DialogTitle>
                 <DialogDescription>
-                  对当前 {entryCount} 条沉淀条目做一次近义合并/去冗整理,结果整体替换旧条目并留档。
-                  整理由 LLM 执行,可能耗时数十秒。
+                  对当前 {entryCount} 条沉淀条目做一次近义合并/去冗整理。
                 </DialogDescription>
               </DialogHeader>
               <DialogFooter>
@@ -172,7 +199,7 @@ export default function ReflectionPage() {
       <SectionCard
         icon={GitCompareArrows}
         title={`整理记录${d ? ` (${d.compactions.length})` : ""}`}
-        description="每次压缩整理的时间与前后条数;展开查看被移除/新增(合并结果)的条目。差异按文本精确比对,LLM 改写的条目会分别落入移除与新增,仅供参考。"
+        description="每次压缩整理的时间与前后条数。"
       >
         <DataState
           loading={loading}
@@ -181,7 +208,7 @@ export default function ReflectionPage() {
           onRetry={refresh}
           emptyIcon={GitCompareArrows}
           emptyTitle="暂无整理记录"
-          emptyDescription={`沉淀条目达到阈值(${d?.config.compactMinEntries ?? "—"} 条)后会定期整理,并在此留档。`}
+          emptyDescription={`沉淀条目达到阈值(${d?.config.compactMinEntries ?? "—"} 条)后会定期整理。`}
           skeleton={<Skeleton className="h-32 w-full" />}
         >
           <div className="flex flex-col gap-2">
@@ -231,7 +258,7 @@ export default function ReflectionPage() {
       <SectionCard
         icon={Brain}
         title={`沉淀知识${d ? ` (${d.entries.length})` : ""}`}
-        description="反思写入 kb 的 human-reflection 条目,Agent 检索可命中。「已整理」为压缩合并后的全局条目。"
+        description="审核通过/驳回;升格会写入 docs/kb/promoted/。"
       >
         <DataState
           loading={loading}
@@ -247,15 +274,30 @@ export default function ReflectionPage() {
             <div className="flex flex-col gap-2">
               {d?.entries.map((e) => {
                 const hasSource = Boolean(e.question || e.answer);
+                const st = e.status ?? "pending";
                 return (
                   <div key={e.id} className="bg-muted/40 rounded-md border p-3">
-                    <div className="text-muted-foreground mb-1.5 flex items-center gap-2 text-xs">
+                    <div className="text-muted-foreground mb-1.5 flex flex-wrap items-center gap-2 text-xs">
                       {e.groupId === 0 ? (
                         <Badge variant="outline">已整理</Badge>
                       ) : e.groupId != null ? (
                         <Badge variant="secondary">{name(e.groupId)}</Badge>
                       ) : null}
+                      <Badge variant={st === "approved" ? "default" : st === "rejected" ? "destructive" : "secondary"}>
+                        {st === "approved" ? "已通过" : st === "rejected" ? "已驳回" : "待审"}
+                      </Badge>
                       <RelativeTime ts={e.ts} />
+                      <span className="ml-auto flex gap-1">
+                        <Button size="sm" variant="ghost" className="h-7 px-2" disabled={acting === e.id} onClick={() => act(e.id, "approve")}>
+                          <Check className="size-3.5" />
+                        </Button>
+                        <Button size="sm" variant="ghost" className="h-7 px-2" disabled={acting === e.id} onClick={() => act(e.id, "reject")}>
+                          <X className="size-3.5" />
+                        </Button>
+                        <Button size="sm" variant="ghost" className="h-7 px-2" disabled={acting === e.id} onClick={() => act(e.id, "promote")} title="升格正式文档">
+                          <FileUp className="size-3.5" />
+                        </Button>
+                      </span>
                     </div>
                     <p className="text-sm whitespace-pre-wrap">{e.content}</p>
                     {hasSource && (

@@ -1,5 +1,7 @@
 // LLM 用量/缓存命中聚合器。仿 lib/logger.ts 的 globalThis 单例:热重载/多次 import 复用同一实例。
-// 首版内存滚动累计(重启清零),用于归因"哪个调用点在漏缓存"。如需持久化后续加 SQLite 表。
+// 内存滚动累计 + 可选 SQLite 日表持久化(bindUsagePersistence)。
+
+import type { Repo } from "./db/repo";
 
 // 调用点标识:与 5 个 query() 站点一一对应(introspect 不产生模型调用,不计)
 export type UsageSite = "agent" | "intent" | "answerability" | "reflect" | "compact";
@@ -28,8 +30,15 @@ const EMPTY: UsageStat = {
   costUsd: 0,
 };
 
+type PersistHook = (site: string, d: UsageDelta) => void;
+
 class UsageStats {
   private m = new Map<string, UsageStat>();
+  private persist?: PersistHook;
+
+  setPersist(hook?: PersistHook): void {
+    this.persist = hook;
+  }
 
   record(site: string, d: UsageDelta): void {
     const cur = this.m.get(site) ?? { ...EMPTY };
@@ -40,6 +49,11 @@ class UsageStats {
     cur.output += d.output || 0;
     cur.costUsd += d.costUsd || 0;
     this.m.set(site, cur);
+    try {
+      this.persist?.(site, d);
+    } catch {
+      /* 持久化失败不阻断主链路 */
+    }
   }
 
   snapshot(): UsageSnapshot {
@@ -60,4 +74,40 @@ export const usageStats: UsageStats = g.__usageStats ?? (g.__usageStats = new Us
 export function cacheHitRatio(s: UsageStat): number {
   const denom = s.cacheRead + s.cacheCreation + s.input;
   return denom > 0 ? s.cacheRead / denom : 0;
+}
+
+function dayKey(d = new Date()): string {
+  return d.toISOString().slice(0, 10);
+}
+
+/** 绑定 repo 做日持久化 + 可选预算告警。返回 unbind。 */
+export function bindUsagePersistence(
+  repo: Repo,
+  opts: {
+    budgetUsd?: number;
+    onBudgetExceeded?: (day: string, cost: number) => void;
+  } = {}
+): () => void {
+  let alertedDay: string | null = null;
+  const hook: PersistHook = (site, d) => {
+    const day = dayKey();
+    repo.addUsageDaily(day, site, {
+      count: 1,
+      cacheRead: d.cacheRead || 0,
+      cacheCreation: d.cacheCreation || 0,
+      input: d.input || 0,
+      output: d.output || 0,
+      costUsd: d.costUsd || 0,
+    });
+    const budget = opts.budgetUsd ?? 0;
+    if (budget > 0 && opts.onBudgetExceeded) {
+      const total = repo.usageDailyTotalCost(day);
+      if (total >= budget && alertedDay !== day) {
+        alertedDay = day;
+        opts.onBudgetExceeded(day, total);
+      }
+    }
+  };
+  usageStats.setPersist(hook);
+  return () => usageStats.setPersist(undefined);
 }

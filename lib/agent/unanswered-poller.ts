@@ -5,6 +5,7 @@ import type { Agent } from "./agent";
 import { AGENT_FALLBACK_TEXT } from "./agent";
 import type { SessionStore } from "./session";
 import type { AnswerabilityClassifier } from "./answerability";
+import type { GroupPolicy } from "../config-store";
 
 // 主动模式哨兵:无把握时 agent 只输出此串 → poller 判为非答案,沉默不发。
 export const PROACTIVE_SUFFIX =
@@ -21,6 +22,9 @@ export interface UnansweredPollerDeps {
   silenceMs?: number;
   maxPerScan?: number;
   now?: () => number;
+  /** 全局主动开关 */
+  globalProactiveEnabled?: boolean;
+  groupPolicies?: Record<string, GroupPolicy>;
 }
 
 interface Resolved {
@@ -33,6 +37,8 @@ interface Resolved {
   silenceMs: number;
   maxPerScan: number;
   now: () => number;
+  globalProactiveEnabled: boolean;
+  groupPolicies: Record<string, GroupPolicy>;
 }
 
 function resolve(d: UnansweredPollerDeps): Resolved {
@@ -46,7 +52,21 @@ function resolve(d: UnansweredPollerDeps): Resolved {
     silenceMs: d.silenceMs ?? 180_000,
     maxPerScan: d.maxPerScan ?? 2,
     now: d.now ?? (() => Date.now()),
+    globalProactiveEnabled: d.globalProactiveEnabled ?? true,
+    groupPolicies: d.groupPolicies ?? {},
   };
+}
+
+function groupEnabled(d: Resolved, groupId: number): boolean {
+  const p = d.groupPolicies[String(groupId)];
+  if (p?.proactiveEnabled !== undefined) return p.proactiveEnabled;
+  return d.globalProactiveEnabled;
+}
+
+function groupSilence(d: Resolved, groupId: number): number {
+  const p = d.groupPolicies[String(groupId)];
+  if (p?.proactiveSilenceMs !== undefined) return p.proactiveSilenceMs;
+  return d.silenceMs;
 }
 
 // 真答案判定:非空、不含哨兵、且不是 agent 降级兜底文案。撞任一 → 沉默。
@@ -57,12 +77,15 @@ function isAnswer(text: string): boolean {
 
 async function scanOnce(d: Resolved): Promise<void> {
   const now = d.now();
-  const until = now - d.silenceMs; // 已沉默上界:早于此的消息才够沉默窗口
-  if (until <= 0) return;
 
   const enabled = new Set(d.enabledGroups);
   for (const groupId of enabled) {
     if (groupId === d.adminGroupId) continue;
+    if (!groupEnabled(d, groupId)) continue;
+    const silenceMs = groupSilence(d, groupId);
+    const until = now - silenceMs;
+    if (until <= 0) continue;
+
     try {
       const cursor = d.repo.groupProactiveCursor(groupId);
       if (until <= cursor) continue; // 无新沉降
@@ -95,10 +118,21 @@ async function scanOnce(d: Resolved): Promise<void> {
         // 压制②:该用户会话已被主链路 @处理/已兜底过(setSessionId 刷了 updated_at)。
         // 注:被意图门拦截的 @bot 消息不 remember → 不走此路,靠 fail-closed 判官兜住。
         const key = `${groupId}:${userId}`;
+        // human-mode 不抢答
+        if (d.repo.isHumanMode(key)) continue;
         const upd = d.repo.sessionUpdatedAt(key);
         if (upd !== undefined && upd > questionTs) continue;
         // 门1:可答性
-        if (!(await d.classify(text))) continue;
+        if (!(await d.classify(text))) {
+          bus.emit("resolution.recorded", {
+            kind: "proactive_silent",
+            sessionKey: key,
+            groupId,
+            userId,
+            detail: "not_answerable",
+          });
+          continue;
+        }
         // 门2:复用主链路 agent,带哨兵。
         // 主动模式指令并入 user prompt(而非 system 后缀):使主动/正常两路径 system 前缀恒等,
         // TTL 内可跨路径命中缓存(~1.5k token 的 system 只需写一次)。行为等价(单轮指令)。
@@ -107,10 +141,25 @@ async function scanOnce(d: Resolved): Promise<void> {
           d.store.resumeId(key),
           { sessionKey: key, groupId, userId }
         );
-        if (!isAnswer(result.text)) continue; // 哨兵/空 → 沉默
+        if (!isAnswer(result.text)) {
+          bus.emit("resolution.recorded", {
+            kind: "proactive_silent",
+            sessionKey: key,
+            groupId,
+            userId,
+            detail: "no_answer",
+          });
+          continue; // 哨兵/空 → 沉默
+        }
         if (result.sessionId) d.store.remember(key, result.sessionId);
         d.repo.insertProactiveReply(groupId, userId, text, result.text); // 留痕供监控页
         bus.emit("reply.ready", { groupId, text: result.text, replyToId: messageId ?? undefined });
+        bus.emit("resolution.recorded", {
+          kind: "proactive",
+          sessionKey: key,
+          groupId,
+          userId,
+        });
         logger.log("info", `[proactive] 群 ${groupId} 主动回答用户 ${userId}`);
         hits++;
       }

@@ -4,7 +4,7 @@ import { Suspense, useDeferredValue, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { MessagesSquare, RefreshCw, Wrench, RotateCcw, TriangleAlert, Circle } from "lucide-react";
+import { MessagesSquare, RefreshCw, Wrench, RotateCcw, TriangleAlert, Circle, Copy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -40,6 +40,7 @@ interface Sess {
   key: string;
   sessionId: string | null;
   active: boolean;
+  humanMode?: boolean;
   lastQuestion: string | null;
   updatedAt: number;
 }
@@ -47,7 +48,6 @@ interface Msg { role: string; text?: string; tool?: string; input?: string; resu
 
 const POLL_MS = 3000;
 
-// 气泡内联时间戳(HH:mm),非相对时间 → 不走 RelativeTime
 function clock(ts: number | undefined): string {
   if (!ts) return "";
   return new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
@@ -68,17 +68,15 @@ function SessionsInner() {
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [resetting, setResetting] = useState(false);
-  // 三步确认:0 关闭,1/2/3 逐级确认弹窗(全部重开)
   const [confirmStep, setConfirmStep] = useState(0);
-  // 单会话重开的目标 key(null = 关闭);单步确认
   const [resetKey, setResetKey] = useState<string | null>(null);
   const { name } = useGroupNames();
   const memberName = useMemberNames((sessions ?? []).map((s) => s.key));
   const params = useSearchParams();
   const [query, setQuery] = useState("");
-  const deferredQuery = useDeferredValue(query); // 输入不阻塞过滤,免逐字符重渲
+  const deferredQuery = useDeferredValue(query);
+  const humanOnly = params.get("human") === "1";
 
-  // session key "gid:uid" → "群名 · 群昵称";昵称查不到回退 uid;非法 key 原样
   const keyLabel = (key: string) => {
     const [gid, uid] = key.split(":");
     const g = Number(gid);
@@ -95,7 +93,6 @@ function SessionsInner() {
     loadSessions();
   }, []);
 
-  // URL ?key=... → 自动打开对应会话
   useEffect(() => {
     const key = params.get("key");
     if (!key || !sessions) return;
@@ -104,7 +101,6 @@ function SessionsInner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessions, params]);
 
-  // 列表自动轮询(3s);标签页隐藏时跳过,选中会话有更新则一并刷 transcript
   useEffect(() => {
     const t = setInterval(() => {
       if (!document.hidden) refresh();
@@ -129,7 +125,6 @@ function SessionsInner() {
     }
   }
 
-  // 刷新:重拉会话列表 + 当前选中会话的 transcript(对话有更新时可见)
   async function refresh() {
     setRefreshing(true);
     try {
@@ -145,7 +140,6 @@ function SessionsInner() {
     }
   }
 
-  // 三步确认文案(逐级加重),第三步 CTA 执行重开
   const confirmSteps = [
     {
       title: `重开全部 ${sessions?.length ?? 0} 个会话?`,
@@ -164,7 +158,6 @@ function SessionsInner() {
     },
   ];
 
-  // 一键重开:清所有会话 resume_id,每个会话下条消息各自开全新对话(历史仍可查)
   async function resetAll() {
     setConfirmStep(0);
     setResetting(true);
@@ -187,7 +180,6 @@ function SessionsInner() {
     }
   }
 
-  // 单会话重开:只清该会话 resume_id
   async function resetOne(key: string) {
     setResetKey(null);
     try {
@@ -207,7 +199,16 @@ function SessionsInner() {
     }
   }
 
-  const list = sessions ?? [];
+  async function copyText(text: string) {
+    try {
+      await navigator.clipboard.writeText(text);
+      toast.success("已复制");
+    } catch {
+      toast.error("复制失败");
+    }
+  }
+
+  const list = (sessions ?? []).filter((s) => (humanOnly ? s.humanMode : true));
   const activeCount = list.filter((s) => s.active).length;
   const shown = list.filter((s) => {
     if (!deferredQuery.trim()) return true;
@@ -223,7 +224,11 @@ function SessionsInner() {
     <div className="flex h-[calc(100svh-6.5rem)] min-h-0 flex-col gap-6">
       <PageHeader
         title="会话"
-        description="查看历史会话的对话记录(读自 Claude SDK transcript)。"
+        description={
+          humanOnly
+            ? "仅显示人工接待中的会话。"
+            : "查看历史会话的对话记录(读自 Claude SDK transcript)。"
+        }
         actions={
           <>
             <Button
@@ -245,7 +250,7 @@ function SessionsInner() {
       <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[320px_1fr]">
         <SectionCard
           title="会话列表"
-          description={`${shown.length} / ${list.length} 个 · ${activeCount} 活跃`}
+          description={`${shown.length} / ${list.length} 个 · ${activeCount} 活跃${humanOnly ? " · 人工" : ""}`}
           className="flex min-h-0 flex-col overflow-hidden"
           contentClassName="flex min-h-0 flex-1 flex-col gap-2"
         >
@@ -286,6 +291,7 @@ function SessionsInner() {
                         )}
                       />
                       <span className="truncate" title={sess.key}>{keyLabel(sess.key)}</span>
+                      {sess.humanMode && <Badge variant="destructive" className="h-4 px-1 text-[10px]">人工</Badge>}
                     </span>
                     {sess.lastQuestion && (
                       <span className="text-muted-foreground truncate">Q: {sess.lastQuestion}</span>
@@ -294,7 +300,6 @@ function SessionsInner() {
                       <RelativeTime ts={sess.updatedAt} />
                     </span>
                   </button>
-                  {/* 悬停出单会话重开 */}
                   <button
                     onClick={() => setResetKey(sess.key)}
                     title="重开该会话"
@@ -337,10 +342,7 @@ function SessionsInner() {
                   <MessageScrollerViewport>
                     <MessageScrollerContent className="gap-3 p-4">
                       {msgs.map((m, i) => {
-                        // inline style 覆盖组件基类的 content-visibility:auto + contain-intrinsic-size:10rem
-                        // (tailwind-merge 不去重 arbitrary property,占位 10rem 会产生巨大空隙)
                         const itemStyle = { contentVisibility: "visible", containIntrinsicSize: "auto" } as const;
-                        // 工具调用(Agent 发起)—— 左对齐,可折叠查看请求 / 响应
                         if (m.role === "tool") {
                           return (
                             <MessageScrollerItem key={i} messageId={String(i)} style={itemStyle}>
@@ -371,10 +373,21 @@ function SessionsInner() {
                           <MessageScrollerItem key={i} messageId={String(i)} scrollAnchor={isUser} style={itemStyle}>
                             <Message align={isUser ? "end" : "start"}>
                               <MessageContent>
-                                <Bubble variant={isUser ? "default" : "muted"}>
-                                  <BubbleContent className="whitespace-pre-wrap">{m.text}</BubbleContent>
-                                </Bubble>
-                                {/* 时间 + assistant 模型标 */}
+                                <div className="group/bubble relative">
+                                  <Bubble variant={isUser ? "default" : "muted"}>
+                                    <BubbleContent className="whitespace-pre-wrap">{m.text}</BubbleContent>
+                                  </Bubble>
+                                  {!isUser && (
+                                    <button
+                                      type="button"
+                                      title="复制 bot 回复"
+                                      className="text-muted-foreground hover:text-foreground absolute -top-1 -right-1 rounded bg-background/80 p-1 opacity-0 shadow group-hover/bubble:opacity-100"
+                                      onClick={() => copyText(m.text!)}
+                                    >
+                                      <Copy className="size-3" />
+                                    </button>
+                                  )}
+                                </div>
                                 <span
                                   className={cn(
                                     "text-muted-foreground/70 mt-0.5 flex items-center gap-1.5 text-[10px]",
@@ -403,7 +416,6 @@ function SessionsInner() {
         </SectionCard>
       </div>
 
-      {/* 单会话重开确认(单步) */}
       <AlertDialog open={resetKey !== null} onOpenChange={(o) => !o && setResetKey(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -427,7 +439,6 @@ function SessionsInner() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* 全部重开三步确认 */}
       <AlertDialog open={confirmStep > 0} onOpenChange={(o) => !o && setConfirmStep(0)}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -442,7 +453,7 @@ function SessionsInner() {
             {confirmStep < 3 ? (
               <AlertDialogAction
                 onClick={(e) => {
-                  e.preventDefault(); // 阻止默认关闭,推进到下一步
+                  e.preventDefault();
                   setConfirmStep((s) => s + 1);
                 }}
               >

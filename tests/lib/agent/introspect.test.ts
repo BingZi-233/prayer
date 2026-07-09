@@ -47,6 +47,11 @@ const cfg: AppConfig = {
   reflectCompactMinEntries: 10,
   reflectNotifyAdmin: true,
   resumeTtlMs: 300000,
+  supportUrl: "https://www.packyapi.com",
+  ackEnabled: true,
+  maxReplyChars: 900,
+  usageBudgetUsd: 0,
+  groupPolicies: {},
 };
 
 // 构造带控制方法的 fake Query(async generator + 控制方法)

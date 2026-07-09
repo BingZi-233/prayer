@@ -7,6 +7,9 @@ export interface KbHit {
   distance: number;
 }
 
+export type ProactiveQuality = "ok" | "bad" | null;
+export type ReflectionStatus = "pending" | "approved" | "rejected";
+
 export class Repo {
   constructor(private db: Database.Database) {}
 
@@ -54,6 +57,46 @@ export class Repo {
       )
       .get(key, maxIdleMs, maxIdleMs) as { resume_id: string | null } | undefined;
     return row?.resume_id ?? undefined;
+  }
+
+  isHumanMode(key: string): boolean {
+    const row = this.db.prepare("SELECT human_mode FROM sessions WHERE key = ?").get(key) as
+      | { human_mode: number }
+      | undefined;
+    return !!row?.human_mode;
+  }
+
+  setHumanMode(key: string, on: boolean): void {
+    const now = Date.now();
+    this.db
+      .prepare(
+        `INSERT INTO sessions (key, human_mode, human_since, updated_at) VALUES (?, ?, ?, ?)
+         ON CONFLICT(key) DO UPDATE SET
+           human_mode = excluded.human_mode,
+           human_since = excluded.human_since,
+           updated_at = excluded.updated_at`
+      )
+      .run(key, on ? 1 : 0, on ? now : null, now);
+  }
+
+  setLastQuestion(key: string, question: string): void {
+    const q = question.slice(0, 500);
+    this.db
+      .prepare(
+        `INSERT INTO sessions (key, last_question, updated_at) VALUES (?, ?, unixepoch('subsec')*1000)
+         ON CONFLICT(key) DO UPDATE SET last_question = excluded.last_question, updated_at = excluded.updated_at`
+      )
+      .run(key, q);
+  }
+
+  // 超时扫描:human_mode=1 且 human_since 早于 cutoff 的会话
+  expiredHumanSessions(cutoffMs: number): string[] {
+    const rows = this.db
+      .prepare(
+        `SELECT key FROM sessions WHERE human_mode = 1 AND human_since IS NOT NULL AND human_since < ?`
+      )
+      .all(cutoffMs) as { key: string }[];
+    return rows.map((r) => r.key);
   }
 
   // 群消息缓冲(被动反思用):落库。messageId 供主动回复引用原消息;缺省 → NULL(不引用)
@@ -184,18 +227,50 @@ export class Repo {
   }
 
   // 主动回复命中留痕:每次真正主动补位一句就记一行,供监控页看历史/次数。
-  insertProactiveReply(groupId: number, userId: number, question: string, answer: string): void {
-    this.db
+  insertProactiveReply(groupId: number, userId: number, question: string, answer: string): number {
+    const info = this.db
       .prepare("INSERT INTO proactive_replies (group_id, user_id, question, answer) VALUES (?, ?, ?, ?)")
       .run(groupId, userId, question, answer);
+    return Number(info.lastInsertRowid);
+  }
+
+  setProactiveQuality(id: number, quality: "ok" | "bad"): boolean {
+    const info = this.db.prepare("UPDATE proactive_replies SET quality = ? WHERE id = ?").run(quality, id);
+    return info.changes > 0;
   }
 
   // 最近主动回复(降序),监控页插话列表用
-  proactiveReplies(limit: number): { id: number; groupId: number; userId: number; question: string; answer: string; ts: number }[] {
+  proactiveReplies(limit: number): {
+    id: number;
+    groupId: number;
+    userId: number;
+    question: string;
+    answer: string;
+    quality: ProactiveQuality;
+    ts: number;
+  }[] {
     const rows = this.db
-      .prepare("SELECT id, group_id, user_id, question, answer, created_at FROM proactive_replies ORDER BY id DESC LIMIT ?")
-      .all(limit) as { id: number; group_id: number; user_id: number; question: string; answer: string; created_at: number }[];
-    return rows.map((r) => ({ id: r.id, groupId: r.group_id, userId: r.user_id, question: r.question, answer: r.answer, ts: r.created_at }));
+      .prepare(
+        "SELECT id, group_id, user_id, question, answer, quality, created_at FROM proactive_replies ORDER BY id DESC LIMIT ?"
+      )
+      .all(limit) as {
+      id: number;
+      group_id: number;
+      user_id: number;
+      question: string;
+      answer: string;
+      quality: string | null;
+      created_at: number;
+    }[];
+    return rows.map((r) => ({
+      id: r.id,
+      groupId: r.group_id,
+      userId: r.user_id,
+      question: r.question,
+      answer: r.answer,
+      quality: (r.quality === "ok" || r.quality === "bad" ? r.quality : null) as ProactiveQuality,
+      ts: r.created_at,
+    }));
   }
 
   // 每群主动回复数 + 最近一条时间,监控页每群行用
@@ -208,6 +283,17 @@ export class Repo {
   // 主动回复总数
   proactiveTotalCount(): number {
     return (this.db.prepare("SELECT COUNT(*) n FROM proactive_replies").get() as { n: number }).n;
+  }
+
+  proactiveBadCount(sinceTs?: number): number {
+    if (sinceTs != null) {
+      return (
+        this.db
+          .prepare("SELECT COUNT(*) n FROM proactive_replies WHERE quality = 'bad' AND created_at >= ?")
+          .get(sinceTs) as { n: number }
+      ).n;
+    }
+    return (this.db.prepare("SELECT COUNT(*) n FROM proactive_replies WHERE quality = 'bad'").get() as { n: number }).n;
   }
 
   // 某群 (afterTs, untilTs] 内的非管理发言(member/NULL),升序。主动兜底候选原料。
@@ -276,16 +362,25 @@ export class Repo {
     ts: number | null;
     question: string | null;
     answer: string | null;
+    status: ReflectionStatus;
   }[] {
     const rows = this.db
       .prepare(
-        `SELECT c.id, c.content, c.source, m.question, m.answer
+        `SELECT c.id, c.content, c.source, m.question, m.answer, COALESCE(m.status, 'pending') AS status
          FROM kb_chunks c LEFT JOIN reflection_meta m ON m.chunk_id = c.id
          WHERE c.doc = 'human-reflection' ORDER BY c.id DESC`
       )
-      .all() as { id: number; content: string; source: string | null; question: string | null; answer: string | null }[];
+      .all() as {
+      id: number;
+      content: string;
+      source: string | null;
+      question: string | null;
+      answer: string | null;
+      status: string;
+    }[];
     return rows.map((r) => {
       const m = /^human-reflection:(\d+):(\d+)$/.exec(r.source ?? "");
+      const st = r.status === "approved" || r.status === "rejected" ? r.status : "pending";
       return {
         id: r.id,
         content: r.content,
@@ -293,6 +388,7 @@ export class Repo {
         ts: m ? Number(m[2]) : null,
         question: r.question,
         answer: r.answer,
+        status: st as ReflectionStatus,
       };
     });
   }
@@ -301,9 +397,33 @@ export class Repo {
   insertReflectionMeta(chunkId: number, groupId: number, question: string, answer: string): void {
     this.db
       .prepare(
-        "INSERT OR REPLACE INTO reflection_meta (chunk_id, group_id, question, answer) VALUES (?, ?, ?, ?)"
+        "INSERT OR REPLACE INTO reflection_meta (chunk_id, group_id, question, answer, status) VALUES (?, ?, ?, ?, 'pending')"
       )
       .run(chunkId, groupId, question, answer);
+  }
+
+  setReflectionStatus(chunkId: number, status: ReflectionStatus): boolean {
+    // 无 meta 的压缩条目:补一行再更新
+    const exists = this.db.prepare("SELECT 1 FROM reflection_meta WHERE chunk_id = ?").get(chunkId);
+    if (!exists) {
+      this.db
+        .prepare("INSERT INTO reflection_meta (chunk_id, group_id, question, answer, status) VALUES (?, NULL, NULL, NULL, ?)")
+        .run(chunkId, status);
+      return true;
+    }
+    const info = this.db.prepare("UPDATE reflection_meta SET status = ? WHERE chunk_id = ?").run(status, chunkId);
+    return info.changes > 0;
+  }
+
+  // 升格为正式文档:复制 content 到 docs/kb 风格的 chunk(doc=promoted),并标 approved
+  promoteReflection(chunkId: number): { ok: boolean; newId?: number; content?: string } {
+    const row = this.db.prepare("SELECT content FROM kb_chunks WHERE id = ? AND doc = 'human-reflection'").get(chunkId) as
+      | { content: string }
+      | undefined;
+    if (!row) return { ok: false };
+    // 标记审核通过;实际写文件由 API 层处理,此处只改状态
+    this.setReflectionStatus(chunkId, "approved");
+    return { ok: true, content: row.content };
   }
 
   // 最近 N 次整理记录(倒序),before/after 内容内联(解析 JSON)
@@ -357,6 +477,110 @@ export class Repo {
       .prepare("INSERT INTO tickets (session_key, summary) VALUES (?, ?)")
       .run(sessionKey, summary);
     return Number(info.lastInsertRowid);
+  }
+
+  closeTicket(id: number): boolean {
+    const info = this.db.prepare("UPDATE tickets SET status = 'closed' WHERE id = ? AND status = 'open'").run(id);
+    return info.changes > 0;
+  }
+
+  closeOpenTicketsForSession(sessionKey: string): number {
+    const info = this.db
+      .prepare("UPDATE tickets SET status = 'closed' WHERE session_key = ? AND status = 'open'")
+      .run(sessionKey);
+    return info.changes;
+  }
+
+  getTicket(id: number): { id: number; sessionKey: string; summary: string; status: string; createdAt: number } | undefined {
+    const r = this.db.prepare("SELECT id, session_key, summary, status, created_at FROM tickets WHERE id = ?").get(id) as
+      | { id: number; session_key: string; summary: string; status: string; created_at: number }
+      | undefined;
+    if (!r) return undefined;
+    return { id: r.id, sessionKey: r.session_key, summary: r.summary, status: r.status, createdAt: r.created_at };
+  }
+
+  insertResolution(
+    kind: string,
+    opts: { sessionKey?: string; groupId?: number; userId?: number; detail?: string } = {}
+  ): void {
+    this.db
+      .prepare(
+        "INSERT INTO resolution_events (kind, session_key, group_id, user_id, detail) VALUES (?, ?, ?, ?, ?)"
+      )
+      .run(kind, opts.sessionKey ?? null, opts.groupId ?? null, opts.userId ?? null, opts.detail ?? null);
+  }
+
+  // sinceTs 起各 kind 计数;用于日看板 / 自动解决率
+  resolutionCounts(sinceTs: number): Record<string, number> {
+    const rows = this.db
+      .prepare(
+        "SELECT kind, COUNT(*) AS n FROM resolution_events WHERE created_at >= ? GROUP BY kind"
+      )
+      .all(sinceTs) as { kind: string; n: number }[];
+    const out: Record<string, number> = {};
+    for (const r of rows) out[r.kind] = r.n;
+    return out;
+  }
+
+  // 用量日持久化:增量累加
+  addUsageDaily(
+    day: string,
+    site: string,
+    d: { count: number; cacheRead: number; cacheCreation: number; input: number; output: number; costUsd: number }
+  ): void {
+    this.db
+      .prepare(
+        `INSERT INTO usage_daily (day, site, count, cache_read, cache_creation, input, output, cost_usd)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(day, site) DO UPDATE SET
+           count = count + excluded.count,
+           cache_read = cache_read + excluded.cache_read,
+           cache_creation = cache_creation + excluded.cache_creation,
+           input = input + excluded.input,
+           output = output + excluded.output,
+           cost_usd = cost_usd + excluded.cost_usd`
+      )
+      .run(day, site, d.count, d.cacheRead, d.cacheCreation, d.input, d.output, d.costUsd);
+  }
+
+  usageDaily(day: string): {
+    site: string;
+    count: number;
+    cacheRead: number;
+    cacheCreation: number;
+    input: number;
+    output: number;
+    costUsd: number;
+  }[] {
+    const rows = this.db
+      .prepare(
+        "SELECT site, count, cache_read, cache_creation, input, output, cost_usd FROM usage_daily WHERE day = ?"
+      )
+      .all(day) as {
+      site: string;
+      count: number;
+      cache_read: number;
+      cache_creation: number;
+      input: number;
+      output: number;
+      cost_usd: number;
+    }[];
+    return rows.map((r) => ({
+      site: r.site,
+      count: r.count,
+      cacheRead: r.cache_read,
+      cacheCreation: r.cache_creation,
+      input: r.input,
+      output: r.output,
+      costUsd: r.cost_usd,
+    }));
+  }
+
+  usageDailyTotalCost(day: string): number {
+    const row = this.db.prepare("SELECT COALESCE(SUM(cost_usd), 0) AS n FROM usage_daily WHERE day = ?").get(day) as {
+      n: number;
+    };
+    return row.n;
   }
 
   insertKbChunk(doc: string, content: string, source: string): number {

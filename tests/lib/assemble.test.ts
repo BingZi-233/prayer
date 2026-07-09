@@ -16,6 +16,7 @@ describe("assemble e2e(总线级)", () => {
       adminGroupId: 999,
       enabledGroups: [1],
       agent: fakeAgent as any,
+      ackEnabled: false, // 测主答案,不测 ACK(意图门可能耗时)
     });
 
     const sent = new Promise<any>((res) => bus.once("action.send", res));
@@ -40,7 +41,7 @@ describe("assemble e2e(总线级)", () => {
 
       const baseline = vi.getTimerCount();
 
-      // 关闭(默认):reflection-poller 挂若干定时器,proactive 不额外多挂
+      // 关闭(默认):reflection-poller + handoff 等,proactive 不额外多挂
       const off = mk();
       const disabledCount = vi.getTimerCount() - baseline;
       off();

@@ -35,11 +35,14 @@ export default function KbPage() {
   const [files, setFiles] = useState<string[] | null>(null);
   const [active, setActive] = useState<string | null>(null);
   const [content, setContent] = useState("");
+  const [savedContent, setSavedContent] = useState("");
   const [saving, setSaving] = useState(false);
   const [ingesting, setIngesting] = useState(false);
   const [stats, setStats] = useState<KbStats | null>(null);
   const [chunks, setChunks] = useState<KbChunk[]>([]);
   const [loadingChunks, setLoadingChunks] = useState(false);
+  /** 保存后尚未重建的文档 */
+  const [dirtyDocs, setDirtyDocs] = useState<Set<string>>(new Set());
 
   async function loadFiles() {
     const r = await fetch("/api/kb").then((x) => x.json());
@@ -54,10 +57,9 @@ export default function KbPage() {
     loadStats();
   }, []);
 
-  // 逐段编码:catch-all 路由需真实 "/" 分隔子目录,不能整串编码
   const encPath = (f: string) => f.split("/").map(encodeURIComponent).join("/");
-
   const chunksOf = (f: string) => stats?.docs.find((d) => d.doc === f)?.chunks ?? 0;
+  const dirty = active ? dirtyDocs.has(active) || content !== savedContent : false;
 
   async function loadChunks(f: string) {
     setLoadingChunks(true);
@@ -73,12 +75,15 @@ export default function KbPage() {
     setActive(f);
     setChunks([]);
     const r = await fetch(`/api/kb/${encPath(f)}`).then((x) => x.json());
-    if (r.ok) setContent(r.data);
+    if (r.ok) {
+      setContent(r.data);
+      setSavedContent(r.data);
+    }
     loadChunks(f);
   }
 
-  async function save() {
-    if (!active) return;
+  async function saveOnly(): Promise<boolean> {
+    if (!active) return false;
     setSaving(true);
     try {
       const r = await fetch(`/api/kb/${encPath(active)}`, {
@@ -86,35 +91,48 @@ export default function KbPage() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ content }),
       }).then((x) => x.json());
-      if (r.ok) toast.success(`已保存 ${active}`);
-      else toast.error(`保存失败:${r.error}`);
+      if (r.ok) {
+        setSavedContent(content);
+        setDirtyDocs((prev) => new Set(prev).add(active));
+        toast.success(`已保存 ${active}(尚未重建向量)`);
+        return true;
+      }
+      toast.error(`保存失败:${r.error}`);
+      return false;
     } finally {
       setSaving(false);
     }
   }
 
-  async function ingest() {
+  async function ingest(): Promise<boolean> {
     setIngesting(true);
     try {
       const r = await fetch("/api/kb/ingest", { method: "POST" }).then((x) => x.json());
       if (r.ok) {
         const results = (r.data ?? []) as IngestResult[];
-        if (results.length === 0) {
-          toast.success("embedding 重建完成:无文件");
-        } else {
+        if (results.length === 0) toast.success("embedding 重建完成:无文件");
+        else {
           const totalChunks = results.reduce((sum, x) => sum + x.chunks, 0);
           toast.success(`embedding 重建完成: ${results.length} 个文档, 共 ${totalChunks} 个分块`);
         }
+        setDirtyDocs(new Set());
         loadStats();
         if (active) loadChunks(active);
-      } else {
-        toast.error(`重建失败:${r.error}`);
+        return true;
       }
+      toast.error(`重建失败:${r.error}`);
+      return false;
     } catch (e) {
       toast.error(`重建失败:${e instanceof Error ? e.message : String(e)}`);
+      return false;
     } finally {
       setIngesting(false);
     }
+  }
+
+  async function saveAndIngest() {
+    const ok = await saveOnly();
+    if (ok) await ingest();
   }
 
   const orphan = stats ? stats.chunks - stats.vecs : 0;
@@ -123,26 +141,35 @@ export default function KbPage() {
     <div className="flex flex-col gap-6">
       <PageHeader
         title="知识库"
-        description="编辑 docs/kb 文档,重建 embedding 后 Agent 即可检索。"
+        description="编辑 docs/kb 文档。「保存并生效」= 写盘 + 重建 embedding。"
         actions={
-          <Button variant="secondary" onClick={ingest} disabled={ingesting}>
+          <Button variant="secondary" onClick={() => ingest()} disabled={ingesting}>
             {ingesting ? <Spinner data-icon="inline-start" /> : <RefreshCw data-icon="inline-start" />}
             {ingesting ? "重建中…" : "重建 embedding"}
           </Button>
         }
       />
 
-      {/* 向量库统计:总分块 / 已建向量 / 文档数 / 维度;chunks≠vecs 时提示孤儿块 */}
       <StatGrid>
         <StatCard icon={Boxes} label="总分块" value={stats ? stats.chunks : "—"} loading={!stats} />
         <StatCard icon={Database} label="已建向量" value={stats ? stats.vecs : "—"} loading={!stats} />
         <StatCard icon={FileText} label="文档数" value={stats ? stats.docs.length : "—"} loading={!stats} />
         <StatCard icon={Ruler} label="向量维度" value={stats ? stats.dim : "—"} loading={!stats} />
       </StatGrid>
-      {orphan !== 0 && (
-        <div className="border-destructive/40 text-destructive flex items-center gap-2 rounded-md border px-3 py-2 text-sm font-medium">
-          <AlertTriangle className="size-4 shrink-0" />
-          {orphan} 个分块缺向量,需重建 embedding。
+      {(orphan !== 0 || dirtyDocs.size > 0) && (
+        <div className="border-destructive/40 text-destructive flex flex-col gap-1 rounded-md border px-3 py-2 text-sm font-medium">
+          {orphan !== 0 && (
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="size-4 shrink-0" />
+              {orphan} 个分块缺向量,需重建 embedding。
+            </div>
+          )}
+          {dirtyDocs.size > 0 && (
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="size-4 shrink-0" />
+              {dirtyDocs.size} 个文档已改未重建:{Array.from(dirtyDocs).join(", ")}
+            </div>
+          )}
         </div>
       )}
 
@@ -164,10 +191,10 @@ export default function KbPage() {
                   onClick={() => open(f)}
                   icon={FileText}
                   badge={
-                    chunksOf(f) > 0 ? (
-                      <Badge variant="secondary" className="tabular-nums">
-                        {chunksOf(f)}
-                      </Badge>
+                    dirtyDocs.has(f) ? (
+                      <Badge variant="destructive" className="tabular-nums">未重建</Badge>
+                    ) : chunksOf(f) > 0 ? (
+                      <Badge variant="secondary" className="tabular-nums">{chunksOf(f)}</Badge>
                     ) : undefined
                   }
                 >
@@ -193,11 +220,16 @@ export default function KbPage() {
                   className="min-h-[420px] flex-1 font-mono text-sm"
                   spellCheck={false}
                 />
-                <div>
-                  <Button onClick={save} disabled={saving}>
+                <div className="flex flex-wrap gap-2">
+                  <Button onClick={saveOnly} disabled={saving || ingesting} variant="outline">
                     {saving ? <Spinner data-icon="inline-start" /> : <Save data-icon="inline-start" />}
-                    保存
+                    仅保存
                   </Button>
+                  <Button onClick={saveAndIngest} disabled={saving || ingesting}>
+                    {saving || ingesting ? <Spinner data-icon="inline-start" /> : <Save data-icon="inline-start" />}
+                    保存并生效
+                  </Button>
+                  {dirty && <span className="text-muted-foreground self-center text-xs">有未生效改动</span>}
                 </div>
               </TabsContent>
 
@@ -207,7 +239,7 @@ export default function KbPage() {
                   empty={chunks.length === 0}
                   emptyIcon={Boxes}
                   emptyTitle="尚无分块"
-                  emptyDescription="点右上角「重建 embedding」后生成。"
+                  emptyDescription="点「保存并生效」或「重建 embedding」后生成。"
                   skeleton={<Skeleton className="h-40 w-full" />}
                 >
                   <ScrollArea className="h-[460px] pr-3">
@@ -232,7 +264,7 @@ export default function KbPage() {
             <EmptyState
               icon={BookOpen}
               title="未选择文件"
-              description="从左侧选择一个文档进行编辑或预览分块,或点右上角重建 embedding。"
+              description="从左侧选择一个文档进行编辑。"
             />
           </SectionCard>
         )}

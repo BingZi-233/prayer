@@ -38,6 +38,11 @@ interface Cfg {
   proactiveScanMs: number;
   proactiveSilenceMs: number;
   proactiveMaxPerScan: number;
+  supportUrl: string;
+  ackEnabled: boolean;
+  maxReplyChars: number;
+  usageBudgetUsd: number;
+  groupPolicies: Record<string, { proactiveEnabled?: boolean; proactiveSilenceMs?: number; notifyAdminOnHandoff?: boolean }>;
 }
 
 const NUM_KEYS: (keyof Cfg)[] = [
@@ -54,7 +59,14 @@ const NUM_KEYS: (keyof Cfg)[] = [
   "proactiveScanMs",
   "proactiveSilenceMs",
   "proactiveMaxPerScan",
+  "maxReplyChars",
+  "usageBudgetUsd",
 ];
+
+const msToMin = (ms: number) => String(Math.round(ms / 60_000));
+const minToMs = (min: string) => Math.round(Number(min) * 60_000) || 0;
+const msToHr = (ms: number) => String(Math.round(ms / 3_600_000));
+const hrToMs = (hr: string) => Math.round(Number(hr) * 3_600_000) || 0;
 
 export default function ConfigPage() {
   const [cfg, setCfg] = useState<Cfg | null>(null);
@@ -65,7 +77,7 @@ export default function ConfigPage() {
   useEffect(() => {
     fetch("/api/config").then((x) => x.json()).then((r) => {
       if (r.ok) {
-        setCfg(r.data);
+        setCfg({ groupPolicies: {}, supportUrl: "https://www.packyapi.com", ackEnabled: true, maxReplyChars: 900, usageBudgetUsd: 0, ...r.data });
       }
     });
   }, []);
@@ -86,7 +98,6 @@ export default function ConfigPage() {
   async function save() {
     if (!cfg) return;
     setBusy(true);
-    // token 若仍是掩码(含 •)则不提交该字段(服务端亦有防御)
     const payload: Partial<Cfg> = { ...cfg };
     if (typeof payload.onebotAccessToken === "string" && payload.onebotAccessToken.includes("•")) {
       delete payload.onebotAccessToken;
@@ -98,7 +109,7 @@ export default function ConfigPage() {
         body: JSON.stringify(payload),
       }).then((x) => x.json());
       if (r.ok) {
-        setCfg(r.data);
+        setCfg({ groupPolicies: {}, ...r.data });
         toast.success("配置已保存,Agent 已热重载");
       } else {
         toast.error(`保存失败:${r.error}`);
@@ -110,9 +121,8 @@ export default function ConfigPage() {
     }
   }
 
-  const num = (k: keyof Cfg) => (cfg ? String(cfg[k]) : "");
+  const num = (k: keyof Cfg) => (cfg ? String(cfg[k] ?? "") : "");
 
-  // 生效群多选 toggle:维护 cfg.enabledGroups(number[])
   function toggleGroup(id: number) {
     if (!cfg) return;
     const set = new Set(cfg.enabledGroups);
@@ -120,9 +130,7 @@ export default function ConfigPage() {
     else set.add(id);
     setCfg({ ...cfg, enabledGroups: Array.from(set) });
   }
-  // 群名查找:不在列表(bot 已退群)→ 裸 id
   const groupName = (id: number) => groups?.find((g) => g.groupId === id)?.groupName ?? String(id);
-  // 管理群下拉选项:已存 id 不在列表(bot 已退群)时补一条裸 id,避免显示为未选而被误覆盖
   const adminGroupOptions = (): { groupId: number; groupName: string }[] => {
     if (!groups) return [];
     if (cfg?.adminGroupId && !groups.some((g) => g.groupId === cfg.adminGroupId)) {
@@ -135,7 +143,7 @@ export default function ConfigPage() {
     <div className="flex max-w-2xl flex-col gap-6">
       <PageHeader
         title="配置"
-        description="修改后保存即热重载,无需重启进程。密钥字段留空表示不修改。"
+        description="修改后保存即热重载。常用项用「分钟」显示;高级毫秒值仍写入配置。"
         actions={
           <Button onClick={save} disabled={busy || !cfg}>
             {busy ? <Spinner data-icon="inline-start" /> : <Save data-icon="inline-start" />}
@@ -150,6 +158,7 @@ export default function ConfigPage() {
         <Tabs defaultValue="onebot">
           <TabsList className="h-auto w-full flex-wrap justify-start">
             <TabsTrigger value="onebot">OneBot</TabsTrigger>
+            <TabsTrigger value="reply">回复体验</TabsTrigger>
             <TabsTrigger value="sdk">Claude SDK</TabsTrigger>
             <TabsTrigger value="session">会话</TabsTrigger>
             <TabsTrigger value="reflect">反思</TabsTrigger>
@@ -177,7 +186,7 @@ export default function ConfigPage() {
                 <Field>
                   <FieldLabel htmlFor="handoffTimeoutMin">转人工超时(分钟)</FieldLabel>
                   <Input id="handoffTimeoutMin" inputMode="numeric" value={num("handoffTimeoutMin")} onChange={(e) => upd("handoffTimeoutMin", e.target.value)} />
-                  <FieldDescription>转人工后无人处理超过此时长自动回收工单。默认 30。</FieldDescription>
+                  <FieldDescription>转人工后无人处理超过此时长自动恢复自动答。默认 30 分钟。</FieldDescription>
                 </Field>
                 <Field>
                   <FieldLabel htmlFor="adminGroupId">管理群号</FieldLabel>
@@ -239,14 +248,44 @@ export default function ConfigPage() {
                         </div>
                       )}
                       <FieldDescription>
-                        仅这些群里 bot 才会回复 / 缓冲 / 沉淀知识。留空 = 对所有群都不响应。管理群不受此列表影响。
+                        仅这些群里 bot 才会回复。也可在「生效群」页一键开关。
                       </FieldDescription>
                     </>
                   ) : (
                     <FieldDescription>
-                      {groupsLoading ? "正在获取群列表…" : "bot 未连接,无法获取群列表。请先填写连接并启动 bot。"}
+                      {groupsLoading ? "正在获取群列表…" : "bot 未连接,无法获取群列表。"}
                     </FieldDescription>
                   )}
+                </Field>
+              </FieldGroup>
+            </SectionCard>
+          </TabsContent>
+
+          <TabsContent value="reply">
+            <SectionCard title="回复体验" description="ACK、支持链接、长文拆条。">
+              <FieldGroup>
+                <Field orientation="horizontal">
+                  <Checkbox
+                    id="ackEnabled"
+                    checked={cfg.ackEnabled !== false}
+                    onCheckedChange={(v) => setCfg({ ...cfg, ackEnabled: v === true })}
+                  />
+                  <FieldLabel htmlFor="ackEnabled">@ 后先回「收到,正在查」</FieldLabel>
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor="supportUrl">支持链接(官网/工单)</FieldLabel>
+                  <Input id="supportUrl" value={cfg.supportUrl ?? ""} onChange={(e) => upd("supportUrl", e.target.value)} />
+                  <FieldDescription>办不了订单/退款时引导此链接;帮助文案也会附带。</FieldDescription>
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor="maxReplyChars">单条字数上限</FieldLabel>
+                  <Input id="maxReplyChars" inputMode="numeric" value={num("maxReplyChars")} onChange={(e) => upd("maxReplyChars", e.target.value)} />
+                  <FieldDescription>超出按标点拆成多条发送。0 = 不拆。默认 900。</FieldDescription>
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor="usageBudgetUsd">日用量预算(USD)</FieldLabel>
+                  <Input id="usageBudgetUsd" inputMode="decimal" value={num("usageBudgetUsd")} onChange={(e) => upd("usageBudgetUsd", e.target.value)} />
+                  <FieldDescription>超过后向管理群告警。0 = 不告警。</FieldDescription>
                 </Field>
               </FieldGroup>
             </SectionCard>
@@ -255,119 +294,115 @@ export default function ConfigPage() {
           <TabsContent value="sdk">
             <SectionCard
               title="Claude Agent SDK"
-              description="模型、Base URL、Auth Token 等 SDK 凭证不由本程序管理,请直接编辑配置目录下的 settings.json 的 env 块(ANTHROPIC_MODEL / ANTHROPIC_BASE_URL / ANTHROPIC_AUTH_TOKEN)。"
+              description="模型、Base URL、Auth Token 等 SDK 凭证不由本程序管理,请直接编辑配置目录下的 settings.json。"
             >
               <FieldGroup>
                 <Field>
                   <FieldLabel htmlFor="claudeConfigDir">CLAUDE_CONFIG_DIR</FieldLabel>
                   <Input id="claudeConfigDir" value={cfg.claudeConfigDir} placeholder="./data/claude-config" onChange={(e) => upd("claudeConfigDir", e.target.value)} />
-                  <FieldDescription>SDK 认证与配置目录。模型与中转凭证在此目录的 settings.json 内维护,本程序不读写这些字段。</FieldDescription>
                 </Field>
               </FieldGroup>
             </SectionCard>
           </TabsContent>
 
           <TabsContent value="session">
-            <SectionCard title="会话" description="Claude 对话 resume 与空闲超时策略。">
+            <SectionCard title="会话" description="空闲超时后开全新对话。">
               <FieldGroup>
                 <Field>
-                  <FieldLabel htmlFor="resumeTtlMs">会话空闲超时(毫秒)</FieldLabel>
-                  <Input id="resumeTtlMs" inputMode="numeric" value={num("resumeTtlMs")} onChange={(e) => upd("resumeTtlMs", e.target.value)} />
-                  <FieldDescription>
-                    会话空闲超过此时长后,下条消息开全新对话(不 resume)。默认 300000(5 分钟)。设 0 关闭。
-                  </FieldDescription>
+                  <FieldLabel htmlFor="resumeTtlMin">会话空闲超时(分钟)</FieldLabel>
+                  <Input
+                    id="resumeTtlMin"
+                    inputMode="numeric"
+                    value={msToMin(cfg.resumeTtlMs)}
+                    onChange={(e) => setCfg({ ...cfg, resumeTtlMs: minToMs(e.target.value) })}
+                  />
+                  <FieldDescription>默认 5 分钟。设 0 关闭超时。</FieldDescription>
                 </Field>
               </FieldGroup>
             </SectionCard>
           </TabsContent>
 
           <TabsContent value="reflect">
-            <SectionCard title="反思(知识沉淀)" description="后台周期性回看群聊,把人工答复沉淀为 kb 的 human-reflection 条目供 Agent 检索。">
+            <SectionCard title="反思(知识沉淀)" description="从人工答复沉淀知识。时间单位:分钟 / 小时。">
               <FieldGroup>
                 <Field>
-                  <FieldLabel htmlFor="reflectScanMs">扫描间隔(毫秒)</FieldLabel>
-                  <Input id="reflectScanMs" inputMode="numeric" value={num("reflectScanMs")} onChange={(e) => upd("reflectScanMs", e.target.value)} />
-                  <FieldDescription>反思轮询周期。默认 300000(5 分钟)。</FieldDescription>
+                  <FieldLabel>扫描间隔(分钟)</FieldLabel>
+                  <Input inputMode="numeric" value={msToMin(cfg.reflectScanMs)} onChange={(e) => setCfg({ ...cfg, reflectScanMs: minToMs(e.target.value) })} />
+                  <FieldDescription>默认 5 分钟。</FieldDescription>
                 </Field>
                 <Field>
-                  <FieldLabel htmlFor="reflectLookbackMs">回看窗口(毫秒)</FieldLabel>
-                  <Input id="reflectLookbackMs" inputMode="numeric" value={num("reflectLookbackMs")} onChange={(e) => upd("reflectLookbackMs", e.target.value)} />
-                  <FieldDescription>每次反思往回看多久的聊天记录。默认 7200000(2 小时)。</FieldDescription>
+                  <FieldLabel>回看窗口(分钟)</FieldLabel>
+                  <Input inputMode="numeric" value={msToMin(cfg.reflectLookbackMs)} onChange={(e) => setCfg({ ...cfg, reflectLookbackMs: minToMs(e.target.value) })} />
+                  <FieldDescription>默认 120 分钟(2 小时)。</FieldDescription>
                 </Field>
                 <Field>
-                  <FieldLabel htmlFor="reflectSettleMs">静置阈值(毫秒)</FieldLabel>
-                  <Input id="reflectSettleMs" inputMode="numeric" value={num("reflectSettleMs")} onChange={(e) => upd("reflectSettleMs", e.target.value)} />
-                  <FieldDescription>对话静置超过此时长才纳入反思,避免打断进行中的会话。默认 600000(10 分钟)。</FieldDescription>
+                  <FieldLabel>静置阈值(分钟)</FieldLabel>
+                  <Input inputMode="numeric" value={msToMin(cfg.reflectSettleMs)} onChange={(e) => setCfg({ ...cfg, reflectSettleMs: minToMs(e.target.value) })} />
+                  <FieldDescription>默认 10 分钟。</FieldDescription>
                 </Field>
                 <Field>
                   <FieldLabel htmlFor="reflectWindowMax">单窗最大消息数</FieldLabel>
                   <Input id="reflectWindowMax" inputMode="numeric" value={num("reflectWindowMax")} onChange={(e) => upd("reflectWindowMax", e.target.value)} />
-                  <FieldDescription>单次反思送入的最大消息条数。默认 60。</FieldDescription>
                 </Field>
                 <Field>
-                  <FieldLabel htmlFor="reflectCompactMs">整理周期(毫秒)</FieldLabel>
-                  <Input id="reflectCompactMs" inputMode="numeric" value={num("reflectCompactMs")} onChange={(e) => upd("reflectCompactMs", e.target.value)} />
-                  <FieldDescription>反思整理周期。默认 86400000(24 小时)。设 0 关闭自动整理。</FieldDescription>
+                  <FieldLabel>整理周期(小时)</FieldLabel>
+                  <Input inputMode="numeric" value={msToHr(cfg.reflectCompactMs)} onChange={(e) => setCfg({ ...cfg, reflectCompactMs: hrToMs(e.target.value) })} />
+                  <FieldDescription>默认 24 小时。设 0 关闭自动整理。</FieldDescription>
                 </Field>
                 <Field>
                   <FieldLabel htmlFor="reflectCompactMinEntries">整理最少条目</FieldLabel>
                   <Input id="reflectCompactMinEntries" inputMode="numeric" value={num("reflectCompactMinEntries")} onChange={(e) => upd("reflectCompactMinEntries", e.target.value)} />
-                  <FieldDescription>反思条目不足此数不整理。默认 10。</FieldDescription>
                 </Field>
               </FieldGroup>
             </SectionCard>
           </TabsContent>
 
           <TabsContent value="proactive">
-            <SectionCard title="主动回复(无人应答兜底)" description="群里有人提问但一段时间无人应答时,bot 主动补一句。仅对生效群生效;人工已接管或主链路已答则沉默。">
+            <SectionCard title="主动回复" description="无人应答时谨慎补位。可在主动回复页一键开关。">
               <FieldGroup>
                 <Field orientation="horizontal">
                   <Checkbox
                     id="proactiveEnabled"
                     checked={cfg.proactiveEnabled}
-                    onCheckedChange={(v) => cfg && setCfg({ ...cfg, proactiveEnabled: v === true })}
+                    onCheckedChange={(v) => setCfg({ ...cfg, proactiveEnabled: v === true })}
                   />
-                  <FieldLabel htmlFor="proactiveEnabled">启用主动回复</FieldLabel>
+                  <FieldLabel htmlFor="proactiveEnabled">启用主动回复(全局)</FieldLabel>
                 </Field>
                 <Field>
-                  <FieldLabel htmlFor="proactiveSilenceMs">静默阈值(毫秒)</FieldLabel>
-                  <Input id="proactiveSilenceMs" inputMode="numeric" value={num("proactiveSilenceMs")} onChange={(e) => upd("proactiveSilenceMs", e.target.value)} />
-                  <FieldDescription>问题发出后无人应答超过此时长才兜底。默认 180000(3 分钟)。</FieldDescription>
+                  <FieldLabel>静默阈值(分钟)</FieldLabel>
+                  <Input inputMode="numeric" value={msToMin(cfg.proactiveSilenceMs)} onChange={(e) => setCfg({ ...cfg, proactiveSilenceMs: minToMs(e.target.value) })} />
+                  <FieldDescription>默认 3 分钟无人应答才兜底。</FieldDescription>
                 </Field>
                 <Field>
-                  <FieldLabel htmlFor="proactiveScanMs">扫描间隔(毫秒)</FieldLabel>
-                  <Input id="proactiveScanMs" inputMode="numeric" value={num("proactiveScanMs")} onChange={(e) => upd("proactiveScanMs", e.target.value)} />
-                  <FieldDescription>轮询检查未应答问题的周期。默认 60000(1 分钟)。</FieldDescription>
+                  <FieldLabel>扫描间隔(分钟)</FieldLabel>
+                  <Input inputMode="numeric" value={msToMin(cfg.proactiveScanMs)} onChange={(e) => setCfg({ ...cfg, proactiveScanMs: minToMs(e.target.value) })} />
+                  <FieldDescription>默认 1 分钟。</FieldDescription>
                 </Field>
                 <Field>
                   <FieldLabel htmlFor="proactiveMaxPerScan">单次最多兜底数</FieldLabel>
                   <Input id="proactiveMaxPerScan" inputMode="numeric" value={num("proactiveMaxPerScan")} onChange={(e) => upd("proactiveMaxPerScan", e.target.value)} />
-                  <FieldDescription>每轮扫描最多主动回复几条,防刷屏。溢出保留到下轮,不丢弃。默认 2。</FieldDescription>
                 </Field>
               </FieldGroup>
             </SectionCard>
           </TabsContent>
 
           <TabsContent value="notify">
-            <SectionCard title="通知" description="向管理群推送的运行时通知开关。">
+            <SectionCard title="通知" description="向管理群推送的运行时通知。">
               <FieldGroup>
                 <Field orientation="horizontal">
                   <Checkbox
                     id="reflectNotifyAdmin"
                     checked={cfg.reflectNotifyAdmin}
-                    onCheckedChange={(v) => cfg && setCfg({ ...cfg, reflectNotifyAdmin: v === true })}
+                    onCheckedChange={(v) => setCfg({ ...cfg, reflectNotifyAdmin: v === true })}
                   />
                   <FieldLabel htmlFor="reflectNotifyAdmin">反思通知管理群</FieldLabel>
                 </Field>
-                <FieldDescription>
-                  开启后,每次沉淀新知识或完成反思整理会向管理群发通知。关闭则静默写入知识库。
-                </FieldDescription>
               </FieldGroup>
             </SectionCard>
           </TabsContent>
 
           <TabsContent value="storage">
-            <SectionCard title="存储" description="SQLite 数据库路径(会话 / 知识库 / 配置)。">
+            <SectionCard title="存储" description="SQLite 数据库路径。">
               <FieldGroup>
                 <Field>
                   <FieldLabel htmlFor="dbPath">数据库路径</FieldLabel>

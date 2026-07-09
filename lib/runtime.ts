@@ -5,6 +5,7 @@ import type { AppConfig } from "./config-store";
 import type { Repo } from "./db/repo";
 import type { Agent } from "./agent/agent";
 import type { AssembleDeps } from "./assemble";
+import { bindUsagePersistence } from "./usage-stats";
 
 export type RuntimeState = "stopped" | "starting" | "running" | "error";
 
@@ -48,9 +49,11 @@ async function defaultBuilders(): Promise<RuntimeBuilders> {
     // 异步 scanOnce(await agent.run 期间)不会撞到 "database connection is not open"
     openDb: (p) => sharedDb(p),
     makeRepo: (db) => new Repo(db as never),
-    makeAgent: (_cfg, _repo) =>
+    makeAgent: (cfg, _repo) =>
       new Agent({
+        // 支持链接注入 system prompt,办不了事务时引导
         systemPrompt: "",
+        supportUrl: cfg.supportUrl,
         // 不显式传 pluginPaths:插件(cs / packyapi)及其 MCP server 唯一由 CLAUDE_CONFIG_DIR/settings.json
         // 的 enabledPlugins(settingSources:["user"])加载,避免与显式 plugins 双加载/冲突。
         // web 插件管理器通过 claude plugin CLI 管理 enabledPlugins + cache。
@@ -68,7 +71,10 @@ export class RuntimeManager {
   private repo?: Repo;
   private client?: RuntimeClient;
   private teardown?: () => void;
+  private unbindUsage?: () => void;
   private wsConnected = false;
+  private adminGroupId = 0;
+  private usageBudgetUsd = 0;
 
   getStatus(): RuntimeStatus {
     return {
@@ -100,6 +106,20 @@ export class RuntimeManager {
       const db = builders.openDb(cfg.dbPath);
       const repo = builders.makeRepo(db);
       const agent = builders.makeAgent(cfg, repo);
+      this.adminGroupId = cfg.adminGroupId;
+      this.usageBudgetUsd = cfg.usageBudgetUsd;
+      this.unbindUsage = bindUsagePersistence(repo, {
+        budgetUsd: cfg.usageBudgetUsd,
+        onBudgetExceeded: (day, cost) => {
+          if (cfg.adminGroupId > 0) {
+            bus.emit("action.send", {
+              action: "send_group_msg",
+              groupId: cfg.adminGroupId,
+              text: `【用量告警】${day} 累计约 $${cost.toFixed(4)},已超过预算 $${cfg.usageBudgetUsd}`,
+            });
+          }
+        },
+      });
       this.teardown = builders.assemble({
         repo,
         botQQ: cfg.botQQ,
@@ -118,6 +138,11 @@ export class RuntimeManager {
         proactiveScanMs: cfg.proactiveScanMs,
         proactiveSilenceMs: cfg.proactiveSilenceMs,
         proactiveMaxPerScan: cfg.proactiveMaxPerScan,
+        handoffTimeoutMin: cfg.handoffTimeoutMin,
+        supportUrl: cfg.supportUrl,
+        ackEnabled: cfg.ackEnabled,
+        maxReplyChars: cfg.maxReplyChars,
+        groupPolicies: cfg.groupPolicies,
       });
       const client = builders.makeClient(cfg.onebotWsUrl, cfg.onebotAccessToken || undefined, (c) => {
         this.wsConnected = c;
@@ -142,6 +167,11 @@ export class RuntimeManager {
    *  与仍在 await agent.run 的 in-flight scanOnce,触发 "database connection is not open"。 */
   private teardownAll(): void {
     try {
+      this.unbindUsage?.();
+    } catch {
+      /* ignore */
+    }
+    try {
       this.teardown?.();
     } catch (e) {
       logger.log("warn", `[runtime] teardown error: ${e instanceof Error ? e.message : String(e)}`);
@@ -153,6 +183,7 @@ export class RuntimeManager {
     }
     bus.removeAllListeners(); // 兜底:清任何遗漏的监听器
     this.teardown = undefined;
+    this.unbindUsage = undefined;
     this.client = undefined;
     this.repo = undefined;
     this.wsConnected = false;

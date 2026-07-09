@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { sharedDb } from "@/lib/db/shared";
 import { Repo } from "@/lib/db/repo";
-import { getConfig, setConfig, type AppConfig } from "@/lib/config-store";
+import { getConfig, setConfig, type AppConfig, type GroupPolicy } from "@/lib/config-store";
 import { getRuntime, defaultBuilders } from "@/lib/runtime";
 import { ok, fail, maskConfig } from "@/lib/api";
 import { mergeSecret } from "@/lib/settings-writer";
@@ -10,6 +10,12 @@ import { mergeSecret } from "@/lib/settings-writer";
 function repo(): Repo {
   return new Repo(sharedDb(process.env.DB_PATH ?? "./data/agent.db"));
 }
+
+const groupPolicySchema = z.object({
+  proactiveEnabled: z.boolean().optional(),
+  proactiveSilenceMs: z.number().optional(),
+  notifyAdminOnHandoff: z.boolean().optional(),
+});
 
 const patchSchema = z.object({
   onebotWsUrl: z.string().optional(),
@@ -32,6 +38,11 @@ const patchSchema = z.object({
   proactiveScanMs: z.number().optional(),
   proactiveSilenceMs: z.number().optional(),
   proactiveMaxPerScan: z.number().optional(),
+  supportUrl: z.string().optional(),
+  ackEnabled: z.boolean().optional(),
+  maxReplyChars: z.number().optional(),
+  usageBudgetUsd: z.number().optional(),
+  groupPolicies: z.record(z.string(), groupPolicySchema).optional(),
 });
 
 export async function GET(): Promise<NextResponse> {
@@ -51,6 +62,14 @@ export async function PUT(req: NextRequest): Promise<NextResponse> {
   // secret 留空则保留
   if ("onebotAccessToken" in patch) {
     patch.onebotAccessToken = mergeSecret(current.onebotAccessToken, patch.onebotAccessToken ?? "");
+  }
+  // 合并 groupPolicies(浅合并每群)
+  if (patch.groupPolicies) {
+    const merged: Record<string, GroupPolicy> = { ...current.groupPolicies };
+    for (const [k, v] of Object.entries(patch.groupPolicies)) {
+      merged[k] = { ...merged[k], ...v };
+    }
+    patch.groupPolicies = merged;
   }
   const next = setConfig(r, patch);
 
