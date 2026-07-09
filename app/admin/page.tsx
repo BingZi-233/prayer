@@ -3,11 +3,10 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
-import { Activity, Plug, Users, RotateCw, TriangleAlert, Clock, LifeBuoy, ShieldCheck, Brain, MessagesSquare, UserRound, ArrowUpRight, Gauge } from "lucide-react";
+import { Activity, Plug, Users, RotateCw, TriangleAlert, Clock, LifeBuoy, ShieldCheck, Brain, MessagesSquare, Gauge, Target, Zap } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
-import { Skeleton } from "@/components/ui/skeleton";
 import { RelativeTime } from "@/components/relative-time";
 import {
   Dialog,
@@ -22,8 +21,6 @@ import {
 import { PageHeader } from "@/components/admin/page-header";
 import { StatCard, StatGrid } from "@/components/admin/stat";
 import { SectionCard } from "@/components/admin/section-card";
-import { DataState } from "@/components/admin/data-state";
-import { useGroupNames } from "@/lib/group-name";
 
 interface Status {
   state: string;
@@ -33,10 +30,27 @@ interface Status {
   bootedAt?: number;
   handoffQueue: number;
 }
-interface Sess { key: string; sessionId: string | null; humanMode: boolean; lastQuestion: string | null; updatedAt: number; }
-interface Entry { id: number; content: string; groupId: number | null; ts: number | null; }
 interface UsageRow { site: string; label: string; count: number; cacheRead: number; cacheCreation: number; input: number; output: number; costUsd: number; hitRatio: number; }
-interface Usage { rows: UsageRow[]; total: UsageRow; }
+interface Usage { rows: UsageRow[]; total: UsageRow; daily?: { day: string; costUsd: number; budgetUsd: number } | null; }
+interface Metrics {
+  auto: number;
+  proactive: number;
+  handoff: number;
+  error: number;
+  blocked: number;
+  proactiveSilent: number;
+  autoResolutionRate: number | null;
+  proactiveBad: number;
+  usageCostUsd: number;
+  usageBudgetUsd: number;
+}
+interface Overview {
+  enabledGroups: number;
+  reflectionCount: number;
+  openTickets: number;
+  humanSessions: number;
+  metrics?: Metrics;
+}
 
 const pct = (r: number) => `${Math.round(r * 100)}%`;
 const kfmt = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n));
@@ -57,25 +71,18 @@ function stateVariant(s?: string): "default" | "secondary" | "destructive" {
 export default function StatusPage() {
   const [s, setS] = useState<Status | null>(null);
   const [busy, setBusy] = useState(false);
-  const [ov, setOv] = useState<{ enabledGroups: number; reflectionCount: number; openTickets: number; humanSessions: number } | null>(null);
-  const [sessions, setSessions] = useState<Sess[] | null>(null);
-  const [entries, setEntries] = useState<Entry[] | null>(null);
+  const [ov, setOv] = useState<Overview | null>(null);
   const [usage, setUsage] = useState<Usage | null>(null);
-  const { label, name } = useGroupNames();
 
   async function load() {
     try {
-      const [st, o, se, rf, ug] = await Promise.all([
+      const [st, o, ug] = await Promise.all([
         fetch("/api/status").then((x) => x.json()),
         fetch("/api/overview").then((x) => x.json()),
-        fetch("/api/sessions").then((x) => x.json()),
-        fetch("/api/reflection").then((x) => x.json()),
         fetch("/api/usage").then((x) => x.json()),
       ]);
       if (st.ok) setS(st.data);
       if (o.ok) setOv(o.data);
-      if (se.ok) setSessions(se.data);
-      if (rf.ok) setEntries(rf.data.entries);
       if (ug.ok) setUsage(ug.data);
     } catch {
       /* 轮询失败静默 */
@@ -106,11 +113,13 @@ export default function StatusPage() {
     }
   }
 
+  const m = ov?.metrics;
+
   return (
-    <div className="flex h-[calc(100svh-6.5rem)] min-h-0 flex-col gap-6">
+    <div className="flex flex-col gap-6">
       <PageHeader
         title="运行状态"
-        description="实时监控 Agent 运行、连接与会话情况。"
+        description="实时监控 Agent 运行、连接与业务结果。"
         actions={
           <Dialog>
             <DialogTrigger asChild>
@@ -123,7 +132,7 @@ export default function StatusPage() {
               <DialogHeader>
                 <DialogTitle>确认重启 Agent?</DialogTitle>
                 <DialogDescription>
-                  重启会断开当前 WS 连接并重新装配 Agent,进行中的会话可能中断,运行日志将清空。
+                  重启会断开当前 WS 连接并重新装配 Agent,进行中的会话可能中断。
                 </DialogDescription>
               </DialogHeader>
               <DialogFooter>
@@ -139,7 +148,7 @@ export default function StatusPage() {
         }
       />
 
-      {(ov?.openTickets ?? 0) > 0 || (ov?.humanSessions ?? 0) > 0 ? (
+      {(ov?.openTickets ?? 0) > 0 || (ov?.humanSessions ?? 0) > 0 || (s && !s.wsConnected) ? (
         <SectionCard
           className="border-destructive/50"
           title={
@@ -148,7 +157,7 @@ export default function StatusPage() {
               有待处理事项
             </span>
           }
-          description="转人工客户正在等待,请尽快处理。"
+          description="真实待办:工单 / 人工会话 / WS 断开。"
           contentClassName="flex flex-wrap gap-2"
         >
           {(ov?.openTickets ?? 0) > 0 && (
@@ -160,6 +169,9 @@ export default function StatusPage() {
             <Button asChild variant="outline" size="sm">
               <Link href="/admin/sessions?human=1">人工会话 {ov!.humanSessions}</Link>
             </Button>
+          )}
+          {s && !s.wsConnected && (
+            <Badge variant="destructive">WS 未连接</Badge>
           )}
         </SectionCard>
       ) : null}
@@ -181,19 +193,51 @@ export default function StatusPage() {
         <StatCard icon={ShieldCheck} label="生效群" loading={!s} value={ov?.enabledGroups} />
         <StatCard icon={Brain} label="沉淀知识" loading={!s} value={ov?.reflectionCount} />
         <StatCard
-          icon={Gauge}
-          label="缓存命中(本次运行)"
-          loading={!usage}
-          value={usage ? (usage.total.count > 0 ? pct(usage.total.hitRatio) : "—") : null}
+          icon={Target}
+          label="今日自动解决率"
+          loading={!ov}
+          value={m?.autoResolutionRate != null ? pct(m.autoResolutionRate) : "—"}
         />
       </StatGrid>
 
-      {usage && usage.rows.length > 0 && (
-        <SectionCard
-          title="LLM 用量 / 缓存命中"
-          icon={Gauge}
-          description="本次进程运行以来按调用点统计;缓存命中率 = 命中 /(命中+写入+未缓存)。重启清零。"
-        >
+      {m && (
+        <SectionCard title="今日结果指标" icon={Target} description="0 点起:自动答 / 主动 / 转人工 / 错误。自动解决率 ≈ 自动答 ÷ (自动+主动+转人工+错误)。">
+          <StatGrid className="lg:grid-cols-4">
+            <StatCard icon={MessagesSquare} label="自动答" value={m.auto} />
+            <StatCard icon={Zap} label="主动补位" value={m.proactive} />
+            <StatCard icon={LifeBuoy} label="转人工" value={m.handoff} />
+            <StatCard icon={TriangleAlert} label="错误兜底" value={m.error} />
+            <StatCard icon={ShieldCheck} label="意图拦截" value={m.blocked} />
+            <StatCard icon={Zap} label="主动沉默" value={m.proactiveSilent} />
+            <StatCard icon={TriangleAlert} label="主动标不当" value={m.proactiveBad} />
+            <StatCard
+              icon={Gauge}
+              label="今日成本"
+              value={
+                <span>
+                  ${m.usageCostUsd.toFixed(4)}
+                  {m.usageBudgetUsd > 0 && (
+                    <span className="text-muted-foreground text-xs font-normal"> / ${m.usageBudgetUsd}</span>
+                  )}
+                </span>
+              }
+            />
+          </StatGrid>
+        </SectionCard>
+      )}
+
+      <SectionCard
+        title="LLM 用量 / 缓存命中"
+        icon={Gauge}
+        description={
+          usage?.daily
+            ? `本次进程内存累计;今日持久化 $${usage.daily.costUsd.toFixed(4)}${usage.daily.budgetUsd > 0 ? ` / 预算 $${usage.daily.budgetUsd}` : ""}。`
+            : "本次进程运行以来按调用点统计。重启后内存清零,日表仍保留。"
+        }
+      >
+        {!usage ? (
+          <div className="text-muted-foreground text-sm">加载中…</div>
+        ) : (
           <div className="overflow-auto">
             <table className="w-full text-sm">
               <thead className="text-muted-foreground text-xs">
@@ -225,100 +269,8 @@ export default function StatusPage() {
               </tbody>
             </table>
           </div>
-        </SectionCard>
-      )}
-
-      <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-2">
-        <SectionCard
-          title="最近会话"
-          icon={MessagesSquare}
-          description="最新活跃的客户会话。"
-          className="flex min-h-0 flex-col"
-          contentClassName="min-h-0 flex-1 overflow-auto"
-          action={
-            <Button asChild variant="ghost" size="sm">
-              <Link href="/admin/sessions">
-                查看全部 <ArrowUpRight data-icon="inline-end" />
-              </Link>
-            </Button>
-          }
-        >
-          <DataState
-            loading={sessions === null}
-            empty={sessions?.length === 0}
-            emptyIcon={MessagesSquare}
-            emptyTitle="暂无会话"
-            emptyDescription="生效群产生对话后会在此出现。"
-            skeleton={<Skeleton className="h-40 w-full" />}
-          >
-            <div className="flex flex-col">
-              {sessions?.slice(0, 30).map((sess) => (
-                <Link
-                  key={sess.key}
-                  href={`/admin/sessions?key=${encodeURIComponent(sess.key)}`}
-                  className="hover:bg-muted -mx-2 flex flex-col gap-0.5 rounded-md px-2 py-2"
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="flex items-center gap-1.5 truncate text-sm font-medium">
-                      {sess.humanMode && (
-                        <Badge variant="destructive" className="gap-1">
-                          <UserRound className="size-3" />人工
-                        </Badge>
-                      )}
-                      <span className="truncate">{label(sess.key)}</span>
-                    </span>
-                    <span className="text-muted-foreground shrink-0 text-xs">
-                      <RelativeTime ts={sess.updatedAt} />
-                    </span>
-                  </div>
-                  {sess.lastQuestion && (
-                    <span className="text-muted-foreground truncate text-xs">Q: {sess.lastQuestion}</span>
-                  )}
-                </Link>
-              ))}
-            </div>
-          </DataState>
-        </SectionCard>
-
-        <SectionCard
-          title="最近沉淀知识"
-          icon={Brain}
-          description="被动反思最新写入 kb 的问答要点。"
-          className="flex min-h-0 flex-col"
-          contentClassName="min-h-0 flex-1 overflow-auto"
-          action={
-            <Button asChild variant="ghost" size="sm">
-              <Link href="/admin/reflection">
-                查看全部 <ArrowUpRight data-icon="inline-end" />
-              </Link>
-            </Button>
-          }
-        >
-          <DataState
-            loading={entries === null}
-            empty={entries?.length === 0}
-            emptyIcon={Brain}
-            emptyTitle="暂无沉淀知识"
-            emptyDescription="生效群有人工回复后会在此沉淀。"
-            skeleton={<Skeleton className="h-40 w-full" />}
-          >
-            <div className="flex flex-col gap-3">
-              {[...(entries ?? [])]
-                .sort((a, b) => (b.ts ?? 0) - (a.ts ?? 0))
-                .slice(0, 20)
-                .map((e) => (
-                  <div key={e.id} className="flex flex-col gap-1">
-                    <div className="text-muted-foreground flex items-center gap-2 text-xs">
-                      {e.groupId != null && <Badge variant="secondary">{name(e.groupId)}</Badge>}
-                      <RelativeTime ts={e.ts} />
-                    </div>
-                    <p className="line-clamp-2 text-sm">{e.content}</p>
-                  </div>
-                ))}
-            </div>
-          </DataState>
-        </SectionCard>
-      </div>
+        )}
+      </SectionCard>
 
       {s?.lastError && (
         <SectionCard
