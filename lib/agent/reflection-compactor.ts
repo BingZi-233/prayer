@@ -64,16 +64,24 @@ function extractJsonArray(s: string): unknown {
   }
 }
 
-// 安全底线:解析 + 校验 LLM 产出。返回整理后 faq 列表;任一异常返回 null(调用方保留旧库)。
-export function validateCompacted(raw: string, inputCount: number): string[] | null {
+// 安全底线:解析 + 校验 LLM 产出。ok=false 时带 reason,供调用方 log 定位(哪个 guard 触发)。
+type CompactCheck = { ok: true; faqs: string[] } | { ok: false; reason: string };
+export function validateCompactedDetailed(raw: string, inputCount: number): CompactCheck {
   const parsed = extractJsonArray(raw);
-  if (!Array.isArray(parsed)) return null;
+  if (!Array.isArray(parsed)) return { ok: false, reason: "非 JSON 数组(未匹配到 [...] 或解析失败)" };
   const faqs = parsed
     .map((x) => (x && typeof x.faq === "string" ? x.faq.trim() : ""))
     .filter((s) => s.length > 0);
-  if (faqs.length === 0 && inputCount > 0) return null; // 空集视为异常,防清空
-  if (faqs.length > Math.ceil(inputCount * 1.5)) return null; // 暴涨视为无视约束
-  return faqs;
+  if (faqs.length === 0 && inputCount > 0) return { ok: false, reason: "空集(输入非空,防清空)" };
+  if (faqs.length > Math.ceil(inputCount * 1.5))
+    return { ok: false, reason: `条目暴涨 ${faqs.length} > 输入 ${inputCount} ×1.5(疑无视约束)` };
+  return { ok: true, faqs };
+}
+
+// 保留原签名(测试与外部依赖):返回整理后 faq 列表;任一异常返回 null(调用方保留旧库)。
+export function validateCompacted(raw: string, inputCount: number): string[] | null {
+  const r = validateCompactedDetailed(raw, inputCount);
+  return r.ok ? r.faqs : null;
 }
 
 // 执行一轮压缩整理,供测试直驱。旁路:异常保留旧库并 emit error,不抛。
@@ -111,14 +119,20 @@ export async function runCompact(deps: ReflectionCompactorDeps): Promise<void> {
       "compact"
     );
 
-    const faqs = validateCompacted(out, entries.length);
-    if (!faqs) {
+    const check = validateCompactedDetailed(out, entries.length);
+    if (!check.ok) {
+      const preview = out.slice(0, 300).replace(/\s+/g, " ").trim();
+      logger.log(
+        "warn",
+        `[reflection-compact] 校验失败(${check.reason}),保留旧库。LLM 原文预览: ${preview || "(空)"}`
+      );
       bus.emit("error.occurred", {
         scope: "reflection-compact",
-        err: new Error("LLM 产出未过安全校验,保留旧库"),
+        err: new Error(`LLM 产出未过安全校验,保留旧库:${check.reason}`),
       });
       return;
     }
+    const faqs = check.faqs;
 
     const withVec: { content: string; embedding: Float32Array }[] = [];
     for (const faq of faqs) withVec.push({ content: faq, embedding: await d.embed(faq) });
