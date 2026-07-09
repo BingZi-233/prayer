@@ -1,15 +1,28 @@
 "use client";
 
-import { Suspense, useDeferredValue, useEffect, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { Suspense, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { MessagesSquare, RefreshCw, Wrench, RotateCcw, TriangleAlert, Circle, Copy } from "lucide-react";
+import {
+  MessagesSquare,
+  RefreshCw,
+  Wrench,
+  RotateCcw,
+  TriangleAlert,
+  Circle,
+  Copy,
+  UserRound,
+  X,
+  Eye,
+  EyeOff,
+  LifeBuoy,
+  Search,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Bubble, BubbleContent } from "@/components/ui/bubble";
-import { Message, MessageContent } from "@/components/ui/message";
 import {
   MessageScroller,
   MessageScrollerButton,
@@ -41,103 +54,286 @@ interface Sess {
   sessionId: string | null;
   active: boolean;
   humanMode?: boolean;
+  humanSince?: number | null;
   lastQuestion: string | null;
   updatedAt: number;
 }
-interface Msg { role: string; text?: string; tool?: string; input?: string; result?: string; ts?: number; model?: string; }
+interface Msg {
+  role: string;
+  text?: string;
+  tool?: string;
+  input?: string;
+  result?: string;
+  ts?: number;
+  model?: string;
+}
 
-const POLL_MS = 3000;
+type Filter = "all" | "active" | "human";
+
+const POLL_MS = 4000;
 
 function clock(ts: number | undefined): string {
   if (!ts) return "";
   return new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
+function hangLabel(since: number | null | undefined): string | null {
+  if (!since) return null;
+  const min = Math.max(0, Math.round((Date.now() - since) / 60_000));
+  if (min < 1) return "刚转人工";
+  if (min < 60) return `挂起 ${min} 分`;
+  const h = Math.floor(min / 60);
+  return `挂起 ${h} 时 ${min % 60} 分`;
+}
+
+/** 仅客户(user)靠左,其余(bot / tool / …)一律靠右 */
+function isCustomerRole(role: string): boolean {
+  return role === "user";
+}
+
 export default function SessionsPage() {
   return (
-    <Suspense fallback={null}>
+    <Suspense fallback={<SessionsSkeleton />}>
       <SessionsInner />
     </Suspense>
   );
 }
 
+function SessionsSkeleton() {
+  return (
+    <div className="flex h-[calc(100svh-6.5rem)] flex-col gap-6">
+      <Skeleton className="h-12 w-64" />
+      <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[320px_1fr]">
+        <Skeleton className="h-full min-h-80" />
+        <Skeleton className="h-full min-h-80" />
+      </div>
+    </div>
+  );
+}
+
 function SessionsInner() {
+  const router = useRouter();
+  const params = useSearchParams();
   const [sessions, setSessions] = useState<Sess[] | null>(null);
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [active, setActive] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [resetting, setResetting] = useState(false);
+  const [resuming, setResuming] = useState(false);
   const [confirmStep, setConfirmStep] = useState(0);
   const [resetKey, setResetKey] = useState<string | null>(null);
-  const { name } = useGroupNames();
-  const memberName = useMemberNames((sessions ?? []).map((s) => s.key));
-  const params = useSearchParams();
   const [query, setQuery] = useState("");
   const deferredQuery = useDeferredValue(query);
-  const humanOnly = params.get("human") === "1";
+  const [filter, setFilter] = useState<Filter>(() => (params.get("human") === "1" ? "human" : "all"));
+  const [showTools, setShowTools] = useState(false);
 
-  const keyLabel = (key: string) => {
-    const [gid, uid] = key.split(":");
-    const g = Number(gid);
-    if (!gid || Number.isNaN(g)) return key;
-    const who = memberName(key) || uid || "";
-    return who ? `${name(g)} · ${who}` : name(g);
-  };
+  // 选中态以 ref 为准,避免轮询 / 过期 URL / 过期 fetch 把界面拉回旧会话
+  const activeKeyRef = useRef<string | null>(null);
+  const activeUpdatedAtRef = useRef<number | null>(null);
+  const sessionsRef = useRef<Sess[] | null>(null);
+  const filterRef = useRef(filter);
+  const transcriptGenRef = useRef(0);
+  // 上次已处理的 URL key;仅在 param 真变化时从 URL 打开,避免 sessions 轮询反复 open
+  const lastHandledUrlKeyRef = useRef<string | null | undefined>(undefined);
+  // 我们自己 router.replace 写出去的 key,URL 追上前忽略旧 param
+  const writingUrlKeyRef = useRef<string | null>(null);
 
-  async function loadSessions() {
-    const r = await fetch("/api/sessions").then((x) => x.json());
-    if (r.ok) setSessions(r.data);
-  }
-  useEffect(() => {
-    loadSessions();
+  const { name } = useGroupNames();
+  const memberName = useMemberNames((sessions ?? []).map((s) => s.key));
+
+  filterRef.current = filter;
+  sessionsRef.current = sessions;
+
+  const keyLabel = useCallback(
+    (key: string) => {
+      const [gid, uid] = key.split(":");
+      const g = Number(gid);
+      if (!gid || Number.isNaN(g)) return key;
+      const who = memberName(key) || uid || "";
+      return who ? `${name(g)} · ${who}` : name(g);
+    },
+    [memberName, name],
+  );
+
+  const syncUrl = useCallback(
+    (key: string | null, nextFilter: Filter) => {
+      writingUrlKeyRef.current = key;
+      lastHandledUrlKeyRef.current = key; // 视为已处理,防止 effect 再 open 一次
+      const sp = new URLSearchParams();
+      if (key) sp.set("key", key);
+      if (nextFilter === "human") sp.set("human", "1");
+      if (nextFilter === "active") sp.set("active", "1");
+      const q = sp.toString();
+      router.replace(q ? `/admin/sessions?${q}` : "/admin/sessions", { scroll: false });
+    },
+    [router],
+  );
+
+  const loadTranscript = useCallback(async (sessionId: string, gen: number, forKey: string) => {
+    try {
+      const r = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}`).then((x) => x.json());
+      // 过期请求:用户已切到别的会话
+      if (transcriptGenRef.current !== gen || activeKeyRef.current !== forKey) return;
+      if (r.ok) setMsgs(r.data as Msg[]);
+    } catch {
+      if (transcriptGenRef.current === gen && activeKeyRef.current === forKey) {
+        /* 保持旧 msgs 或空 */
+      }
+    } finally {
+      if (transcriptGenRef.current === gen && activeKeyRef.current === forKey) {
+        setLoading(false);
+      }
+    }
   }, []);
 
-  useEffect(() => {
-    const key = params.get("key");
-    if (!key || !sessions) return;
-    const s = sessions.find((x) => x.key === key);
-    if (s && active !== s.key) open(s);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sessions, params]);
+  const openSession = useCallback(
+    (sess: Sess, opts: { pushUrl?: boolean; forceReload?: boolean } = {}) => {
+      const { pushUrl = true, forceReload = false } = opts;
+      if (!sess.sessionId) {
+        toast.message("无对话记录", { description: "该会话尚无 transcript(可能刚建或已过期)。" });
+        return;
+      }
+      // 已是当前会话且不强制重载 → 只同步 URL
+      if (!forceReload && activeKeyRef.current === sess.key) {
+        if (pushUrl) syncUrl(sess.key, filterRef.current);
+        return;
+      }
 
-  useEffect(() => {
-    const t = setInterval(() => {
-      if (!document.hidden) refresh();
-    }, POLL_MS);
-    return () => clearInterval(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active]);
+      activeKeyRef.current = sess.key;
+      activeUpdatedAtRef.current = sess.updatedAt;
+      setActive(sess.key);
+      if (pushUrl) syncUrl(sess.key, filterRef.current);
 
-  async function loadTranscript(sessionId: string) {
-    const r = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}`).then((x) => x.json());
-    if (r.ok) setMsgs(r.data);
-  }
+      const gen = ++transcriptGenRef.current;
+      setLoading(true);
+      // 切换时先清空,避免短暂显示上一会话内容
+      setMsgs([]);
+      void loadTranscript(sess.sessionId, gen, sess.key);
+    },
+    [loadTranscript, syncUrl],
+  );
 
-  async function open(sess: Sess) {
-    if (!sess.sessionId) return;
-    setActive(sess.key);
-    setLoading(true);
-    try {
-      await loadTranscript(sess.sessionId);
-    } finally {
-      setLoading(false);
+  const loadSessions = useCallback(async (): Promise<Sess[] | null> => {
+    const r = await fetch("/api/sessions").then((x) => x.json());
+    if (r.ok) {
+      const list = r.data as Sess[];
+      sessionsRef.current = list;
+      setSessions(list);
+      return list;
     }
-  }
+    return null;
+  }, []);
+
+  // 首屏拉列表
+  useEffect(() => {
+    void loadSessions();
+  }, [loadSessions]);
+
+  // 筛选仅在 URL 明确带 human/active 时初始化一次;之后以本地 filter 为准,避免轮询/导航抖
+  useEffect(() => {
+    if (params.get("human") === "1") setFilter("human");
+    else if (params.get("active") === "1") setFilter("active");
+    // 只在挂载时读一次
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // 仅当 URL 的 key 真的变化时才从外链打开(工单跳入等);sessions 轮询不触发
+  const paramKey = params.get("key");
+  useEffect(() => {
+    // 我们自己写 URL 过程中:param 还是旧值 → 忽略
+    if (writingUrlKeyRef.current != null) {
+      if (paramKey === writingUrlKeyRef.current) {
+        writingUrlKeyRef.current = null; // URL 已追上
+      }
+      return;
+    }
+    if (paramKey === lastHandledUrlKeyRef.current) return;
+    lastHandledUrlKeyRef.current = paramKey;
+
+    if (!paramKey) return;
+    if (activeKeyRef.current === paramKey) return;
+
+    const list = sessionsRef.current;
+    if (!list) return; // 列表未就绪:等 sessions 就绪后再试
+    const s = list.find((x) => x.key === paramKey);
+    if (s) openSession(s, { pushUrl: false });
+  }, [paramKey, openSession]);
+
+  // 列表首次就绪时,补一次 URL 深链打开
+  useEffect(() => {
+    if (!sessions?.length) return;
+    if (writingUrlKeyRef.current != null) return;
+    const key = paramKey;
+    if (!key) return;
+    if (activeKeyRef.current === key) return;
+    if (lastHandledUrlKeyRef.current === key && activeKeyRef.current) return;
+    const s = sessions.find((x) => x.key === key);
+    if (s) {
+      lastHandledUrlKeyRef.current = key;
+      openSession(s, { pushUrl: false });
+    }
+    // 只在 sessions 从空到有时配合 paramKey
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessions]);
+
+  // 静默轮询列表;transcript 仅在当前会话 updatedAt 变化时刷新
+  useEffect(() => {
+    let cancelled = false;
+    const tick = async () => {
+      if (document.hidden || cancelled) return;
+      try {
+        const r = await fetch("/api/sessions").then((x) => x.json());
+        if (!r.ok || cancelled) return;
+        const list = r.data as Sess[];
+        sessionsRef.current = list;
+        setSessions(list);
+
+        const key = activeKeyRef.current;
+        if (!key) return;
+        const s = list.find((x) => x.key === key);
+        if (!s?.sessionId) return;
+        if (activeUpdatedAtRef.current === s.updatedAt) return;
+        // 会话有新活动 → 静默重拉 transcript(不打断选中)
+        activeUpdatedAtRef.current = s.updatedAt;
+        const gen = ++transcriptGenRef.current;
+        const tr = await fetch(`/api/sessions/${encodeURIComponent(s.sessionId)}`).then((x) => x.json());
+        if (cancelled || transcriptGenRef.current !== gen || activeKeyRef.current !== key) return;
+        if (tr.ok) setMsgs(tr.data as Msg[]);
+      } catch {
+        /* 静默 */
+      }
+    };
+    const t = setInterval(() => void tick(), POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(t);
+    };
+  }, []);
 
   async function refresh() {
     setRefreshing(true);
     try {
-      const r = await fetch("/api/sessions").then((x) => x.json());
-      if (!r.ok) return;
-      setSessions(r.data);
-      if (active) {
-        const s = (r.data as Sess[]).find((x) => x.key === active);
-        if (s?.sessionId) await loadTranscript(s.sessionId);
+      const list = await loadSessions();
+      const key = activeKeyRef.current;
+      if (key && list) {
+        const s = list.find((x) => x.key === key);
+        if (s?.sessionId) {
+          activeUpdatedAtRef.current = s.updatedAt;
+          const gen = ++transcriptGenRef.current;
+          setLoading(true);
+          await loadTranscript(s.sessionId, gen, key);
+        }
       }
     } finally {
       setRefreshing(false);
     }
+  }
+
+  function setFilterAndUrl(f: Filter) {
+    setFilter(f);
+    filterRef.current = f;
+    syncUrl(activeKeyRef.current, f);
   }
 
   const confirmSteps = [
@@ -147,13 +343,8 @@ function SessionsInner() {
       cta: "继续",
     },
     {
-      title: "二次确认",
-      desc: "此操作会清空所有会话的续接上下文,机器人将丢失当前对话记忆。确定继续?",
-      cta: "我了解,继续",
-    },
-    {
       title: "最后确认",
-      desc: "该操作立即生效且不可撤销。点下方按钮执行全部重开。",
+      desc: "此操作立即生效且不可撤销:机器人将丢失当前对话记忆。",
       cta: "执行全部重开",
     },
   ];
@@ -169,10 +360,8 @@ function SessionsInner() {
       }).then((x) => x.json());
       if (r.ok) {
         await loadSessions();
-        toast.success(`已重开 ${r.data.reset} 个会话,下条消息各自开新对话`);
-      } else {
-        toast.error(`重开失败:${r.error}`);
-      }
+        toast.success(`已重开 ${r.data.reset} 个会话`);
+      } else toast.error(`重开失败:${r.error}`);
     } catch (e) {
       toast.error(`重开失败:${e instanceof Error ? e.message : String(e)}`);
     } finally {
@@ -191,11 +380,28 @@ function SessionsInner() {
       if (r.ok) {
         await loadSessions();
         toast.success("已重开该会话,下条消息开新对话");
-      } else {
-        toast.error(`重开失败:${r.error}`);
-      }
+      } else toast.error(`重开失败:${r.error}`);
     } catch (e) {
       toast.error(`重开失败:${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
+  async function resumeHandoff(key: string) {
+    setResuming(true);
+    try {
+      const r = await fetch("/api/sessions", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "resume_handoff", key }),
+      }).then((x) => x.json());
+      if (r.ok) {
+        toast.success("已恢复自动客服");
+        await loadSessions();
+      } else toast.error(r.error || "恢复失败");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : String(e));
+    } finally {
+      setResuming(false);
     }
   }
 
@@ -208,201 +414,419 @@ function SessionsInner() {
     }
   }
 
-  const list = (sessions ?? []).filter((s) => (humanOnly ? s.humanMode : true));
-  const activeCount = list.filter((s) => s.active).length;
-  const shown = list.filter((s) => {
-    if (!deferredQuery.trim()) return true;
+  const activeSess = useMemo(
+    () => (sessions ?? []).find((s) => s.key === active) ?? null,
+    [sessions, active],
+  );
+
+  const stats = useMemo(() => {
+    const all = sessions ?? [];
+    return {
+      total: all.length,
+      active: all.filter((s) => s.active).length,
+      human: all.filter((s) => s.humanMode).length,
+    };
+  }, [sessions]);
+
+  const list = useMemo(() => {
+    let base = sessions ?? [];
+    if (filter === "human") base = base.filter((s) => s.humanMode);
+    else if (filter === "active") base = base.filter((s) => s.active);
+    return [...base].sort((a, b) => {
+      if (!!b.humanMode !== !!a.humanMode) return a.humanMode ? -1 : 1;
+      return b.updatedAt - a.updatedAt;
+    });
+  }, [sessions, filter]);
+
+  const shown = useMemo(() => {
+    if (!deferredQuery.trim()) return list;
     const q = deferredQuery.toLowerCase();
-    return (
-      s.key.toLowerCase().includes(q) ||
-      keyLabel(s.key).toLowerCase().includes(q) ||
-      (s.lastQuestion ?? "").toLowerCase().includes(q)
+    return list.filter(
+      (s) =>
+        s.key.toLowerCase().includes(q) ||
+        keyLabel(s.key).toLowerCase().includes(q) ||
+        (s.lastQuestion ?? "").toLowerCase().includes(q),
     );
-  });
+  }, [list, deferredQuery, keyLabel]);
+
+  const visibleMsgs = useMemo(
+    () => (showTools ? msgs : msgs.filter((m) => m.role !== "tool")),
+    [msgs, showTools],
+  );
+
+  const toolCount = useMemo(() => msgs.filter((m) => m.role === "tool").length, [msgs]);
+
+  const lastBotText = useMemo(() => {
+    for (let i = msgs.length - 1; i >= 0; i--) {
+      if (msgs[i].role === "assistant" && msgs[i].text) return msgs[i].text!;
+    }
+    return null;
+  }, [msgs]);
+
+  const filters: { id: Filter; label: string; count: number }[] = [
+    { id: "all", label: "全部", count: stats.total },
+    { id: "active", label: "活跃", count: stats.active },
+    { id: "human", label: "人工", count: stats.human },
+  ];
 
   return (
-    <div className="flex h-[calc(100svh-6.5rem)] min-h-0 flex-col gap-6">
+    <div className="flex h-[calc(100svh-6.5rem)] min-h-0 flex-col gap-4">
       <PageHeader
         title="会话"
-        description={
-          humanOnly
-            ? "仅显示人工接待中的会话。"
-            : "查看历史会话的对话记录(读自 Claude SDK transcript)。"
-        }
+        description="查看对话 transcript;人工会话可一键恢复自动答。左=客户 · 右=bot/工具。"
         actions={
           <>
             <Button
               variant="destructive"
+              size="sm"
               onClick={() => setConfirmStep(1)}
-              disabled={resetting || list.length === 0}
+              disabled={resetting || !sessions?.length}
             >
               {resetting ? <Spinner data-icon="inline-start" /> : <RotateCcw data-icon="inline-start" />}
-              {resetting ? "重开中…" : "全部重开"}
+              全部重开
             </Button>
-            <Button variant="secondary" onClick={refresh} disabled={refreshing}>
+            <Button variant="secondary" size="sm" onClick={() => void refresh()} disabled={refreshing}>
               {refreshing ? <Spinner data-icon="inline-start" /> : <RefreshCw data-icon="inline-start" />}
-              {refreshing ? "刷新中…" : "刷新"}
+              刷新
             </Button>
           </>
         }
       />
 
-      <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[320px_1fr]">
+      <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[340px_1fr]">
         <SectionCard
           title="会话列表"
-          description={`${shown.length} / ${list.length} 个 · ${activeCount} 活跃${humanOnly ? " · 人工" : ""}`}
+          description={`${shown.length} / ${list.length} · 活跃 ${stats.active} · 人工 ${stats.human}`}
           className="flex min-h-0 flex-col overflow-hidden"
           contentClassName="flex min-h-0 flex-1 flex-col gap-2"
         >
-          <Input
-            placeholder="搜索群名 / QQ / 问题…"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            className="h-8 text-xs"
-          />
+          <div className="flex flex-wrap gap-1">
+            {filters.map((f) => (
+              <Button
+                key={f.id}
+                size="sm"
+                variant={filter === f.id ? "default" : "outline"}
+                className="h-7 px-2.5 text-xs"
+                onClick={() => setFilterAndUrl(f.id)}
+              >
+                {f.label}
+                <Badge variant="secondary" className="ml-1 h-4 px-1 tabular-nums">
+                  {f.count}
+                </Badge>
+              </Button>
+            ))}
+          </div>
+
+          <div className="relative">
+            <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2" />
+            <Input
+              placeholder="搜索群名 / 昵称 / 问题…"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              className="h-8 pr-8 pl-8 text-xs"
+            />
+            {query && (
+              <button
+                type="button"
+                className="text-muted-foreground hover:text-foreground absolute top-1/2 right-2 -translate-y-1/2"
+                onClick={() => setQuery("")}
+                aria-label="清除搜索"
+              >
+                <X className="size-3.5" />
+              </button>
+            )}
+          </div>
+
           <DataState
             loading={sessions === null}
             empty={shown.length === 0}
             emptyIcon={MessagesSquare}
             emptyTitle={list.length === 0 ? "暂无会话" : "无匹配会话"}
-            emptyDescription={list.length === 0 ? "生效群产生对话后会在此出现。" : "调整搜索条件。"}
+            emptyDescription={
+              list.length === 0
+                ? "生效群产生对话后会在此出现。"
+                : filter !== "all"
+                  ? "换个筛选或清空搜索。"
+                  : "调整搜索条件。"
+            }
             skeleton={<Skeleton className="h-32 w-full" />}
           >
-            <div className="-mr-1 flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto pr-1">
-              {shown.map((sess) => (
-                <div
-                  key={sess.key}
-                  className={cn(
-                    "group hover:bg-muted relative flex flex-col gap-1 rounded-md px-2 py-1.5 text-xs",
-                    active === sess.key && "bg-muted",
-                    !sess.sessionId && "opacity-50",
-                  )}
-                >
-                  <button
-                    onClick={() => open(sess)}
-                    disabled={!sess.sessionId}
-                    className="flex flex-col gap-1 text-left disabled:cursor-not-allowed"
-                  >
-                    <span className="flex items-center gap-1.5">
-                      <Circle
-                        className={cn(
-                          "size-2 shrink-0",
-                          sess.active ? "fill-emerald-500 text-emerald-500" : "fill-muted-foreground/40 text-muted-foreground/40",
-                        )}
-                      />
-                      <span className="truncate" title={sess.key}>{keyLabel(sess.key)}</span>
-                      {sess.humanMode && <Badge variant="destructive" className="h-4 px-1 text-[10px]">人工</Badge>}
-                    </span>
-                    {sess.lastQuestion && (
-                      <span className="text-muted-foreground truncate">Q: {sess.lastQuestion}</span>
+            <div className="-mr-1 flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto pr-1">
+              {shown.map((sess) => {
+                const hang = sess.humanMode ? hangLabel(sess.humanSince) : null;
+                return (
+                  <div
+                    key={sess.key}
+                    className={cn(
+                      "group hover:bg-muted relative flex flex-col gap-0.5 rounded-md border border-transparent px-2 py-1.5 text-xs transition",
+                      active === sess.key && "bg-muted border-border",
+                      sess.humanMode && "border-l-destructive border-l-2",
+                      !sess.sessionId && "opacity-50",
                     )}
-                    <span className="text-muted-foreground/70">
-                      <RelativeTime ts={sess.updatedAt} />
-                    </span>
-                  </button>
-                  <button
-                    onClick={() => setResetKey(sess.key)}
-                    title="重开该会话"
-                    className="text-muted-foreground hover:text-destructive absolute top-1.5 right-1.5 opacity-0 transition group-hover:opacity-100"
                   >
-                    <RotateCcw className="size-3.5" />
-                  </button>
-                </div>
-              ))}
+                    <button
+                      type="button"
+                      onClick={() => openSession(sess)}
+                      className="flex flex-col gap-0.5 text-left"
+                    >
+                      <span className="flex items-center gap-1.5">
+                        <Circle
+                          className={cn(
+                            "size-2 shrink-0",
+                            sess.active
+                              ? "fill-emerald-500 text-emerald-500"
+                              : "fill-muted-foreground/40 text-muted-foreground/40",
+                          )}
+                        />
+                        <span className="truncate font-medium" title={sess.key}>
+                          {keyLabel(sess.key)}
+                        </span>
+                        {sess.humanMode && (
+                          <Badge variant="destructive" className="h-4 shrink-0 gap-0.5 px-1 text-[10px]">
+                            <UserRound className="size-2.5" />
+                            人工
+                          </Badge>
+                        )}
+                      </span>
+                      {sess.lastQuestion ? (
+                        <span className="text-muted-foreground line-clamp-2 pl-3.5 leading-snug">
+                          {sess.lastQuestion}
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground/60 pl-3.5 italic">暂无问题摘要</span>
+                      )}
+                      <span className="text-muted-foreground/70 flex items-center gap-2 pl-3.5">
+                        <RelativeTime ts={sess.updatedAt} />
+                        {hang && <span className="text-destructive">{hang}</span>}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setResetKey(sess.key)}
+                      title="重开该会话"
+                      className="text-muted-foreground hover:text-destructive absolute top-1.5 right-1.5 rounded p-0.5 opacity-0 transition group-hover:opacity-100"
+                    >
+                      <RotateCcw className="size-3.5" />
+                    </button>
+                  </div>
+                );
+              })}
             </div>
           </DataState>
         </SectionCard>
 
         <SectionCard
           title={
-            <span className="truncate" title={active ?? undefined}>
-              {active ? `对话:${keyLabel(active)}` : "对话"}
-            </span>
+            activeSess ? (
+              <span className="flex min-w-0 items-center gap-2">
+                <span className="truncate" title={activeSess.key}>
+                  {keyLabel(activeSess.key)}
+                </span>
+                {activeSess.humanMode && (
+                  <Badge variant="destructive" className="shrink-0 gap-1">
+                    <UserRound className="size-3" />
+                    人工接待
+                  </Badge>
+                )}
+                {activeSess.active ? (
+                  <Badge variant="secondary" className="shrink-0">
+                    活跃
+                  </Badge>
+                ) : (
+                  <Badge variant="outline" className="shrink-0">
+                    已结束续接
+                  </Badge>
+                )}
+              </span>
+            ) : (
+              "对话"
+            )
+          }
+          description={
+            activeSess?.lastQuestion
+              ? `Q: ${activeSess.lastQuestion}`
+              : active
+                ? "选中会话的 transcript"
+                : undefined
           }
           className="flex min-h-0 flex-col overflow-hidden"
-          contentClassName="min-h-0 flex-1 p-0"
+          contentClassName="flex min-h-0 flex-1 flex-col p-0"
+          action={
+            activeSess ? (
+              <div className="flex flex-wrap items-center gap-1">
+                {activeSess.humanMode && (
+                  <Button
+                    size="sm"
+                    variant="default"
+                    className="h-7 text-xs"
+                    disabled={resuming}
+                    onClick={() => void resumeHandoff(activeSess.key)}
+                  >
+                    {resuming ? <Spinner data-icon="inline-start" /> : <LifeBuoy data-icon="inline-start" />}
+                    恢复自动答
+                  </Button>
+                )}
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7 text-xs"
+                  disabled={!lastBotText}
+                  onClick={() => lastBotText && void copyText(lastBotText)}
+                  title="复制最新 bot 回复"
+                >
+                  <Copy data-icon="inline-start" />
+                  复制回复
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 text-xs"
+                  onClick={() => setShowTools((v) => !v)}
+                  title={showTools ? "隐藏工具调用" : "显示工具调用"}
+                >
+                  {showTools ? <EyeOff data-icon="inline-start" /> : <Eye data-icon="inline-start" />}
+                  工具{toolCount > 0 ? ` ${toolCount}` : ""}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 text-xs"
+                  onClick={() => setResetKey(activeSess.key)}
+                >
+                  <RotateCcw data-icon="inline-start" />
+                  重开
+                </Button>
+              </div>
+            ) : undefined
+          }
         >
           {!active ? (
             <EmptyState
               icon={MessagesSquare}
               title="未选择会话"
-              description="从左侧选择一个会话查看其对话记录。"
+              description="从左侧选择一个会话查看对话记录。人工会话会优先排在前面。"
             />
           ) : (
             <DataState
               loading={loading}
-              empty={msgs.length === 0}
+              empty={visibleMsgs.length === 0 && !loading}
               emptyIcon={MessagesSquare}
-              emptyTitle="无 transcript"
-              emptyDescription="session 文件未找到或为空。"
+              emptyTitle={msgs.length > 0 && !showTools ? "仅有工具调用" : "无 transcript"}
+              emptyDescription={
+                msgs.length > 0 && !showTools
+                  ? "点右上角「工具」显示工具调用记录。"
+                  : "session 文件未找到或为空。"
+              }
               skeleton={<Skeleton className="m-4 h-40" />}
             >
               <MessageScrollerProvider>
-                <MessageScroller>
+                <MessageScroller className="min-h-0 flex-1">
                   <MessageScrollerViewport>
                     <MessageScrollerContent className="gap-3 p-4">
-                      {msgs.map((m, i) => {
-                        const itemStyle = { contentVisibility: "visible", containIntrinsicSize: "auto" } as const;
+                      {visibleMsgs.map((m, i) => {
+                        const itemStyle = {
+                          contentVisibility: "visible",
+                          containIntrinsicSize: "auto",
+                        } as const;
+                        const customer = isCustomerRole(m.role);
+
                         if (m.role === "tool") {
                           return (
                             <MessageScrollerItem key={i} messageId={String(i)} style={itemStyle}>
-                              <details className="bg-muted/50 text-muted-foreground w-fit max-w-[85%] rounded-lg border px-2.5 py-1.5 text-xs">
-                                <summary className="flex cursor-pointer items-center gap-1.5 select-none">
-                                  <Wrench className="size-3 shrink-0" />
-                                  工具调用:<span className="text-foreground font-medium">{m.tool}</span>
-                                </summary>
-                                {m.input && (
-                                  <div className="mt-2">
-                                    <div className="mb-1 font-medium">请求</div>
-                                    <pre className="bg-background overflow-auto rounded p-2 whitespace-pre-wrap">{m.input}</pre>
-                                  </div>
-                                )}
-                                {m.result && (
-                                  <div className="mt-2">
-                                    <div className="mb-1 font-medium">响应</div>
-                                    <pre className="bg-background overflow-auto rounded p-2 whitespace-pre-wrap">{m.result}</pre>
-                                  </div>
-                                )}
-                              </details>
+                              <div className="flex w-full justify-end">
+                                <details className="bg-muted/50 text-muted-foreground w-fit max-w-[min(90%,36rem)] rounded-lg border px-2.5 py-1.5 text-xs">
+                                  <summary className="flex cursor-pointer items-center gap-1.5 select-none">
+                                    <Wrench className="size-3 shrink-0" />
+                                    工具:<span className="text-foreground font-medium">{m.tool}</span>
+                                    {m.ts ? (
+                                      <span className="text-muted-foreground/70 ml-1">{clock(m.ts)}</span>
+                                    ) : null}
+                                  </summary>
+                                  {m.input && (
+                                    <div className="mt-2">
+                                      <div className="mb-1 font-medium">请求</div>
+                                      <pre className="bg-background max-h-48 overflow-auto rounded p-2 whitespace-pre-wrap">
+                                        {m.input}
+                                      </pre>
+                                    </div>
+                                  )}
+                                  {m.result && (
+                                    <div className="mt-2">
+                                      <div className="mb-1 font-medium">响应</div>
+                                      <pre className="bg-background max-h-48 overflow-auto rounded p-2 whitespace-pre-wrap">
+                                        {m.result}
+                                      </pre>
+                                    </div>
+                                  )}
+                                </details>
+                              </div>
                             </MessageScrollerItem>
                           );
                         }
                         if (!m.text) return null;
-                        const isUser = m.role === "user";
+
                         return (
-                          <MessageScrollerItem key={i} messageId={String(i)} scrollAnchor={isUser} style={itemStyle}>
-                            <Message align={isUser ? "end" : "start"}>
-                              <MessageContent>
-                                <div className="group/bubble relative">
-                                  <Bubble variant={isUser ? "default" : "muted"}>
-                                    <BubbleContent className="whitespace-pre-wrap">{m.text}</BubbleContent>
+                          <MessageScrollerItem
+                            key={i}
+                            messageId={String(i)}
+                            scrollAnchor={customer}
+                            style={itemStyle}
+                          >
+                            <div
+                              className={cn(
+                                "flex w-full",
+                                customer ? "justify-start" : "justify-end",
+                              )}
+                            >
+                              <div
+                                className={cn(
+                                  "flex w-fit max-w-[min(85%,36rem)] flex-col gap-0.5",
+                                  customer ? "items-start" : "items-end",
+                                )}
+                              >
+                                <div className="group/bubble relative w-fit max-w-full">
+                                  <Bubble
+                                    align={customer ? "start" : "end"}
+                                    variant={customer ? "muted" : "default"}
+                                    className="max-w-full"
+                                  >
+                                    <BubbleContent className="whitespace-pre-wrap">
+                                      {m.text}
+                                    </BubbleContent>
                                   </Bubble>
-                                  {!isUser && (
-                                    <button
-                                      type="button"
-                                      title="复制 bot 回复"
-                                      className="text-muted-foreground hover:text-foreground absolute -top-1 -right-1 rounded bg-background/80 p-1 opacity-0 shadow group-hover/bubble:opacity-100"
-                                      onClick={() => copyText(m.text!)}
-                                    >
-                                      <Copy className="size-3" />
-                                    </button>
-                                  )}
+                                  <button
+                                    type="button"
+                                    title="复制"
+                                    className={cn(
+                                      "text-muted-foreground hover:text-foreground absolute -top-1 rounded bg-background/90 p-1 opacity-0 shadow transition group-hover/bubble:opacity-100",
+                                      customer ? "-right-1" : "-left-1",
+                                    )}
+                                    onClick={() => void copyText(m.text!)}
+                                  >
+                                    <Copy className="size-3" />
+                                  </button>
                                 </div>
                                 <span
                                   className={cn(
-                                    "text-muted-foreground/70 mt-0.5 flex items-center gap-1.5 text-[10px]",
-                                    isUser && "justify-end",
+                                    "text-muted-foreground/70 flex items-center gap-1.5 px-0.5 text-[10px]",
+                                    !customer && "flex-row-reverse",
                                   )}
                                 >
+                                  <span className="text-muted-foreground/50">
+                                    {customer ? "客户" : m.role === "assistant" ? "bot" : m.role}
+                                  </span>
                                   {clock(m.ts)}
-                                  {!isUser && m.model && (
-                                    <Badge variant="outline" className="h-4 px-1 py-0 text-[10px] font-normal">
+                                  {!customer && m.model && (
+                                    <Badge
+                                      variant="outline"
+                                      className="h-4 px-1 py-0 text-[10px] font-normal"
+                                    >
                                       {m.model}
                                     </Badge>
                                   )}
                                 </span>
-                              </MessageContent>
-                            </Message>
+                              </div>
+                            </div>
                           </MessageScrollerItem>
                         );
                       })}
@@ -424,14 +848,14 @@ function SessionsInner() {
               重开该会话?
             </AlertDialogTitle>
             <AlertDialogDescription>
-              {resetKey ? keyLabel(resetKey) : ""} 的下条消息将开启全新对话,历史记录仍保留可查。
+              {resetKey ? keyLabel(resetKey) : ""} 的下条消息将开启全新对话,历史仍可查。
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>取消</AlertDialogCancel>
             <AlertDialogAction
               className="bg-destructive/10 text-destructive hover:bg-destructive/20"
-              onClick={() => resetKey && resetOne(resetKey)}
+              onClick={() => resetKey && void resetOne(resetKey)}
             >
               重开
             </AlertDialogAction>
@@ -450,7 +874,7 @@ function SessionsInner() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel onClick={() => setConfirmStep(0)}>取消</AlertDialogCancel>
-            {confirmStep < 3 ? (
+            {confirmStep < 2 ? (
               <AlertDialogAction
                 onClick={(e) => {
                   e.preventDefault();
@@ -462,9 +886,9 @@ function SessionsInner() {
             ) : (
               <AlertDialogAction
                 className="bg-destructive/10 text-destructive hover:bg-destructive/20"
-                onClick={resetAll}
+                onClick={() => void resetAll()}
               >
-                {confirmSteps[2].cta}
+                {confirmSteps[1].cta}
               </AlertDialogAction>
             )}
           </AlertDialogFooter>
