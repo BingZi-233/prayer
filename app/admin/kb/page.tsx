@@ -26,6 +26,10 @@ interface KbChunk {
   id: number;
   content: string;
 }
+interface IngestResult {
+  file: string;
+  chunks: number;
+}
 
 export default function KbPage() {
   const [files, setFiles] = useState<string[] | null>(null);
@@ -94,8 +98,13 @@ export default function KbPage() {
     try {
       const r = await fetch("/api/kb/ingest", { method: "POST" }).then((x) => x.json());
       if (r.ok) {
-        const summary = r.data.map((x: { file: string; chunks: number }) => `${x.file}(${x.chunks})`).join(", ");
-        toast.success(`embedding 重建完成:${summary || "无文件"}`);
+        const results = (r.data ?? []) as IngestResult[];
+        if (results.length === 0) {
+          toast.success("embedding 重建完成:无文件");
+        } else {
+          const totalChunks = results.reduce((sum, x) => sum + x.chunks, 0);
+          toast.success(`embedding 重建完成: ${results.length} 个文档, 共 ${totalChunks} 个分块`);
+        }
         loadStats();
         if (active) loadChunks(active);
       } else {
