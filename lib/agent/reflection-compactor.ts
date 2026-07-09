@@ -107,10 +107,12 @@ export async function runCompact(deps: ReflectionCompactorDeps): Promise<void> {
         prompt,
         options: {
           systemPrompt: COMPACT_SYSTEM,
-          // maxTurns:1 的 JSON 整理任务,关思考省成本/延迟;单次覆盖全局 alwaysThinkingEnabled
+          // JSON 整理任务,关思考省成本/延迟;单次覆盖全局 alwaysThinkingEnabled
           thinking: { type: "disabled" },
           canUseTool: async () => ({ behavior: "deny" as const, message: "压缩阶段不使用工具" }),
-          maxTurns: 1,
+          // maxTurns:2 而非 1:模型偶发首轮吐 tool_use,deny 回消息须第 2 轮消费才出文本;
+          // maxTurns:1 下 SDK 直接 reject「Reached maximum number of turns」误判为错误。
+          maxTurns: 2,
           permissionMode: "default",
           settingSources: ["user"],
           env: sdkEnv(),

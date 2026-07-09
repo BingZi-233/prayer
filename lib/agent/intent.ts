@@ -79,7 +79,9 @@ export function makeIntentClassifier(deps: IntentClassifierDeps = {}): IntentCla
             // 单次覆盖 settings.json 的全局 alwaysThinkingEnabled。
             thinking: { type: "disabled" },
             canUseTool: async () => ({ behavior: "deny" as const, message: "分类阶段不使用工具" }),
-            maxTurns: 1,
+            // maxTurns:2 而非 1:模型偶发首轮吐 tool_use,deny 回消息须第 2 轮消费才出文本;
+            // maxTurns:1 下 SDK 直接 reject「Reached maximum number of turns」误判为错误。
+            maxTurns: 2,
             // 同 agent.ts:防 settings 里的 bypassPermissions 把 canUseTool 短路掉
             permissionMode: "default",
             settingSources: ["user"],
