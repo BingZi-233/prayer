@@ -42,7 +42,8 @@ const patchSchema = z.object({
   ackEnabled: z.boolean().optional(),
   maxReplyChars: z.number().optional(),
   usageBudgetUsd: z.number().optional(),
-  groupPolicies: z.record(z.string(), groupPolicySchema).optional(),
+  // null = 清除该群全部覆盖,回到跟随全局;object = 整份替换该群策略(非字段浅合并)
+  groupPolicies: z.record(z.string(), groupPolicySchema.nullable()).optional(),
 });
 
 export async function GET(): Promise<NextResponse> {
@@ -58,20 +59,32 @@ export async function PUT(req: NextRequest): Promise<NextResponse> {
   const r = repo();
   const current = getConfig(r);
   // 模型 / 中转凭证不由本程序管理:全部在 CLAUDE_CONFIG_DIR/settings.json 由用户直接维护
-  const patch = { ...parsed.data } as Partial<AppConfig>;
+  const patch = { ...parsed.data } as Partial<AppConfig> & {
+    groupPolicies?: Record<string, GroupPolicy | null>;
+  };
   // secret 留空则保留
   if ("onebotAccessToken" in patch) {
     patch.onebotAccessToken = mergeSecret(current.onebotAccessToken, patch.onebotAccessToken ?? "");
   }
-  // 合并 groupPolicies(浅合并每群)
+  // 按群: null 删除覆盖; object 整份替换(便于 UI「跟随全局」清字段)
   if (patch.groupPolicies) {
     const merged: Record<string, GroupPolicy> = { ...current.groupPolicies };
     for (const [k, v] of Object.entries(patch.groupPolicies)) {
-      merged[k] = { ...merged[k], ...v };
+      if (v === null) {
+        delete merged[k];
+      } else {
+        // 去掉 undefined 键,避免脏字段
+        const clean: GroupPolicy = {};
+        if (v.proactiveEnabled !== undefined) clean.proactiveEnabled = v.proactiveEnabled;
+        if (v.proactiveSilenceMs !== undefined) clean.proactiveSilenceMs = v.proactiveSilenceMs;
+        if (v.notifyAdminOnHandoff !== undefined) clean.notifyAdminOnHandoff = v.notifyAdminOnHandoff;
+        if (Object.keys(clean).length === 0) delete merged[k];
+        else merged[k] = clean;
+      }
     }
     patch.groupPolicies = merged;
   }
-  const next = setConfig(r, patch);
+  const next = setConfig(r, patch as Partial<AppConfig>);
 
   const builders = await defaultBuilders();
   getRuntime().reconfigure(next, builders);
