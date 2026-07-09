@@ -23,12 +23,14 @@ PackyAPI = AI API 聚合中转平台(`https://www.packyapi.com`),Anthropic/OpenA
 | `models` | `endpoint?` `group?` | 列可用模型 ID |
 | `groups` | — | 分组倍率与说明 |
 | `raw` | `model`(必填) | 单模型原始 JSON |
+| `announcements` | `limit?` `keyword?` | 平台公告(上新/变更/通知),默认最近 5 条,按发布时间降序 |
 
 示例调用参数:
 - 查 claude 各组价:`{ "action": "price", "keyword": "claude" }`
 - 锁 cc 组全表:`{ "action": "price", "group": "cc" }`
 - 列 anthropic 端点模型:`{ "action": "models", "endpoint": "anthropic" }`
 - 单模型原始:`{ "action": "raw", "model": "claude-opus-4-8" }`
+- 看最近公告:`{ "action": "announcements", "limit": 5 }`
 
 Server 为 TypeScript,Node(v22.6+/24)原生 strip 直跑;依赖 `@modelcontextprotocol/sdk`(repo 根 node_modules)。
 

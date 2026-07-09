@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  formatAnnouncements,
   formatGroups,
   formatModels,
   formatPrice,
   formatRaw,
+  type Announcements,
   type Pricing,
 } from "@/plugins/packyapi/scripts/packy-mcp";
 
@@ -109,5 +111,55 @@ describe("formatRaw", () => {
   });
   it("未找到", () => {
     expect(formatRaw(D, "xxx")).toContain("未找到");
+  });
+});
+
+const A: Announcements = {
+  data: [
+    {
+      id: 1,
+      category: "model",
+      type: "default",
+      title: "老公告",
+      title_en: "old",
+      content: "旧内容 opus",
+      content_en: "old",
+      publishDate: "2026-06-01T00:00:00.000Z",
+    },
+    {
+      id: 2,
+      category: "group",
+      type: "default",
+      title: "新公告",
+      title_en: "new",
+      content: "新内容 sale",
+      content_en: "new",
+      publishDate: "2026-07-08T00:00:00.000Z",
+    },
+  ],
+};
+
+describe("formatAnnouncements", () => {
+  it("按发布时间降序,新公告在前", () => {
+    const out = formatAnnouncements(A);
+    expect(out.indexOf("新公告")).toBeLessThan(out.indexOf("老公告"));
+    expect(out).toContain("2026-07-08");
+    expect(out).toContain("[2] 新公告");
+  });
+
+  it("limit 截断", () => {
+    const out = formatAnnouncements(A, { limit: 1 });
+    expect(out).toContain("新公告");
+    expect(out).not.toContain("老公告");
+  });
+
+  it("keyword 过滤标题/正文", () => {
+    const out = formatAnnouncements(A, { keyword: "sale" });
+    expect(out).toContain("新公告");
+    expect(out).not.toContain("老公告");
+  });
+
+  it("无匹配返回提示", () => {
+    expect(formatAnnouncements(A, { keyword: "nope" })).toContain("无公告");
   });
 });

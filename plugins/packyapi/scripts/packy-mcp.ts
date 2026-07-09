@@ -22,6 +22,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 
 export const API = "https://www.packyapi.com/api/pricing";
+export const ANNOUNCE_API = "https://www.packyapi.com/api/announcements";
 
 export interface Model {
   model_name: string;
@@ -44,6 +45,27 @@ async function fetchPricing(): Promise<Pricing> {
   const res = await fetch(API, { headers: { "User-Agent": "packy-mcp" } });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   return (await res.json()) as Pricing;
+}
+
+export interface Announcement {
+  id: number;
+  category: string;
+  type: string;
+  title: string;
+  title_en: string;
+  content: string;
+  content_en: string;
+  publishDate: string;
+}
+
+export interface Announcements {
+  data: Announcement[];
+}
+
+async function fetchAnnouncements(): Promise<Announcements> {
+  const res = await fetch(ANNOUNCE_API, { headers: { "User-Agent": "packy-mcp" } });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return (await res.json()) as Announcements;
 }
 
 function grValue(d: Pricing, group: string): number {
@@ -148,9 +170,37 @@ export function formatRaw(d: Pricing, model?: string): string {
   return JSON.stringify(m, null, 2);
 }
 
+export function formatAnnouncements(
+  d: Announcements,
+  opts: { keyword?: string; limit?: number } = {}
+): string {
+  const limit = opts.limit ?? 5;
+  const kw = (opts.keyword ?? "").toLowerCase();
+  let list = [...(d.data ?? [])];
+  if (kw) {
+    list = list.filter(
+      (a) => a.title?.toLowerCase().includes(kw) || a.content?.toLowerCase().includes(kw)
+    );
+  }
+  // 按发布时间降序,取最近 limit 条
+  list.sort((a, b) => (b.publishDate ?? "").localeCompare(a.publishDate ?? ""));
+  const shown = list.slice(0, limit);
+  if (shown.length === 0) {
+    return `无公告(关键词=${kw || "无"})`;
+  }
+  const out: string[] = [`# PackyAPI 公告 — 共 ${list.length} 条,列最近 ${shown.length} 条`];
+  for (const a of shown) {
+    const date = (a.publishDate ?? "").slice(0, 10);
+    out.push("");
+    out.push(`[${a.id}] ${a.title}  (${a.category}${date ? `, ${date}` : ""})`);
+    out.push((a.content ?? "").trim());
+  }
+  return out.join("\n");
+}
+
 // —— MCP server ——
 
-const server = new McpServer({ name: "packyapi", version: "0.2.0" });
+const server = new McpServer({ name: "packyapi", version: "0.3.0" });
 
 server.registerTool(
   "packy",
@@ -160,9 +210,9 @@ server.registerTool(
       "查询 PackyAPI(Claude/OpenAI/Gemini 兼容的 AI API 中转平台)的模型价格、可用模型 ID、分组倍率与单模型原始数据。底层读公开 JSON /api/pricing,本地计价,输出极简结构化文本 —— 比抓 HTML 页面省 token 且精确。按 action 分四种查询,配合可选参数过滤。价格单位 $/1M tokens。",
     inputSchema: {
       action: z
-        .enum(["price", "models", "groups", "raw"])
+        .enum(["price", "models", "groups", "raw", "announcements"])
         .describe(
-          "查询类型:price=计价($/1M tokens,含 input/output/cache) / models=列可用模型 ID / groups=列全部分组倍率与说明 / raw=单模型完整原始 JSON"
+          "查询类型:price=计价($/1M tokens,含 input/output/cache) / models=列可用模型 ID / groups=列全部分组倍率与说明 / raw=单模型完整原始 JSON / announcements=平台公告(上新、变更、通知)"
         ),
       keyword: z
         .string()
@@ -183,9 +233,25 @@ server.registerTool(
         .optional()
         .describe("仅 price:计价 base 系数,默认 2(即 $0.002/1K);input$ = model_ratio×group_ratio×base"),
       model: z.string().optional().describe("仅 raw:精确模型 ID(必填,须与 models 列出的完全一致)"),
+      limit: z
+        .number()
+        .optional()
+        .describe("仅 announcements:列出最近几条公告,默认 5;keyword 可同时按标题/正文子串过滤"),
     },
   },
-  async ({ action, keyword, group, endpoint, base, model }) => {
+  async ({ action, keyword, group, endpoint, base, model, limit }) => {
+    // announcements 走独立 API,不读 pricing
+    if (action === "announcements") {
+      try {
+        const a = await fetchAnnouncements();
+        return { content: [{ type: "text", text: formatAnnouncements(a, { keyword, limit }) }] };
+      } catch (e) {
+        return {
+          isError: true,
+          content: [{ type: "text", text: `取公告失败: ${(e as Error).message}` }],
+        };
+      }
+    }
     let d: Pricing;
     try {
       d = await fetchPricing();
