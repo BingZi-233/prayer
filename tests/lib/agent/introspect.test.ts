@@ -2,16 +2,24 @@ import { describe, it, expect } from "vitest";
 import { buildToolPolicy } from "@/lib/agent/introspect";
 
 describe("buildToolPolicy", () => {
-  it("allowlist 含 MCP 通配 + Skill(无 WebSearch/WebFetch),gated 含 Bash/Read", () => {
+  it("放行规则条恒在;无 liveTools 时 gated 仅兜底规则条", () => {
     const p = buildToolPolicy();
-    expect(p.allowlist.some((a) => a.startsWith("mcp__*"))).toBe(true);
+    expect(p.allowlist[0]).toContain("mcp__*");
+    expect(p.allowlist[0]).toContain("Skill"); // 规则条含 TOOL_ALLOWLIST 内容
+    expect(p.gated).toHaveLength(1);
+    expect(p.gated[0].tool).toContain("其余一切工具");
+  });
+
+  it("liveTools 经 isToolAllowed 分区:mcp__/Skill 进 allowlist,其余进 gated", () => {
+    const p = buildToolPolicy(["mcp__plugin_cs_cs__kb_search", "Skill", "Bash", "WebSearch"]);
+    expect(p.allowlist).toContain("mcp__plugin_cs_cs__kb_search");
     expect(p.allowlist).toContain("Skill");
-    expect(p.allowlist).not.toContain("WebSearch");
-    expect(p.allowlist).not.toContain("WebFetch");
-    const tools = p.gated.map((g) => g.tool);
-    expect(tools).toEqual(["Bash", "Read"]);
-    for (const g of p.gated) expect(g.constraint).toContain("禁用");
-    for (const g of p.gated) expect(g.constraint.length).toBeGreaterThan(0);
+    const gatedTools = p.gated.map((g) => g.tool);
+    expect(gatedTools).toContain("Bash");
+    expect(gatedTools).toContain("WebSearch");
+    expect(gatedTools).not.toContain("mcp__plugin_cs_cs__kb_search");
+    // 末条恒为允许制兜底
+    expect(gatedTools[gatedTools.length - 1]).toContain("其余一切工具");
   });
 });
 
@@ -89,7 +97,7 @@ describe("probeCapabilities", () => {
     expect(caps.skills[0]).toMatchObject({ name: "packyapi", description: "查价" });
     expect(caps.mcpServers[0]).toMatchObject({ name: "cs", status: "connected", version: "1.0.0" });
     expect(caps.mcpServers[0].tools[0]).toMatchObject({ name: "kb_search", readOnly: true });
-    expect(caps.toolPolicy.allowlist).toContain("Skill");
+    expect(caps.toolPolicy.allowlist[0]).toContain("Skill"); // 规则条含 TOOL_ALLOWLIST 内容
     expect(caps.probedAt).toBe(1000);
   });
 

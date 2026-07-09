@@ -1,7 +1,7 @@
 import { resolve } from "path";
 import { query as sdkQuery } from "@anthropic-ai/claude-agent-sdk";
 import type { AppConfig } from "../config-store";
-import { TOOL_ALLOWLIST, sdkEnv } from "./agent";
+import { TOOL_ALLOWLIST, isToolAllowed, sdkEnv } from "./agent";
 
 export interface CapabilityTool {
   name: string;
@@ -38,14 +38,19 @@ export interface Capabilities {
   probedAt: number;
 }
 
-// 静态工具门控:与 lib/agent/agent.ts 的 isToolAllowed/denyMessage 语义一致。
-// SDK 不上报本 host 的白名单,故在此静态描述。
-export function buildToolPolicy(): CapabilityToolPolicy {
+// 工具门控:唯一真源是 agent.ts 的 isToolAllowed(允许制:mcp__ 前缀或命中 TOOL_ALLOWLIST 才放行)。
+// 不再手写枚举被禁工具 —— 把 probe 到的 Agent 实际暴露工具(liveTools)逐个跑 isToolAllowed 分区:
+//   放行的进 allowlist;被拒的进 gated,逐条列真实工具名。
+// 内建宿主工具(Bash/Read/Web* 等)需模型 turn 才被 getContextUsage 上报,零 token probe 看不到,
+// 故补一条规则兜底(不点名任何工具),说明「规则外一律 deny」,避免手写清单造成漂移/误读。
+export function buildToolPolicy(liveTools: string[] = []): CapabilityToolPolicy {
+  const uniq = [...new Set(liveTools)];
+  const allowRule = ["mcp__* 前缀工具", ...TOOL_ALLOWLIST].join("、");
   return {
-    allowlist: ["mcp__* — 所有插件 MCP 工具", ...TOOL_ALLOWLIST],
+    allowlist: [`规则:放行 ${allowRule}`, ...uniq.filter((t) => isToolAllowed(t, {}))],
     gated: [
-      { tool: "Bash", constraint: "整体禁用,不接受任何命令" },
-      { tool: "Read", constraint: "整体禁用,不读任何文件" },
+      ...uniq.filter((t) => !isToolAllowed(t, {})).map((tool) => ({ tool, constraint: "未命中放行规则 → canUseTool 拒绝(deny)" })),
+      { tool: "其余一切工具(非 mcp__ 前缀且不在放行白名单)", constraint: "允许制:一律 canUseTool 拒绝(deny)" },
     ],
   };
 }
@@ -55,6 +60,13 @@ export interface ProbeOptions {
   refresh?: boolean;
   now?: () => number;
 }
+
+// getContextUsage 返回的子集(仅取工具清单三块;其余字段忽略)
+type ContextUsageLite = {
+  mcpTools?: { name: string }[];
+  systemTools?: { name: string }[];
+  deferredBuiltinTools?: { name: string }[];
+};
 
 type McpStatusRaw = {
   name: string;
@@ -165,6 +177,21 @@ async function probeUncached(cfg: AppConfig, opts: ProbeOptions = {}): Promise<C
       settled(q.reloadSkills(), { skills: [] as CapabilitySkill[] }),
       pollMcpStatus(q),
     ]);
+    // getContextUsage 在 MCP 连上后再取 —— mcpTools 要等 server 握手才上报;与 poll 并发会拿到空表。
+    // systemTools/deferredBuiltinTools(内建宿主工具)需模型 turn 才上报,零 token probe 下仍多为空,
+    // 由 buildToolPolicy 的规则兜底条覆盖。async thunk:老 SDK 无此方法时同步 throw 也转 reject 被 settled 兜住。
+    const ctxUsage = await settled(
+      (async () => (typeof q.getContextUsage === "function" ? await q.getContextUsage() : {}))() as Promise<ContextUsageLite>,
+      {} as ContextUsageLite
+    );
+    const mcpServers = normalizeMcp(mcp);
+    // liveTools 只取 getContextUsage(工具名是完全限定的 mcp__… / 内建裸名),逐个跑 isToolAllowed 分区。
+    // 不用 mcpServerStatus().tools —— 那里是 server 内的裸工具名(如 kb_search),缺 mcp__ 前缀会被误判 gated。
+    const liveTools = [
+      ...(ctxUsage.mcpTools ?? []).map((t) => t.name),
+      ...(ctxUsage.systemTools ?? []).map((t) => t.name),
+      ...(ctxUsage.deferredBuiltinTools ?? []).map((t) => t.name),
+    ];
     return {
       plugins: (plugins.plugins ?? []).map((p: CapabilityPlugin) => ({ name: p.name, path: p.path, source: p.source })),
       skills: (skills.skills ?? []).map((s: any) => ({
@@ -172,8 +199,8 @@ async function probeUncached(cfg: AppConfig, opts: ProbeOptions = {}): Promise<C
         description: s.description,
         argumentHint: s.argumentHint || undefined,
       })),
-      mcpServers: normalizeMcp(mcp),
-      toolPolicy: buildToolPolicy(),
+      mcpServers,
+      toolPolicy: buildToolPolicy(liveTools),
       probedAt: now(),
     };
   } finally {

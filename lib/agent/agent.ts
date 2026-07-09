@@ -168,15 +168,10 @@ export function isToolAllowed(toolName: string, _input: Record<string, unknown>)
   return toolName.startsWith("mcp__") || TOOL_ALLOWLIST.has(toolName);
 }
 
-// 拒因 message:引导模型停止重试、改走合规路径,避免反复撞被拒工具烧光 maxTurns
+// 拒因 message:引导模型停止重试、改走合规路径,避免反复撞被拒工具烧光 maxTurns。
+// 允许制下被拒即「未在放行白名单」,无需逐工具区分文案;统一导向 kb_search / packy。
 export function denyMessage(toolName: string): string {
-  switch (toolName) {
-    case "Bash":
-    case "Read":
-      return `${toolName} 已禁用。改用 kb_search 或 packy 工具获取信息。`;
-    default:
-      return `无 ${toolName} 工具可用。请改用 kb_search 或 packy 工具。`;
-  }
+  return `${toolName} 不可用(未在放行白名单)。改用 kb_search 或 packy 工具获取信息。`;
 }
 
 export class Agent {
