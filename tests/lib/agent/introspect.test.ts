@@ -45,6 +45,8 @@ const cfg: AppConfig = {
   reflectWindowMax: 60,
   reflectCompactMs: 86_400_000,
   reflectCompactMinEntries: 10,
+  reflectNotifyAdmin: true,
+  resumeTtlMs: 300000,
 };
 
 // 构造带控制方法的 fake Query(async generator + 控制方法)

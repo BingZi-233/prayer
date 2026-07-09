@@ -66,6 +66,24 @@ describe("reflection-poller runScan", () => {
     expect(entry).toMatchObject({ question: "退款多久到账", answer: "3个工作日" });
   });
 
+  it("notifyAdmin=false → 入库但不通知管理群", async () => {
+    seed(100, 200, "member", "退款多久到账?", NOW - 5000);
+    seed(100, 201, "admin", "一般 3 个工作日", NOW - 4000);
+    const spy = vi.fn();
+    bus.on("action.send", spy);
+    await runScan(
+      opts({
+        notifyAdmin: false,
+        queryFn: fakeQuery(
+          '[{"question":"退款多久到账","answer":"3个工作日","effective":true,"faq":"退款一般 3 个工作日到账"}]'
+        ) as never,
+      })
+    );
+    expect(spy).not.toHaveBeenCalled();
+    expect(repo.searchKb(new Float32Array([1, 0, 0]), 1)).toHaveLength(1);
+    expect(repo.groupReflectCursor(100)).toBe(NOW - 1000);
+  });
+
   it("effective=false → 不入库不通知", async () => {
     seed(100, 201, "admin", "在的亲", NOW - 4000);
     const spy = vi.fn();

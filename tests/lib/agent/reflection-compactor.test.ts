@@ -60,6 +60,20 @@ describe("runCompact", () => {
     expect(refs.every((r) => r.groupId === 0 && r.ts === 7_000_000)).toBe(true);
   });
 
+  it("notifyAdmin=false → 整理成功但不通知管理群", async () => {
+    seedReflections(5);
+    const spy = vi.fn();
+    bus.on("action.send", spy);
+    await runCompact(
+      opts({
+        notifyAdmin: false,
+        queryFn: fakeQuery('[{"faq":"合并后的条目A"},{"faq":"合并后的条目B"}]') as never,
+      })
+    );
+    expect(spy).not.toHaveBeenCalled();
+    expect(repo.reflectionEntries()).toHaveLength(2);
+  });
+
   it("整理成功 → 写入 reflect_compactions 记录(before/after 快照)", async () => {
     seedReflections(5);
     await runCompact(opts({ queryFn: fakeQuery('[{"faq":"合并A"},{"faq":"合并B"}]') as never }));

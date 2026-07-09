@@ -24,6 +24,8 @@ export interface AssembleDeps {
   reflectWindowMax?: number;
   reflectCompactMs?: number;
   reflectCompactMinEntries?: number;
+  // 反思沉淀/整理后是否通知管理群。缺省 true(保持既有行为)
+  reflectNotifyAdmin?: boolean;
   // 会话空闲超时(ms):超时则下条消息开全新对话,不 resume 旧会话。缺省 5 分钟
   resumeTtlMs?: number;
   proactiveEnabled?: boolean;
@@ -38,6 +40,7 @@ const DEFAULT_RESUME_TTL_MS = 300_000;
 /** 装配全链路,返回 teardown 用于热重载时卸载监听器与定时器 */
 export function assemble(deps: AssembleDeps): () => void {
   const { repo, botQQ, adminGroupId, enabledGroups, agent } = deps;
+  const notifyAdmin = deps.reflectNotifyAdmin ?? true;
   const store = new SessionStore(repo, deps.resumeTtlMs ?? DEFAULT_RESUME_TTL_MS);
   const cleanups = [
     registerErrorHandler(),
@@ -57,6 +60,7 @@ export function assemble(deps: AssembleDeps): () => void {
       lookbackMs: deps.reflectLookbackMs,
       settleMs: deps.reflectSettleMs,
       windowMax: deps.reflectWindowMax,
+      notifyAdmin,
     }),
   ];
   if ((deps.reflectCompactMs ?? 86_400_000) > 0) {
@@ -66,6 +70,7 @@ export function assemble(deps: AssembleDeps): () => void {
         adminGroupId,
         compactMs: deps.reflectCompactMs,
         minEntries: deps.reflectCompactMinEntries,
+        notifyAdmin,
       })
     );
   }

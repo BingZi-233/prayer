@@ -112,6 +112,8 @@ export class RuntimeManager {
         reflectWindowMax: cfg.reflectWindowMax,
         reflectCompactMs: cfg.reflectCompactMs,
         reflectCompactMinEntries: cfg.reflectCompactMinEntries,
+        reflectNotifyAdmin: cfg.reflectNotifyAdmin,
+        resumeTtlMs: cfg.resumeTtlMs,
         proactiveEnabled: cfg.proactiveEnabled,
         proactiveScanMs: cfg.proactiveScanMs,
         proactiveSilenceMs: cfg.proactiveSilenceMs,

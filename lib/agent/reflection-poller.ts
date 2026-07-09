@@ -12,6 +12,8 @@ export interface ReflectionPollerDeps {
   settleMs?: number;
   windowMax?: number;
   enabledGroups?: number[];
+  // 沉淀成功后是否向管理群发通知。缺省 true
+  notifyAdmin?: boolean;
   embed?: (text: string) => Promise<Float32Array>;
   queryFn?: typeof sdkQuery;
   now?: () => number;
@@ -24,6 +26,7 @@ interface Resolved {
   settleMs: number;
   windowMax: number;
   enabledGroups: number[];
+  notifyAdmin: boolean;
   embed: (text: string) => Promise<Float32Array>;
   queryFn: typeof sdkQuery;
   now: () => number;
@@ -63,6 +66,7 @@ function resolve(deps: ReflectionPollerDeps): Resolved {
     settleMs: deps.settleMs ?? 600_000,
     windowMax: deps.windowMax ?? 60,
     enabledGroups: deps.enabledGroups ?? [],
+    notifyAdmin: deps.notifyAdmin ?? true,
     embed: deps.embed ?? defaultEmbed,
     queryFn: deps.queryFn ?? sdkQuery,
     now: deps.now ?? (() => Date.now()),
@@ -122,11 +126,13 @@ async function scanOnce(d: Resolved): Promise<void> {
           typeof it.question === "string" ? it.question : "",
           typeof it.answer === "string" ? it.answer : ""
         );
-        bus.emit("action.send", {
-          action: "send_group_msg",
-          groupId: d.adminGroupId,
-          text: `已从群 ${groupId} 的人工回复沉淀 1 条知识:${faq.slice(0, 40)}${faq.length > 40 ? "…" : ""}`,
-        });
+        if (d.notifyAdmin) {
+          bus.emit("action.send", {
+            action: "send_group_msg",
+            groupId: d.adminGroupId,
+            text: `已从群 ${groupId} 的人工回复沉淀 1 条知识:${faq.slice(0, 40)}${faq.length > 40 ? "…" : ""}`,
+          });
+        }
       }
       d.repo.setGroupReflectCursor(groupId, until); // 成功才推进该群游标
     } catch (err) {

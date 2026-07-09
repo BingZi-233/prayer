@@ -30,6 +30,10 @@ interface Cfg {
   reflectLookbackMs: number;
   reflectSettleMs: number;
   reflectWindowMax: number;
+  reflectCompactMs: number;
+  reflectCompactMinEntries: number;
+  reflectNotifyAdmin: boolean;
+  resumeTtlMs: number;
   proactiveEnabled: boolean;
   proactiveScanMs: number;
   proactiveSilenceMs: number;
@@ -44,6 +48,9 @@ const NUM_KEYS: (keyof Cfg)[] = [
   "reflectLookbackMs",
   "reflectSettleMs",
   "reflectWindowMax",
+  "reflectCompactMs",
+  "reflectCompactMinEntries",
+  "resumeTtlMs",
   "proactiveScanMs",
   "proactiveSilenceMs",
   "proactiveMaxPerScan",
@@ -141,11 +148,13 @@ export default function ConfigPage() {
         <Skeleton className="h-72 w-full" />
       ) : (
         <Tabs defaultValue="onebot">
-          <TabsList>
+          <TabsList className="h-auto w-full flex-wrap justify-start">
             <TabsTrigger value="onebot">OneBot</TabsTrigger>
             <TabsTrigger value="sdk">Claude SDK</TabsTrigger>
+            <TabsTrigger value="session">会话</TabsTrigger>
             <TabsTrigger value="reflect">反思</TabsTrigger>
             <TabsTrigger value="proactive">主动回复</TabsTrigger>
+            <TabsTrigger value="notify">通知</TabsTrigger>
             <TabsTrigger value="storage">存储</TabsTrigger>
           </TabsList>
 
@@ -258,6 +267,20 @@ export default function ConfigPage() {
             </SectionCard>
           </TabsContent>
 
+          <TabsContent value="session">
+            <SectionCard title="会话" description="Claude 对话 resume 与空闲超时策略。">
+              <FieldGroup>
+                <Field>
+                  <FieldLabel htmlFor="resumeTtlMs">会话空闲超时(毫秒)</FieldLabel>
+                  <Input id="resumeTtlMs" inputMode="numeric" value={num("resumeTtlMs")} onChange={(e) => upd("resumeTtlMs", e.target.value)} />
+                  <FieldDescription>
+                    会话空闲超过此时长后,下条消息开全新对话(不 resume)。默认 300000(5 分钟)。设 0 关闭。
+                  </FieldDescription>
+                </Field>
+              </FieldGroup>
+            </SectionCard>
+          </TabsContent>
+
           <TabsContent value="reflect">
             <SectionCard title="反思(知识沉淀)" description="后台周期性回看群聊,把人工答复沉淀为 kb 的 human-reflection 条目供 Agent 检索。">
               <FieldGroup>
@@ -280,6 +303,16 @@ export default function ConfigPage() {
                   <FieldLabel htmlFor="reflectWindowMax">单窗最大消息数</FieldLabel>
                   <Input id="reflectWindowMax" inputMode="numeric" value={num("reflectWindowMax")} onChange={(e) => upd("reflectWindowMax", e.target.value)} />
                   <FieldDescription>单次反思送入的最大消息条数。默认 60。</FieldDescription>
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor="reflectCompactMs">整理周期(毫秒)</FieldLabel>
+                  <Input id="reflectCompactMs" inputMode="numeric" value={num("reflectCompactMs")} onChange={(e) => upd("reflectCompactMs", e.target.value)} />
+                  <FieldDescription>反思整理周期。默认 86400000(24 小时)。设 0 关闭自动整理。</FieldDescription>
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor="reflectCompactMinEntries">整理最少条目</FieldLabel>
+                  <Input id="reflectCompactMinEntries" inputMode="numeric" value={num("reflectCompactMinEntries")} onChange={(e) => upd("reflectCompactMinEntries", e.target.value)} />
+                  <FieldDescription>反思条目不足此数不整理。默认 10。</FieldDescription>
                 </Field>
               </FieldGroup>
             </SectionCard>
@@ -311,6 +344,24 @@ export default function ConfigPage() {
                   <Input id="proactiveMaxPerScan" inputMode="numeric" value={num("proactiveMaxPerScan")} onChange={(e) => upd("proactiveMaxPerScan", e.target.value)} />
                   <FieldDescription>每轮扫描最多主动回复几条,防刷屏。溢出保留到下轮,不丢弃。默认 2。</FieldDescription>
                 </Field>
+              </FieldGroup>
+            </SectionCard>
+          </TabsContent>
+
+          <TabsContent value="notify">
+            <SectionCard title="通知" description="向管理群推送的运行时通知开关。">
+              <FieldGroup>
+                <Field orientation="horizontal">
+                  <Checkbox
+                    id="reflectNotifyAdmin"
+                    checked={cfg.reflectNotifyAdmin}
+                    onCheckedChange={(v) => cfg && setCfg({ ...cfg, reflectNotifyAdmin: v === true })}
+                  />
+                  <FieldLabel htmlFor="reflectNotifyAdmin">反思通知管理群</FieldLabel>
+                </Field>
+                <FieldDescription>
+                  开启后,每次沉淀新知识或完成反思整理会向管理群发通知。关闭则静默写入知识库。
+                </FieldDescription>
               </FieldGroup>
             </SectionCard>
           </TabsContent>

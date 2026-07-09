@@ -89,6 +89,24 @@ describe("config-store", () => {
     setConfig(repo, { enabledGroups: [100, 200] });
     expect(getConfig(repo, {}).enabledGroups).toEqual([100, 200]); // 存储值优先
   });
+
+  it("reflectNotifyAdmin 默认 true;env false 关闭;setConfig 可改", () => {
+    const repo = mkRepo();
+    expect(getConfig(repo, {}).reflectNotifyAdmin).toBe(true);
+    const repo2 = mkRepo();
+    expect(getConfig(repo2, { REFLECT_NOTIFY_ADMIN: "false" }).reflectNotifyAdmin).toBe(false);
+    setConfig(repo, { reflectNotifyAdmin: false });
+    expect(getConfig(repo, {}).reflectNotifyAdmin).toBe(false);
+  });
+
+  it("resumeTtlMs 默认 300000;env RESUME_TTL_MS 覆盖", () => {
+    const repo = mkRepo();
+    expect(getConfig(repo, {}).resumeTtlMs).toBe(300000);
+    const repo2 = mkRepo();
+    expect(getConfig(repo2, { RESUME_TTL_MS: "120000" }).resumeTtlMs).toBe(120000);
+    setConfig(repo, { resumeTtlMs: 60000 });
+    expect(getConfig(repo, {}).resumeTtlMs).toBe(60000);
+  });
 });
 
 describe("config-store proactive 字段", () => {

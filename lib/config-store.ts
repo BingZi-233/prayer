@@ -16,6 +16,10 @@ export interface AppConfig {
   reflectWindowMax: number;
   reflectCompactMs: number;
   reflectCompactMinEntries: number;
+  // 反思沉淀/整理后是否向管理群发通知。默认开(保持既有行为);设 false 静默沉淀
+  reflectNotifyAdmin: boolean;
+  // 会话空闲 TTL:超时后不 resume,下条消息开全新对话。默认 5 分钟
+  resumeTtlMs: number;
   enabledGroups: number[];
   proactiveEnabled: boolean;
   proactiveScanMs: number;
@@ -40,6 +44,9 @@ function seedFromEnv(env: Record<string, string | undefined>): AppConfig {
     reflectWindowMax: Number(env.REFLECT_WINDOW_MAX ?? "60"),
     reflectCompactMs: Number(env.REFLECT_COMPACT_MS ?? "86400000"),
     reflectCompactMinEntries: Number(env.REFLECT_COMPACT_MIN_ENTRIES ?? "10"),
+    // 默认开:env 显式 "false" 才关(与当前始终通知的行为兼容)
+    reflectNotifyAdmin: env.REFLECT_NOTIFY_ADMIN !== "false",
+    resumeTtlMs: Number(env.RESUME_TTL_MS ?? "300000"),
     enabledGroups: [],
     proactiveEnabled: env.PROACTIVE_ENABLED === "true",
     proactiveScanMs: Number(env.PROACTIVE_SCAN_MS ?? "60000"),

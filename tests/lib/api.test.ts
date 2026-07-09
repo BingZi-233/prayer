@@ -16,6 +16,8 @@ const cfg: AppConfig = {
   reflectWindowMax: 60,
   reflectCompactMs: 86_400_000,
   reflectCompactMinEntries: 10,
+  reflectNotifyAdmin: true,
+  resumeTtlMs: 300000,
   enabledGroups: [],
   proactiveEnabled: false,
   proactiveScanMs: 60000,

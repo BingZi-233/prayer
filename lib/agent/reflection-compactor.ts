@@ -15,6 +15,8 @@ export interface ReflectionCompactorDeps {
   firstDelayMs?: number;
   minEntries?: number;
   baseContextK?: number;
+  // 整理成功后是否向管理群发通知。缺省 true
+  notifyAdmin?: boolean;
   embed?: (text: string) => Promise<Float32Array>;
   queryFn?: typeof sdkQuery;
   now?: () => number;
@@ -25,6 +27,7 @@ interface Resolved {
   adminGroupId: number;
   minEntries: number;
   baseContextK: number;
+  notifyAdmin: boolean;
   embed: (text: string) => Promise<Float32Array>;
   queryFn: typeof sdkQuery;
   now: () => number;
@@ -48,6 +51,7 @@ function resolve(deps: ReflectionCompactorDeps): Resolved {
     adminGroupId: deps.adminGroupId,
     minEntries: deps.minEntries ?? 10,
     baseContextK: deps.baseContextK ?? 3,
+    notifyAdmin: deps.notifyAdmin ?? true,
     embed: deps.embed ?? defaultEmbed,
     queryFn: deps.queryFn ?? sdkQuery,
     now: deps.now ?? (() => Date.now()),
@@ -147,11 +151,13 @@ export async function runCompact(deps: ReflectionCompactorDeps): Promise<void> {
       faqs
     );
 
-    bus.emit("action.send", {
-      action: "send_group_msg",
-      groupId: d.adminGroupId,
-      text: `反思整理:${entries.length} → ${faqs.length} 条`,
-    });
+    if (d.notifyAdmin) {
+      bus.emit("action.send", {
+        action: "send_group_msg",
+        groupId: d.adminGroupId,
+        text: `反思整理:${entries.length} → ${faqs.length} 条`,
+      });
+    }
   } catch (err) {
     bus.emit("error.occurred", { scope: "reflection-compact", err });
   }

@@ -17,6 +17,7 @@ export async function POST(): Promise<NextResponse> {
       repo,
       adminGroupId: cfg.adminGroupId,
       minEntries: cfg.reflectCompactMinEntries,
+      notifyAdmin: cfg.reflectNotifyAdmin,
     });
     repo.setCompactAt(Date.now()); // 手动整理也推进游标,避免紧接着定时任务重复跑
     const after = repo.reflectionEntries().length;

@@ -21,6 +21,8 @@ const cfg: AppConfig = {
   reflectWindowMax: 60,
   reflectCompactMs: 86_400_000,
   reflectCompactMinEntries: 10,
+  reflectNotifyAdmin: true,
+  resumeTtlMs: 300000,
 };
 
 function fakeBuilders(overrides: Partial<RuntimeBuilders> = {}): RuntimeBuilders {
@@ -147,5 +149,19 @@ describe("RuntimeManager", () => {
   it("client 无 getGroupMemberList → getGroupMembers 返回 undefined", async () => {
     m.start(cfg, fakeBuilders());
     expect(await m.getGroupMembers(111)).toBeUndefined();
+  });
+
+  it("assemble 收到 resumeTtlMs", () => {
+    let got: { resumeTtlMs?: number } | undefined;
+    m.start(
+      { ...cfg, resumeTtlMs: 120000 },
+      fakeBuilders({
+        assemble: (args) => {
+          got = args;
+          return () => {};
+        },
+      })
+    );
+    expect(got?.resumeTtlMs).toBe(120000);
   });
 });
