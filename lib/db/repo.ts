@@ -56,13 +56,19 @@ export class Repo {
     return row?.resume_id ?? undefined;
   }
 
-  // 群消息缓冲(被动反思用):落库
-  bufferGroupMessage(groupId: number, userId: number, senderRole: string | null, text: string): void {
+  // 群消息缓冲(被动反思用):落库。messageId 供主动回复引用原消息;缺省 → NULL(不引用)
+  bufferGroupMessage(
+    groupId: number,
+    userId: number,
+    senderRole: string | null,
+    text: string,
+    messageId?: number
+  ): void {
     this.db
       .prepare(
-        "INSERT INTO group_messages (group_id, user_id, sender_role, text) VALUES (?, ?, ?, ?)"
+        "INSERT INTO group_messages (group_id, user_id, sender_role, text, message_id) VALUES (?, ?, ?, ?, ?)"
       )
-      .run(groupId, userId, senderRole, text);
+      .run(groupId, userId, senderRole, text, messageId ?? null);
   }
 
   // 上界 untilTs 前存在 owner/admin 发言的候选 group,去重(每群游标另判 band)
@@ -209,16 +215,21 @@ export class Repo {
     groupId: number,
     afterTs: number,
     untilTs: number
-  ): { userId: number; text: string; createdAt: number }[] {
+  ): { userId: number; text: string; createdAt: number; messageId: number | null }[] {
     const rows = this.db
       .prepare(
-        `SELECT user_id, text, created_at FROM group_messages
+        `SELECT user_id, text, created_at, message_id FROM group_messages
          WHERE group_id = ? AND created_at > ? AND created_at <= ?
            AND (sender_role IS NULL OR sender_role NOT IN ('owner','admin'))
          ORDER BY created_at ASC`
       )
-      .all(groupId, afterTs, untilTs) as { user_id: number; text: string; created_at: number }[];
-    return rows.map((r) => ({ userId: r.user_id, text: r.text, createdAt: r.created_at }));
+      .all(groupId, afterTs, untilTs) as {
+      user_id: number;
+      text: string;
+      created_at: number;
+      message_id: number | null;
+    }[];
+    return rows.map((r) => ({ userId: r.user_id, text: r.text, createdAt: r.created_at, messageId: r.message_id }));
   }
 
   // 反思游标(每群独立,已处理到的时间戳),复用 config 表。

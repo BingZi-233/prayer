@@ -19,6 +19,7 @@ export interface QualifiedMessage {
   sessionKey: string;
   groupId: number;
   userId: number;
+  messageId: number; // 触发消息 id,回复时引用它(readers 分辨回谁)
   text: string;
   images?: ImageInput[];
   quoted?: string;
@@ -28,12 +29,14 @@ export interface QualifiedMessage {
 export interface ReplyReady {
   groupId: number;
   text: string;
+  replyToId?: number; // 被引用消息 id;缺省 → 不引用(纯文本)
 }
 
 export interface ActionSend {
   action: "send_group_msg";
   groupId: number;
   text: string;
+  replyToId?: number; // 被引用消息 id;缺省 → 纯文本发送
 }
 
 export interface ErrorOccurred {

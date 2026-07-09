@@ -27,7 +27,7 @@ export function registerOrchestrator(deps: OrchestratorDeps): () => void {
           scope: "intent",
           err: `blocked intent=${intent}(${INTENT_LABELS[intent]}) session=${q.sessionKey}`,
         });
-        bus.emit("reply.ready", { groupId: q.groupId, text: BLOCKED_REPLY });
+        bus.emit("reply.ready", { groupId: q.groupId, text: BLOCKED_REPLY, replyToId: q.messageId });
         return;
       }
     }
@@ -43,7 +43,7 @@ export function registerOrchestrator(deps: OrchestratorDeps): () => void {
       { images: q.images, quoted: q.quoted, forwarded: q.forwarded }
     );
     if (result.sessionId) store.remember(q.sessionKey, result.sessionId);
-    if (result.text) bus.emit("reply.ready", { groupId: q.groupId, text: result.text });
+    if (result.text) bus.emit("reply.ready", { groupId: q.groupId, text: result.text, replyToId: q.messageId });
   }
 
   const onQualified = (q: QualifiedMessage) => {

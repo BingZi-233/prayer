@@ -9,10 +9,10 @@ import { AGENT_FALLBACK_TEXT } from "@/lib/agent/agent";
 let repo: Repo;
 const NOW = 10_000_000;
 
-function seed(groupId: number, userId: number, role: string | null, text: string, at: number) {
+function seed(groupId: number, userId: number, role: string | null, text: string, at: number, messageId?: number) {
   (repo as any).db
-    .prepare("INSERT INTO group_messages (group_id,user_id,sender_role,text,created_at) VALUES (?,?,?,?,?)")
-    .run(groupId, userId, role, text, at);
+    .prepare("INSERT INTO group_messages (group_id,user_id,sender_role,text,created_at,message_id) VALUES (?,?,?,?,?,?)")
+    .run(groupId, userId, role, text, at, messageId ?? null);
 }
 
 // 假 agent:返回固定文本 + sessionId
@@ -55,6 +55,16 @@ describe("unanswered-poller runScan", () => {
     expect(repo.proactiveTotalCount()).toBe(1);
     const rec = repo.proactiveReplies(10);
     expect(rec[0]).toMatchObject({ groupId: 100, userId: 200, question: "claude 价格?", answer: "cc 组每百万 token 20 美元" });
+  });
+
+  it("主动回复引用用户代表消息(band 内最后一条)", async () => {
+    repo.setGroupProactiveCursor(100, 1);
+    seed(100, 200, "member", "第一句", NOW - 6000, 501);
+    seed(100, 200, "member", "第二句?", NOW - 5000, 502); // band 内最后一条 → 代表
+    const reply = new Promise<any>((res) => bus.once("reply.ready", res));
+    await runScan(base());
+    const r = await reply;
+    expect(r.replyToId).toBe(502);
   });
 
   it("沉默(哨兵/空/降级)不写库", async () => {

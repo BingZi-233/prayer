@@ -100,9 +100,18 @@ export class OneBotClient {
 
   private sendAction(a: ActionSend): void {
     if (this.ws?.readyState !== WebSocket.OPEN) return;
+    // 有 replyToId → 用消息段数组(reply + text),避免答案文本里的 [...] 被 CQ 误解析;
+    // 无则保持纯字符串(向后兼容)。
+    const message =
+      a.replyToId != null
+        ? [
+            { type: "reply", data: { id: String(a.replyToId) } },
+            { type: "text", data: { text: a.text } },
+          ]
+        : a.text;
     this.ws.send(JSON.stringify({
       action: a.action,
-      params: { group_id: a.groupId, message: a.text },
+      params: { group_id: a.groupId, message },
     }));
   }
 

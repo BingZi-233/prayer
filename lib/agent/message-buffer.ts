@@ -21,7 +21,7 @@ export function registerMessageBuffer(deps: MessageBufferDeps): () => void {
     if (!msg.rawText?.trim()) return;
     if (!enabled.has(msg.groupId)) return; // 生效群门:非生效群不缓冲
     try {
-      repo.bufferGroupMessage(msg.groupId, msg.userId, msg.senderRole ?? null, msg.rawText);
+      repo.bufferGroupMessage(msg.groupId, msg.userId, msg.senderRole ?? null, msg.rawText, msg.messageId);
     } catch (err) {
       bus.emit("error.occurred", { scope: "message-buffer", err });
     }

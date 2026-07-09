@@ -98,6 +98,12 @@ function migrate(db: Database.Database, dim: number): void {
   } catch {
     /* 列已存在 */
   }
+  // 旧库补 message_id(主动回复引用原消息用);旧行为 NULL → 不引用,退化纯文本。重复加列报错忽略
+  try {
+    db.exec("ALTER TABLE group_messages ADD COLUMN message_id INTEGER");
+  } catch {
+    /* 列已存在 */
+  }
 }
 
 export { DIM };

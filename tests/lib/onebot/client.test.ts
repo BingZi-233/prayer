@@ -71,6 +71,24 @@ describe("OneBotClient", () => {
     expect(action.params.message).toBe("hello");
   });
 
+  it("action.send 带 replyToId → message 为 reply+text 消息段数组", async () => {
+    const gotAction = new Promise<any>((res) => {
+      startServer((ws) => {
+        ws.on("message", (raw: Buffer) => res(JSON.parse(raw.toString())));
+      }).then((port) => {
+        client = new OneBotClient(`ws://127.0.0.1:${port}`);
+        client.start();
+        setTimeout(() => bus.emit("action.send", { action: "send_group_msg", groupId: 9, text: "答案", replyToId: 3 }), 100);
+      });
+    });
+    const action = await gotAction;
+    expect(Array.isArray(action.params.message)).toBe(true);
+    expect(action.params.message).toEqual([
+      { type: "reply", data: { id: "3" } },
+      { type: "text", data: { text: "答案" } },
+    ]);
+  });
+
   it("getGroupList → 发 get_group_list 并按 echo 解析 data", async () => {
     const port = await startServer((ws) => {
       ws.on("message", (raw: Buffer) => {

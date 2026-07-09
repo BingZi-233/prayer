@@ -76,18 +76,19 @@ async function scanOnce(d: Resolved): Promise<void> {
       // 每用户取 band 内最新一条为代表(questionTs=最新),对两条压制都是最宽松取值:
       // 只要用户最后一句仍无人应答就兜底。前文多句升序拼进 text 作上下文。
       // 按 userId 归组:每人取 band 内文本(升序拼接)作上下文,代表 ts = 最后一条
-      const byUser = new Map<number, { text: string; questionTs: number }>();
+      const byUser = new Map<number, { text: string; questionTs: number; messageId: number | null }>();
       for (const r of rows) {
         const prev = byUser.get(r.userId);
         byUser.set(r.userId, {
           text: prev ? `${prev.text}\n${r.text}` : r.text,
           questionTs: r.createdAt,
+          messageId: r.messageId, // 代表 = band 内最后一条,引用它
         });
       }
 
       let hits = 0;
       let capped = false;
-      for (const [userId, { text, questionTs }] of byUser) {
+      for (const [userId, { text, questionTs, messageId }] of byUser) {
         if (hits >= d.maxPerScan) { capped = true; break; }
         // 压制①:问题后(至 now)群里有 owner/admin 发言 → 人工接管
         if (d.repo.hasAdminMessageBetween(groupId, questionTs, now)) continue;
@@ -109,7 +110,7 @@ async function scanOnce(d: Resolved): Promise<void> {
         if (!isAnswer(result.text)) continue; // 哨兵/空 → 沉默
         if (result.sessionId) d.store.remember(key, result.sessionId);
         d.repo.insertProactiveReply(groupId, userId, text, result.text); // 留痕供监控页
-        bus.emit("reply.ready", { groupId, text: result.text });
+        bus.emit("reply.ready", { groupId, text: result.text, replyToId: messageId ?? undefined });
         logger.log("info", `[proactive] 群 ${groupId} 主动回答用户 ${userId}`);
         hits++;
       }

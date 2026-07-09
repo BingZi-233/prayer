@@ -46,6 +46,7 @@ export function registerGateway(deps: GatewayDeps): () => void {
         action: "send_group_msg",
         groupId: msg.groupId,
         text: "已重置对话,我们重新开始吧~",
+        replyToId: msg.messageId,
       });
       return;
     }
@@ -54,6 +55,7 @@ export function registerGateway(deps: GatewayDeps): () => void {
       sessionKey,
       groupId: msg.groupId,
       userId: msg.userId,
+      messageId: msg.messageId,
       text: msg.rawText,
       images: msg.images,
       quoted: msg.quoted,

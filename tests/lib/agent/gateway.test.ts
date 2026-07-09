@@ -25,6 +25,7 @@ describe("gateway", () => {
     const q = await p;
     expect(q.sessionKey).toBe("1:2");
     expect(q.text).toBe("订单在哪");
+    expect(q.messageId).toBe(10); // 透传触发消息 id,供回复引用
   });
 
   it("纯图消息(无文本)@bot 也放行,并透传 images/quoted/forwarded", async () => {
@@ -73,6 +74,7 @@ describe("gateway", () => {
     const a = await p;
     expect(a.groupId).toBe(1);
     expect(a.text).toContain("重置");
+    expect(a.replyToId).toBe(20); // 重置回复引用触发消息
     expect(repo.getResumeId("1:2")).toBeUndefined(); // 续接指针已清
     expect(repo.getSessionId("1:2")).toBe("sid-old"); // 展示指针保留,网页仍可查看
     expect(qualified).not.toHaveBeenCalled();

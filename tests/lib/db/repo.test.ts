@@ -272,4 +272,14 @@ describe("repo 主动兜底支持", () => {
     expect(rows.map((r) => r.text)).toEqual(["问题A", "问题B"]);
     expect(rows[0]).toMatchObject({ userId: 200, createdAt: 200 });
   });
+
+  it("bufferGroupMessage:存 messageId 并由 groupMemberMessagesBetween 带出;缺省 → null", () => {
+    const repo = mk();
+    repo.bufferGroupMessage(100, 200, "member", "带 id", 8001);
+    repo.bufferGroupMessage(100, 201, "member", "无 id"); // 缺省
+    const rows = repo.groupMemberMessagesBetween(100, 0, Date.now() + 1000);
+    const byUser = Object.fromEntries(rows.map((r) => [r.userId, r.messageId]));
+    expect(byUser[200]).toBe(8001);
+    expect(byUser[201]).toBeNull();
+  });
 });

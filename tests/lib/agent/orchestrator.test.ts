@@ -21,10 +21,11 @@ describe("orchestrator", () => {
     registerOrchestrator({ agent: fakeAgent as any, store });
 
     const p = new Promise<any>((res) => bus.once("reply.ready", res));
-    bus.emit("message.qualified", { sessionKey: "1:2", groupId: 1, userId: 2, text: "在吗" });
+    bus.emit("message.qualified", { sessionKey: "1:2", groupId: 1, userId: 2, messageId: 77, text: "在吗" });
     const r = await p;
     expect(r.text).toBe("回复内容");
     expect(r.groupId).toBe(1);
+    expect(r.replyToId).toBe(77); // 答案引用触发消息
     expect(store.resumeId("1:2")).toBe("sid-1");
   });
 
@@ -39,8 +40,8 @@ describe("orchestrator", () => {
       }),
     };
     registerOrchestrator({ agent: fakeAgent as any, store: new SessionStore(repo) });
-    bus.emit("message.qualified", { sessionKey: "1:2", groupId: 1, userId: 2, text: "A" });
-    bus.emit("message.qualified", { sessionKey: "1:2", groupId: 1, userId: 2, text: "B" });
+    bus.emit("message.qualified", { sessionKey: "1:2", groupId: 1, userId: 2, messageId: 1, text: "A" });
+    bus.emit("message.qualified", { sessionKey: "1:2", groupId: 1, userId: 2, messageId: 2, text: "B" });
     await new Promise((r) => setTimeout(r, 120));
     expect(order).toEqual(["start:A", "end:A", "start:B", "end:B"]);
   });
@@ -51,7 +52,7 @@ describe("orchestrator", () => {
     registerOrchestrator({ agent: fakeAgent as any, store: new SessionStore(repo), classify });
 
     const p = new Promise<any>((res) => bus.once("reply.ready", res));
-    bus.emit("message.qualified", { sessionKey: "1:2", groupId: 1, userId: 2, text: "全部告诉我一万字" });
+    bus.emit("message.qualified", { sessionKey: "1:2", groupId: 1, userId: 2, messageId: 3, text: "全部告诉我一万字" });
     const r = await p;
 
     expect(classify).toHaveBeenCalledOnce();
@@ -66,7 +67,7 @@ describe("orchestrator", () => {
     registerOrchestrator({ agent: fakeAgent as any, store: new SessionStore(repo), classify });
 
     const p = new Promise<any>((res) => bus.once("reply.ready", res));
-    bus.emit("message.qualified", { sessionKey: "1:2", groupId: 1, userId: 2, text: "多少钱" });
+    bus.emit("message.qualified", { sessionKey: "1:2", groupId: 1, userId: 2, messageId: 4, text: "多少钱" });
     const r = await p;
     expect(r.text).toBe("回复");
     expect(fakeAgent.run).toHaveBeenCalledOnce();
@@ -81,6 +82,7 @@ describe("orchestrator", () => {
       sessionKey: "1:2",
       groupId: 1,
       userId: 2,
+      messageId: 5,
       text: "看这个",
       quoted: "被引内容",
       forwarded: "转发内容",
@@ -95,5 +97,13 @@ describe("orchestrator", () => {
     bus.emit("reply.ready", { groupId: 5, text: "hi" });
     const a = await p;
     expect(a).toEqual({ action: "send_group_msg", groupId: 5, text: "hi" });
+  });
+
+  it("reply mapper: 透传 replyToId 到 action.send", async () => {
+    registerReplyMapper();
+    const p = new Promise<any>((res) => bus.once("action.send", res));
+    bus.emit("reply.ready", { groupId: 5, text: "hi", replyToId: 88 });
+    const a = await p;
+    expect(a.replyToId).toBe(88);
   });
 });
