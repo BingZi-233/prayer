@@ -1,6 +1,6 @@
 {
   "name": "packyapi",
-  "version": "0.3.0",
+  "version": "1.2.1",
   "description": "查询 PackyAPI 模型价格、可用模型、平台公告与文档,MCP server 走公开 JSON API,省 token、高精确",
   "author": { "name": "prayer" },
   "skills": "./skills",

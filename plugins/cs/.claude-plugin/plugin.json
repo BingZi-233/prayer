@@ -1,6 +1,6 @@
 {
   "name": "cs",
-  "version": "1.0.0",
+  "version": "1.2.1",
   "description": "客服知识库检索 MCP server(kb_search):本地 embed(bge-small-zh)+ sqlite-vec 语义检索,只读知识库",
   "author": { "name": "prayer" },
   "skills": "./skills",
