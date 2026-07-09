@@ -10,7 +10,7 @@
  *   向量近邻 SQL 在此内联,以 repo-like { searchKb } 传给 runKbSearch(kb.ts 仅 import type Repo,运行时不加载 repo.ts)。
  * DB 路径:父进程 env DB_PATH 传入(runtime.start / introspect 已绝对化),只读打开,不建表/迁移。
  */
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import Database from "better-sqlite3";
@@ -31,7 +31,20 @@ function findRepoRoot(start: string): string {
   }
 }
 
-const server = new McpServer({ name: "cs", version: "1.0.0" });
+// server 版本随 plugin 走:读同插件 .claude-plugin/plugin.json,避免手改漂移。
+function pluginVersion(scriptDir: string): string {
+  try {
+    const p = join(scriptDir, "..", ".claude-plugin", "plugin.json");
+    return JSON.parse(readFileSync(p, "utf8")).version ?? "0.0.0";
+  } catch {
+    return "0.0.0";
+  }
+}
+
+const server = new McpServer({
+  name: "cs",
+  version: pluginVersion(dirname(fileURLToPath(import.meta.url))),
+});
 
 async function main(): Promise<void> {
   const root = findRepoRoot(dirname(fileURLToPath(import.meta.url)));

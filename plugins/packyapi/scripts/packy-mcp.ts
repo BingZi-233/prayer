@@ -17,6 +17,9 @@
  * quota_type=1(按次):  price/次 = model_price * group_ratio
  */
 
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
@@ -200,7 +203,20 @@ export function formatAnnouncements(
 
 // —— MCP server ——
 
-const server = new McpServer({ name: "packyapi", version: "0.3.0" });
+// server 版本随 plugin 走:读同插件 .claude-plugin/plugin.json,避免手改漂移。
+function pluginVersion(scriptDir: string): string {
+  try {
+    const p = join(scriptDir, "..", ".claude-plugin", "plugin.json");
+    return JSON.parse(readFileSync(p, "utf8")).version ?? "0.0.0";
+  } catch {
+    return "0.0.0";
+  }
+}
+
+const server = new McpServer({
+  name: "packyapi",
+  version: pluginVersion(dirname(fileURLToPath(import.meta.url))),
+});
 
 server.registerTool(
   "packy",
