@@ -29,7 +29,6 @@ export async function GET(): Promise<NextResponse> {
       ok({
         enabledGroups: cfg.enabledGroups.length,
         reflectionCount: repo.reflectionEntries().length,
-        openTickets: repo.openTickets().length,
         humanSessions: repo.listSessions().filter((s) => s.humanMode).length,
         // 结果指标(今日 0 点起)
         metrics: {

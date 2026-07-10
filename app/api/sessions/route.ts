@@ -17,7 +17,7 @@ export async function GET(): Promise<NextResponse> {
 // 会话操作:
 //   {action:"reset_all"}              → 清所有会话 resume_id
 //   {action:"reset", key:"g:u"}       → 清单个会话 resume_id
-//   {action:"resume_handoff", key}    → 恢复自动答(关 human_mode + 关工单)
+//   {action:"resume_handoff", key}    → 恢复自动答(关 human_mode)
 export async function POST(req: NextRequest): Promise<NextResponse> {
   const body = await req.json().catch(() => null);
   if (body?.action === "reset_all") {

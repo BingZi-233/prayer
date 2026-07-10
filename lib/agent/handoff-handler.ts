@@ -27,7 +27,7 @@ export function registerHandoffHandler(deps: HandoffHandlerDeps): () => void {
   } = deps;
 
   const onRequested = (e: HandoffRequested) => {
-    // 已在人工模式 → 不重复建单(避免连刷「人工」)
+    // 已在人工模式 → 不重复通知(避免连刷「人工」)
     if (repo.isHumanMode(e.sessionKey)) {
       bus.emit("action.send", {
         action: "send_group_msg",
@@ -39,18 +39,17 @@ export function registerHandoffHandler(deps: HandoffHandlerDeps): () => void {
 
     repo.setHumanMode(e.sessionKey, true);
     if (e.lastQuestion) repo.setLastQuestion(e.sessionKey, e.lastQuestion);
-    const ticketId = repo.createTicket(e.sessionKey, e.lastQuestion || "(无摘要)");
     repo.insertResolution("handoff", {
       sessionKey: e.sessionKey,
       groupId: e.groupId,
       userId: e.userId,
-      detail: `ticket=${ticketId}`,
+      detail: "human",
     });
 
     bus.emit("action.send", {
       action: "send_group_msg",
       groupId: e.groupId,
-      text: "已为你转接人工客服,群管看到后会尽快回复。期间我先不插话;若想继续让我答,可让管理在管理群发 !resume " + e.sessionKey,
+      text: "已为你转接人工客服,群管看到后会尽快回复。期间我先不插话。",
     });
 
     const doNotify = shouldNotify ? shouldNotify(e.groupId) : notifyAdmin;
@@ -59,7 +58,7 @@ export function registerHandoffHandler(deps: HandoffHandlerDeps): () => void {
       bus.emit("action.send", {
         action: "send_group_msg",
         groupId: adminGroupId,
-        text: `【转人工 #${ticketId}】会话 ${e.sessionKey}\n用户 ${e.userId} 在群 ${e.groupId}\n问题:${q || "(无)"}\n恢复自动答:!resume ${e.sessionKey}`,
+        text: `【转人工】会话 ${e.sessionKey}\n用户 ${e.userId} 在群 ${e.groupId}\n问题:${q || "(无)"}\n恢复自动答:!resume ${e.sessionKey}`,
       });
     }
   };
@@ -67,7 +66,6 @@ export function registerHandoffHandler(deps: HandoffHandlerDeps): () => void {
   const onResumed = (e: HandoffResumed) => {
     if (!repo.isHumanMode(e.sessionKey)) return;
     repo.setHumanMode(e.sessionKey, false);
-    repo.closeOpenTicketsForSession(e.sessionKey);
     const groupId = Number(e.sessionKey.split(":")[0]);
     if (!Number.isNaN(groupId) && groupId > 0) {
       bus.emit("action.send", {
@@ -76,7 +74,7 @@ export function registerHandoffHandler(deps: HandoffHandlerDeps): () => void {
         text: "已恢复自动客服,有问题 @我 即可~",
       });
     }
-    if (adminGroupId > 0 && e.by !== "ticket") {
+    if (adminGroupId > 0) {
       bus.emit("action.send", {
         action: "send_group_msg",
         groupId: adminGroupId,

@@ -76,7 +76,6 @@ interface Metrics {
 interface Overview {
   enabledGroups: number;
   reflectionCount: number;
-  openTickets: number;
   humanSessions: number;
   metrics?: Metrics;
 }
@@ -178,7 +177,7 @@ export default function StatusPage() {
 
   const m = ov?.metrics;
   const hasAlerts =
-    (ov?.openTickets ?? 0) > 0 || (ov?.humanSessions ?? 0) > 0 || (s != null && !s.wsConnected);
+    (ov?.humanSessions ?? 0) > 0 || (s != null && !s.wsConnected);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden lg:gap-6">
@@ -227,14 +226,9 @@ export default function StatusPage() {
               有待处理事项
             </span>
           }
-          description="真实待办:工单 / 人工会话 / WS 断开。"
+          description="真实待办:人工会话 / WS 断开。"
           contentClassName="flex flex-wrap gap-2"
         >
-          {(ov?.openTickets ?? 0) > 0 && (
-            <Button asChild variant="outline" size="sm">
-              <Link href="/admin/tickets">待处理工单 {ov!.openTickets}</Link>
-            </Button>
-          )}
           {(ov?.humanSessions ?? 0) > 0 && (
             <Button asChild variant="outline" size="sm">
               <Link href="/admin/sessions?human=1">人工会话 {ov!.humanSessions}</Link>

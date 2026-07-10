@@ -41,7 +41,11 @@ function fakeBuilders(overrides: Partial<RuntimeBuilders> = {}): RuntimeBuilders
   };
   return {
     openDb: () => ({}) as never,
-    makeRepo: () => ({ countSessions: () => 3, openTickets: () => [{}, {}] }) as never,
+    makeRepo: () =>
+      ({
+        countSessions: () => 3,
+        listSessions: () => [{ humanMode: true }, { humanMode: true }, { humanMode: false }],
+      }) as never,
     makeAgent: () => ({}) as never,
     assemble: () => () => {},
     makeClient: () => client as never,

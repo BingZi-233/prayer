@@ -406,7 +406,7 @@ export default function GroupsPage() {
                     <SelectItem value="off">不通知</SelectItem>
                   </SelectContent>
                 </Select>
-                <FieldDescription>工单仍会创建;仅控制是否向管理群发消息。</FieldDescription>
+                <FieldDescription>仅控制转人工时是否向管理群发消息;会话仍会进入人工接待。</FieldDescription>
               </Field>
             </FieldGroup>
           </div>

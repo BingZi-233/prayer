@@ -57,8 +57,8 @@ export interface HandoffRequested {
 
 export interface HandoffResumed {
   sessionKey: string;
-  // 谁恢复:超时 / 管理群 !resume / 后台关工单
-  by?: "timeout" | "admin" | "ticket";
+  // 谁恢复:超时 / 管理群 !resume / 后台会话页
+  by?: "timeout" | "admin" | "ui";
 }
 
 export type ResolutionKind =

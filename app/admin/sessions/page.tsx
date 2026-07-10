@@ -238,7 +238,7 @@ function SessionsInner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 仅当 URL 的 key 真的变化时才从外链打开(工单跳入等);sessions 轮询不触发
+  // 仅当 URL 的 key 真的变化时才从外链打开;sessions 轮询不触发
   const paramKey = params.get("key");
   useEffect(() => {
     // 我们自己写 URL 过程中:param 还是旧值 → 忽略

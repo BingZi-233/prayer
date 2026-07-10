@@ -13,7 +13,6 @@ interface Status {
 interface Overview {
   enabledGroups: number;
   reflectionCount: number;
-  openTickets: number;
   humanSessions: number;
 }
 interface Live {
@@ -57,11 +56,11 @@ export function LiveProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  // tab 标题:有待处理工单 → "(N) 客服 Agent",离开页面也瞥得见
+  // tab 标题:有人工会话 → "(N) 客服 Agent"
   useEffect(() => {
-    const n = overview?.openTickets ?? 0;
+    const n = overview?.humanSessions ?? 0;
     document.title = n > 0 ? `(${n}) 客服 Agent` : "客服 Agent";
-  }, [overview?.openTickets]);
+  }, [overview?.humanSessions]);
 
   return <LiveCtx.Provider value={{ status, overview, lastUpdated }}>{children}</LiveCtx.Provider>;
 }

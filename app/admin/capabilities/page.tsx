@@ -59,7 +59,7 @@ function humanSummary(caps: Capabilities): { can: string[]; cannot: string[] } {
     can.push(...caps.skills.slice(0, 4).map((s) => `技能: ${s.name}`));
   }
   if (can.length === 0) can.push("当前未探测到可用业务工具");
-  can.push("转人工(用户发「人工」建工单)");
+  can.push("转人工(用户发「人工」转接群管)");
   return { can, cannot };
 }
 
