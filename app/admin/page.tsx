@@ -231,7 +231,8 @@ export default function StatusPage() {
         >
           {(ov?.humanSessions ?? 0) > 0 && (
             <Button asChild variant="outline" size="sm">
-              <Link href="/admin/sessions?human=1">人工会话 {ov!.humanSessions}</Link>
+              <Link href="/admin/handoff">人工会话 {ov!.humanSessions}</Link>
+
             </Button>
           )}
           {s && !s.wsConnected && <Badge variant="destructive">WS 未连接</Badge>}

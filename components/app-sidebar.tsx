@@ -2,7 +2,20 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Activity, Settings, BookOpen, MessagesSquare, ScrollText, Bot, Brain, Users, Zap, Boxes, Puzzle } from "lucide-react";
+import {
+  Activity,
+  Settings,
+  BookOpen,
+  MessagesSquare,
+  ScrollText,
+  Bot,
+  Brain,
+  Users,
+  Zap,
+  Boxes,
+  Puzzle,
+  LifeBuoy,
+} from "lucide-react";
 import {
   Sidebar,
   SidebarContent,
@@ -28,7 +41,8 @@ const navGroups = [
   {
     label: "客服运营",
     items: [
-      { href: "/admin/sessions", label: "会话", icon: MessagesSquare, badge: "human" as const },
+      { href: "/admin/sessions", label: "会话", icon: MessagesSquare },
+      { href: "/admin/handoff", label: "人工队列", icon: LifeBuoy, badge: "human" as const },
       { href: "/admin/proactive", label: "主动回复", icon: Zap },
     ],
   },
