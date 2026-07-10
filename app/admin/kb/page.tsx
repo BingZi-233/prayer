@@ -480,17 +480,17 @@ export default function KbPage() {
       if (n.kind === "dir") {
         const open = expanded.has(n.path) || !!query.trim();
         return (
-          <div key={`d:${n.path}`}>
+          <div key={`d:${n.path}`} className="min-w-0">
             <button
               type="button"
               onClick={() => toggleDir(n.path)}
-              className="hover:bg-muted text-muted-foreground flex w-full items-center gap-1 rounded-md px-1.5 py-1 text-left text-xs"
+              className="hover:bg-muted text-muted-foreground flex w-full min-w-0 items-center gap-1 rounded-md py-1 pr-1.5 text-left text-xs"
               style={{ paddingLeft: 6 + depth * 12 }}
             >
               {open ? <ChevronDown className="size-3.5 shrink-0" /> : <ChevronRight className="size-3.5 shrink-0" />}
               {open ? <FolderOpen className="size-3.5 shrink-0" /> : <Folder className="size-3.5 shrink-0" />}
-              <span className="truncate font-medium">{n.name}</span>
-              <span className="text-muted-foreground/70 ml-auto tabular-nums">
+              <span className="min-w-0 flex-1 truncate font-medium">{n.name}</span>
+              <span className="text-muted-foreground/70 shrink-0 tabular-nums">
                 {countFiles(n)}
               </span>
             </button>
@@ -507,7 +507,7 @@ export default function KbPage() {
           type="button"
           onClick={() => requestOpen(n.path)}
           className={cn(
-            "hover:bg-muted flex w-full items-center gap-1.5 rounded-md py-1 pr-1.5 text-left text-xs",
+            "hover:bg-muted flex w-full min-w-0 items-center gap-1.5 rounded-md py-1 pr-1.5 text-left text-xs",
             isActive && "bg-muted font-medium",
           )}
           style={{ paddingLeft: 6 + depth * 12 + 14 }}
@@ -516,15 +516,15 @@ export default function KbPage() {
           <FileText className="text-muted-foreground size-3.5 shrink-0" />
           <span className="min-w-0 flex-1 truncate">{n.name}</span>
           {isUnsavedActive ? (
-            <Badge variant="destructive" className="h-4 px-1 text-[10px]">
+            <Badge variant="destructive" className="h-4 shrink-0 px-1 text-[10px]">
               未保存
             </Badge>
           ) : isDirtyDoc ? (
-            <Badge variant="destructive" className="h-4 px-1 text-[10px]">
+            <Badge variant="destructive" className="h-4 shrink-0 px-1 text-[10px]">
               未重建
             </Badge>
           ) : chunksOf(n.path) > 0 ? (
-            <Badge variant="secondary" className="h-4 px-1 tabular-nums text-[10px]">
+            <Badge variant="secondary" className="h-4 shrink-0 px-1 tabular-nums text-[10px]">
               {chunksOf(n.path)}
             </Badge>
           ) : null}
@@ -596,13 +596,13 @@ export default function KbPage() {
         </div>
       )}
 
-      <div className="grid min-h-0 flex-1 gap-4 md:grid-cols-[280px_1fr]">
+      <div className="grid min-h-0 min-w-0 flex-1 gap-4 md:grid-cols-[minmax(0,280px)_minmax(0,1fr)]">
         {/* ── 左栏:目录树 ── */}
         <SectionCard
           title="文件"
           description={files ? `${filteredFiles.length}${query ? ` / ${files.length}` : ""} 个` : undefined}
-          className="flex min-h-0 flex-col overflow-hidden"
-          contentClassName="flex min-h-0 flex-1 flex-col gap-2"
+          className="flex min-h-0 min-w-0 flex-col overflow-hidden"
+          contentClassName="flex min-h-0 min-w-0 flex-1 flex-col gap-2"
         >
           <div className="relative shrink-0">
             <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2" />
@@ -634,9 +634,10 @@ export default function KbPage() {
             }
             skeleton={<Skeleton className="h-32 w-full" />}
           >
-            <ScrollArea className="min-h-0 flex-1">
-              <div className="flex flex-col gap-0.5 pr-2 pb-2">{renderTree(tree)}</div>
-            </ScrollArea>
+            {/* 原生滚动：滚动条占位，不叠在 badge/文件名上（ScrollArea 为 overlay 会遮挡） */}
+            <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto pr-1">
+              <div className="flex min-w-0 flex-col gap-0.5 pb-2">{renderTree(tree)}</div>
+            </div>
           </DataState>
         </SectionCard>
 
@@ -661,8 +662,8 @@ export default function KbPage() {
               </span>
             }
             icon={FileText}
-            className="flex min-h-0 flex-col overflow-hidden"
-            contentClassName="flex min-h-0 flex-1 flex-col gap-2"
+            className="flex min-h-0 min-w-0 flex-col overflow-hidden"
+            contentClassName="flex min-h-0 min-w-0 flex-1 flex-col gap-2"
             action={
               <div className="flex flex-wrap gap-1">
                 <Button
@@ -775,7 +776,8 @@ export default function KbPage() {
             )}
           </SectionCard>
         ) : (
-          <SectionCard title="预览" className="flex min-h-0 flex-col" contentClassName="flex flex-1 items-center justify-center">
+          <SectionCard title="预览" className="flex min-h-0 min-w-0 flex-col" contentClassName="flex flex-1 items-center justify-center">
+
             <EmptyState
               icon={BookOpen}
               title="未选择文件"
