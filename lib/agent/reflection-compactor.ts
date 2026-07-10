@@ -3,7 +3,7 @@ import { bus } from "../bus";
 import { logger } from "../logger";
 import type { Repo } from "../db/repo";
 import { embed as defaultEmbed } from "../tools/embed";
-import { sdkEnv, drainQuery } from "./agent";
+import { noToolQueryOptions, drainQuery } from "./agent";
 
 export interface ReflectionCompactorDeps {
   repo: Repo;
@@ -109,7 +109,7 @@ export async function runCompact(deps: ReflectionCompactorDeps): Promise<void> {
     const { text: out } = await drainQuery(
       d.queryFn({
         prompt,
-        options: {
+        options: noToolQueryOptions({
           systemPrompt: COMPACT_SYSTEM,
           // JSON 整理任务,关思考省成本/延迟;单次覆盖全局 alwaysThinkingEnabled
           thinking: { type: "disabled" },
@@ -117,10 +117,7 @@ export async function runCompact(deps: ReflectionCompactorDeps): Promise<void> {
           // maxTurns:2 而非 1:模型偶发首轮吐 tool_use,deny 回消息须第 2 轮消费才出文本;
           // maxTurns:1 下 SDK 直接 reject「Reached maximum number of turns」误判为错误。
           maxTurns: 2,
-          permissionMode: "default",
-          settingSources: ["user"],
-          env: sdkEnv(),
-        } as never,
+        }) as never,
       }) as AsyncIterable<any>,
       "compact"
     );

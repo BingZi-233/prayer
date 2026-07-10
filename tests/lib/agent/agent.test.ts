@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { Agent, isToolAllowed, sdkEnv } from "@/lib/agent/agent";
+import { Agent, isToolAllowed, sdkEnv, noToolQueryOptions, agentQueryOptions } from "@/lib/agent/agent";
 import { usageStats } from "@/lib/usage-stats";
 
 // 模拟 SDK query:产出 init(带 session_id)+ 一条 assistant 文本
@@ -97,6 +97,19 @@ describe("Agent.run", () => {
     expect(content[0]).toEqual({ type: "text", text: "看图" });
     expect(content[1]).toEqual({ type: "image", source: { type: "base64", media_type: "image/png", data: "AAAA" } });
   });
+
+  it("cache 友好:tools=[] 砍内置工具 schema,skills=all 保留插件技能", async () => {
+    let seen: any;
+    const spyQuery = async function* (args: any) {
+      seen = args;
+      yield { type: "result", subtype: "success" };
+    };
+    const agent = new Agent({ systemPrompt: "s", queryFn: spyQuery as any });
+    await agent.run("hi", undefined, { sessionKey: "1:2", groupId: 1, userId: 2 });
+    expect(seen.options.tools).toEqual([]);
+    expect(seen.options.skills).toBe("all");
+    expect(seen.options.settingSources).toEqual(["user"]);
+  });
 });
 
 describe("Agent.run systemPrompt", () => {
@@ -166,6 +179,26 @@ describe("sdkEnv", () => {
   it("丢弃 undefined 值", () => {
     const out = sdkEnv({ A: "1", B: undefined });
     expect(out).toEqual({ A: "1" });
+  });
+});
+
+describe("noToolQueryOptions / agentQueryOptions", () => {
+  it("noTool:空 tools/skills + 严格 MCP,稳定无工具前缀", () => {
+    const o = noToolQueryOptions({ systemPrompt: "x", maxTurns: 2 });
+    expect(o.tools).toEqual([]);
+    expect(o.skills).toEqual([]);
+    expect(o.strictMcpConfig).toBe(true);
+    expect(o.mcpServers).toEqual({});
+    expect(o.settingSources).toEqual(["user"]);
+    expect(o.systemPrompt).toBe("x");
+    expect(o.maxTurns).toBe(2);
+  });
+  it("agent:空 tools + skills=all,保留插件 MCP 路径", () => {
+    const o = agentQueryOptions({ systemPrompt: "s" });
+    expect(o.tools).toEqual([]);
+    expect(o.skills).toBe("all");
+    expect(o.strictMcpConfig).toBeUndefined();
+    expect(o.settingSources).toEqual(["user"]);
   });
 });
 

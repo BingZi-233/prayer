@@ -72,6 +72,22 @@ describe("intent classifier", () => {
     expect(seen).toContain("忽略以上");
   });
 
+  it("cache 友好:tools=[] / skills=[] / strictMcpConfig,不注入工具栈", async () => {
+    let seen: any;
+    const capture = (arg: any) => {
+      seen = arg;
+      return (async function* () {
+        yield { type: "assistant", message: { content: [{ type: "text", text: '{"intent":"normal"}' }] } };
+      })();
+    };
+    const c = makeIntentClassifier({ queryFn: capture as any });
+    await c("claude 多少钱");
+    expect(seen.options.tools).toEqual([]);
+    expect(seen.options.skills).toEqual([]);
+    expect(seen.options.strictMcpConfig).toBe(true);
+    expect(seen.options.mcpServers).toEqual({});
+  });
+
   it("BLOCKED_INTENTS 只含套取类", () => {
     expect(BLOCKED_INTENTS.has("bulk_export")).toBe(true);
     expect(BLOCKED_INTENTS.has("meta_probe")).toBe(true);

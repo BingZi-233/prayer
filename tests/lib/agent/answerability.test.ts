@@ -40,4 +40,20 @@ describe("answerability 判官", () => {
     });
     expect(await c("问题")).toBe(false);
   });
+
+  it("cache 友好:tools=[] / skills=[] / strictMcpConfig", async () => {
+    let seen: any;
+    const capture = (arg: any) => {
+      seen = arg;
+      return (async function* () {
+        yield { type: "assistant", message: { content: [{ type: "text", text: '{"answer":true}' }] } };
+      })();
+    };
+    const c = makeAnswerabilityClassifier({ queryFn: capture as never });
+    await c("价格多少");
+    expect(seen.options.tools).toEqual([]);
+    expect(seen.options.skills).toEqual([]);
+    expect(seen.options.strictMcpConfig).toBe(true);
+    expect(seen.options.mcpServers).toEqual({});
+  });
 });

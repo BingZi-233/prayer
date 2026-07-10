@@ -1,5 +1,5 @@
 import { query as sdkQuery } from "@anthropic-ai/claude-agent-sdk";
-import { sdkEnv, drainQuery } from "./agent";
+import { noToolQueryOptions, drainQuery } from "./agent";
 
 // 主动兜底的可答性判官:判定一条群消息是否为「值得客服主动补位回答的 PackyAPI 产品咨询」。
 // 与 intent.ts 相反,fail-CLOSED:出错/无法解析 → false(主动插话宁可少发)。
@@ -45,7 +45,7 @@ export function makeAnswerabilityClassifier(deps: AnswerabilityDeps = {}): Answe
       const { text: out } = await drainQuery(
         queryFn({
           prompt: wrapUserText(text),
-          options: {
+          options: noToolQueryOptions({
             systemPrompt: SYSTEM,
             // maxTurns:1 的 JSON 判定任务,关思考省成本/延迟;单次覆盖全局 alwaysThinkingEnabled
             thinking: { type: "disabled" },
@@ -53,10 +53,7 @@ export function makeAnswerabilityClassifier(deps: AnswerabilityDeps = {}): Answe
             // maxTurns:2 而非 1:模型偶发首轮吐 tool_use,deny 回消息须第 2 轮消费才出文本;
             // maxTurns:1 下 SDK 直接 reject「Reached maximum number of turns」误判为错误。
             maxTurns: 2,
-            permissionMode: "default",
-            settingSources: ["user"],
-            env: sdkEnv(),
-          } as never,
+          }) as never,
         }) as AsyncIterable<any>,
         "answerability"
       );

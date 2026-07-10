@@ -2,7 +2,7 @@ import { query as sdkQuery } from "@anthropic-ai/claude-agent-sdk";
 import { bus } from "../bus";
 import type { Repo } from "../db/repo";
 import { embed as defaultEmbed } from "../tools/embed";
-import { sdkEnv, drainQuery } from "./agent";
+import { noToolQueryOptions, drainQuery } from "./agent";
 
 export interface ReflectionPollerDeps {
   repo: Repo;
@@ -98,7 +98,7 @@ async function scanOnce(d: Resolved): Promise<void> {
       const { text: out } = await drainQuery(
         d.queryFn({
           prompt,
-          options: {
+          options: noToolQueryOptions({
             systemPrompt: REFLECT_SYSTEM,
             // JSON 抽取任务,关思考省成本/延迟;单次覆盖全局 alwaysThinkingEnabled
             thinking: { type: "disabled" },
@@ -106,12 +106,7 @@ async function scanOnce(d: Resolved): Promise<void> {
             // maxTurns:2 而非 1:模型偶发首轮吐 tool_use(MiniMax-M3 尤甚),deny 回消息须第 2 轮
             // 消费才能出文本;maxTurns:1 下 SDK 直接 reject「Reached maximum number of turns」误判为错误。
             maxTurns: 2,
-            // 同 agent.ts:防 settings 里的 bypassPermissions 把 canUseTool 短路掉
-            permissionMode: "default",
-            settingSources: ["user"],
-            // 与 agent 一致:剥继承 ANTHROPIC_*,用 CLAUDE_CONFIG_DIR/settings.json 的 env
-            env: sdkEnv(),
-          } as never,
+          }) as never,
         }) as AsyncIterable<any>,
         "reflect"
       );

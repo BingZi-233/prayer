@@ -22,6 +22,54 @@ export function sdkEnv(base: Record<string, string | undefined> = process.env): 
   return out;
 }
 
+/**
+ * 无工具 JSON 任务(intent / answerability / reflect / compact)共用的 query options 基座。
+ *
+ * 目标:压住 prompt cache 前缀抖动与体积 —— 这些调用点从不需要工具,却曾默认带上
+ * Claude Code 全套内置工具 schema + enabledPlugins 的 MCP/skills,导致:
+ *   1) 前缀数 k~数十 k token,每次冷启动贵;
+ *   2) MCP 连接时序/工具顺序不稳 → 5 分钟 API cache 前缀字节对不上 → 命中率 20%~50%。
+ *
+ * 仍保留 settingSources:["user"]:CLAUDE_CONFIG_DIR/settings.json 的 env(auth/model)要靠它加载。
+ * strictMcpConfig + 空 mcpServers:忽略 settings/plugins 里的 MCP,不进 prompt。
+ * tools:[] / skills:[]:内置工具与技能均不注入。
+ */
+export function noToolQueryOptions(
+  overrides: Record<string, unknown> = {}
+): Record<string, unknown> {
+  return {
+    tools: [],
+    skills: [],
+    strictMcpConfig: true,
+    mcpServers: {},
+    settingSources: ["user"],
+    permissionMode: "default",
+    env: sdkEnv(),
+    canUseTool: async () => ({ behavior: "deny" as const, message: "本阶段不使用工具" }),
+    ...overrides,
+  };
+}
+
+/**
+ * 主客服 agent 的 query options 基座:砍掉 Bash/Read/Web* 等内置工具 schema
+ * (本就靠 canUseTool 拒绝,但 schema 仍占前缀、会抖),只留插件 MCP + skills。
+ * 插件(cs / packyapi)及其 MCP 仍由 settingSources:["user"] → enabledPlugins 加载。
+ */
+export function agentQueryOptions(
+  overrides: Record<string, unknown> = {}
+): Record<string, unknown> {
+  return {
+    // 空数组 = 禁用全部内置工具 schema;MCP 工具不在此列,仍由插件注入
+    tools: [],
+    // 启用已发现 skills(packyapi 等);skills 选项会带上 Skill 工具,无需再塞 allowedTools
+    skills: "all",
+    settingSources: ["user"],
+    permissionMode: "default",
+    env: sdkEnv(),
+    ...overrides,
+  };
+}
+
 export interface AgentDeps {
   // 模型不在此传:由 CLAUDE_CONFIG_DIR/settings.json 的 env.ANTHROPIC_MODEL 决定(见 run 内注释)
   systemPrompt: string;
@@ -201,7 +249,7 @@ export class Agent {
   ): Promise<AgentResult> {
     const iter = this.queryFn({
       prompt: buildPrompt(text, media) as any,
-      options: {
+      options: agentQueryOptions({
         // 模型由 CLAUDE_CONFIG_DIR 内配置决定,不在此覆盖
         // 用完整自定义 system prompt(不套 claude_code preset):preset 的编码助手人格会
         // 干扰视觉输入(实测带图时模型回"无图"),且本就需靠 prompt 抹掉编码设定 —— 直接替换更干净。
@@ -230,11 +278,8 @@ export class Agent {
         maxTurns: 20,
         // 强制 default:CLAUDE_CONFIG_DIR/settings.json 里若合了 bypassPermissions,
         // 会整体跳过 canUseTool,让上面的白名单形同虚设 —— 显式钉死模式堵死这个绕过口子
-        permissionMode: "default",
-        settingSources: ["user"],
-        // 剥继承的 ANTHROPIC_*,让 CLAUDE_CONFIG_DIR/settings.json 的 env 块生效
-        env: sdkEnv(),
-      } as any,
+        // (permissionMode / env / settingSources / tools / skills 已由 agentQueryOptions 钉好)
+      }) as any,
     });
 
     let sessionId: string | undefined = resumeId;

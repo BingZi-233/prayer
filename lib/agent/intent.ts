@@ -1,5 +1,5 @@
 import { query as sdkQuery } from "@anthropic-ai/claude-agent-sdk";
-import { sdkEnv, drainQuery } from "./agent";
+import { noToolQueryOptions, drainQuery } from "./agent";
 
 // 面向 QQ 用户客服 bot 的入站意图分类。只用于在 orchestrator 前置硬拦「套取类」滥用:
 //   bulk_export —— 索要整库/大批量导出(全部售后/订单/模型/计费、指定超长字数)
@@ -73,7 +73,7 @@ export function makeIntentClassifier(deps: IntentClassifierDeps = {}): IntentCla
       const { text: out } = await drainQuery(
         queryFn({
           prompt: wrapUserText(text),
-          options: {
+          options: noToolQueryOptions({
             systemPrompt: INTENT_SYSTEM,
             // maxTurns:1 的 JSON 分类任务,思考纯浪费(延迟+输出 token+计费推理)。
             // 单次覆盖 settings.json 的全局 alwaysThinkingEnabled。
@@ -82,12 +82,7 @@ export function makeIntentClassifier(deps: IntentClassifierDeps = {}): IntentCla
             // maxTurns:2 而非 1:模型偶发首轮吐 tool_use,deny 回消息须第 2 轮消费才出文本;
             // maxTurns:1 下 SDK 直接 reject「Reached maximum number of turns」误判为错误。
             maxTurns: 2,
-            // 同 agent.ts:防 settings 里的 bypassPermissions 把 canUseTool 短路掉
-            permissionMode: "default",
-            settingSources: ["user"],
-            // 与 agent/反思一致:剥继承 ANTHROPIC_*,用 CLAUDE_CONFIG_DIR/settings.json 的 env
-            env: sdkEnv(),
-          } as never,
+          }) as never,
         }) as AsyncIterable<any>,
         "intent"
       );
