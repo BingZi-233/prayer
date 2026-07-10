@@ -45,7 +45,23 @@ describe("drainQuery", () => {
     const r = await drainQuery(iter, "reflect");
     expect(r.text).toBe("ab");
     expect(r.sessionId).toBe("sid");
+    expect(r.structuredOutput).toBeUndefined();
     expect(usageStats.snapshot().reflect).toMatchObject({ count: 1, input: 7, output: 3, cacheRead: 40, cacheCreation: 1, costUsd: 0.02 });
+  });
+
+  it("抓 result.structured_output(json_schema 路径)", async () => {
+    const iter = (async function* () {
+      yield { type: "assistant", message: { content: [{ type: "text", text: "ignored" }] } };
+      yield {
+        type: "result",
+        subtype: "success",
+        structured_output: { items: [{ faq: "甲" }] },
+        usage: { input_tokens: 1, output_tokens: 1 },
+      };
+    })();
+    const r = await drainQuery(iter, "compact");
+    expect(r.text).toBe("ignored");
+    expect(r.structuredOutput).toEqual({ items: [{ faq: "甲" }] });
   });
 
   it("无 result → 不记账,返回已累计文本", async () => {

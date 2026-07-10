@@ -2,17 +2,26 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import { openDb } from "@/lib/db/index";
 import { Repo } from "@/lib/db/repo";
 import { bus } from "@/lib/bus";
-import { runCompact, validateCompacted } from "@/lib/agent/reflection-compactor";
+import {
+  runCompact,
+  validateCompacted,
+  validateCompactedDetailed,
+  COMPACT_OUTPUT_SCHEMA,
+} from "@/lib/agent/reflection-compactor";
 
 let repo: Repo;
 const vec = () => new Float32Array([1, 0, 0]);
 const embed = async () => vec();
 
-function fakeQuery(text: string) {
+function fakeQuery(text: string, structured?: unknown) {
   return () =>
     (async function* () {
       yield { type: "assistant", message: { content: [{ type: "text", text }] } };
-      yield { type: "result", subtype: "success" };
+      yield {
+        type: "result",
+        subtype: "success",
+        ...(structured !== undefined ? { structured_output: structured } : {}),
+      };
     })();
 }
 
@@ -58,6 +67,21 @@ describe("runCompact", () => {
     expect(refs).toHaveLength(2);
     expect(refs.map((r) => r.content).sort()).toEqual(["合并后的条目A", "合并后的条目B"]);
     expect(refs.every((r) => r.groupId === 0 && r.ts === 7_000_000)).toBe(true);
+  });
+
+  it("query 带 outputFormat.json_schema + 优先用 structured_output", async () => {
+    seedReflections(5);
+    let captured: { options?: { outputFormat?: unknown } } | undefined;
+    const qf = (args: { options?: { outputFormat?: unknown } }) => {
+      captured = args;
+      return fakeQuery("", { items: [{ faq: "结构化A" }, { faq: "结构化B" }] })();
+    };
+    await runCompact(opts({ queryFn: qf as never }));
+    expect(captured?.options?.outputFormat).toEqual({
+      type: "json_schema",
+      schema: COMPACT_OUTPUT_SCHEMA,
+    });
+    expect(repo.reflectionEntries().map((r) => r.content).sort()).toEqual(["结构化A", "结构化B"]);
   });
 
   it("notifyAdmin=false → 整理成功但不通知管理群", async () => {
@@ -125,6 +149,30 @@ describe("runCompact", () => {
     expect(spy).not.toHaveBeenCalled();
   });
 
+  it("截断+嵌套 source 数组:完整对象够下限 → salvage 应用", async () => {
+    // 复现线上:LLM 加 source 字段后输出被截断;旧贪婪 /\[...\]/ 吃到嵌套 ] 解析失败
+    seedReflections(5);
+    const truncated =
+      '[{"faq":"支付方式展示","source":["1"]},{"faq":"auth.json 与 apikey","source":["2","7"]},{"faq":"机器人知识库尚未';
+    const notice = new Promise<any>((res) => bus.once("action.send", res));
+    await runCompact(opts({ queryFn: fakeQuery(truncated) as never }));
+    const a = await notice;
+    expect(a.text).toContain("5 → 2");
+    const refs = repo.reflectionEntries();
+    expect(refs).toHaveLength(2);
+    expect(refs.map((r) => r.content).sort()).toEqual(["auth.json 与 apikey", "支付方式展示"]);
+  });
+
+  it("截断 salvage 条数过少(< 输入×0.2)→ 保留旧库", async () => {
+    seedReflections(10);
+    // 仅 1 条完整 + 半截 → floor=ceil(10*0.2)=2 → 拒
+    const truncated = '[{"faq":"仅一条完整","source":["1"]},{"faq":"半截';
+    const err = new Promise<any>((res) => bus.once("error.occurred", res));
+    await runCompact(opts({ queryFn: fakeQuery(truncated) as never }));
+    expect((await err).err.message).toMatch(/截断产出/);
+    expect(repo.reflectionEntries()).toHaveLength(10);
+  });
+
   it("基础上下文:去重后的基础片段注入 prompt(同一 chunk 只出现一次)", async () => {
     seedReflections(3); // 3 条反思,同一向量都最近邻到同一基础 chunk
     repo.insertKbEntry("faq/x.md", "基础片段X", "faq/x.md", vec());
@@ -182,6 +230,41 @@ describe("validateCompacted", () => {
   });
   it("过滤空白 faq 后仍有内容 → 返回过滤结果", () => {
     expect(validateCompacted('[{"faq":"a"},{"faq":"  "},{"faq":""}]', 3)).toEqual(["a"]);
+  });
+  it("完整数组含嵌套 source → 正常解析,忽略额外字段", () => {
+    const raw =
+      '[{"faq":"甲","source":["1"]},{"faq":"乙","source":["2","7"]}]';
+    expect(validateCompacted(raw, 5)).toEqual(["甲", "乙"]);
+  });
+  it("截断+嵌套 source:salvage 完整对象且够下限", () => {
+    // 输入 5, floor=ceil(1)=1 → 2 条够
+    const raw =
+      '[{"faq":"支付方式","source":["1"]},{"faq":"auth","source":["2","7"]},{"faq":"半截';
+    expect(validateCompacted(raw, 5)).toEqual(["支付方式", "auth"]);
+  });
+  it("截断 salvage 过少 → null + 截断 reason", () => {
+    const raw = '[{"faq":"仅一条","source":["1"]},{"faq":"半截';
+    const r = validateCompactedDetailed(raw, 10);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/截断产出/);
+  });
+  it("完整闭合数组可大幅缩减,不受截断下限约束", () => {
+    // 10 → 1 合法(闭合完整)
+    expect(validateCompacted('[{"faq":"合并后唯一条"}]', 10)).toEqual(["合并后唯一条"]);
+  });
+  it("markdown 代码块包裹 → 仍可抽出数组", () => {
+    expect(validateCompacted('```json\n[{"faq":"a"},{"faq":"b"}]\n```', 3)).toEqual(["a", "b"]);
+  });
+  it("schema 根对象 {items:[...]} 文本 → 正常", () => {
+    expect(validateCompacted('{"items":[{"faq":"甲"},{"faq":"乙"}]}', 5)).toEqual(["甲", "乙"]);
+  });
+  it("structured_output {items} 优先于文本", () => {
+    expect(
+      validateCompacted("抱歉", 5, { items: [{ faq: "  结构A  " }, { faq: "结构B" }] })
+    ).toEqual(["结构A", "结构B"]);
+  });
+  it("structured_output 非法形状 → null", () => {
+    expect(validateCompacted('[{"faq":"文本兜底"}]', 5, { nope: true })).toBeNull();
   });
 });
 

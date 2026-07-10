@@ -33,6 +33,27 @@ interface Resolved {
   now: () => number;
 }
 
+// SDK outputFormat.json_schema 强制根对象(非裸数组);items 为整理后 FAQ 列表。
+// additionalProperties:false 防模型塞 source/id 等额外字段膨胀输出。
+export const COMPACT_OUTPUT_SCHEMA = {
+  type: "object",
+  properties: {
+    items: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          faq: { type: "string", description: "整理后的问答要点,纯文本一段,尽量简洁" },
+        },
+        required: ["faq"],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ["items"],
+  additionalProperties: false,
+} as const;
+
 const COMPACT_SYSTEM = `你是客服知识库整理助手。用户消息会给出两部分:
 一、【权威基础文档片段】——正式产品文档节选,视为最新、最权威。
 二、【现有反思条目】——历史沉淀的客服问答 FAQ,每条带序号。
@@ -41,9 +62,12 @@ const COMPACT_SYSTEM = `你是客服知识库整理助手。用户消息会给�
 - 删除被基础文档覆盖:某条反思讲的内容基础文档已清楚覆盖,则删除(基础文档会被单独检索,无需在反思里重复)。
 - 删除矛盾/失效:与基础文档或更完整反思冲突的旧条目删除。
 硬约束:只能基于【现有反思条目】做合并与删除,不得新增基础片段之外的新事实,不得把基础文档片段本身写成反思条目。
-只输出一个 JSON 数组,不要额外文字,不要 Markdown 代码块:
-[{"faq":"整理后的问答要点,纯文本一段"}]
-若全部应删除,仍至少保留信息量最高的若干条,不要输出空数组。`;
+输出由 JSON Schema 强制为 {"items":[{"faq":"..."}]};faq 尽量简洁,不要 source/id 等额外字段。
+若全部应删除,仍至少保留信息量最高的若干条,不要输出空 items。`;
+
+// 截断 salvage 时的最低保留比例:防止只解析出前 1~2 条就把整库替换掉。
+// 完整解析(外层数组括号闭合)不受此限——合法的大量合并/删除允许大幅缩减。
+const TRUNCATED_MIN_RATIO = 0.2;
 
 function resolve(deps: ReflectionCompactorDeps): Resolved {
   return {
@@ -58,33 +82,145 @@ function resolve(deps: ReflectionCompactorDeps): Resolved {
   };
 }
 
-function extractJsonArray(s: string): unknown {
-  const m = s.match(/\[[\s\S]*\]/);
-  if (!m) return null;
-  try {
-    return JSON.parse(m[0]);
-  } catch {
+// 从 start 起扫描,返回与 s[start] 配对的闭合括号下标;字符串内括号忽略。
+// 未闭合返回 -1(截断)。
+function findBalancedEnd(s: string, start: number): number {
+  const open = s[start];
+  const close = open === "[" ? "]" : open === "{" ? "}" : null;
+  if (!close) return -1;
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+  for (let i = start; i < s.length; i++) {
+    const c = s[i];
+    if (inString) {
+      if (escape) escape = false;
+      else if (c === "\\") escape = true;
+      else if (c === '"') inString = false;
+      continue;
+    }
+    if (c === '"') {
+      inString = true;
+      continue;
+    }
+    if (c === open) depth++;
+    else if (c === close) {
+      depth--;
+      if (depth === 0) return i;
+    }
+  }
+  return -1;
+}
+
+// 从数组开括号后 salvage 完整顶层对象(跳过截断中的半条)。
+function salvageArrayObjects(s: string, arrayStart: number): unknown[] {
+  const items: unknown[] = [];
+  let i = arrayStart + 1;
+  while (i < s.length) {
+    while (i < s.length && /[\s,]/.test(s[i]!)) i++;
+    if (i >= s.length || s[i] === "]") break;
+    if (s[i] !== "{") break;
+    const end = findBalancedEnd(s, i);
+    if (end < 0) break; // 半截对象,停
+    try {
+      items.push(JSON.parse(s.slice(i, end + 1)));
+    } catch {
+      break;
+    }
+    i = end + 1;
+  }
+  return items;
+}
+
+// 解析 LLM 产出的 JSON 数组(文本兜底路径)。
+// 不用贪婪 /\[...\]/:嵌套 "source":[1] 的 ] 会让截断文本匹配成非法片段。
+// 策略:括号配对完整 → 整段 parse;否则 salvage 已写完的顶层对象。
+// 返回 { items, truncated }:truncated=true 表示外层数组未闭合(输出被截断)。
+function extractJsonArray(s: string): { items: unknown[]; truncated: boolean } | null {
+  // 优先尝试 schema 根对象 {"items":[...]}
+  const objStart = s.indexOf("{");
+  const arrStart = s.indexOf("[");
+  if (objStart >= 0 && (arrStart < 0 || objStart < arrStart)) {
+    const end = findBalancedEnd(s, objStart);
+    if (end >= 0) {
+      try {
+        const v = JSON.parse(s.slice(objStart, end + 1));
+        if (v && typeof v === "object" && Array.isArray(v.items)) {
+          return { items: v.items, truncated: false };
+        }
+      } catch {
+        /* fall through to array path */
+      }
+    }
+  }
+  const start = arrStart;
+  if (start < 0) return null;
+  const end = findBalancedEnd(s, start);
+  if (end >= 0) {
+    try {
+      const v = JSON.parse(s.slice(start, end + 1));
+      if (Array.isArray(v)) return { items: v, truncated: false };
+    } catch {
+      // 配对成功但内容非法:再尝试 salvage
+    }
+  }
+  const salvaged = salvageArrayObjects(s, start);
+  if (salvaged.length === 0) return null;
+  return { items: salvaged, truncated: true };
+}
+
+// structured_output / 文本解析统一抽出 items 列表。
+function itemsFromPayload(structured: unknown | undefined, rawText: string): { items: unknown[]; truncated: boolean } | null {
+  if (structured !== undefined && structured !== null) {
+    if (Array.isArray(structured)) return { items: structured, truncated: false };
+    if (typeof structured === "object" && Array.isArray((structured as { items?: unknown }).items)) {
+      return { items: (structured as { items: unknown[] }).items, truncated: false };
+    }
     return null;
   }
+  return extractJsonArray(rawText);
 }
 
 // 安全底线:解析 + 校验 LLM 产出。ok=false 时带 reason,供调用方 log 定位(哪个 guard 触发)。
+// structured 优先(outputFormat.json_schema 已校验过形状);无则回退文本解析/截断 salvage。
 type CompactCheck = { ok: true; faqs: string[] } | { ok: false; reason: string };
-export function validateCompactedDetailed(raw: string, inputCount: number): CompactCheck {
-  const parsed = extractJsonArray(raw);
-  if (!Array.isArray(parsed)) return { ok: false, reason: "非 JSON 数组(未匹配到 [...] 或解析失败)" };
-  const faqs = parsed
-    .map((x) => (x && typeof x.faq === "string" ? x.faq.trim() : ""))
+export function validateCompactedDetailed(
+  raw: string,
+  inputCount: number,
+  structured?: unknown
+): CompactCheck {
+  const extracted = itemsFromPayload(structured, raw);
+  if (!extracted) {
+    return {
+      ok: false,
+      reason:
+        structured !== undefined && structured !== null
+          ? "structured_output 非 {items:[...]} / 数组"
+          : "非 JSON 数组(未匹配到 [...] 或解析失败)",
+    };
+  }
+  const faqs = extracted.items
+    .map((x) => (x && typeof (x as { faq?: unknown }).faq === "string" ? (x as { faq: string }).faq.trim() : ""))
     .filter((s) => s.length > 0);
   if (faqs.length === 0 && inputCount > 0) return { ok: false, reason: "空集(输入非空,防清空)" };
   if (faqs.length > Math.ceil(inputCount * 1.5))
     return { ok: false, reason: `条目暴涨 ${faqs.length} > 输入 ${inputCount} ×1.5(疑无视约束)` };
+  // 截断 salvage:只拿到数组前半段完整对象,若条数过少疑似大半还没写出 → 拒,防误清空
+  if (extracted.truncated && inputCount > 0) {
+    const floor = Math.max(1, Math.ceil(inputCount * TRUNCATED_MIN_RATIO));
+    if (faqs.length < floor) {
+      return {
+        ok: false,
+        reason: `截断产出仅 ${faqs.length} 条 < 输入 ${inputCount} ×${TRUNCATED_MIN_RATIO} 下限 ${floor}(疑输出被截断)`,
+      };
+    }
+  }
   return { ok: true, faqs };
 }
 
 // 保留原签名(测试与外部依赖):返回整理后 faq 列表;任一异常返回 null(调用方保留旧库)。
-export function validateCompacted(raw: string, inputCount: number): string[] | null {
-  const r = validateCompactedDetailed(raw, inputCount);
+export function validateCompacted(raw: string, inputCount: number, structured?: unknown): string[] | null {
+  const r = validateCompactedDetailed(raw, inputCount, structured);
   return r.ok ? r.faqs : null;
 }
 
@@ -106,11 +242,13 @@ export async function runCompact(deps: ReflectionCompactorDeps): Promise<void> {
     const refBlock = entries.map((e, i) => `[${i + 1}] ${e.content}`).join("\n");
     const prompt = `【权威基础文档片段】\n${baseBlock || "(无)"}\n\n【现有反思条目】\n${refBlock}`;
 
-    const { text: out } = await drainQuery(
+    const { text: out, structuredOutput } = await drainQuery(
       d.queryFn({
         prompt,
         options: noToolQueryOptions({
           systemPrompt: COMPACT_SYSTEM,
+          // API 侧强制 JSON Schema,杜绝自由文本/markdown/截断半 JSON
+          outputFormat: { type: "json_schema", schema: COMPACT_OUTPUT_SCHEMA },
           // JSON 整理任务,关思考省成本/延迟;单次覆盖全局 alwaysThinkingEnabled
           thinking: { type: "disabled" },
           canUseTool: async () => ({ behavior: "deny" as const, message: "压缩阶段不使用工具" }),
@@ -122,12 +260,12 @@ export async function runCompact(deps: ReflectionCompactorDeps): Promise<void> {
       "compact"
     );
 
-    const check = validateCompactedDetailed(out, entries.length);
+    const check = validateCompactedDetailed(out, entries.length, structuredOutput);
     if (!check.ok) {
-      const preview = out.slice(0, 300).replace(/\s+/g, " ").trim();
+      const preview = (out || JSON.stringify(structuredOutput ?? "")).slice(0, 300).replace(/\s+/g, " ").trim();
       logger.log(
         "warn",
-        `[reflection-compact] 校验失败(${check.reason}),保留旧库。LLM 原文预览: ${preview || "(空)"}`
+        `[reflection-compact] 校验失败(${check.reason}),保留旧库。len=${out.length} structured=${structuredOutput != null} 预览: ${preview || "(空)"}`
       );
       bus.emit("error.occurred", {
         scope: "reflection-compact",

@@ -144,27 +144,35 @@ export interface DrainResult {
   text: string;
   sessionId?: string;
   usage?: UsageDelta;
+  /** outputFormat:json_schema 时 SDK result 上的 structured_output(已校验过 schema) */
+  structuredOutput?: unknown;
 }
 
 // 单次迭代 query 结果流:累计 assistant 文本 + 抓 session_id + 抓末尾 result 的用量并记账。
+// 若启用 outputFormat.json_schema,同时抓 result.structured_output。
 // 抛错语义保留:迭代中断直接向上抛(供一次性调用方的 fail-open/closed / 反思不推进游标依赖)。
 // 主 agent 因有降级需求(保留部分文本)不走此助手,单独在 run 内联同款记账。
 export async function drainQuery(iter: AsyncIterable<any>, site: UsageSite): Promise<DrainResult> {
   let text = "";
   let sessionId: string | undefined;
   let usage: UsageDelta | undefined;
+  let structuredOutput: unknown | undefined;
   for await (const msg of iter) {
     if (msg.type === "system" && msg.subtype === "init" && msg.session_id) {
       sessionId = msg.session_id;
     } else if (msg.type === "assistant" && Array.isArray(msg.message?.content)) {
       for (const b of msg.message.content) if (b.type === "text") text += b.text;
+    } else if (msg.type === "result") {
+      if (msg.structured_output !== undefined) structuredOutput = msg.structured_output;
+      const u = usageFromResult(msg);
+      if (u) usage = u;
     } else {
       const u = usageFromResult(msg);
       if (u) usage = u;
     }
   }
   if (usage) usageStats.record(site, usage);
-  return { text, sessionId, usage };
+  return { text, sessionId, usage, structuredOutput };
 }
 
 export function buildDefaultSystem(supportUrl = "https://www.packyapi.com"): string {
