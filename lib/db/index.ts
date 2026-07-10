@@ -152,11 +152,24 @@ function migrate(db: Database.Database, dim: number): void {
   } catch {
     /* 列已存在 */
   }
-  // 反思审核:pending / approved / rejected;旧数据默认 approved(已在用)
+  // 反思状态:approved(默认入库) / rejected(人工驳回) / pending(遗留)。沉淀无需审核。
   try {
-    db.exec("ALTER TABLE reflection_meta ADD COLUMN status TEXT NOT NULL DEFAULT 'pending'");
+    db.exec("ALTER TABLE reflection_meta ADD COLUMN status TEXT NOT NULL DEFAULT 'approved'");
   } catch {
     /* 列已存在 */
+  }
+  // 旧数据对齐:历史 pending 升 approved;无 meta 的 human-reflection 补一行(默认入库)
+  try {
+    db.exec("UPDATE reflection_meta SET status = 'approved' WHERE status = 'pending'");
+    db.exec(`
+      INSERT OR IGNORE INTO reflection_meta (chunk_id, group_id, question, answer, status)
+      SELECT c.id, NULL, NULL, NULL, 'approved'
+      FROM kb_chunks c
+      WHERE c.doc = 'human-reflection'
+        AND NOT EXISTS (SELECT 1 FROM reflection_meta m WHERE m.chunk_id = c.id)
+    `);
+  } catch {
+    /* 表/列不存在等极端情况忽略 */
   }
 }
 

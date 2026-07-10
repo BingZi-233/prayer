@@ -57,7 +57,7 @@ const patchSchema = z.object({
   action: z.enum(["approve", "reject", "promote"]),
 });
 
-// 审核 / 驳回 / 升格为正式 FAQ 文档
+// 驳回 / 恢复入库 / 升格为正式 FAQ 文档(沉淀默认已 approved,无需审核)
 export async function PATCH(req: NextRequest): Promise<NextResponse> {
   try {
     const body = await req.json().catch(() => null);

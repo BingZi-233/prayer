@@ -355,6 +355,7 @@ export class Repo {
 
   // 反思沉淀的知识条目(doc='human-reflection');source 格式 human-reflection:{gid}:{ts},畸形回退 null。
   // LEFT JOIN reflection_meta 带出来源问答(整理后条目 gid=0、无 meta → question/answer 为 null)
+  // 无 meta / 未知 status 一律视为 approved(沉淀即入库,无需审核)
   reflectionEntries(): {
     id: number;
     content: string;
@@ -366,7 +367,7 @@ export class Repo {
   }[] {
     const rows = this.db
       .prepare(
-        `SELECT c.id, c.content, c.source, m.question, m.answer, COALESCE(m.status, 'pending') AS status
+        `SELECT c.id, c.content, c.source, m.question, m.answer, COALESCE(m.status, 'approved') AS status
          FROM kb_chunks c LEFT JOIN reflection_meta m ON m.chunk_id = c.id
          WHERE c.doc = 'human-reflection' ORDER BY c.id DESC`
       )
@@ -380,7 +381,7 @@ export class Repo {
     }[];
     return rows.map((r) => {
       const m = /^human-reflection:(\d+):(\d+)$/.exec(r.source ?? "");
-      const st = r.status === "approved" || r.status === "rejected" ? r.status : "pending";
+      const st = r.status === "rejected" || r.status === "pending" ? r.status : "approved";
       return {
         id: r.id,
         content: r.content,
@@ -393,11 +394,11 @@ export class Repo {
     });
   }
 
-  // 记录一条沉淀的来源问答(chunk_id 对应 kb_chunks.id)。poller 沉淀后调用。
+  // 记录一条沉淀的来源问答(chunk_id 对应 kb_chunks.id)。poller 沉淀后调用;默认 approved 直接入库。
   insertReflectionMeta(chunkId: number, groupId: number, question: string, answer: string): void {
     this.db
       .prepare(
-        "INSERT OR REPLACE INTO reflection_meta (chunk_id, group_id, question, answer, status) VALUES (?, ?, ?, ?, 'pending')"
+        "INSERT OR REPLACE INTO reflection_meta (chunk_id, group_id, question, answer, status) VALUES (?, ?, ?, ?, 'approved')"
       )
       .run(chunkId, groupId, question, answer);
   }
@@ -415,13 +416,12 @@ export class Repo {
     return info.changes > 0;
   }
 
-  // 升格为正式文档:复制 content 到 docs/kb 风格的 chunk(doc=promoted),并标 approved
+  // 升格为正式文档:标 approved;实际写文件由 API 层处理
   promoteReflection(chunkId: number): { ok: boolean; newId?: number; content?: string } {
     const row = this.db.prepare("SELECT content FROM kb_chunks WHERE id = ? AND doc = 'human-reflection'").get(chunkId) as
       | { content: string }
       | undefined;
     if (!row) return { ok: false };
-    // 标记审核通过;实际写文件由 API 层处理,此处只改状态
     this.setReflectionStatus(chunkId, "approved");
     return { ok: true, content: row.content };
   }

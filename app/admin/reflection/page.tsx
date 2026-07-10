@@ -65,7 +65,6 @@ export default function ReflectionPage() {
   const [acting, setActing] = useState<number | null>(null);
   const entryCount = d?.entries.length ?? 0;
   const willCompact = d ? entryCount >= d.config.compactMinEntries : false;
-  const pendingCount = d?.entries.filter((e) => (e.status ?? "pending") === "pending").length ?? 0;
 
   async function compact() {
     setBusy(true);
@@ -94,7 +93,7 @@ export default function ReflectionPage() {
       }).then((x) => x.json());
       if (r.ok) {
         if (action === "promote") toast.success(`已升格到 docs/kb/${r.data.file}`);
-        else toast.success(action === "approve" ? "已通过" : "已驳回");
+        else toast.success(action === "approve" ? "已恢复入库" : "已驳回");
         await refresh();
       } else toast.error(r.error || "操作失败");
     } catch (e) {
@@ -108,7 +107,7 @@ export default function ReflectionPage() {
     <div className="flex flex-col gap-6">
       <PageHeader
         title="反思"
-        description={`被动反思:从人工回复沉淀知识。待审核 ${pendingCount} 条。`}
+        description="被动反思:从人工回复沉淀知识,自动入库。"
         actions={
           <Dialog>
             <DialogTrigger asChild>
@@ -211,7 +210,7 @@ export default function ReflectionPage() {
           emptyDescription={`沉淀条目达到阈值(${d?.config.compactMinEntries ?? "—"} 条)后会定期整理。`}
           skeleton={<Skeleton className="h-32 w-full" />}
         >
-          <div className="flex flex-col gap-2">
+          <div className="max-h-[calc(3*2.875rem+2*0.5rem)] space-y-2 overflow-y-auto pr-1">
             {d?.compactions.map((c) => {
               const { removed, added, keptCount } = diff(c.before, c.after);
               return (
@@ -258,7 +257,7 @@ export default function ReflectionPage() {
       <SectionCard
         icon={Brain}
         title={`沉淀知识${d ? ` (${d.entries.length})` : ""}`}
-        description="审核通过/驳回;升格会写入 docs/kb/promoted/。"
+        description="沉淀后自动入库;可驳回或升格写入 docs/kb/promoted/。"
       >
         <DataState
           loading={loading}
@@ -274,7 +273,7 @@ export default function ReflectionPage() {
             <div className="flex flex-col gap-2">
               {d?.entries.map((e) => {
                 const hasSource = Boolean(e.question || e.answer);
-                const st = e.status ?? "pending";
+                const st = e.status ?? "approved";
                 return (
                   <div key={e.id} className="bg-muted/40 rounded-md border p-3">
                     <div className="text-muted-foreground mb-1.5 flex flex-wrap items-center gap-2 text-xs">
@@ -283,17 +282,25 @@ export default function ReflectionPage() {
                       ) : e.groupId != null ? (
                         <Badge variant="secondary">{name(e.groupId)}</Badge>
                       ) : null}
-                      <Badge variant={st === "approved" ? "default" : st === "rejected" ? "destructive" : "secondary"}>
-                        {st === "approved" ? "已通过" : st === "rejected" ? "已驳回" : "待审"}
-                      </Badge>
+                      {st === "rejected" ? (
+                        <Badge variant="destructive">已驳回</Badge>
+                      ) : st === "pending" ? (
+                        <Badge variant="secondary">待审</Badge>
+                      ) : (
+                        <Badge variant="default">已入库</Badge>
+                      )}
                       <RelativeTime ts={e.ts} />
                       <span className="ml-auto flex gap-1">
-                        <Button size="sm" variant="ghost" className="h-7 px-2" disabled={acting === e.id} onClick={() => act(e.id, "approve")}>
-                          <Check className="size-3.5" />
-                        </Button>
-                        <Button size="sm" variant="ghost" className="h-7 px-2" disabled={acting === e.id} onClick={() => act(e.id, "reject")}>
-                          <X className="size-3.5" />
-                        </Button>
+                        {st !== "approved" && (
+                          <Button size="sm" variant="ghost" className="h-7 px-2" disabled={acting === e.id} onClick={() => act(e.id, "approve")} title="恢复入库">
+                            <Check className="size-3.5" />
+                          </Button>
+                        )}
+                        {st !== "rejected" && (
+                          <Button size="sm" variant="ghost" className="h-7 px-2" disabled={acting === e.id} onClick={() => act(e.id, "reject")} title="驳回">
+                            <X className="size-3.5" />
+                          </Button>
+                        )}
                         <Button size="sm" variant="ghost" className="h-7 px-2" disabled={acting === e.id} onClick={() => act(e.id, "promote")} title="升格正式文档">
                           <FileUp className="size-3.5" />
                         </Button>
