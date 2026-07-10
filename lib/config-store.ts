@@ -35,7 +35,7 @@ export interface AppConfig {
   proactiveScanMs: number;
   proactiveSilenceMs: number;
   proactiveMaxPerScan: number;
-  /** 办不了事务时引导的固定链接(官网/工单) */
+  /** 办不了事务时引导的固定链接(官网) */
   supportUrl: string;
   /** @ 后是否先发「收到,正在查」ACK。默认开 */
   ackEnabled: boolean;

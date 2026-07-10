@@ -21,7 +21,7 @@ const HANDOFF_KEYWORDS = /^\s*(人工|转人工|人工客服|转接人工|客服
 const HELP_KEYWORDS = /^\s*(帮助|怎么用|使用说明|\/help|help)\s*$/i;
 
 function helpText(supportUrl?: string): string {
-  const link = supportUrl ? `\n官网/工单:${supportUrl}` : "";
+  const link = supportUrl ? `\n官网:${supportUrl}` : "";
   return `用法说明:问我请 @我;重置对话发「重置」;需要人工发「人工」。${link}`;
 }
 

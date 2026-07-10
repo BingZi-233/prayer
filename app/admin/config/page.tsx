@@ -273,7 +273,7 @@ export default function ConfigPage() {
                   <FieldLabel htmlFor="ackEnabled">@ 后先回「收到,正在查」</FieldLabel>
                 </Field>
                 <Field>
-                  <FieldLabel htmlFor="supportUrl">支持链接(官网/工单)</FieldLabel>
+                  <FieldLabel htmlFor="supportUrl">支持链接(官网)</FieldLabel>
                   <Input id="supportUrl" value={cfg.supportUrl ?? ""} onChange={(e) => upd("supportUrl", e.target.value)} />
                   <FieldDescription>办不了订单/退款时引导此链接;帮助文案也会附带。</FieldDescription>
                 </Field>

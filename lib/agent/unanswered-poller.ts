@@ -9,7 +9,7 @@ import type { GroupPolicy } from "../config-store";
 
 // 主动模式哨兵:无把握时 agent 只输出此串 → poller 判为非答案,沉默不发。
 export const PROACTIVE_SUFFIX =
-  "【主动模式】你是在无人应答时主动补位。仅当知识库检索到确切依据且你有把握时才作答;否则只输出 __NO_ANSWER__(不解释、不道歉、不引导工单、不寒暄)。";
+  "【主动模式】你是在无人应答时主动补位。仅当知识库检索到确切依据且你有把握时才作答;否则只输出 __NO_ANSWER__(不解释、不道歉、不引导人工或外链、不寒暄)。";
 
 export interface UnansweredPollerDeps {
   repo: Repo;

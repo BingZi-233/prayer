@@ -8,7 +8,7 @@ export interface ErrorHandlerDeps {
 }
 
 export function defaultFallbackText(supportUrl?: string): string {
-  const link = supportUrl ? ` 也可访问 ${supportUrl} 提交工单。` : "";
+  const link = supportUrl ? ` 也可访问 ${supportUrl} 查看官网说明。` : "";
   return `系统繁忙,请稍后再试,或回复「人工」转接客服。${link}`.trim();
 }
 
