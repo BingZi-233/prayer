@@ -617,6 +617,33 @@ export class Repo {
       .all(doc) as { id: number; content: string }[];
   }
 
+  // 删文档对应的全部 chunk+vec(文件删除 / 重建前清理用)。返回删除的 chunk 数。
+  deleteKbDoc(doc: string): number {
+    return this.db.transaction(() => {
+      const ids = (
+        this.db.prepare("SELECT id FROM kb_chunks WHERE doc = ?").all(doc) as { id: number }[]
+      ).map((r) => r.id);
+      if (!ids.length) return 0;
+      const ph = ids.map(() => "?").join(",");
+      this.db.prepare(`DELETE FROM kb_vec WHERE chunk_id IN (${ph})`).run(...ids);
+      const info = this.db.prepare(`DELETE FROM kb_chunks WHERE id IN (${ph})`).run(...ids);
+      return info.changes;
+    })();
+  }
+
+  // 重命名文档:同步更新 doc;source 若等于旧路径也一并改(文件入库时 source=路径)。
+  renameKbDoc(from: string, to: string): number {
+    const info = this.db
+      .prepare(
+        `UPDATE kb_chunks
+         SET doc = ?,
+             source = CASE WHEN source = ? THEN ? ELSE source END
+         WHERE doc = ?`
+      )
+      .run(to, from, to, from);
+    return info.changes;
+  }
+
   searchKb(query: Float32Array, k: number): KbHit[] {
     const rows = this.db
       .prepare(
