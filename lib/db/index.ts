@@ -103,6 +103,27 @@ function migrate(db: Database.Database, dim: number): void {
       cost_usd REAL NOT NULL DEFAULT 0,
       PRIMARY KEY (day, site)
     );
+    -- QQ 群名 / 用户名缓存(分表;数字 id 可能撞车)。exp 为毫秒时间戳,过期后 API 重新打 OneBot。
+    CREATE TABLE IF NOT EXISTS name_cache_groups_list (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      rows_json TEXT NOT NULL,
+      exp INTEGER NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS name_cache_group (
+      group_id INTEGER PRIMARY KEY,
+      name TEXT NOT NULL,
+      exp INTEGER NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS name_cache_user (
+      user_id INTEGER PRIMARY KEY,
+      name TEXT NOT NULL,
+      exp INTEGER NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS name_cache_members (
+      group_id INTEGER PRIMARY KEY,
+      rows_json TEXT NOT NULL,
+      exp INTEGER NOT NULL
+    );
   `);
   // 旧库补列(resume_id 拆分自 session_id);新库已含,重复加列报错忽略。
   // 回填仅在首次加列时执行(ALTER 成功后),旧 session_id 兼作续接指针,保持既有 resume 行为;
