@@ -6,6 +6,7 @@ const cfg: AppConfig = {
   onebotWsUrl: "ws://x:1",
   onebotAccessToken: "secret-token-9999",
   botQQ: 1,
+  extraAtQQs: [],
   adminGroupId: 2,
   handoffTimeoutMin: 30,
   dbPath: "./data/agent.db",

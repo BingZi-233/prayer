@@ -6,6 +6,7 @@ const cfg: AppConfig = {
   onebotWsUrl: "ws://x:1",
   onebotAccessToken: "",
   botQQ: 1,
+  extraAtQQs: [],
   adminGroupId: 2,
   enabledGroups: [],
   proactiveEnabled: false,

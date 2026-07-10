@@ -18,6 +18,8 @@ import type { GroupPolicy } from "./config-store";
 export interface AssembleDeps {
   repo: Repo;
   botQQ: number;
+  /** 额外监听 AT 的 QQ,与 botQQ 一并视为 bot 触发 */
+  extraAtQQs?: number[];
   adminGroupId: number;
   enabledGroups: number[];
   agent: Agent;
@@ -71,7 +73,14 @@ export function assemble(deps: AssembleDeps): () => void {
       handoffTimeoutMin: deps.handoffTimeoutMin ?? 30,
       shouldNotify: shouldNotifyHandoff,
     }),
-    registerGateway({ repo, botQQ, adminGroupId, enabledGroups, supportUrl: deps.supportUrl }),
+    registerGateway({
+      repo,
+      botQQ,
+      extraAtQQs: deps.extraAtQQs,
+      adminGroupId,
+      enabledGroups,
+      supportUrl: deps.supportUrl,
+    }),
     registerOrchestrator({
       agent,
       store,

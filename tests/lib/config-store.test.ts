@@ -1,11 +1,22 @@
 import { describe, it, expect } from "vitest";
 import { openDb } from "@/lib/db/index";
 import { Repo } from "@/lib/db/repo";
-import { getConfig, setConfig } from "@/lib/config-store";
+import { getConfig, setConfig, parseQQList } from "@/lib/config-store";
 
 function mkRepo(): Repo {
   return new Repo(openDb(":memory:", 3));
 }
+
+describe("parseQQList", () => {
+  it("逗号/空白分隔并去重", () => {
+    expect(parseQQList("111, 222 333,111")).toEqual([111, 222, 333]);
+  });
+  it("空/非法 → []", () => {
+    expect(parseQQList(undefined)).toEqual([]);
+    expect(parseQQList("")).toEqual([]);
+    expect(parseQQList("0, -1, abc")).toEqual([]);
+  });
+});
 
 describe("config-store", () => {
   it("无行时用 env 种子并落库", () => {
@@ -88,6 +99,21 @@ describe("config-store", () => {
     expect(getConfig(repo, {}).enabledGroups).toEqual([]); // 缺失补默认
     setConfig(repo, { enabledGroups: [100, 200] });
     expect(getConfig(repo, {}).enabledGroups).toEqual([100, 200]); // 存储值优先
+  });
+
+  it("extraAtQQs 默认 [];env EXTRA_AT_QQS;setConfig 可改", () => {
+    const repo = mkRepo();
+    expect(getConfig(repo, {}).extraAtQQs).toEqual([]);
+    const repo2 = mkRepo();
+    expect(getConfig(repo2, { EXTRA_AT_QQS: "111, 222" }).extraAtQQs).toEqual([111, 222]);
+    setConfig(repo, { extraAtQQs: [333] });
+    expect(getConfig(repo, {}).extraAtQQs).toEqual([333]);
+  });
+
+  it("旧库缺 extraAtQQs 补空数组", () => {
+    const repo = mkRepo();
+    repo.setConfigRow("app", JSON.stringify({ botQQ: 5 }));
+    expect(getConfig(repo, {}).extraAtQQs).toEqual([]);
   });
 
   it("reflectNotifyAdmin 默认 true;env false 关闭;setConfig 可改", () => {

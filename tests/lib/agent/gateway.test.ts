@@ -2,21 +2,44 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import { openDb } from "@/lib/db/index";
 import { Repo } from "@/lib/db/repo";
 import { bus } from "@/lib/bus";
-import { registerGateway } from "@/lib/agent/gateway";
+import { registerGateway, isAtTrigger } from "@/lib/agent/gateway";
 import type { QualifiedMessage } from "@/lib/events";
 
 let repo: Repo;
 const BOT = 555;
+const ADMIN = 888;
 
 beforeEach(() => {
   bus.removeAllListeners();
   repo = new Repo(openDb(":memory:"));
-  registerGateway({ repo, botQQ: BOT, adminGroupId: 999, enabledGroups: [1], supportUrl: "https://example.com" });
+  registerGateway({
+    repo,
+    botQQ: BOT,
+    extraAtQQs: [ADMIN],
+    adminGroupId: 999,
+    enabledGroups: [1],
+    supportUrl: "https://example.com",
+  });
 });
 
 function collectQualified(): Promise<QualifiedMessage> {
   return new Promise((res) => bus.once("message.qualified", res));
 }
+
+describe("isAtTrigger", () => {
+  it("命中 botQQ", () => {
+    expect(isAtTrigger([BOT], BOT, [])).toBe(true);
+  });
+  it("命中 extraAtQQs", () => {
+    expect(isAtTrigger([ADMIN], BOT, [ADMIN])).toBe(true);
+  });
+  it("都不命中", () => {
+    expect(isAtTrigger([123], BOT, [ADMIN])).toBe(false);
+  });
+  it("忽略 0 / 负数", () => {
+    expect(isAtTrigger([0], BOT, [0, -1])).toBe(false);
+  });
+});
 
 describe("gateway", () => {
   it("@bot 的群消息 → emit message.qualified,含 sessionKey 与去 @ 文本", async () => {
@@ -26,6 +49,14 @@ describe("gateway", () => {
     expect(q.sessionKey).toBe("1:2");
     expect(q.text).toBe("订单在哪");
     expect(q.messageId).toBe(10); // 透传触发消息 id,供回复引用
+  });
+
+  it("@额外监听 QQ(群管理)也当作 bot 触发", async () => {
+    const p = collectQualified();
+    bus.emit("message.received", { groupId: 1, userId: 2, messageId: 102, rawText: "帮我看看", atList: [ADMIN] });
+    const q = await p;
+    expect(q.sessionKey).toBe("1:2");
+    expect(q.text).toBe("帮我看看");
   });
 
   it("写入 lastQuestion 供会话列表预览", async () => {

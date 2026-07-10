@@ -5,6 +5,8 @@ import type { IncomingMessage } from "../events";
 export interface GatewayDeps {
   repo: Repo;
   botQQ: number;
+  /** 额外监听的 QQ:atList 命中其中任一时也当 @bot */
+  extraAtQQs?: number[];
   adminGroupId: number;
   enabledGroups: number[];
   /** 固定支持链接,办不了/人工时附带 */
@@ -25,8 +27,18 @@ function helpText(supportUrl?: string): string {
   return `用法说明:问我请 @我;重置对话发「重置」;需要人工发「人工」。${link}`;
 }
 
+/** atList 是否命中 bot 或任一额外监听 QQ */
+export function isAtTrigger(atList: number[], botQQ: number, extraAtQQs: number[] = []): boolean {
+  if (atList.includes(botQQ)) return true;
+  for (const qq of extraAtQQs) {
+    if (qq > 0 && atList.includes(qq)) return true;
+  }
+  return false;
+}
+
 export function registerGateway(deps: GatewayDeps): () => void {
   const { repo, botQQ, adminGroupId, enabledGroups, supportUrl } = deps;
+  const extraAtQQs = deps.extraAtQQs ?? [];
   const enabled = new Set(enabledGroups);
 
   const onReceived = (msg: IncomingMessage) => {
@@ -52,7 +64,7 @@ export function registerGateway(deps: GatewayDeps): () => void {
       }
     }
 
-    if (!msg.atList.includes(botQQ)) return; // 仅 @bot
+    if (!isAtTrigger(msg.atList, botQQ, extraAtQQs)) return; // 仅 @bot 或额外监听号
     if (repo.seenMessage(msg.messageId)) return; // 去重
     const sessionKey = `${msg.groupId}:${msg.userId}`;
     if (!msg.rawText && !msg.images?.length) return; // 纯图消息也放行

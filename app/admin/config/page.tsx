@@ -21,6 +21,7 @@ interface Cfg {
   onebotWsUrl: string;
   onebotAccessToken: string;
   botQQ: number;
+  extraAtQQs: number[];
   adminGroupId: number;
   handoffTimeoutMin: number;
   dbPath: string;
@@ -43,6 +44,13 @@ interface Cfg {
   maxReplyChars: number;
   usageBudgetUsd: number;
   groupPolicies: Record<string, { proactiveEnabled?: boolean; proactiveSilenceMs?: number; notifyAdminOnHandoff?: boolean }>;
+}
+
+interface AdminCandidate {
+  userId: number;
+  name: string;
+  role: "owner" | "admin";
+  groupIds: number[];
 }
 
 const NUM_KEYS: (keyof Cfg)[] = [
@@ -68,16 +76,20 @@ const minToMs = (min: string) => Math.round(Number(min) * 60_000) || 0;
 const msToHr = (ms: number) => String(Math.round(ms / 3_600_000));
 const hrToMs = (hr: string) => Math.round(Number(hr) * 3_600_000) || 0;
 
+const roleLabel = (role: "owner" | "admin") => (role === "owner" ? "群主" : "管理");
+
 export default function ConfigPage() {
   const [cfg, setCfg] = useState<Cfg | null>(null);
   const [busy, setBusy] = useState(false);
   const [groups, setGroups] = useState<{ groupId: number; groupName: string }[] | null>(null);
   const [groupsLoading, setGroupsLoading] = useState(true);
+  const [admins, setAdmins] = useState<AdminCandidate[] | null>(null);
+  const [adminsLoading, setAdminsLoading] = useState(false);
 
   useEffect(() => {
     fetch("/api/config").then((x) => x.json()).then((r) => {
       if (r.ok) {
-        setCfg({ groupPolicies: {}, supportUrl: "https://www.packyapi.com", ackEnabled: true, maxReplyChars: 900, usageBudgetUsd: 0, ...r.data });
+        setCfg({ groupPolicies: {}, supportUrl: "https://www.packyapi.com", ackEnabled: true, maxReplyChars: 900, usageBudgetUsd: 0, extraAtQQs: [], ...r.data });
       }
     });
   }, []);
@@ -89,6 +101,36 @@ export default function ConfigPage() {
       .catch(() => setGroups(null))
       .finally(() => setGroupsLoading(false));
   }, []);
+
+  // 生效群变化后重拉跨群管理员名单(去重)
+  const enabledKey = cfg?.enabledGroups?.slice().sort((a, b) => a - b).join(",") ?? "";
+  useEffect(() => {
+    if (!cfg) return;
+    if (!cfg.enabledGroups.length) {
+      setAdmins([]);
+      setAdminsLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setAdminsLoading(true);
+    fetch(`/api/onebot/admins?groups=${encodeURIComponent(enabledKey)}`)
+      .then((x) => x.json())
+      .then((r) => {
+        if (cancelled) return;
+        setAdmins(r.ok ? (r.data as AdminCandidate[]) : null);
+      })
+      .catch(() => {
+        if (!cancelled) setAdmins(null);
+      })
+      .finally(() => {
+        if (!cancelled) setAdminsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // 仅随生效群集合变化刷新;cfg 本体其它字段不触发
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [enabledKey]);
 
   function upd(k: keyof Cfg, v: string) {
     if (!cfg) return;
@@ -109,7 +151,7 @@ export default function ConfigPage() {
         body: JSON.stringify(payload),
       }).then((x) => x.json());
       if (r.ok) {
-        setCfg({ groupPolicies: {}, ...r.data });
+        setCfg({ groupPolicies: {}, extraAtQQs: [], ...r.data });
         toast.success("配置已保存,Agent 已热重载");
       } else {
         toast.error(`保存失败:${r.error}`);
@@ -130,7 +172,21 @@ export default function ConfigPage() {
     else set.add(id);
     setCfg({ ...cfg, enabledGroups: Array.from(set) });
   }
+
+  function toggleExtraAt(qq: number) {
+    if (!cfg) return;
+    const set = new Set(cfg.extraAtQQs);
+    if (set.has(qq)) set.delete(qq);
+    else set.add(qq);
+    setCfg({ ...cfg, extraAtQQs: Array.from(set) });
+  }
+
   const groupName = (id: number) => groups?.find((g) => g.groupId === id)?.groupName ?? String(id);
+  const adminLabel = (qq: number) => {
+    const a = admins?.find((x) => x.userId === qq);
+    if (a) return `${a.name} (${qq})`;
+    return String(qq);
+  };
   const adminGroupOptions = (): { groupId: number; groupName: string }[] => {
     if (!groups) return [];
     if (cfg?.adminGroupId && !groups.some((g) => g.groupId === cfg.adminGroupId)) {
@@ -255,6 +311,67 @@ export default function ConfigPage() {
                     <FieldDescription>
                       {groupsLoading ? "正在获取群列表…" : "bot 未连接,无法获取群列表。"}
                     </FieldDescription>
+                  )}
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor="extraAtQQs">额外监听 AT</FieldLabel>
+                  {!cfg.enabledGroups.length ? (
+                    <FieldDescription>请先选择生效群,再从群管理员中勾选。</FieldDescription>
+                  ) : adminsLoading ? (
+                    <FieldDescription>正在拉取生效群管理员…</FieldDescription>
+                  ) : admins === null ? (
+                    <FieldDescription>bot 未连接或无法获取群成员,请确认 OneBot 已连接。</FieldDescription>
+                  ) : (
+                    <>
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <Button id="extraAtQQs" variant="outline" role="combobox" className="justify-between font-normal">
+                            {cfg.extraAtQQs.length ? `已选 ${cfg.extraAtQQs.length} 人` : "选择群管理员"}
+                            <ChevronsUpDown className="opacity-50" />
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="p-0" align="start">
+                          <Command>
+                            <CommandInput placeholder="搜索昵称或 QQ…" />
+                            <CommandList>
+                              <CommandEmpty>无匹配管理员</CommandEmpty>
+                              <CommandGroup>
+                                {admins.map((a) => (
+                                  <CommandItem
+                                    key={a.userId}
+                                    value={`${a.name} ${a.userId} ${roleLabel(a.role)}`}
+                                    onSelect={() => toggleExtraAt(a.userId)}
+                                  >
+                                    <Checkbox checked={cfg.extraAtQQs.includes(a.userId)} className="mr-2" />
+                                    <span className="min-w-0 flex-1 truncate">
+                                      {a.name} ({a.userId})
+                                    </span>
+                                    <span className="ml-2 shrink-0 text-muted-foreground text-xs">
+                                      {roleLabel(a.role)}
+                                      {a.groupIds.length > 1 ? ` · ${a.groupIds.length} 群` : ""}
+                                    </span>
+                                  </CommandItem>
+                                ))}
+                              </CommandGroup>
+                            </CommandList>
+                          </Command>
+                        </PopoverContent>
+                      </Popover>
+                      {cfg.extraAtQQs.length > 0 && (
+                        <div className="mt-2 flex flex-wrap gap-1">
+                          {cfg.extraAtQQs.map((qq) => (
+                            <Badge key={qq} variant="secondary" className="cursor-pointer gap-1" onClick={() => toggleExtraAt(qq)}>
+                              {adminLabel(qq)}
+                              <X className="size-3" />
+                            </Badge>
+                          ))}
+                        </div>
+                      )}
+                      <FieldDescription>
+                        从生效群的群主/管理员中多选(跨群已去重,不含 Bot QQ)。群友 @ 这些人时也当作 @bot 处理。
+                        {admins.length === 0 ? " 当前生效群未识别到管理员。" : ""}
+                      </FieldDescription>
+                    </>
                   )}
                 </Field>
               </FieldGroup>

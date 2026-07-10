@@ -16,6 +16,11 @@ export interface AppConfig {
   onebotWsUrl: string;
   onebotAccessToken: string;
   botQQ: number;
+  /**
+   * 额外监听的 QQ:群友 @ 这些人时也当作 @bot 处理。
+   * 常用于群管理/客服号被误当 bot 的场景。默认 []。
+   */
+  extraAtQQs: number[];
   adminGroupId: number;
   handoffTimeoutMin: number;
   dbPath: string;
@@ -47,11 +52,26 @@ export interface AppConfig {
   groupPolicies: Record<string, GroupPolicy>;
 }
 
+/** 解析逗号/空白分隔的 QQ 列表,过滤非法项并去重 */
+export function parseQQList(raw: string | undefined): number[] {
+  if (!raw?.trim()) return [];
+  const seen = new Set<number>();
+  const out: number[] = [];
+  for (const part of raw.split(/[,\s]+/)) {
+    const n = Number(part);
+    if (!Number.isFinite(n) || n <= 0 || seen.has(n)) continue;
+    seen.add(n);
+    out.push(n);
+  }
+  return out;
+}
+
 function seedFromEnv(env: Record<string, string | undefined>): AppConfig {
   return {
     onebotWsUrl: env.ONEBOT_WS_URL ?? "",
     onebotAccessToken: env.ONEBOT_ACCESS_TOKEN ?? "",
     botQQ: Number(env.BOT_QQ ?? "0"),
+    extraAtQQs: parseQQList(env.EXTRA_AT_QQS),
     adminGroupId: Number(env.ADMIN_GROUP_ID ?? "0"),
     handoffTimeoutMin: Number(env.HANDOFF_TIMEOUT_MIN ?? "30"),
     dbPath: env.DB_PATH ?? "./data/agent.db",

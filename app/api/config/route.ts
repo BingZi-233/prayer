@@ -21,6 +21,7 @@ const patchSchema = z.object({
   onebotWsUrl: z.string().optional(),
   onebotAccessToken: z.string().optional(),
   botQQ: z.number().optional(),
+  extraAtQQs: z.array(z.number()).optional(),
   adminGroupId: z.number().optional(),
   handoffTimeoutMin: z.number().optional(),
   dbPath: z.string().optional(),

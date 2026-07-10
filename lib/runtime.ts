@@ -123,6 +123,7 @@ export class RuntimeManager {
       this.teardown = builders.assemble({
         repo,
         botQQ: cfg.botQQ,
+        extraAtQQs: cfg.extraAtQQs,
         adminGroupId: cfg.adminGroupId,
         enabledGroups: cfg.enabledGroups,
         agent,
