@@ -180,7 +180,7 @@ export default function StatusPage() {
     (ov?.humanSessions ?? 0) > 0 || (s != null && !s.wsConnected);
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden lg:gap-6">
+    <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden p-px lg:gap-6">
       {/* ── 第 1 行:页头 ── */}
       <PageHeader
         className="shrink-0"
@@ -232,7 +232,6 @@ export default function StatusPage() {
           {(ov?.humanSessions ?? 0) > 0 && (
             <Button asChild variant="outline" size="sm">
               <Link href="/admin/handoff">人工会话 {ov!.humanSessions}</Link>
-
             </Button>
           )}
           {s && !s.wsConnected && <Badge variant="destructive">WS 未连接</Badge>}
