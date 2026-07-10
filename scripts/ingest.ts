@@ -28,9 +28,10 @@ export async function runIngest(repo: Repo, dir = "docs/kb"): Promise<IngestResu
   for (const f of files) {
     const content = readFileSync(join(dir, f), "utf8");
     const chunks = chunkText(content);
+    // 先清该 doc 旧分块再写入,保证「重建 embedding」幂等;否则每次重建叠加重复 chunk
+    repo.deleteKbDoc(f);
     for (const c of chunks) {
-      const id = repo.insertKbChunk(f, c, f);
-      repo.insertKbVec(id, await embed(c));
+      repo.insertKbEntry(f, c, f, await embed(c));
     }
     out.push({ file: f, chunks: chunks.length });
   }

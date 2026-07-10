@@ -1,4 +1,7 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { chunkText, runIngest } from "@/scripts/ingest";
 import { openDb } from "@/lib/db/index";
 import { Repo } from "@/lib/db/repo";
@@ -18,14 +21,53 @@ describe("chunkText", () => {
     expect(chunks.length).toBe(3);
     expect(chunks[0].length).toBe(500);
   });
+  it("两行短文仅 1 块(无空行分隔时)", () => {
+    expect(chunkText("第一行\n第二行")).toEqual(["第一行\n第二行"]);
+  });
 });
 
 describe("runIngest", () => {
+  let dir: string;
+
+  beforeEach(() => {
+    dir = join(tmpdir(), `kb-ingest-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    mkdirSync(dir, { recursive: true });
+  });
+
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
   it("对给定目录切块入库,返回统计", async () => {
+    writeFileSync(join(dir, "a.md"), "hello\n\nworld");
     const repo = new Repo(openDb(":memory:", 3));
-    const res = await runIngest(repo, "docs/kb");
-    expect(Array.isArray(res)).toBe(true);
-    // 至少不报错;若 docs/kb 有文件则 chunks>0
-    for (const r of res) expect(r.chunks).toBeGreaterThanOrEqual(0);
+    const res = await runIngest(repo, dir);
+    expect(res).toEqual([{ file: "a.md", chunks: 2 }]);
+    expect(repo.kbTotals()).toEqual({ chunks: 2, vecs: 2 });
+  });
+
+  it("重复重建不叠加分块(幂等)", async () => {
+    writeFileSync(join(dir, "tiny.md"), "两行文本\n而已");
+    const repo = new Repo(openDb(":memory:", 3));
+
+    await runIngest(repo, dir);
+    await runIngest(repo, dir);
+    await runIngest(repo, dir);
+
+    expect(repo.kbDocStats()).toEqual([{ doc: "tiny.md", chunks: 1 }]);
+    expect(repo.kbTotals()).toEqual({ chunks: 1, vecs: 1 });
+    expect(repo.kbChunksByDoc("tiny.md").map((c) => c.content)).toEqual(["两行文本\n而已"]);
+  });
+
+  it("内容变短后旧分块被清掉", async () => {
+    writeFileSync(join(dir, "doc.md"), "段一\n\n段二\n\n段三");
+    const repo = new Repo(openDb(":memory:", 3));
+    await runIngest(repo, dir);
+    expect(repo.kbDocStats()[0]?.chunks).toBe(3);
+
+    writeFileSync(join(dir, "doc.md"), "只剩一段");
+    await runIngest(repo, dir);
+    expect(repo.kbDocStats()).toEqual([{ doc: "doc.md", chunks: 1 }]);
+    expect(repo.kbChunksByDoc("doc.md")[0]?.content).toBe("只剩一段");
   });
 });
