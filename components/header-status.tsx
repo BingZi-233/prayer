@@ -22,11 +22,13 @@ export function HeaderStatus() {
         ? "bg-destructive"
         : "bg-muted-foreground/50";
   return (
-    <div className="ml-auto flex items-center gap-3 text-xs">
+    <div className="ml-auto flex shrink-0 items-center gap-2 text-xs sm:gap-3">
       <span className="flex items-center gap-1.5">
-        <span className={cn("size-2 rounded-full", dot, state === "running" && "animate-pulse")} />
+        <span className={cn("size-2 shrink-0 rounded-full", dot, state === "running" && "animate-pulse")} />
         <span className="text-muted-foreground">{status ? (STATE_LABEL[state!] ?? state) : "…"}</span>
-        {status && !status.wsConnected && <span className="text-muted-foreground">· WS 断开</span>}
+        {status && !status.wsConnected && (
+          <span className="text-muted-foreground hidden sm:inline">· WS 断开</span>
+        )}
       </span>
       <PollingIndicator />
       <ThemeToggle />

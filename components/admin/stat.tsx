@@ -15,18 +15,20 @@ export function StatCard({
   value,
   icon: Icon,
   loading,
+  className,
 }: {
   label: ReactNode;
   value: ReactNode;
   icon?: ComponentType<{ className?: string }>;
   loading?: boolean;
+  className?: string;
 }) {
   return (
-    <Card size="sm">
+    <Card size="sm" className={className}>
       <CardHeader>
         <CardDescription className="flex items-center gap-2">
-          {Icon && <Icon className="size-3.5" />}
-          {label}
+          {Icon && <Icon className="size-3.5 shrink-0" />}
+          <span className="truncate">{label}</span>
         </CardDescription>
         <CardTitle className="text-xl tabular-nums">
           {loading ? <Skeleton className="h-6 w-14" /> : value}
