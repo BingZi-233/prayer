@@ -11,7 +11,7 @@ import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { RelativeTime } from "@/components/relative-time";
 import { PageHeader } from "@/components/admin/page-header";
-import { StatCard, StatGrid } from "@/components/admin/stat";
+import { MetricBadge, MetricBadgeRow } from "@/components/admin/stat";
 import { SectionCard } from "@/components/admin/section-card";
 import { DataState } from "@/components/admin/data-state";
 import { usePolling } from "@/components/admin/use-polling";
@@ -105,17 +105,18 @@ export default function ProactivePage() {
         }
       />
 
-      <StatGrid>
-        <StatCard
+      <MetricBadgeRow>
+        <MetricBadge
           icon={Zap}
           label="状态"
-          value={!d ? "—" : d.config.enabled ? <span className="text-green-600 dark:text-green-500">已启用</span> : <span className="text-muted-foreground">已关闭</span>}
           loading={loading}
+          value={!d ? "—" : d.config.enabled ? "已启用" : "已关闭"}
+          tone={d?.config.enabled ? "primary" : undefined}
         />
-        <StatCard icon={Timer} label="静默阈值" value={d ? min(d.config.silenceMs) : "—"} loading={loading} />
-        <StatCard icon={Clock} label="扫描周期" value={d ? min(d.config.scanMs) : "—"} loading={loading} />
-        <StatCard icon={Hash} label="单次上限" value={d ? d.config.maxPerScan : "—"} loading={loading} />
-      </StatGrid>
+        <MetricBadge icon={Timer} label="静默阈值" value={d ? min(d.config.silenceMs) : "—"} loading={loading} />
+        <MetricBadge icon={Clock} label="扫描周期" value={d ? min(d.config.scanMs) : "—"} loading={loading} />
+        <MetricBadge icon={Hash} label="单次上限" value={d ? d.config.maxPerScan : "—"} loading={loading} />
+      </MetricBadgeRow>
 
       <SectionCard title="每群兜底进度">
         <DataState

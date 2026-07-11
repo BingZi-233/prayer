@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type ComponentType, type ReactNode } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
 import {
@@ -35,7 +35,7 @@ import {
 } from "@/components/ui/dialog";
 import { PageHeader } from "@/components/admin/page-header";
 import { SectionCard } from "@/components/admin/section-card";
-import { cn } from "@/lib/utils";
+import { MetricBadge } from "@/components/admin/stat";
 
 interface Status {
   state: string;
@@ -89,43 +89,6 @@ const STATE_LABEL: Record<string, string> = {
   starting: "启动中",
   error: "错误",
 };
-
-/** 指标徽章:标签 + 数值,可标警示 / 主色 */
-function MetricBadge({
-  label,
-  value,
-  icon: Icon,
-  warn,
-  tone,
-  loading,
-}: {
-  label: string;
-  value: ReactNode;
-  icon?: ComponentType<{ className?: string }>;
-  warn?: boolean;
-  tone?: "primary";
-  loading?: boolean;
-}) {
-  return (
-    <Badge
-      variant={warn ? "destructive" : tone === "primary" ? "default" : "secondary"}
-      className={cn(
-        "h-8 gap-1.5 px-2.5 text-xs font-normal",
-        !warn && tone !== "primary" && "bg-muted text-foreground",
-      )}
-    >
-      {Icon && <Icon className="size-3 opacity-70" />}
-      <span className={cn(tone === "primary" || warn ? "opacity-80" : "text-muted-foreground")}>
-        {label}
-      </span>
-      {loading ? (
-        <Skeleton className="h-3.5 w-6" />
-      ) : (
-        <span className="font-semibold tabular-nums">{value}</span>
-      )}
-    </Badge>
-  );
-}
 
 export default function StatusPage() {
   const [s, setS] = useState<Status | null>(null);

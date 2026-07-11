@@ -52,7 +52,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { PageHeader } from "@/components/admin/page-header";
-import { StatCard, StatGrid } from "@/components/admin/stat";
+import { MetricBadge, MetricBadgeRow } from "@/components/admin/stat";
 import { SectionCard } from "@/components/admin/section-card";
 import { DataState, EmptyState } from "@/components/admin/data-state";
 import { cn } from "@/lib/utils";
@@ -566,12 +566,12 @@ export default function KbPage() {
         }
       />
 
-      <StatGrid className="shrink-0">
-        <StatCard icon={Boxes} label="总分块" value={stats ? stats.chunks : "—"} loading={!stats} />
-        <StatCard icon={Database} label="已建向量" value={stats ? stats.vecs : "—"} loading={!stats} />
-        <StatCard icon={FileText} label="文档数" value={stats ? stats.docs.length : "—"} loading={!stats} />
-        <StatCard icon={Ruler} label="向量维度" value={stats ? stats.dim : "—"} loading={!stats} />
-      </StatGrid>
+      <MetricBadgeRow className="shrink-0">
+        <MetricBadge icon={Boxes} label="总分块" value={stats ? stats.chunks : "—"} loading={!stats} />
+        <MetricBadge icon={Database} label="已建向量" value={stats ? stats.vecs : "—"} loading={!stats} />
+        <MetricBadge icon={FileText} label="文档数" value={stats ? stats.docs.length : "—"} loading={!stats} />
+        <MetricBadge icon={Ruler} label="向量维度" value={stats ? stats.dim : "—"} loading={!stats} />
+      </MetricBadgeRow>
 
       {(orphan !== 0 || dirtyDocs.size > 0 || unsaved) && (
         <div className="border-destructive/40 text-destructive flex shrink-0 flex-col gap-1 rounded-md border px-3 py-2 text-sm font-medium">

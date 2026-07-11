@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/dialog";
 import { RelativeTime } from "@/components/relative-time";
 import { PageHeader } from "@/components/admin/page-header";
-import { StatCard, StatGrid } from "@/components/admin/stat";
+import { MetricBadge, MetricBadgeRow } from "@/components/admin/stat";
 import { SectionCard } from "@/components/admin/section-card";
 import { DataState } from "@/components/admin/data-state";
 import { usePolling } from "@/components/admin/use-polling";
@@ -136,28 +136,20 @@ export default function ReflectionPage() {
         }
       />
 
-      <StatGrid>
-        <StatCard icon={Clock} label="扫描周期" value={d ? min(d.config.scanMs) : "—"} loading={loading} />
-        <StatCard icon={Clock} label="沉降延迟" value={d ? min(d.config.settleMs) : "—"} loading={loading} />
-        <StatCard icon={Layers} label="回溯窗口" value={d ? min(d.config.lookbackMs) : "—"} loading={loading} />
-        <StatCard icon={Layers} label="窗口上限" value={d ? d.config.windowMax : "—"} loading={loading} />
-        <StatCard icon={Timer} label="整理周期" value={d ? hr(d.config.compactMs) : "—"} loading={loading} />
-        <StatCard
+      <MetricBadgeRow>
+        <MetricBadge icon={Clock} label="扫描周期" value={d ? min(d.config.scanMs) : "—"} loading={loading} />
+        <MetricBadge icon={Clock} label="沉降延迟" value={d ? min(d.config.settleMs) : "—"} loading={loading} />
+        <MetricBadge icon={Layers} label="回溯窗口" value={d ? min(d.config.lookbackMs) : "—"} loading={loading} />
+        <MetricBadge icon={Layers} label="窗口上限" value={d ? d.config.windowMax : "—"} loading={loading} />
+        <MetricBadge icon={Timer} label="整理周期" value={d ? hr(d.config.compactMs) : "—"} loading={loading} />
+        <MetricBadge
           icon={Gauge}
-          label="整理触发阈值"
-          value={
-            d ? (
-              <span className="flex flex-col">
-                <span>{d.config.compactMinEntries} 条</span>
-                <span className="text-muted-foreground text-xs font-normal">
-                  当前 {entryCount} 条 · {willCompact ? "将触发整理" : "未达阈值"}
-                </span>
-              </span>
-            ) : "—"
-          }
+          label="整理阈值"
           loading={loading}
+          value={d ? `${entryCount}/${d.config.compactMinEntries}` : "—"}
+          tone={willCompact ? "primary" : undefined}
         />
-      </StatGrid>
+      </MetricBadgeRow>
 
       <SectionCard title="每群反思进度">
         <DataState
