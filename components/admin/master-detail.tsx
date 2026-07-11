@@ -48,20 +48,24 @@ export function MasterDetail({
   const narrow = useNarrow(breakpoint);
 
   if (narrow) {
-    if (!selected) {
-      return <div className={cn("flex min-h-0 min-w-0 flex-1 flex-col", className)}>{list}</div>;
-    }
+    // list 与 detail 都保持挂载,用 hidden 切换 —— 避免卸载 list 子树导致
+    // 返回后滚动位置/非受控 DOM 状态丢失。
     return (
       <div className={cn("flex min-h-0 min-w-0 flex-1 flex-col", className)}>
-        <button
-          type="button"
-          onClick={onBack}
-          className="text-muted-foreground hover:text-foreground -mx-1 mb-2 flex h-11 shrink-0 items-center gap-1 px-1 text-sm"
-        >
-          <ChevronLeft className="size-4" />
-          {backLabel}
-        </button>
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col">{detail}</div>
+        <div className={cn("flex min-h-0 min-w-0 flex-1 flex-col", selected && "hidden")}>
+          {list}
+        </div>
+        <div className={cn("flex min-h-0 min-w-0 flex-1 flex-col", !selected && "hidden")}>
+          <button
+            type="button"
+            onClick={onBack}
+            className="text-muted-foreground hover:text-foreground -mx-1 mb-2 flex h-11 shrink-0 items-center gap-1 px-1 text-sm"
+          >
+            <ChevronLeft className="size-4" />
+            {backLabel}
+          </button>
+          {detail}
+        </div>
       </div>
     );
   }
