@@ -2,7 +2,14 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import { openDb } from "@/lib/db/index";
 import { Repo } from "@/lib/db/repo";
 import { bus } from "@/lib/bus";
-import { runScan, registerReflectionPoller } from "@/lib/agent/reflection-poller";
+import {
+  runScan,
+  registerReflectionPoller,
+  isDuplicateOfHits,
+  textNearlySame,
+  bigramJaccard,
+  collectKbContext,
+} from "@/lib/agent/reflection-poller";
 
 let repo: Repo;
 const embed = async () => new Float32Array([1, 0, 0]); // 与 openDb(:memory:,3) 一致
@@ -39,6 +46,26 @@ const opts = (over: Record<string, unknown> = {}) => ({
 beforeEach(() => {
   bus.removeAllListeners();
   repo = new Repo(openDb(":memory:", 3));
+});
+
+describe("reflection-poller 去重 helpers", () => {
+  it("textNearlySame / bigramJaccard 识别近义与包含", () => {
+    expect(textNearlySame("退款一般 3 个工作日到账", "退款一般3个工作日到账")).toBe(true);
+    expect(textNearlySame("退款一般3个工作日到账", "说明:退款一般3个工作日到账。")).toBe(true);
+    expect(textNearlySame("退款多久", "如何改密码")).toBe(false);
+    expect(bigramJaccard("abcdefgh", "abcdefgh")).toBe(1);
+  });
+
+  it("isDuplicateOfHits:文本重合或向量近且相关 → 重复", () => {
+    const hits = [{ content: "退款一般3个工作日到账", distance: 0.1 }];
+    expect(isDuplicateOfHits("退款一般 3 个工作日到账", hits, 0.45).duplicate).toBe(true);
+    expect(isDuplicateOfHits("如何修改登录密码步骤一打开设置", hits, 0.45).duplicate).toBe(false);
+    // 距离远但文本完全一致仍判重
+    expect(
+      isDuplicateOfHits("退款一般3个工作日到账", [{ content: "退款一般3个工作日到账", distance: 9 }], 0.45)
+        .duplicate
+    ).toBe(true);
+  });
 });
 
 describe("reflection-poller runScan", () => {
@@ -136,9 +163,49 @@ describe("reflection-poller runScan", () => {
     };
     await runScan(opts({ queryFn: qf as never, windowMax: 60 }));
     expect(captured).toContain("在我的订单页点退款"); // 回答必须出现在喂给 LLM 的转录里
+    expect(captured).toContain("【已有知识库相关片段】");
   });
 
-  it("多群:各群 band 有管理发言 → 都被处理并各沉淀一条", async () => {
+  it("prompt 注入已有知识库片段,供 LLM 去重", async () => {
+    repo.insertKbEntry("faq/refund.md", "退款一般三个工作日到账", "faq/refund.md", new Float32Array([1, 0, 0]));
+    seed(100, 200, "member", "退款多久?", NOW - 5000);
+    seed(100, 201, "admin", "3 个工作日", NOW - 4000);
+    let captured = "";
+    const qf = (args: { prompt: string }) => {
+      captured = args.prompt;
+      return fakeQuery("[]")();
+    };
+    await runScan(opts({ queryFn: qf as never }));
+    expect(captured).toContain("【已有知识库相关片段】");
+    expect(captured).toContain("退款一般三个工作日到账");
+  });
+
+  it("入库前硬去重:与已有知识库近义 → 不重复入库", async () => {
+    repo.insertKbEntry(
+      "faq/refund.md",
+      "退款一般3个工作日到账",
+      "faq/refund.md",
+      new Float32Array([1, 0, 0])
+    );
+    seed(100, 200, "member", "退款多久?", NOW - 5000);
+    seed(100, 201, "admin", "3 个工作日", NOW - 4000);
+    const spy = vi.fn();
+    bus.on("action.send", spy);
+    await runScan(
+      opts({
+        queryFn: fakeQuery(
+          '[{"question":"退款多久","answer":"3天","effective":true,"faq":"退款一般 3 个工作日到账"}]'
+        ) as never,
+      })
+    );
+    // 仅基础文档 1 条,无新增 human-reflection
+    const refs = repo.reflectionEntries();
+    expect(refs).toHaveLength(0);
+    expect(spy).not.toHaveBeenCalled();
+    expect(repo.groupReflectCursor(100)).toBe(NOW - 1000); // 仍推进
+  });
+
+  it("多群同 FAQ → 去重只沉淀 1 条", async () => {
     seed(100, 201, "admin", "群100答案", NOW - 4000);
     seed(200, 202, "admin", "群200答案", NOW - 4000);
     await runScan(
@@ -148,7 +215,28 @@ describe("reflection-poller runScan", () => {
       })
     );
     const hits = repo.searchKb(new Float32Array([1, 0, 0]), 10);
-    expect(hits).toHaveLength(2);
+    // 相同 FAQ 第二次被硬去重
+    expect(hits.filter((h) => h.content === "通用知识条")).toHaveLength(1);
+    expect(repo.groupReflectCursor(100)).toBe(NOW - 1000);
+    expect(repo.groupReflectCursor(200)).toBe(NOW - 1000);
+  });
+
+  it("多群不同 FAQ → 各沉淀一条", async () => {
+    seed(100, 201, "admin", "群100答案", NOW - 4000);
+    seed(200, 202, "admin", "群200答案", NOW - 4000);
+    const qf = (args: { prompt: string }) => {
+      if (args.prompt.includes("群100答案")) {
+        return fakeQuery(
+          '[{"question":"q1","answer":"a1","effective":true,"faq":"关于退款周期的说明是三个工作日"}]'
+        )();
+      }
+      return fakeQuery(
+        '[{"question":"q2","answer":"a2","effective":true,"faq":"修改密码请到设置页安全中心操作"}]'
+      )();
+    };
+    await runScan(opts({ enabledGroups: [100, 200], queryFn: qf as never }));
+    const refs = repo.reflectionEntries();
+    expect(refs).toHaveLength(2);
   });
 
   it("单群处理抛错 → 该群游标不推进(下轮重试),其他群照常沉淀", async () => {
@@ -202,5 +290,14 @@ describe("reflection-poller runScan", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe("collectKbContext", () => {
+  it("检索去重并按距离排序截断", async () => {
+    repo.insertKbEntry("a.md", "退款政策说明", "a.md", new Float32Array([1, 0, 0]));
+    repo.insertKbEntry("b.md", "密码重置流程", "b.md", new Float32Array([1, 0, 0]));
+    const hits = await collectKbContext(repo, embed, ["退款多久", "退款"], 1);
+    expect(hits).toHaveLength(1);
   });
 });
