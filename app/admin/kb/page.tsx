@@ -54,6 +54,7 @@ import {
 import { PageHeader } from "@/components/admin/page-header";
 import { MetricBadge, MetricBadgeRow } from "@/components/admin/stat";
 import { SectionCard } from "@/components/admin/section-card";
+import { MasterDetail } from "@/components/admin/master-detail";
 import { DataState, EmptyState } from "@/components/admin/data-state";
 import { cn } from "@/lib/utils";
 
@@ -304,6 +305,17 @@ export default function KbPage() {
       return;
     }
     void openFile(f);
+  }
+
+  function closeFile() {
+    if (unsaved) {
+      setPendingNav({ type: "clear" });
+      return;
+    }
+    setActive(null);
+    setContent("");
+    setSavedContent("");
+    setChunks([]);
   }
 
   function confirmDiscard() {
@@ -596,196 +608,202 @@ export default function KbPage() {
         </div>
       )}
 
-      <div className="grid min-h-0 min-w-0 flex-1 gap-4 md:grid-cols-[minmax(0,280px)_minmax(0,1fr)]">
-        {/* ── 左栏:目录树 ── */}
-        <SectionCard
-          title="文件"
-          description={files ? `${filteredFiles.length}${query ? ` / ${files.length}` : ""} 个` : undefined}
-          className="flex min-h-0 min-w-0 flex-col overflow-hidden"
-          contentClassName="flex min-h-0 min-w-0 flex-1 flex-col gap-2"
-        >
-          <div className="relative shrink-0">
-            <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2" />
-            <Input
-              placeholder="搜索路径…"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              className="h-8 pr-8 pl-8 text-xs"
-            />
-            {query && (
-              <button
-                type="button"
-                className="text-muted-foreground hover:text-foreground absolute top-1/2 right-2 -translate-y-1/2"
-                onClick={() => setQuery("")}
-                aria-label="清除"
-              >
-                <X className="size-3.5" />
-              </button>
-            )}
-          </div>
-
-          <DataState
-            loading={files === null}
-            empty={filteredFiles.length === 0}
-            emptyIcon={FileText}
-            emptyTitle={files?.length === 0 ? "暂无文档" : "无匹配"}
-            emptyDescription={
-              files?.length === 0 ? "点「新建」创建文档，或放入 .md / .txt 文件。" : "换个关键词试试。"
-            }
-            skeleton={<Skeleton className="h-32 w-full" />}
-          >
-            {/* 原生滚动：滚动条占位，不叠在 badge/文件名上（ScrollArea 为 overlay 会遮挡） */}
-            <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto pr-1">
-              <div className="flex min-w-0 flex-col gap-0.5 pb-2">{renderTree(tree)}</div>
-            </div>
-          </DataState>
-        </SectionCard>
-
-        {/* ── 右栏:编辑器 ── */}
-        {active ? (
+      <MasterDetail
+        selected={!!active}
+        onBack={closeFile}
+        breakpoint="md"
+        listWidth="280px"
+        backLabel="返回文件列表"
+        list={
           <SectionCard
-            title={
-              <span className="flex min-w-0 items-center gap-2">
-                <span className="truncate font-mono text-sm" title={active}>
-                  {active}
-                </span>
-                {unsaved && (
-                  <Badge variant="destructive" className="shrink-0">
-                    未保存
-                  </Badge>
-                )}
-                {!unsaved && dirtyDocs.has(active) && (
-                  <Badge variant="outline" className="text-destructive shrink-0">
-                    未重建
-                  </Badge>
-                )}
-              </span>
-            }
-            icon={FileText}
+            title="文件"
+            description={files ? `${filteredFiles.length}${query ? ` / ${files.length}` : ""} 个` : undefined}
             className="flex min-h-0 min-w-0 flex-col overflow-hidden"
             contentClassName="flex min-h-0 min-w-0 flex-1 flex-col gap-2"
-            action={
-              <div className="flex flex-wrap gap-1">
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="h-7 text-xs"
-                  disabled={busyFs}
-                  onClick={() => {
-                    setRenamePath(active);
-                    setRenameOpen(true);
-                  }}
-                >
-                  <Pencil data-icon="inline-start" />
-                  重命名
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="text-destructive h-7 text-xs"
-                  disabled={busyFs}
-                  onClick={() => setDeleteOpen(true)}
-                >
-                  <Trash2 data-icon="inline-start" />
-                  删除
-                </Button>
-              </div>
-            }
           >
-            {loadingFile ? (
-              <Skeleton className="min-h-40 flex-1" />
-            ) : (
-              <Tabs
-                value={tab}
-                onValueChange={(v) => setTab(v as typeof tab)}
-                className="flex min-h-0 flex-1 flex-col"
-              >
-                <TabsList className="shrink-0">
-                  <TabsTrigger value="edit">
-                    <Code2 data-icon="inline-start" />
-                    编辑
-                  </TabsTrigger>
-                  <TabsTrigger value="preview">
-                    <Eye data-icon="inline-start" />
-                    预览
-                  </TabsTrigger>
-                  <TabsTrigger value="chunks">
-                    分块
-                    {chunksOf(active) > 0 ? ` (${chunksOf(active)})` : ""}
-                  </TabsTrigger>
-                </TabsList>
+            <div className="relative shrink-0">
+              <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2" />
+              <Input
+                placeholder="搜索路径…"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                className="h-8 pr-8 pl-8 text-xs"
+              />
+              {query && (
+                <button
+                  type="button"
+                  className="text-muted-foreground hover:text-foreground absolute top-1/2 right-2 -translate-y-1/2"
+                  onClick={() => setQuery("")}
+                  aria-label="清除"
+                >
+                  <X className="size-3.5" />
+                </button>
+              )}
+            </div>
 
-                <TabsContent value="edit" className="mt-2 flex min-h-0 flex-1 flex-col gap-2 data-[state=inactive]:hidden">
-                  <Textarea
-                    value={content}
-                    onChange={(e) => setContent(e.target.value)}
-                    className="min-h-0 flex-1 resize-none font-mono text-sm"
-                    spellCheck={false}
-                  />
-                  <div className="flex shrink-0 flex-wrap items-center gap-2">
-                    <Button onClick={() => void saveOnly()} disabled={saving || ingesting || !unsaved} variant="outline" size="sm">
-                      {saving ? <Spinner data-icon="inline-start" /> : <Save data-icon="inline-start" />}
-                      仅保存
-                    </Button>
-                    <Button onClick={() => void saveAndIngest()} disabled={saving || ingesting} size="sm">
-                      {saving || ingesting ? <Spinner data-icon="inline-start" /> : <Save data-icon="inline-start" />}
-                      保存并生效
-                    </Button>
-                    {dirty && (
-                      <span className="text-muted-foreground text-xs">
-                        {unsaved ? "有未保存改动" : "已保存，待重建索引"}
-                      </span>
-                    )}
-                    <span className="text-muted-foreground ml-auto tabular-nums text-xs">
-                      {content.length.toLocaleString()} 字
-                    </span>
-                  </div>
-                </TabsContent>
-
-                <TabsContent value="preview" className="mt-2 min-h-0 flex-1 overflow-hidden data-[state=inactive]:hidden">
-                  <ScrollArea className="h-full rounded-md border p-4">
-                    <MarkdownBody source={content} />
-                  </ScrollArea>
-                </TabsContent>
-
-                <TabsContent value="chunks" className="mt-2 min-h-0 flex-1 overflow-hidden data-[state=inactive]:hidden">
-                  <DataState
-                    loading={loadingChunks}
-                    empty={chunks.length === 0}
-                    emptyIcon={Boxes}
-                    emptyTitle="尚无分块"
-                    emptyDescription="点「保存并生效」或「重建索引」后生成。"
-                    skeleton={<Skeleton className="h-40 w-full" />}
+            <DataState
+              loading={files === null}
+              empty={filteredFiles.length === 0}
+              emptyIcon={FileText}
+              emptyTitle={files?.length === 0 ? "暂无文档" : "无匹配"}
+              emptyDescription={
+                files?.length === 0 ? "点「新建」创建文档，或放入 .md / .txt 文件。" : "换个关键词试试。"
+              }
+              skeleton={<Skeleton className="h-32 w-full" />}
+            >
+              {/* 原生滚动：滚动条占位，不叠在 badge/文件名上（ScrollArea 为 overlay 会遮挡） */}
+              <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto pr-1">
+                <div className="flex min-w-0 flex-col gap-0.5 pb-2">{renderTree(tree)}</div>
+              </div>
+            </DataState>
+          </SectionCard>
+        }
+        detail={
+          active ? (
+            <SectionCard
+              title={
+                <span className="flex min-w-0 items-center gap-2">
+                  <span className="truncate font-mono text-sm" title={active}>
+                    {active}
+                  </span>
+                  {unsaved && (
+                    <Badge variant="destructive" className="shrink-0">
+                      未保存
+                    </Badge>
+                  )}
+                  {!unsaved && dirtyDocs.has(active) && (
+                    <Badge variant="outline" className="text-destructive shrink-0">
+                      未重建
+                    </Badge>
+                  )}
+                </span>
+              }
+              icon={FileText}
+              className="flex min-h-0 min-w-0 flex-col overflow-hidden"
+              contentClassName="flex min-h-0 min-w-0 flex-1 flex-col gap-2"
+              action={
+                <div className="flex flex-wrap gap-1">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 text-xs"
+                    disabled={busyFs}
+                    onClick={() => {
+                      setRenamePath(active);
+                      setRenameOpen(true);
+                    }}
                   >
-                    <ScrollArea className="h-full pr-3">
-                      <div className="flex flex-col gap-2 pb-2">
-                        {chunks.map((c, i) => (
-                          <div key={c.id} className="bg-muted/40 rounded-md border p-3">
-                            <div className="text-muted-foreground mb-1.5 flex items-center justify-between text-xs">
-                              <span>#{i + 1}</span>
-                              <span className="tabular-nums">{c.content.length} 字</span>
-                            </div>
-                            <p className="text-sm whitespace-pre-wrap">{c.content}</p>
-                          </div>
-                        ))}
-                      </div>
-                    </ScrollArea>
-                  </DataState>
-                </TabsContent>
-              </Tabs>
-            )}
-          </SectionCard>
-        ) : (
-          <SectionCard title="预览" className="flex min-h-0 min-w-0 flex-col" contentClassName="flex flex-1 items-center justify-center">
+                    <Pencil data-icon="inline-start" />
+                    重命名
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="text-destructive h-7 text-xs"
+                    disabled={busyFs}
+                    onClick={() => setDeleteOpen(true)}
+                  >
+                    <Trash2 data-icon="inline-start" />
+                    删除
+                  </Button>
+                </div>
+              }
+            >
+              {loadingFile ? (
+                <Skeleton className="min-h-40 flex-1" />
+              ) : (
+                <Tabs
+                  value={tab}
+                  onValueChange={(v) => setTab(v as typeof tab)}
+                  className="flex min-h-0 flex-1 flex-col"
+                >
+                  <TabsList className="shrink-0">
+                    <TabsTrigger value="edit">
+                      <Code2 data-icon="inline-start" />
+                      编辑
+                    </TabsTrigger>
+                    <TabsTrigger value="preview">
+                      <Eye data-icon="inline-start" />
+                      预览
+                    </TabsTrigger>
+                    <TabsTrigger value="chunks">
+                      分块
+                      {chunksOf(active) > 0 ? ` (${chunksOf(active)})` : ""}
+                    </TabsTrigger>
+                  </TabsList>
 
-            <EmptyState
-              icon={BookOpen}
-              title="未选择文件"
-              description="从左侧选择文档，或点「新建」创建。"
-            />
-          </SectionCard>
-        )}
-      </div>
+                  <TabsContent value="edit" className="mt-2 flex min-h-0 flex-1 flex-col gap-2 data-[state=inactive]:hidden">
+                    <Textarea
+                      value={content}
+                      onChange={(e) => setContent(e.target.value)}
+                      className="min-h-0 flex-1 resize-none font-mono text-sm"
+                      spellCheck={false}
+                    />
+                    <div className="flex shrink-0 flex-wrap items-center gap-2">
+                      <Button onClick={() => void saveOnly()} disabled={saving || ingesting || !unsaved} variant="outline" size="sm">
+                        {saving ? <Spinner data-icon="inline-start" /> : <Save data-icon="inline-start" />}
+                        仅保存
+                      </Button>
+                      <Button onClick={() => void saveAndIngest()} disabled={saving || ingesting} size="sm">
+                        {saving || ingesting ? <Spinner data-icon="inline-start" /> : <Save data-icon="inline-start" />}
+                        保存并生效
+                      </Button>
+                      {dirty && (
+                        <span className="text-muted-foreground text-xs">
+                          {unsaved ? "有未保存改动" : "已保存，待重建索引"}
+                        </span>
+                      )}
+                      <span className="text-muted-foreground ml-auto tabular-nums text-xs">
+                        {content.length.toLocaleString()} 字
+                      </span>
+                    </div>
+                  </TabsContent>
+
+                  <TabsContent value="preview" className="mt-2 min-h-0 flex-1 overflow-hidden data-[state=inactive]:hidden">
+                    <ScrollArea className="h-full rounded-md border p-4">
+                      <MarkdownBody source={content} />
+                    </ScrollArea>
+                  </TabsContent>
+
+                  <TabsContent value="chunks" className="mt-2 min-h-0 flex-1 overflow-hidden data-[state=inactive]:hidden">
+                    <DataState
+                      loading={loadingChunks}
+                      empty={chunks.length === 0}
+                      emptyIcon={Boxes}
+                      emptyTitle="尚无分块"
+                      emptyDescription="点「保存并生效」或「重建索引」后生成。"
+                      skeleton={<Skeleton className="h-40 w-full" />}
+                    >
+                      <ScrollArea className="h-full pr-3">
+                        <div className="flex flex-col gap-2 pb-2">
+                          {chunks.map((c, i) => (
+                            <div key={c.id} className="bg-muted/40 rounded-md border p-3">
+                              <div className="text-muted-foreground mb-1.5 flex items-center justify-between text-xs">
+                                <span>#{i + 1}</span>
+                                <span className="tabular-nums">{c.content.length} 字</span>
+                              </div>
+                              <p className="text-sm whitespace-pre-wrap">{c.content}</p>
+                            </div>
+                          ))}
+                        </div>
+                      </ScrollArea>
+                    </DataState>
+                  </TabsContent>
+                </Tabs>
+              )}
+            </SectionCard>
+          ) : (
+            <SectionCard title="预览" className="flex min-h-0 min-w-0 flex-col" contentClassName="flex flex-1 items-center justify-center">
+
+              <EmptyState
+                icon={BookOpen}
+                title="未选择文件"
+                description="从左侧选择文档，或点「新建」创建。"
+              />
+            </SectionCard>
+          )
+        }
+      />
 
       {/* 新建 */}
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
