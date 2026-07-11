@@ -2,7 +2,19 @@
 
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { Save, ChevronsUpDown, X } from "lucide-react";
+import {
+  Save,
+  ChevronsUpDown,
+  X,
+  Cable,
+  MessageSquareText,
+  Bot,
+  MessagesSquare,
+  Brain,
+  Zap,
+  Bell,
+  HardDrive,
+} from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
@@ -196,7 +208,7 @@ export default function ConfigPage() {
   };
 
   return (
-    <div className="flex max-w-2xl flex-col gap-6">
+    <div className="flex flex-col gap-6">
       <PageHeader
         title="配置"
         description="修改后保存即热重载。常用项用「分钟」显示;高级毫秒值仍写入配置。"
@@ -208,19 +220,19 @@ export default function ConfigPage() {
         }
       />
 
-      {!cfg ? (
-        <Skeleton className="h-72 w-full" />
-      ) : (
+      {!cfg && <Skeleton className="h-72 w-full" />}
+
+      {cfg && (
         <Tabs defaultValue="onebot">
-          <TabsList className="h-auto w-full flex-wrap justify-start">
-            <TabsTrigger value="onebot">OneBot</TabsTrigger>
-            <TabsTrigger value="reply">回复体验</TabsTrigger>
-            <TabsTrigger value="sdk">Claude SDK</TabsTrigger>
-            <TabsTrigger value="session">会话</TabsTrigger>
-            <TabsTrigger value="reflect">反思</TabsTrigger>
-            <TabsTrigger value="proactive">主动回复</TabsTrigger>
-            <TabsTrigger value="notify">通知</TabsTrigger>
-            <TabsTrigger value="storage">存储</TabsTrigger>
+          <TabsList className="h-auto flex-wrap">
+            <TabsTrigger value="onebot"><Cable data-icon="inline-start" /> OneBot</TabsTrigger>
+            <TabsTrigger value="reply"><MessageSquareText data-icon="inline-start" /> 回复体验</TabsTrigger>
+            <TabsTrigger value="sdk"><Bot data-icon="inline-start" /> Claude SDK</TabsTrigger>
+            <TabsTrigger value="session"><MessagesSquare data-icon="inline-start" /> 会话</TabsTrigger>
+            <TabsTrigger value="reflect"><Brain data-icon="inline-start" /> 反思</TabsTrigger>
+            <TabsTrigger value="proactive"><Zap data-icon="inline-start" /> 主动回复</TabsTrigger>
+            <TabsTrigger value="notify"><Bell data-icon="inline-start" /> 通知</TabsTrigger>
+            <TabsTrigger value="storage"><HardDrive data-icon="inline-start" /> 存储</TabsTrigger>
           </TabsList>
 
           <TabsContent value="onebot">
