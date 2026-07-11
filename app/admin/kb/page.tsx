@@ -202,6 +202,13 @@ export default function KbPage() {
     if (r.ok) setStats(r.data as KbStats);
   }, []);
 
+  const resetActiveFile = useCallback(() => {
+    setActive(null);
+    setContent("");
+    setSavedContent("");
+    setChunks([]);
+  }, []);
+
   useEffect(() => {
     void loadFiles();
     void loadStats();
@@ -312,10 +319,7 @@ export default function KbPage() {
       setPendingNav({ type: "clear" });
       return;
     }
-    setActive(null);
-    setContent("");
-    setSavedContent("");
-    setChunks([]);
+    resetActiveFile();
   }
 
   function confirmDiscard() {
@@ -324,10 +328,7 @@ export default function KbPage() {
     if (!p) return;
     if (p.type === "open") void openFile(p.path);
     else {
-      setActive(null);
-      setContent("");
-      setSavedContent("");
-      setChunks([]);
+      resetActiveFile();
     }
   }
 
@@ -466,10 +467,7 @@ export default function KbPage() {
           n.delete(active);
           return n;
         });
-        setActive(null);
-        setContent("");
-        setSavedContent("");
-        setChunks([]);
+        resetActiveFile();
         await loadFiles();
         void loadStats();
       } else toast.error(r.error || "删除失败");
