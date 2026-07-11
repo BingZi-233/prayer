@@ -92,7 +92,7 @@ export default function ProactivePage() {
     <div className="flex flex-col gap-6">
       <PageHeader
         title="主动回复"
-        description="无人应答兜底:生效群有人提问且久无人应答时 bot 主动补位。"
+        description="生效群里有人提问且长时间无人应答时，机器人会谨慎补位。"
         actions={
           <div className="flex items-center gap-2">
             <span className="text-muted-foreground text-sm">全局开关</span>
@@ -118,7 +118,7 @@ export default function ProactivePage() {
         <MetricBadge icon={Hash} label="单次上限" value={d ? d.config.maxPerScan : "—"} loading={loading} />
       </MetricBadgeRow>
 
-      <SectionCard title="每群兜底进度">
+      <SectionCard title="每群进度">
         <DataState
           loading={loading}
           error={error}
@@ -126,7 +126,7 @@ export default function ProactivePage() {
           onRetry={refresh}
           emptyIcon={Zap}
           emptyTitle="暂无生效群"
-          emptyDescription="在配置页选择生效群并启用主动回复后,进度会在此显示。"
+          emptyDescription="在配置页选择生效群并启用主动回复后，进度会显示在这里。"
           skeleton={<Skeleton className="h-40 w-full" />}
         >
           <Table>
@@ -135,7 +135,7 @@ export default function ProactivePage() {
                 <TableHead>群</TableHead>
                 <TableHead>生效</TableHead>
                 <TableHead>主动</TableHead>
-                <TableHead>游标时间</TableHead>
+                <TableHead>上次扫描</TableHead>
                 <TableHead className="text-right">滞后</TableHead>
                 <TableHead className="text-right">主动回复数</TableHead>
               </TableRow>
@@ -163,7 +163,7 @@ export default function ProactivePage() {
       <SectionCard
         icon={MessageSquareReply}
         title={`最近主动回复${d ? ` (${d.total})` : ""}`}
-        description="质检:标「不当」会计入护栏指标,便于纠偏。"
+        description="可标记回复是否恰当，便于后续优化。"
       >
         <DataState
           loading={loading}
@@ -172,7 +172,7 @@ export default function ProactivePage() {
           onRetry={refresh}
           emptyIcon={MessageSquareReply}
           emptyTitle="暂无主动回复"
-          emptyDescription="bot 主动补位后,记录会在此展示。"
+          emptyDescription="机器人主动补位后，记录会显示在这里。"
           skeleton={<Skeleton className="h-40 w-full" />}
         >
           <ScrollArea className="h-[400px] pr-3">

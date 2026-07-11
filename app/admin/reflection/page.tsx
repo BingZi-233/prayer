@@ -92,7 +92,7 @@ export default function ReflectionPage() {
         body: JSON.stringify({ id, action }),
       }).then((x) => x.json());
       if (r.ok) {
-        if (action === "promote") toast.success(`已升格到 docs/kb/${r.data.file}`);
+        if (action === "promote") toast.success(`已升格为正式文档：${r.data.file}`);
         else toast.success(action === "approve" ? "已恢复入库" : "已驳回");
         await refresh();
       } else toast.error(r.error || "操作失败");
@@ -107,7 +107,7 @@ export default function ReflectionPage() {
     <div className="flex flex-col gap-6">
       <PageHeader
         title="反思"
-        description="被动反思:从人工回复沉淀知识,自动入库。"
+        description="从人工答复中提炼知识，自动写入知识库。"
         actions={
           <Dialog>
             <DialogTrigger asChild>
@@ -120,7 +120,7 @@ export default function ReflectionPage() {
               <DialogHeader>
                 <DialogTitle>立即整理反思条目</DialogTitle>
                 <DialogDescription>
-                  对当前 {entryCount} 条沉淀条目做一次近义合并/去冗整理。
+                  对当前 {entryCount} 条知识做一次去重与合并整理。
                 </DialogDescription>
               </DialogHeader>
               <DialogFooter>
@@ -138,8 +138,8 @@ export default function ReflectionPage() {
 
       <MetricBadgeRow>
         <MetricBadge icon={Clock} label="扫描周期" value={d ? min(d.config.scanMs) : "—"} loading={loading} />
-        <MetricBadge icon={Clock} label="沉降延迟" value={d ? min(d.config.settleMs) : "—"} loading={loading} />
-        <MetricBadge icon={Layers} label="回溯窗口" value={d ? min(d.config.lookbackMs) : "—"} loading={loading} />
+        <MetricBadge icon={Clock} label="静置等待" value={d ? min(d.config.settleMs) : "—"} loading={loading} />
+        <MetricBadge icon={Layers} label="回溯范围" value={d ? min(d.config.lookbackMs) : "—"} loading={loading} />
         <MetricBadge icon={Layers} label="窗口上限" value={d ? d.config.windowMax : "—"} loading={loading} />
         <MetricBadge icon={Timer} label="整理周期" value={d ? hr(d.config.compactMs) : "—"} loading={loading} />
         <MetricBadge
@@ -158,18 +158,18 @@ export default function ReflectionPage() {
           empty={!d || d.groups.length === 0}
           onRetry={refresh}
           emptyIcon={Brain}
-          emptyTitle="暂无反思记录"
-          emptyDescription="生效群有人工回复后会在此沉淀反思。"
+          emptyTitle="暂无进度"
+          emptyDescription="生效群出现人工答复后，进度会显示在这里。"
           skeleton={<Skeleton className="h-40 w-full" />}
         >
           <Table>
             <TableHeader>
               <TableRow>
                 <TableHead>群</TableHead>
-                <TableHead>游标时间</TableHead>
+                <TableHead>上次扫描</TableHead>
                 <TableHead className="text-right">滞后</TableHead>
                 <TableHead className="text-right">缓冲消息</TableHead>
-                <TableHead className="text-right">已沉淀</TableHead>
+                <TableHead className="text-right">已入库</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -190,7 +190,7 @@ export default function ReflectionPage() {
       <SectionCard
         icon={GitCompareArrows}
         title={`整理记录${d ? ` (${d.compactions.length})` : ""}`}
-        description="每次压缩整理的时间与前后条数。"
+        description="每次整理的时间与条目变化。"
       >
         <DataState
           loading={loading}
@@ -199,7 +199,7 @@ export default function ReflectionPage() {
           onRetry={refresh}
           emptyIcon={GitCompareArrows}
           emptyTitle="暂无整理记录"
-          emptyDescription={`沉淀条目达到阈值(${d?.config.compactMinEntries ?? "—"} 条)后会定期整理。`}
+          emptyDescription={`知识条目达到阈值（${d?.config.compactMinEntries ?? "—"} 条）后会定期整理。`}
           skeleton={<Skeleton className="h-32 w-full" />}
         >
           <div className="max-h-[calc(3*2.875rem+2*0.5rem)] space-y-2 overflow-y-auto pr-1">
@@ -248,8 +248,8 @@ export default function ReflectionPage() {
 
       <SectionCard
         icon={Brain}
-        title={`沉淀知识${d ? ` (${d.entries.length})` : ""}`}
-        description="沉淀后自动入库;可驳回或升格写入 docs/kb/promoted/。"
+        title={`知识条目${d ? ` (${d.entries.length})` : ""}`}
+        description="自动入库的知识；可驳回，或升格为正式文档。"
       >
         <DataState
           loading={loading}
@@ -257,8 +257,8 @@ export default function ReflectionPage() {
           empty={!d || d.entries.length === 0}
           onRetry={refresh}
           emptyIcon={Brain}
-          emptyTitle="暂无沉淀知识"
-          emptyDescription="反思写入 kb 的条目会在此展示。"
+          emptyTitle="暂无知识条目"
+          emptyDescription="提炼出的知识会出现在这里。"
           skeleton={<Skeleton className="h-40 w-full" />}
         >
           <ScrollArea className="h-[400px] pr-3">
@@ -293,7 +293,7 @@ export default function ReflectionPage() {
                             <X className="size-3.5" />
                           </Button>
                         )}
-                        <Button size="sm" variant="ghost" className="h-7 px-2" disabled={acting === e.id} onClick={() => act(e.id, "promote")} title="升格正式文档">
+                        <Button size="sm" variant="ghost" className="h-7 px-2" disabled={acting === e.id} onClick={() => act(e.id, "promote")} title="升格为正式文档">
                           <FileUp className="size-3.5" />
                         </Button>
                       </span>

@@ -50,7 +50,7 @@ export default function PluginsPage() {
     <div className="flex flex-col gap-6">
       <PageHeader
         title="插件"
-        description="安装 / 更新 / 启停插件,操作后 agent 自动重载生效。"
+        description="安装、更新与启停插件，操作后自动生效。"
       />
 
       {err && <ErrorState description={err} onRetry={load} />}
@@ -58,7 +58,7 @@ export default function PluginsPage() {
       <SectionCard
         title="添加插件"
         icon={Plus}
-        description="GitHub 传 owner/repo,本地目录传绝对路径;marketplace 名与插件名见其 marketplace.json。"
+        description="GitHub 填写 owner/repo，本地填写绝对路径；市场名与插件名见 marketplace.json。"
         contentClassName="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"
       >
         <div className="flex flex-col gap-1.5">
@@ -88,9 +88,9 @@ export default function PluginsPage() {
         </div>
       </SectionCard>
 
-      <SectionCard title="已装插件" description="当前安装的插件,可启停、更新或卸载。">
+      <SectionCard title="已装插件" description="已安装的插件，可启停、更新或卸载。">
         {plugins.length === 0 ? (
-          <EmptyState icon={Puzzle} title="暂无插件" description="用上方表单安装。" />
+          <EmptyState icon={Puzzle} title="暂无插件" description="使用上方表单安装插件。" />
         ) : (
           <Table>
             <TableHeader>

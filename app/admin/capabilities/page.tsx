@@ -65,7 +65,7 @@ export default function CapabilitiesPage() {
     <div className="flex flex-col gap-6">
       <PageHeader
         title="能力"
-        description="Agent 运行时持有的插件、技能、MCP server 与工具门控。"
+        description="当前加载的插件、技能、MCP 与工具权限。"
         actions={
           <Button onClick={() => load(true)} disabled={busy}>
             {busy ? <Spinner data-icon="inline-start" /> : <RotateCw data-icon="inline-start" />}
@@ -88,9 +88,9 @@ export default function CapabilitiesPage() {
           </TabsList>
 
           <TabsContent value="plugins">
-            <SectionCard title="插件" description="本地加载的 plugin。" contentClassName="flex flex-col gap-3">
+            <SectionCard title="插件" description="已加载的本地插件。" contentClassName="flex flex-col gap-3">
               {caps.plugins.length === 0 ? (
-                <EmptyState icon={Puzzle} title="无插件" description="Agent 未加载任何本地 plugin。" />
+                <EmptyState icon={Puzzle} title="无插件" description="尚未加载任何本地插件。" />
               ) : (
                 caps.plugins.map((p) => (
                   <CapItem
@@ -106,9 +106,9 @@ export default function CapabilitiesPage() {
           </TabsContent>
 
           <TabsContent value="skills">
-            <SectionCard title="技能" description="Agent 可自动触发的 skill。" contentClassName="flex flex-col gap-3">
+            <SectionCard title="技能" description="机器人可自动触发的技能。" contentClassName="flex flex-col gap-3">
               {caps.skills.length === 0 ? (
-                <EmptyState icon={Boxes} title="无技能" description="Agent 未注册任何 skill。" />
+                <EmptyState icon={Boxes} title="无技能" description="尚未注册任何技能。" />
               ) : (
                 caps.skills.map((s) => (
                   <CapItem
@@ -124,9 +124,9 @@ export default function CapabilitiesPage() {
           </TabsContent>
 
           <TabsContent value="mcp">
-            <SectionCard title="MCP Server" description="已注册的 MCP server 及其工具。" contentClassName="flex flex-col gap-3">
+            <SectionCard title="MCP Server" description="已注册的 MCP 服务及其工具。" contentClassName="flex flex-col gap-3">
               {caps.mcpServers.length === 0 ? (
-                <EmptyState icon={Plug} title="无 MCP Server" description="未注册任何 MCP server。" />
+                <EmptyState icon={Plug} title="无 MCP Server" description="尚未注册任何 MCP 服务。" />
               ) : (
                 caps.mcpServers.map((m) => (
                   <CapItem
@@ -158,7 +158,7 @@ export default function CapabilitiesPage() {
           </TabsContent>
 
           <TabsContent value="policy">
-            <SectionCard title="工具门控" description="本 host 对工具调用的白名单与限制。" contentClassName="flex flex-col gap-4">
+            <SectionCard title="工具门控" description="工具调用的放行与限制规则。" contentClassName="flex flex-col gap-4">
               <div className="flex flex-col gap-2">
                 <span className="text-sm font-medium">无条件放行</span>
                 <div className="flex flex-wrap gap-2">

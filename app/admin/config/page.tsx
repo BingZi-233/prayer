@@ -164,7 +164,7 @@ export default function ConfigPage() {
       }).then((x) => x.json());
       if (r.ok) {
         setCfg({ groupPolicies: {}, extraAtQQs: [], ...r.data });
-        toast.success("配置已保存,Agent 已热重载");
+        toast.success("配置已保存并生效");
       } else {
         toast.error(`保存失败:${r.error}`);
       }
@@ -211,11 +211,11 @@ export default function ConfigPage() {
     <div className="flex flex-col gap-6">
       <PageHeader
         title="配置"
-        description="修改后保存即热重载。常用项用「分钟」显示;高级毫秒值仍写入配置。"
+        description="修改后保存即生效。时间类配置按分钟显示。"
         actions={
           <Button onClick={save} disabled={busy || !cfg}>
             {busy ? <Spinner data-icon="inline-start" /> : <Save data-icon="inline-start" />}
-            {busy ? "保存中…" : "保存并热重载"}
+            {busy ? "保存中…" : "保存并生效"}
           </Button>
         }
       />
@@ -236,7 +236,7 @@ export default function ConfigPage() {
           </TabsList>
 
           <TabsContent value="onebot">
-            <SectionCard title="OneBot 连接" description="NapCat 正向 WS 连接与群参数。">
+            <SectionCard title="OneBot 连接" description="OneBot 连接地址与群相关参数。">
               <FieldGroup>
                 <Field>
                   <FieldLabel htmlFor="onebotWsUrl">WS 地址</FieldLabel>
@@ -391,7 +391,7 @@ export default function ConfigPage() {
           </TabsContent>
 
           <TabsContent value="reply">
-            <SectionCard title="回复体验" description="ACK、支持链接、长文拆条。">
+            <SectionCard title="回复体验" description="收到消息确认、支持链接与长文拆分。">
               <FieldGroup>
                 <Field orientation="horizontal">
                   <Checkbox
@@ -423,7 +423,7 @@ export default function ConfigPage() {
           <TabsContent value="sdk">
             <SectionCard
               title="Claude Agent SDK"
-              description="模型、Base URL、Auth Token 等 SDK 凭证不由本程序管理,请直接编辑配置目录下的 settings.json。"
+              description="模型与 API 密钥请直接编辑配置目录下的 settings.json，本页仅管理配置路径。"
             >
               <FieldGroup>
                 <Field>
@@ -435,7 +435,7 @@ export default function ConfigPage() {
           </TabsContent>
 
           <TabsContent value="session">
-            <SectionCard title="会话" description="空闲超时后开全新对话。">
+            <SectionCard title="会话" description="空闲超时后开启新对话。">
               <FieldGroup>
                 <Field>
                   <FieldLabel htmlFor="resumeTtlMin">会话空闲超时(分钟)</FieldLabel>
@@ -452,7 +452,7 @@ export default function ConfigPage() {
           </TabsContent>
 
           <TabsContent value="reflect">
-            <SectionCard title="反思(知识沉淀)" description="从人工答复沉淀知识。时间单位:分钟 / 小时。">
+            <SectionCard title="反思(知识沉淀)" description="从人工答复提炼知识。时间单位：分钟 / 小时。">
               <FieldGroup>
                 <Field>
                   <FieldLabel>扫描间隔(分钟)</FieldLabel>
@@ -487,7 +487,7 @@ export default function ConfigPage() {
           </TabsContent>
 
           <TabsContent value="proactive">
-            <SectionCard title="主动回复" description="无人应答时谨慎补位。可在主动回复页一键开关。">
+            <SectionCard title="主动回复" description="无人应答时谨慎补位。也可在主动回复页一键开关。">
               <FieldGroup>
                 <Field orientation="horizontal">
                   <Checkbox
@@ -500,7 +500,7 @@ export default function ConfigPage() {
                 <Field>
                   <FieldLabel>静默阈值(分钟)</FieldLabel>
                   <Input inputMode="numeric" value={msToMin(cfg.proactiveSilenceMs)} onChange={(e) => setCfg({ ...cfg, proactiveSilenceMs: minToMs(e.target.value) })} />
-                  <FieldDescription>默认 3 分钟无人应答才兜底。</FieldDescription>
+                  <FieldDescription>默认 3 分钟无人应答才主动补位。</FieldDescription>
                 </Field>
                 <Field>
                   <FieldLabel>扫描间隔(分钟)</FieldLabel>
@@ -508,7 +508,7 @@ export default function ConfigPage() {
                   <FieldDescription>默认 1 分钟。</FieldDescription>
                 </Field>
                 <Field>
-                  <FieldLabel htmlFor="proactiveMaxPerScan">单次最多兜底数</FieldLabel>
+                  <FieldLabel htmlFor="proactiveMaxPerScan">单次最多补位数</FieldLabel>
                   <Input id="proactiveMaxPerScan" inputMode="numeric" value={num("proactiveMaxPerScan")} onChange={(e) => upd("proactiveMaxPerScan", e.target.value)} />
                 </Field>
               </FieldGroup>
@@ -516,7 +516,7 @@ export default function ConfigPage() {
           </TabsContent>
 
           <TabsContent value="notify">
-            <SectionCard title="通知" description="向管理群推送的运行时通知。">
+            <SectionCard title="通知" description="向管理群推送的运行通知。">
               <FieldGroup>
                 <Field orientation="horizontal">
                   <Checkbox
@@ -531,7 +531,7 @@ export default function ConfigPage() {
           </TabsContent>
 
           <TabsContent value="storage">
-            <SectionCard title="存储" description="SQLite 数据库路径。">
+            <SectionCard title="存储" description="数据库文件路径。">
               <FieldGroup>
                 <Field>
                   <FieldLabel htmlFor="dbPath">数据库路径</FieldLabel>

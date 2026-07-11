@@ -331,7 +331,7 @@ export default function KbPage() {
       if (r.ok) {
         setSavedContent(content);
         setDirtyDocs((prev) => new Set(prev).add(active));
-        toast.success(`已保存 ${active}（尚未重建向量）`);
+        toast.success(`已保存 ${active}（尚未重建索引）`);
         return true;
       }
       toast.error(`保存失败:${r.error}`);
@@ -347,20 +347,20 @@ export default function KbPage() {
       const r = await fetch("/api/kb/ingest", { method: "POST" }).then((x) => x.json());
       if (r.ok) {
         const results = (r.data ?? []) as IngestResult[];
-        if (results.length === 0) toast.success("embedding 重建完成:无文件");
+        if (results.length === 0) toast.success("索引重建完成：无文件");
         else {
           const totalChunks = results.reduce((sum, x) => sum + x.chunks, 0);
-          toast.success(`embedding 重建完成: ${results.length} 个文档, 共 ${totalChunks} 个分块`);
+          toast.success(`索引重建完成：${results.length} 个文档，共 ${totalChunks} 个分块`);
         }
         setDirtyDocs(new Set());
         void loadStats();
         if (active) void loadChunks(active);
         return true;
       }
-      toast.error(`重建失败:${r.error}`);
+      toast.error(`重建失败：${r.error}`);
       return false;
     } catch (e) {
-      toast.error(`重建失败:${e instanceof Error ? e.message : String(e)}`);
+      toast.error(`重建失败：${e instanceof Error ? e.message : String(e)}`);
       return false;
     } finally {
       setIngesting(false);
@@ -544,7 +544,7 @@ export default function KbPage() {
     <div className="flex h-[calc(100svh-6.5rem)] min-h-0 flex-col gap-4">
       <PageHeader
         title="知识库"
-        description="编辑 docs/kb。⌘/Ctrl+S 保存。「保存并生效」= 写盘 + 重建 embedding。"
+        description="编辑知识文档。⌘/Ctrl+S 保存；「保存并生效」会写入并重建检索索引。"
         actions={
           <div className="flex flex-wrap gap-2">
             <Button
@@ -560,17 +560,17 @@ export default function KbPage() {
             </Button>
             <Button variant="secondary" size="sm" onClick={() => void ingest()} disabled={ingesting}>
               {ingesting ? <Spinner data-icon="inline-start" /> : <RefreshCw data-icon="inline-start" />}
-              {ingesting ? "重建中…" : "重建 embedding"}
+              {ingesting ? "重建中…" : "重建索引"}
             </Button>
           </div>
         }
       />
 
       <MetricBadgeRow className="shrink-0">
-        <MetricBadge icon={Boxes} label="总分块" value={stats ? stats.chunks : "—"} loading={!stats} />
-        <MetricBadge icon={Database} label="已建向量" value={stats ? stats.vecs : "—"} loading={!stats} />
+        <MetricBadge icon={Boxes} label="分块数" value={stats ? stats.chunks : "—"} loading={!stats} />
+        <MetricBadge icon={Database} label="已索引" value={stats ? stats.vecs : "—"} loading={!stats} />
         <MetricBadge icon={FileText} label="文档数" value={stats ? stats.docs.length : "—"} loading={!stats} />
-        <MetricBadge icon={Ruler} label="向量维度" value={stats ? stats.dim : "—"} loading={!stats} />
+        <MetricBadge icon={Ruler} label="索引维度" value={stats ? stats.dim : "—"} loading={!stats} />
       </MetricBadgeRow>
 
       {(orphan !== 0 || dirtyDocs.size > 0 || unsaved) && (
@@ -584,7 +584,7 @@ export default function KbPage() {
           {orphan !== 0 && (
             <div className="flex items-center gap-2">
               <AlertTriangle className="size-4 shrink-0" />
-              {orphan} 个分块缺向量，需重建 embedding。
+              {orphan} 个分块缺少向量，需重建索引。
             </div>
           )}
           {dirtyDocs.size > 0 && (
@@ -630,7 +630,7 @@ export default function KbPage() {
             emptyIcon={FileText}
             emptyTitle={files?.length === 0 ? "暂无文档" : "无匹配"}
             emptyDescription={
-              files?.length === 0 ? "点「新建」或向 docs/kb 放入 .md / .txt。" : "换个关键词试试。"
+              files?.length === 0 ? "点「新建」创建文档，或放入 .md / .txt 文件。" : "换个关键词试试。"
             }
             skeleton={<Skeleton className="h-32 w-full" />}
           >
@@ -733,7 +733,7 @@ export default function KbPage() {
                     </Button>
                     {dirty && (
                       <span className="text-muted-foreground text-xs">
-                        {unsaved ? "有未保存改动" : "已保存，待重建向量"}
+                        {unsaved ? "有未保存改动" : "已保存，待重建索引"}
                       </span>
                     )}
                     <span className="text-muted-foreground ml-auto tabular-nums text-xs">
@@ -754,7 +754,7 @@ export default function KbPage() {
                     empty={chunks.length === 0}
                     emptyIcon={Boxes}
                     emptyTitle="尚无分块"
-                    emptyDescription="点「保存并生效」或「重建 embedding」后生成。"
+                    emptyDescription="点「保存并生效」或「重建索引」后生成。"
                     skeleton={<Skeleton className="h-40 w-full" />}
                   >
                     <ScrollArea className="h-full pr-3">
@@ -781,7 +781,7 @@ export default function KbPage() {
             <EmptyState
               icon={BookOpen}
               title="未选择文件"
-              description="从左侧目录树选择文档，或点「新建」创建。"
+              description="从左侧选择文档，或点「新建」创建。"
             />
           </SectionCard>
         )}
@@ -792,7 +792,7 @@ export default function KbPage() {
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>新建文档</DialogTitle>
-            <DialogDescription>相对 docs/kb 的路径，仅支持 .md / .txt。可含子目录，如 faq/new.md。</DialogDescription>
+            <DialogDescription>相对知识库根目录的路径，仅支持 .md / .txt。可含子目录，如 faq/new.md。</DialogDescription>
           </DialogHeader>
           <Input
             placeholder="faq/example.md"
@@ -818,7 +818,7 @@ export default function KbPage() {
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>重命名 / 移动</DialogTitle>
-            <DialogDescription>目标路径已存在则失败。会同步更新向量库中的 doc 标识。</DialogDescription>
+            <DialogDescription>若目标路径已存在将失败。会同步更新检索索引中的文档标识。</DialogDescription>
           </DialogHeader>
           <Input
             value={renamePath}
@@ -847,7 +847,7 @@ export default function KbPage() {
               删除文档？
             </AlertDialogTitle>
             <AlertDialogDescription>
-              将删除磁盘文件 <span className="font-mono">{active}</span>，并清除对应向量分块。此操作不可撤销。
+              将删除文件 <span className="font-mono">{active}</span>，并清除对应检索分块。此操作不可撤销。
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

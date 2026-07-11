@@ -191,7 +191,7 @@ function SessionsInner() {
     (sess: Sess, opts: { pushUrl?: boolean; forceReload?: boolean } = {}) => {
       const { pushUrl = true, forceReload = false } = opts;
       if (!sess.sessionId) {
-        toast.message("无对话记录", { description: "该会话尚无 transcript(可能刚建或已过期)。" });
+        toast.message("无对话记录", { description: "该会话尚无对话记录（可能刚创建或已过期）。" });
         return;
       }
       // 已是当前会话且不强制重载 → 只同步 URL
@@ -338,13 +338,13 @@ function SessionsInner() {
 
   const confirmSteps = [
     {
-      title: `重开全部 ${sessions?.length ?? 0} 个会话?`,
-      desc: "每个会话下条消息将各自开启全新对话,历史记录仍保留可查。",
+      title: `重开全部 ${sessions?.length ?? 0} 个会话？`,
+      desc: "每个会话的下一条消息将开启全新对话，历史记录仍可查看。",
       cta: "继续",
     },
     {
       title: "最后确认",
-      desc: "此操作立即生效且不可撤销:机器人将丢失当前对话记忆。",
+      desc: "此操作立即生效且不可撤销，机器人将丢失当前对话记忆。",
       cta: "执行全部重开",
     },
   ];
@@ -395,7 +395,7 @@ function SessionsInner() {
         body: JSON.stringify({ action: "resume_handoff", key }),
       }).then((x) => x.json());
       if (r.ok) {
-        toast.success("已恢复自动客服");
+        toast.success("已恢复自动答");
         await loadSessions();
       } else toast.error(r.error || "恢复失败");
     } catch (e) {
@@ -473,7 +473,7 @@ function SessionsInner() {
     <div className="flex h-[calc(100svh-6.5rem)] min-h-0 flex-col gap-4">
       <PageHeader
         title="会话"
-        description="查看对话 transcript;人工会话可一键恢复自动答。左=客户 · 右=bot/工具。"
+        description="查看群聊对话记录；人工接待中的会话可一键恢复自动答。"
         actions={
           <>
             <Button
@@ -634,7 +634,7 @@ function SessionsInner() {
                   </Badge>
                 ) : (
                   <Badge variant="outline" className="shrink-0">
-                    已结束续接
+                    已结束
                   </Badge>
                 )}
               </span>
@@ -644,9 +644,9 @@ function SessionsInner() {
           }
           description={
             activeSess?.lastQuestion
-              ? `Q: ${activeSess.lastQuestion}`
+              ? activeSess.lastQuestion
               : active
-                ? "选中会话的 transcript"
+                ? "对话记录"
                 : undefined
           }
           className="flex min-h-0 flex-col overflow-hidden"
@@ -672,7 +672,7 @@ function SessionsInner() {
                   className="h-7 text-xs"
                   disabled={!lastBotText}
                   onClick={() => lastBotText && void copyText(lastBotText)}
-                  title="复制最新 bot 回复"
+                  title="复制最新回复"
                 >
                   <Copy data-icon="inline-start" />
                   复制回复
@@ -704,18 +704,18 @@ function SessionsInner() {
             <EmptyState
               icon={MessagesSquare}
               title="未选择会话"
-              description="从左侧选择一个会话查看对话记录。人工会话会优先排在前面。"
+              description="从左侧选择会话查看记录。人工接待中的会话会优先排在前面。"
             />
           ) : (
             <DataState
               loading={loading}
               empty={visibleMsgs.length === 0 && !loading}
               emptyIcon={MessagesSquare}
-              emptyTitle={msgs.length > 0 && !showTools ? "仅有工具调用" : "无 transcript"}
+              emptyTitle={msgs.length > 0 && !showTools ? "仅有工具调用" : "暂无对话记录"}
               emptyDescription={
                 msgs.length > 0 && !showTools
-                  ? "点右上角「工具」显示工具调用记录。"
-                  : "session 文件未找到或为空。"
+                  ? "点右上角「工具」可显示工具调用。"
+                  : "对话记录不存在或为空。"
               }
               skeleton={<Skeleton className="m-4 h-40" />}
             >
@@ -813,7 +813,7 @@ function SessionsInner() {
                                   )}
                                 >
                                   <span className="text-muted-foreground/50">
-                                    {customer ? "客户" : m.role === "assistant" ? "bot" : m.role}
+                                    {customer ? "客户" : m.role === "assistant" ? "机器人" : m.role}
                                   </span>
                                   {clock(m.ts)}
                                   {!customer && m.model && (
@@ -845,10 +845,10 @@ function SessionsInner() {
           <AlertDialogHeader>
             <AlertDialogTitle className="flex items-center gap-2">
               <TriangleAlert className="text-destructive size-5" />
-              重开该会话?
+              重开该会话？
             </AlertDialogTitle>
             <AlertDialogDescription>
-              {resetKey ? keyLabel(resetKey) : ""} 的下条消息将开启全新对话,历史仍可查。
+              {resetKey ? keyLabel(resetKey) : ""} 的下一条消息将开启全新对话，历史记录仍可查看。
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

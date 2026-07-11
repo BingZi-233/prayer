@@ -212,11 +212,11 @@ export default function GroupsPage() {
     <div className="flex flex-col gap-6">
       <PageHeader
         title="生效群"
-        description={`开关 bot 应答,并按群覆盖主动补位 / 转人工通知策略。${overrideCount ? `当前 ${overrideCount} 个群有独立策略。` : "未设置覆盖时全部跟随全局配置。"}`}
+        description={`按群开关机器人应答，并覆盖主动补位 / 转人工通知策略。${overrideCount ? `当前 ${overrideCount} 个群有独立策略。` : "未设置覆盖时全部跟随全局配置。"}`}
       />
 
       {globals && (
-        <SectionCard title="全局默认" description="配置页可改;此处仅展示,供对比各群覆盖。">
+        <SectionCard title="全局默认" description="全局默认值，可在配置页修改；此处便于对比各群覆盖。">
           <div className="text-muted-foreground flex flex-wrap gap-3 text-sm">
             <Badge variant={globals.proactiveEnabled ? "default" : "secondary"}>
               主动补位 {globals.proactiveEnabled ? "开" : "关"}
@@ -235,7 +235,7 @@ export default function GroupsPage() {
           onRetry={refresh}
           emptyIcon={Users}
           emptyTitle="暂无群活动"
-          emptyDescription="生效群产生消息后会在此展示。也可从配置页先勾选生效群。"
+          emptyDescription="生效群有消息后会出现在这里。也可先在配置页勾选生效群。"
           skeleton={<Skeleton className="h-40 w-full" />}
         >
           <Table>
@@ -319,7 +319,7 @@ export default function GroupsPage() {
                           variant="ghost"
                           className="h-7 px-2 text-xs"
                           disabled={busyId === r.groupId}
-                          title="清除覆盖,跟随全局"
+                          title="清除覆盖，跟随全局"
                           onClick={() => clearPolicy(r.groupId)}
                         >
                           <RotateCcw className="size-3.5" />

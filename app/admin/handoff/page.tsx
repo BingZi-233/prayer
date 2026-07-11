@@ -83,7 +83,7 @@ export default function HandoffQueuePage() {
     <div className="flex flex-col gap-6">
       <PageHeader
         title="人工队列"
-        description={`当前 ${rows.length} 个会话在人工接待。群管处理完后可「恢复自动答」,bot 会重新接管。`}
+        description={`当前 ${rows.length} 个会话在人工接待。处理完成后可恢复自动答。`}
       />
 
       <SectionCard title="待接待会话" icon={LifeBuoy}>
@@ -94,7 +94,7 @@ export default function HandoffQueuePage() {
           onRetry={refresh}
           emptyIcon={LifeBuoy}
           emptyTitle="队列为空"
-          emptyDescription="用户发「人工」转接后会出现在此。也可在「会话」页筛选人工会话。"
+          emptyDescription="用户请求转人工后会出现在此。也可在「会话」页筛选。"
           skeleton={<Skeleton className="h-40 w-full" />}
         >
           <Table>

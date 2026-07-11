@@ -148,7 +148,7 @@ export default function StatusPage() {
       <PageHeader
         className="shrink-0"
         title="运行状态"
-        description="实时监控 Agent 运行、连接与业务结果。"
+        description="查看运行状态、连接与今日业务结果。"
         actions={
           <Dialog>
             <DialogTrigger asChild>
@@ -159,9 +159,9 @@ export default function StatusPage() {
             </DialogTrigger>
             <DialogContent>
               <DialogHeader>
-                <DialogTitle>确认重启 Agent?</DialogTitle>
+                <DialogTitle>确认重启 Agent？</DialogTitle>
                 <DialogDescription>
-                  重启会断开当前 WS 连接并重新装配 Agent,进行中的会话可能中断。
+                  重启会断开当前连接并重新加载服务，进行中的会话可能中断。
                 </DialogDescription>
               </DialogHeader>
               <DialogFooter>
@@ -189,7 +189,7 @@ export default function StatusPage() {
               有待处理事项
             </span>
           }
-          description="真实待办:人工会话 / WS 断开。"
+          description="请尽快处理人工会话，或检查连接状态。"
           contentClassName="flex flex-wrap gap-2"
         >
           {(ov?.humanSessions ?? 0) > 0 && (
@@ -206,7 +206,7 @@ export default function StatusPage() {
         className="shrink-0"
         title="运行概况"
         icon={Activity}
-        description="运行态、连接与核心计数。"
+        description="当前状态与关键计数。"
         contentClassName="flex flex-wrap gap-2"
       >
         <MetricBadge
@@ -227,7 +227,7 @@ export default function StatusPage() {
         />
         <MetricBadge icon={Users} label="活动会话" loading={!s} value={s?.sessionCount ?? "—"} />
         <MetricBadge icon={ShieldCheck} label="生效群" loading={!ov} value={ov?.enabledGroups ?? "—"} />
-        <MetricBadge icon={Brain} label="沉淀知识" loading={!ov} value={ov?.reflectionCount ?? "—"} />
+        <MetricBadge icon={Brain} label="知识条目" loading={!ov} value={ov?.reflectionCount ?? "—"} />
         <MetricBadge
           icon={Target}
           label="自动解决率"
@@ -239,9 +239,9 @@ export default function StatusPage() {
       {/* ── 第 4 行:今日结果独占整行,指标徽章化 ── */}
       <SectionCard
         className="shrink-0"
-        title="今日结果指标"
+        title="今日结果"
         icon={Target}
-        description="0 点起:自动答 / 主动 / 转人工 / 错误。自动解决率 ≈ 自动答 ÷ (自动+主动+转人工+错误)。"
+        description="今日 0 点起累计。自动解决率 = 自动答 ÷ (自动答 + 主动补位 + 转人工 + 错误)。"
         contentClassName="flex flex-wrap gap-2"
       >
         {!m ? (
@@ -257,15 +257,15 @@ export default function StatusPage() {
             <MetricBadge icon={LifeBuoy} label="转人工" value={m.handoff} warn={m.handoff > 0} />
             <MetricBadge
               icon={TriangleAlert}
-              label="错误兜底"
+              label="错误"
               value={m.error}
               warn={m.error > 0}
             />
             <MetricBadge icon={ShieldCheck} label="意图拦截" value={m.blocked} />
-            <MetricBadge icon={Zap} label="主动沉默" value={m.proactiveSilent} />
+            <MetricBadge icon={Zap} label="主动跳过" value={m.proactiveSilent} />
             <MetricBadge
               icon={TriangleAlert}
-              label="主动标不当"
+              label="标为不当"
               value={m.proactiveBad}
               warn={m.proactiveBad > 0}
             />
@@ -287,12 +287,12 @@ export default function StatusPage() {
 
       {/* ── 第 5 行:LLM 用量独占整行,吃满剩余高度 ── */}
       <SectionCard
-        title="LLM 用量 / 缓存命中"
+        title="模型用量"
         icon={Gauge}
         description={
           usage?.daily
-            ? `本次进程内存累计;今日持久化 $${usage.daily.costUsd.toFixed(4)}${usage.daily.budgetUsd > 0 ? ` / 预算 $${usage.daily.budgetUsd}` : ""}。`
-            : "本次进程运行以来按调用点统计。重启后内存清零,日表仍保留。"
+            ? `本次运行累计；今日已记账 $${usage.daily.costUsd.toFixed(4)}${usage.daily.budgetUsd > 0 ? ` / 预算 $${usage.daily.budgetUsd}` : ""}。`
+            : "按调用点统计本次运行用量。重启后内存计数清零，日汇总仍保留。"
         }
         action={
           usage ? (
@@ -322,9 +322,9 @@ export default function StatusPage() {
                   <th className="bg-card sticky left-0 z-20">调用点</th>
                   <th>次数</th>
                   <th>命中率</th>
-                  <th className="hidden sm:table-cell">命中/写入(tok)</th>
-                  <th className="hidden md:table-cell">未缓存(tok)</th>
-                  <th className="hidden md:table-cell">输出(tok)</th>
+                  <th className="hidden sm:table-cell">缓存命中/写入</th>
+                  <th className="hidden md:table-cell">未缓存输入</th>
+                  <th className="hidden md:table-cell">输出</th>
                   <th>成本($)</th>
                 </tr>
               </thead>
@@ -380,7 +380,7 @@ export default function StatusPage() {
               最近错误
             </span>
           }
-          description="Agent 装配或连接出错,修改配置后将自动重试。"
+          description="服务启动或连接出错，修改配置后会自动重试。"
         >
           <pre className="bg-muted text-muted-foreground max-h-24 overflow-auto rounded-md p-3 text-xs whitespace-pre-wrap">
             {s.lastError}

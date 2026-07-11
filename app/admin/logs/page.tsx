@@ -68,7 +68,7 @@ export default function LogsPage() {
     <div className="flex flex-col gap-6">
       <PageHeader
         title="运行日志"
-        description="进程内环形缓冲,最近 500 条,重启后清空。"
+        description="最近 500 条运行日志，重启后清空。"
       />
 
       <SectionCard
@@ -110,7 +110,7 @@ export default function LogsPage() {
           onRetry={refresh}
           emptyIcon={ScrollText}
           emptyTitle="暂无日志"
-          emptyDescription="Agent 运行后会输出日志。"
+          emptyDescription="服务运行后会输出日志。"
           skeleton={<Skeleton className="h-[520px] w-full" />}
         >
           {shown.length === 0 ? (
