@@ -1,6 +1,6 @@
 # 移动端适配 Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** 让全部 admin 页 + login 在移动端可用——消除横向滚动、面板重叠、点不到的控件;master-detail 页(sessions、kb)手机上单栏切换。
 
@@ -26,7 +26,7 @@
 **Files:**
 - Create: `components/admin/master-detail.tsx`
 
-- [ ] **Step 1: 写组件**
+- [x] **Step 1: 写组件**
 
 参考现有组件风格(`components/admin/page-header.tsx`:`"use client"` 非必需——page-header 是 server;但本组件用 `useIsMobile` hook,必须 client)。写入 `components/admin/master-detail.tsx`:
 
@@ -100,17 +100,17 @@ export function MasterDetail({
 }
 ```
 
-- [ ] **Step 2: typecheck**
+- [x] **Step 2: typecheck**
 
 Run: `pnpm typecheck`
 Expected: 无 error(新文件类型自洽)。
 
-- [ ] **Step 3: lint**
+- [x] **Step 3: lint**
 
 Run: `pnpm lint`
 Expected: 无 error。
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add components/admin/master-detail.tsx
@@ -124,12 +124,12 @@ git commit -m "feat(admin): 加 MasterDetail 组件(手机单栏切换/桌面双
 **Files:**
 - Modify: `app/admin/sessions/page.tsx`(约 496–616 行 list SectionCard、618 起 detail SectionCard;769/770 附近 grid div 收尾)
 
-- [ ] **Step 1: 读现状定边界**
+- [x] **Step 1: 读现状定边界**
 
 Run: `sed -n '494,500p' app/admin/sessions/page.tsx`
 确认第 496 行为 `<div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[340px_1fr]">`,其后紧跟列表 `<SectionCard>`(约 497–616)与详情 `<SectionCard>`(约 618 起),最终该 grid `</div>` 收尾。
 
-- [ ] **Step 2: import MasterDetail**
+- [x] **Step 2: import MasterDetail**
 
 在文件顶部 import 区(`SectionCard` import 同组,约 47 行)后加:
 
@@ -137,7 +137,7 @@ Run: `sed -n '494,500p' app/admin/sessions/page.tsx`
 import { MasterDetail } from "@/components/admin/master-detail";
 ```
 
-- [ ] **Step 3: 替换 grid 包裹为 MasterDetail**
+- [x] **Step 3: 替换 grid 包裹为 MasterDetail**
 
 把:
 
@@ -175,12 +175,12 @@ import { MasterDetail } from "@/components/admin/master-detail";
 
 注意:`setActive` 是该页已有 setter(约 119 行 `const [active, setActive] = useState<string | null>(null)`)。若清空选中还需重置其他 ref/URL,沿用页内已有的"打开/关闭会话"路径——若存在 `open(null)` 或 `syncUrl(null, ...)` 之类函数,`onBack` 改调它以保持 URL/ref 一致;否则 `() => setActive(null)` 即可。执行时先 grep 确认:`grep -n "syncUrl\|setActive(null)\|function open" app/admin/sessions/page.tsx`。
 
-- [ ] **Step 4: typecheck + lint**
+- [x] **Step 4: typecheck + lint**
 
 Run: `pnpm typecheck && pnpm lint`
 Expected: 无 error。
 
-- [ ] **Step 5: Playwright 验证(见 Task 5 复用同一流程,先单验 sessions)**
+- [x] **Step 5: Playwright 验证(见 Task 5 复用同一流程,先单验 sessions)**
 
 启动 dev(若未起):`pnpm dev`(0.0.0.0:3000)。用 Playwright MCP:
 1. `browser_resize` 375×667。
@@ -189,7 +189,7 @@ Expected: 无 error。
 4. 手机下应仅见会话列表(无详情空态并列)。点一条会话 → 见记录 + 顶部"‹ 返回会话列表"。点返回 → 回列表。
 5. `browser_resize` 768×1024 → 断言列表+记录双栏并存。
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add app/admin/sessions/page.tsx
@@ -203,12 +203,12 @@ git commit -m "feat(sessions): 移动端单栏切换(套 MasterDetail)"
 **Files:**
 - Modify: `app/admin/kb/page.tsx`(约 599 行 grid;左栏文件树 SectionCard;右栏 `{active ? <编辑器 SectionCard/> : <空态>}`)
 
-- [ ] **Step 1: 读现状定边界**
+- [x] **Step 1: 读现状定边界**
 
 Run: `sed -n '597,601p' app/admin/kb/page.tsx`
 确认第 599 行为 `<div className="grid min-h-0 min-w-0 flex-1 gap-4 md:grid-cols-[minmax(0,280px)_minmax(0,1fr)]">`,其后为文件树 `<SectionCard title="文件" ...>`,再后为 `{active ? (<编辑器 SectionCard/>) : (<空态/>)}`,最终该 grid `</div>` 收尾。
 
-- [ ] **Step 2: import MasterDetail**
+- [x] **Step 2: import MasterDetail**
 
 在 import 区加:
 
@@ -216,7 +216,7 @@ Run: `sed -n '597,601p' app/admin/kb/page.tsx`
 import { MasterDetail } from "@/components/admin/master-detail";
 ```
 
-- [ ] **Step 3: 替换 grid 包裹为 MasterDetail**
+- [x] **Step 3: 替换 grid 包裹为 MasterDetail**
 
 把:
 
@@ -259,16 +259,16 @@ import { MasterDetail } from "@/components/admin/master-detail";
 
 注意:`setActive` 为该页已有 setter(约 164 行)。若关闭文件还需重置 `content`/`unsaved`/tab 等,`onBack` 改调页内已有的"关闭/切换文件"逻辑;执行时先 grep:`grep -n "setActive\|function open\|selectFile\|loadFile" app/admin/kb/page.tsx`,复用最贴近"清空当前文件"的路径。若无专用函数,`() => setActive(null)` 即可(未保存改动的提醒由页内既有 `unsaved` 逻辑负责,不在本任务扩展)。
 
-- [ ] **Step 4: typecheck + lint**
+- [x] **Step 4: typecheck + lint**
 
 Run: `pnpm typecheck && pnpm lint`
 Expected: 无 error。
 
-- [ ] **Step 5: Playwright 验证**
+- [x] **Step 5: Playwright 验证**
 
 375×667:导航 `/admin/kb` → 断言无横向滚动 → 仅见文件树 → 点文件 → 见编辑器 + "‹ 返回文件列表" → 返回回文件树。768×1024:双栏并存。
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add app/admin/kb/page.tsx
@@ -282,7 +282,7 @@ git commit -m "feat(kb): 移动端单栏切换(套 MasterDetail)"
 **Files(仅在发现问题时 Modify):**
 - `app/admin/page.tsx`、`app/admin/logs/page.tsx`、`app/admin/handoff/page.tsx`、`app/admin/proactive/page.tsx`、`app/admin/reflection/page.tsx`、`app/admin/config/page.tsx`、`app/admin/groups/page.tsx`、`app/admin/capabilities/page.tsx`、`app/admin/plugins/page.tsx`、`app/login/page.tsx`
 
-- [ ] **Step 1: 逐页 375px 扫查**
+- [x] **Step 1: 逐页 375px 扫查**
 
 dev 已起。对上述每个路由,用 Playwright MCP:
 1. `browser_resize` 375×667。
@@ -290,7 +290,7 @@ dev 已起。对上述每个路由,用 Playwright MCP:
 3. `browser_evaluate` `() => { const el = document.documentElement; return { ok: el.scrollWidth <= el.clientWidth + 1, sw: el.scrollWidth, cw: el.clientWidth }; }`。
 4. 记录 `ok=false` 的页与溢出元素(用 `browser_snapshot` 或 evaluate 找出 `scrollWidth > clientWidth` 的子节点)。
 
-- [ ] **Step 2: 对溢出页补 Tailwind 断点补丁**
+- [x] **Step 2: 对溢出页补 Tailwind 断点补丁**
 
 已知合格基线(不动):admin 表格 `min-w-[32rem]`+外层 `overflow-auto`+`hidden sm:table-cell`;PageHeader `flex-col sm:flex-row`;KPI `flex-wrap`;plugins `sm:grid-cols-2 lg:grid-cols-4`;login `max-w-sm p-4`。
 
@@ -302,12 +302,12 @@ dev 已起。对上述每个路由,用 Playwright MCP:
 
 每处改完 `browser_navigate` 重载复验 `ok=true`。
 
-- [ ] **Step 3: typecheck + lint**
+- [x] **Step 3: typecheck + lint**
 
 Run: `pnpm typecheck && pnpm lint`
 Expected: 无 error。
 
-- [ ] **Step 4: Commit(若有改动)**
+- [x] **Step 4: Commit(若有改动)**
 
 ```bash
 git add -A
@@ -322,23 +322,23 @@ git commit -m "fix(admin): 补移动端溢出/断点(逐页扫查)"
 
 **Files:** 无(纯验证)
 
-- [ ] **Step 1: 375×667 全路由过一遍**
+- [x] **Step 1: 375×667 全路由过一遍**
 
 路由清单:`/login`, `/admin`, `/admin/logs`, `/admin/sessions`, `/admin/handoff`, `/admin/proactive`, `/admin/kb`, `/admin/reflection`, `/admin/config`, `/admin/groups`, `/admin/capabilities`, `/admin/plugins`。
 每页 `browser_resize` 375×667 → `browser_navigate` → 断言无横向滚动。
 
-- [ ] **Step 2: master-detail 链路**
+- [x] **Step 2: master-detail 链路**
 
 375px 下 sessions、kb 各走一遍:列表 → 点进详情 → 返回。确认返回后列表筛选/滚动状态未丢。
 
-- [ ] **Step 3: 768×1024 复验**
+- [x] **Step 3: 768×1024 复验**
 
 同清单每页 768×1024 断言无横向滚动;sessions、kb 双栏并存。
 
-- [ ] **Step 4: 交互抽查**
+- [x] **Step 4: 交互抽查**
 
 375px 下抽查:侧栏 Sheet 抽屉开合(点 header `SidebarTrigger`);config 页表单可填可提交;任一弹窗/对话框不溢出视口。
 
-- [ ] **Step 5: 记录结果**
+- [x] **Step 5: 记录结果**
 
 在执行记录里列出每页两视口的 `ok` 结果 + master-detail 链路通过情况。全绿则完成。

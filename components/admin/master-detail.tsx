@@ -47,6 +47,9 @@ export function MasterDetail({
 }) {
   const narrow = useNarrow(breakpoint);
 
+  // 注:实时拖拽窗口跨越 breakpoint 会在窄/宽两套结构间切换,导致子树重挂、
+  // list/detail 内部滚动位置重置。所有业务态由父级受控,不丢数据;此为已知取舍
+  // (真机极少触发,窄屏"返回"丢滚动的高频场景已在窄屏分支用 hidden 切换解决)。
   if (narrow) {
     // list 与 detail 都保持挂载,用 hidden 切换 —— 避免卸载 list 子树导致
     // 返回后滚动位置/非受控 DOM 状态丢失。
