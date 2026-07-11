@@ -8,6 +8,7 @@ import { registerReplyMapper } from "./agent/reply-mapper";
 import { registerMessageBuffer } from "./agent/message-buffer";
 import { registerReflectionPoller } from "./agent/reflection-poller";
 import { registerReflectionCompactor } from "./agent/reflection-compactor";
+import { registerReflectionPromoter } from "./agent/reflection-promoter";
 import { registerErrorHandler } from "./agent/error-handler";
 import { registerUnansweredPoller } from "./agent/unanswered-poller";
 import { makeAnswerabilityClassifier } from "./agent/answerability";
@@ -29,6 +30,9 @@ export interface AssembleDeps {
   reflectWindowMax?: number;
   reflectCompactMs?: number;
   reflectCompactMinEntries?: number;
+  reflectPromoteMs?: number;
+  reflectPromoteMinEntries?: number;
+  reflectPromoteMaxPerRun?: number;
   // 反思沉淀/整理后是否通知管理群。缺省 true(保持既有行为)
   reflectNotifyAdmin?: boolean;
   // 会话空闲超时(ms):超时则下条消息开全新对话,不 resume 旧会话。缺省 5 分钟
@@ -107,6 +111,18 @@ export function assemble(deps: AssembleDeps): () => void {
         adminGroupId,
         compactMs: deps.reflectCompactMs,
         minEntries: deps.reflectCompactMinEntries,
+        notifyAdmin,
+      })
+    );
+  }
+  if ((deps.reflectPromoteMs ?? 86_400_000) > 0) {
+    cleanups.push(
+      registerReflectionPromoter({
+        repo,
+        adminGroupId,
+        promoteMs: deps.reflectPromoteMs,
+        minEntries: deps.reflectPromoteMinEntries,
+        maxPerRun: deps.reflectPromoteMaxPerRun,
         notifyAdmin,
       })
     );

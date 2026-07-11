@@ -26,13 +26,15 @@ describe("reflection_meta / reflectionEntries", () => {
     });
   });
 
-  it("setReflectionStatus 可驳回 / 恢复", () => {
+  it("setReflectionStatus 可驳回 / 恢复 / 升格", () => {
     const id = repo.insertKbEntry("human-reflection", "faq", "human-reflection:100:5", vec());
     repo.insertReflectionMeta(id, 100, "q", "a");
     expect(repo.setReflectionStatus(id, "rejected")).toBe(true);
     expect(repo.reflectionEntries().find((r) => r.id === id)!.status).toBe("rejected");
     expect(repo.setReflectionStatus(id, "approved")).toBe(true);
     expect(repo.reflectionEntries().find((r) => r.id === id)!.status).toBe("approved");
+    expect(repo.setReflectionStatus(id, "promoted")).toBe(true);
+    expect(repo.reflectionEntries().find((r) => r.id === id)!.status).toBe("promoted");
   });
 
   it("migrate 回填:无 meta 的 human-reflection 补 approved 行", () => {

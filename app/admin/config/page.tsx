@@ -45,6 +45,9 @@ interface Cfg {
   reflectWindowMax: number;
   reflectCompactMs: number;
   reflectCompactMinEntries: number;
+  reflectPromoteMs: number;
+  reflectPromoteMinEntries: number;
+  reflectPromoteMaxPerRun: number;
   reflectNotifyAdmin: boolean;
   resumeTtlMs: number;
   proactiveEnabled: boolean;
@@ -75,6 +78,9 @@ const NUM_KEYS: (keyof Cfg)[] = [
   "reflectWindowMax",
   "reflectCompactMs",
   "reflectCompactMinEntries",
+  "reflectPromoteMs",
+  "reflectPromoteMinEntries",
+  "reflectPromoteMaxPerRun",
   "resumeTtlMs",
   "proactiveScanMs",
   "proactiveSilenceMs",
@@ -481,6 +487,21 @@ export default function ConfigPage() {
                 <Field>
                   <FieldLabel htmlFor="reflectCompactMinEntries">整理最少条目</FieldLabel>
                   <Input id="reflectCompactMinEntries" inputMode="numeric" value={num("reflectCompactMinEntries")} onChange={(e) => upd("reflectCompactMinEntries", e.target.value)} />
+                </Field>
+                <Field>
+                  <FieldLabel>自动升格周期(小时)</FieldLabel>
+                  <Input inputMode="numeric" value={msToHr(cfg.reflectPromoteMs)} onChange={(e) => setCfg({ ...cfg, reflectPromoteMs: hrToMs(e.target.value) })} />
+                  <FieldDescription>Agent 评审高质量反思并固化为正式文档。默认 24 小时。设 0 关闭。</FieldDescription>
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor="reflectPromoteMinEntries">升格最少候选</FieldLabel>
+                  <Input id="reflectPromoteMinEntries" inputMode="numeric" value={num("reflectPromoteMinEntries")} onChange={(e) => upd("reflectPromoteMinEntries", e.target.value)} />
+                  <FieldDescription>候选(已入库未升格)达到此数才调 LLM。默认 1。</FieldDescription>
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor="reflectPromoteMaxPerRun">单轮最多升格</FieldLabel>
+                  <Input id="reflectPromoteMaxPerRun" inputMode="numeric" value={num("reflectPromoteMaxPerRun")} onChange={(e) => upd("reflectPromoteMaxPerRun", e.target.value)} />
+                  <FieldDescription>防止一次升格过多。默认 5。</FieldDescription>
                 </Field>
               </FieldGroup>
             </SectionCard>

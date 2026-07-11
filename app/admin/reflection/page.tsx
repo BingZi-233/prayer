@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { toast } from "sonner";
-import { Brain, Clock, Layers, GitCompareArrows, Timer, Gauge, Wand2, Check, X, FileUp } from "lucide-react";
+import { Brain, Clock, Layers, GitCompareArrows, Timer, Gauge, Wand2, Check, X, FileUp, Sparkles } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
@@ -35,11 +35,21 @@ interface Entry {
   ts: number | null;
   question: string | null;
   answer: string | null;
-  status?: "pending" | "approved" | "rejected";
+  status?: "pending" | "approved" | "rejected" | "promoted";
 }
 interface Compaction { id: number; ts: number; beforeCount: number; afterCount: number; before: string[]; after: string[]; }
 interface Data {
-  config: { scanMs: number; lookbackMs: number; settleMs: number; windowMax: number; compactMs: number; compactMinEntries: number };
+  config: {
+    scanMs: number;
+    lookbackMs: number;
+    settleMs: number;
+    windowMax: number;
+    compactMs: number;
+    compactMinEntries: number;
+    promoteMs: number;
+    promoteMinEntries: number;
+    promoteMaxPerRun: number;
+  };
   groups: GroupRow[];
   entries: Entry[];
   compactions: Compaction[];
@@ -62,9 +72,12 @@ export default function ReflectionPage() {
   const { data: d, error, loading, refresh } = usePolling<Data>("/api/reflection");
   const { name } = useGroupNames();
   const [busy, setBusy] = useState(false);
+  const [promoteBusy, setPromoteBusy] = useState(false);
   const [acting, setActing] = useState<number | null>(null);
   const entryCount = d?.entries.length ?? 0;
-  const willCompact = d ? entryCount >= d.config.compactMinEntries : false;
+  const approvedCount = d?.entries.filter((e) => (e.status ?? "approved") === "approved").length ?? 0;
+  const willCompact = d ? approvedCount >= d.config.compactMinEntries : false;
+  const willPromote = d ? approvedCount >= d.config.promoteMinEntries && d.config.promoteMs > 0 : false;
 
   async function compact() {
     setBusy(true);
@@ -80,6 +93,27 @@ export default function ReflectionPage() {
     } finally {
       await refresh();
       setBusy(false);
+    }
+  }
+
+  async function autoPromote() {
+    setPromoteBusy(true);
+    try {
+      const r = await fetch("/api/reflection/promote", { method: "POST" }).then((x) => x.json());
+      if (r.ok) {
+        toast.success(
+          r.data.promoted > 0
+            ? `自动升格:评审 ${r.data.considered} 条,升格 ${r.data.promoted} 条`
+            : `升格评审完成:候选 ${r.data.considered} 条,无需升格`
+        );
+      } else {
+        toast.error(`升格失败:${r.error}`);
+      }
+    } catch (e) {
+      toast.error(`升格失败:${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      await refresh();
+      setPromoteBusy(false);
     }
   }
 
@@ -109,30 +143,36 @@ export default function ReflectionPage() {
         title="反思"
         description="从人工答复中提炼知识，自动写入知识库。"
         actions={
-          <Dialog>
-            <DialogTrigger asChild>
-              <Button disabled={busy || !willCompact}>
-                {busy ? <Spinner data-icon="inline-start" /> : <Wand2 data-icon="inline-start" />}
-                {busy ? "整理中…" : "立即整理"}
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>立即整理反思条目</DialogTitle>
-                <DialogDescription>
-                  对当前 {entryCount} 条知识做一次去重与合并整理。
-                </DialogDescription>
-              </DialogHeader>
-              <DialogFooter>
-                <DialogClose asChild>
-                  <Button variant="outline">取消</Button>
-                </DialogClose>
-                <DialogClose asChild>
-                  <Button onClick={compact} disabled={busy}>确认整理</Button>
-                </DialogClose>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
+          <div className="flex flex-wrap gap-2">
+            <Button disabled={promoteBusy || !willPromote} onClick={() => void autoPromote()}>
+              {promoteBusy ? <Spinner data-icon="inline-start" /> : <Sparkles data-icon="inline-start" />}
+              {promoteBusy ? "升格评审中…" : "立即升格评审"}
+            </Button>
+            <Dialog>
+              <DialogTrigger asChild>
+                <Button disabled={busy || !willCompact} variant="outline">
+                  {busy ? <Spinner data-icon="inline-start" /> : <Wand2 data-icon="inline-start" />}
+                  {busy ? "整理中…" : "立即整理"}
+                </Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>立即整理反思条目</DialogTitle>
+                  <DialogDescription>
+                    对当前 {entryCount} 条知识做一次近义去重合并（保留细节，不因基础文档已覆盖而删除）。
+                  </DialogDescription>
+                </DialogHeader>
+                <DialogFooter>
+                  <DialogClose asChild>
+                    <Button variant="outline">取消</Button>
+                  </DialogClose>
+                  <DialogClose asChild>
+                    <Button onClick={compact} disabled={busy}>确认整理</Button>
+                  </DialogClose>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+          </div>
         }
       />
 
@@ -146,8 +186,21 @@ export default function ReflectionPage() {
           icon={Gauge}
           label="整理阈值"
           loading={loading}
-          value={d ? `${entryCount}/${d.config.compactMinEntries}` : "—"}
+          value={d ? `${approvedCount}/${d.config.compactMinEntries}` : "—"}
           tone={willCompact ? "primary" : undefined}
+        />
+        <MetricBadge
+          icon={Sparkles}
+          label="升格周期"
+          value={d ? (d.config.promoteMs > 0 ? hr(d.config.promoteMs) : "关") : "—"}
+          loading={loading}
+        />
+        <MetricBadge
+          icon={FileUp}
+          label="待升格候选"
+          loading={loading}
+          value={d ? `${approvedCount}/${d.config.promoteMinEntries}` : "—"}
+          tone={willPromote ? "primary" : undefined}
         />
       </MetricBadgeRow>
 
@@ -249,7 +302,7 @@ export default function ReflectionPage() {
       <SectionCard
         icon={Brain}
         title={`知识条目${d ? ` (${d.entries.length})` : ""}`}
-        description="自动入库的知识；可驳回，或升格为正式文档。"
+        description="自动入库的自学习知识，Agent 检索可直接命中；可驳回，或升格为正式文档。"
       >
         <DataState
           loading={loading}
@@ -276,6 +329,8 @@ export default function ReflectionPage() {
                       ) : null}
                       {st === "rejected" ? (
                         <Badge variant="destructive">已驳回</Badge>
+                      ) : st === "promoted" ? (
+                        <Badge variant="outline">已升格</Badge>
                       ) : st === "pending" ? (
                         <Badge variant="secondary">待审</Badge>
                       ) : (
@@ -283,19 +338,21 @@ export default function ReflectionPage() {
                       )}
                       <RelativeTime ts={e.ts} />
                       <span className="ml-auto flex gap-1">
-                        {st !== "approved" && (
+                        {st !== "approved" && st !== "promoted" && (
                           <Button size="sm" variant="ghost" className="h-7 px-2" disabled={acting === e.id} onClick={() => act(e.id, "approve")} title="恢复入库">
                             <Check className="size-3.5" />
                           </Button>
                         )}
-                        {st !== "rejected" && (
+                        {st !== "rejected" && st !== "promoted" && (
                           <Button size="sm" variant="ghost" className="h-7 px-2" disabled={acting === e.id} onClick={() => act(e.id, "reject")} title="驳回">
                             <X className="size-3.5" />
                           </Button>
                         )}
-                        <Button size="sm" variant="ghost" className="h-7 px-2" disabled={acting === e.id} onClick={() => act(e.id, "promote")} title="升格为正式文档">
-                          <FileUp className="size-3.5" />
-                        </Button>
+                        {st === "approved" && (
+                          <Button size="sm" variant="ghost" className="h-7 px-2" disabled={acting === e.id} onClick={() => act(e.id, "promote")} title="升格为正式文档">
+                            <FileUp className="size-3.5" />
+                          </Button>
+                        )}
                       </span>
                     </div>
                     <p className="text-sm whitespace-pre-wrap">{e.content}</p>

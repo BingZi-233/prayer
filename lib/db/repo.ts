@@ -8,7 +8,7 @@ export interface KbHit {
 }
 
 export type ProactiveQuality = "ok" | "bad" | null;
-export type ReflectionStatus = "pending" | "approved" | "rejected";
+export type ReflectionStatus = "pending" | "approved" | "rejected" | "promoted";
 
 export class Repo {
   constructor(private db: Database.Database) {}
@@ -338,6 +338,15 @@ export class Repo {
     this.setConfigRow("reflect_compact_at", String(ts));
   }
 
+  // 全局反思自动升格游标(上次升格评审完成时间戳)
+  promoteAt(): number {
+    return Number(this.getConfigRow("reflect_promote_at") ?? "0");
+  }
+
+  setPromoteAt(ts: number): void {
+    this.setConfigRow("reflect_promote_at", String(ts));
+  }
+
   // 每群反思游标(config key = reflect_cursor:{gid}),供反思/群活动页展示进度
   reflectCursors(): { groupId: number; cursor: number }[] {
     const rows = this.db
@@ -381,7 +390,10 @@ export class Repo {
     }[];
     return rows.map((r) => {
       const m = /^human-reflection:(\d+):(\d+)$/.exec(r.source ?? "");
-      const st = r.status === "rejected" || r.status === "pending" ? r.status : "approved";
+      const st =
+        r.status === "rejected" || r.status === "pending" || r.status === "promoted"
+          ? r.status
+          : "approved";
       return {
         id: r.id,
         content: r.content,
@@ -416,14 +428,20 @@ export class Repo {
     return info.changes > 0;
   }
 
-  // 升格为正式文档:标 approved;实际写文件由 API 层处理
-  promoteReflection(chunkId: number): { ok: boolean; newId?: number; content?: string } {
+  // 升格为正式文档:标 promoted;写文件+向量入库由 applyPromote / API 处理
+  promoteReflection(chunkId: number): { ok: boolean; content?: string; status?: ReflectionStatus } {
     const row = this.db.prepare("SELECT content FROM kb_chunks WHERE id = ? AND doc = 'human-reflection'").get(chunkId) as
       | { content: string }
       | undefined;
     if (!row) return { ok: false };
-    this.setReflectionStatus(chunkId, "approved");
-    return { ok: true, content: row.content };
+    const meta = this.db.prepare("SELECT status FROM reflection_meta WHERE chunk_id = ?").get(chunkId) as
+      | { status: string }
+      | undefined;
+    const status = (meta?.status === "promoted" || meta?.status === "rejected" || meta?.status === "pending"
+      ? meta.status
+      : "approved") as ReflectionStatus;
+    if (status === "rejected") return { ok: false };
+    return { ok: true, content: row.content, status };
   }
 
   // 最近 N 次整理记录(倒序),before/after 内容内联(解析 JSON)
@@ -644,12 +662,19 @@ export class Repo {
     return info.changes;
   }
 
+  // 向量近邻检索。驳回/已升格的反思不参与命中:
+  // - rejected:人工纠错须立刻从检索消失
+  // - promoted:知识已固化到正式文档(promoted/*.md),避免与正式 chunk 重复占 top-k
+  // 无 meta / 非反思文档一律视为可检索(沉淀默认 approved)。
   searchKb(query: Float32Array, k: number): KbHit[] {
     const rows = this.db
       .prepare(
         `SELECT c.id, c.content, c.source, v.distance
-         FROM kb_vec v JOIN kb_chunks c ON c.id = v.chunk_id
+         FROM kb_vec v
+         JOIN kb_chunks c ON c.id = v.chunk_id
+         LEFT JOIN reflection_meta m ON m.chunk_id = c.id
          WHERE v.embedding MATCH ? AND k = ?
+           AND COALESCE(m.status, 'approved') NOT IN ('rejected', 'promoted')
          ORDER BY v.distance`
       )
       .all(Buffer.from(query.buffer), k) as KbHit[];

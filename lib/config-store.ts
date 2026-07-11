@@ -31,6 +31,12 @@ export interface AppConfig {
   reflectWindowMax: number;
   reflectCompactMs: number;
   reflectCompactMinEntries: number;
+  // 自动升格评审周期(ms)。默认每日;≤0 关闭
+  reflectPromoteMs: number;
+  // 候选至少 N 条才调 LLM。默认 1
+  reflectPromoteMinEntries: number;
+  // 单轮最多升格条数。默认 5
+  reflectPromoteMaxPerRun: number;
   // 反思沉淀/整理后是否向管理群发通知。默认开(保持既有行为);设 false 静默沉淀
   reflectNotifyAdmin: boolean;
   // 会话空闲 TTL:超时后不 resume,下条消息开全新对话。默认 5 分钟
@@ -84,6 +90,9 @@ function seedFromEnv(env: Record<string, string | undefined>): AppConfig {
     reflectWindowMax: Number(env.REFLECT_WINDOW_MAX ?? "60"),
     reflectCompactMs: Number(env.REFLECT_COMPACT_MS ?? "86400000"),
     reflectCompactMinEntries: Number(env.REFLECT_COMPACT_MIN_ENTRIES ?? "10"),
+    reflectPromoteMs: Number(env.REFLECT_PROMOTE_MS ?? "86400000"),
+    reflectPromoteMinEntries: Number(env.REFLECT_PROMOTE_MIN_ENTRIES ?? "1"),
+    reflectPromoteMaxPerRun: Number(env.REFLECT_PROMOTE_MAX_PER_RUN ?? "5"),
     // 默认开:env 显式 "false" 才关(与当前始终通知的行为兼容)
     reflectNotifyAdmin: env.REFLECT_NOTIFY_ADMIN !== "false",
     resumeTtlMs: Number(env.RESUME_TTL_MS ?? "300000"),

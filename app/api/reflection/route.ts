@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { mkdir, writeFile } from "fs/promises";
-import { join } from "path";
 import { sharedDb } from "@/lib/db/shared";
 import { Repo } from "@/lib/db/repo";
 import { getConfig } from "@/lib/config-store";
 import { ok, fail } from "@/lib/api";
 import { buildGroupStatMaps } from "@/lib/reflect-stats";
+import { applyPromote } from "@/lib/reflect-promote";
+import { embed } from "@/lib/tools/embed";
 
 function getRepo(): Repo {
   const cfg = getConfig(new Repo(sharedDb(process.env.DB_PATH ?? "./data/agent.db")));
@@ -42,6 +42,9 @@ export async function GET(): Promise<NextResponse> {
         windowMax: cfg.reflectWindowMax,
         compactMs: cfg.reflectCompactMs,
         compactMinEntries: cfg.reflectCompactMinEntries,
+        promoteMs: cfg.reflectPromoteMs,
+        promoteMinEntries: cfg.reflectPromoteMinEntries,
+        promoteMaxPerRun: cfg.reflectPromoteMaxPerRun,
       },
       groups,
       entries,
@@ -75,15 +78,15 @@ export async function PATCH(req: NextRequest): Promise<NextResponse> {
       return NextResponse.json(ok({ id, status: "rejected" }));
     }
 
-    // promote: 写到 docs/kb/promoted/ 并标 approved
-    const promo = r.promoteReflection(id);
-    if (!promo.ok || !promo.content) return NextResponse.json(fail("条目不存在"), { status: 404 });
-    const dir = join(process.cwd(), "docs/kb/promoted");
-    await mkdir(dir, { recursive: true });
-    const file = join(dir, `reflection-${id}.md`);
-    const bodyMd = `# 升格反思 #${id}\n\n${promo.content}\n`;
-    await writeFile(file, bodyMd, "utf8");
-    return NextResponse.json(ok({ id, status: "approved", file: `promoted/reflection-${id}.md` }));
+    // promote: 写文件 + 向量入库 + status=promoted
+    const promo = await applyPromote({ repo: r, chunkId: id, embed });
+    if (!promo.ok) {
+      const status = promo.reason.includes("不存在") ? 404 : 400;
+      return NextResponse.json(fail(promo.reason), { status });
+    }
+    return NextResponse.json(
+      ok({ id, status: "promoted", file: promo.file, already: promo.already ?? false })
+    );
   } catch (err) {
     return NextResponse.json(fail(err instanceof Error ? err.message : String(err)), { status: 500 });
   }

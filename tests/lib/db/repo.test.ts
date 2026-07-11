@@ -73,6 +73,28 @@ describe("Repo kb", () => {
     expect(hits[0].content).toContain("退货");
   });
 
+  it("searchKb 排除 status=rejected 的反思条目,基础文档与 approved 仍命中", () => {
+    const base = repo.insertKbEntry("faq/x.md", "基础文档", "faq/x.md", new Float32Array([1, 0, 0]));
+    const ok = repo.insertKbEntry("human-reflection", "已入库反思", "human-reflection:1:1", new Float32Array([1, 0, 0]));
+    repo.insertReflectionMeta(ok, 1, "q", "a");
+    const bad = repo.insertKbEntry("human-reflection", "已驳回反思", "human-reflection:1:2", new Float32Array([1, 0, 0]));
+    repo.insertReflectionMeta(bad, 1, "q2", "a2");
+    repo.setReflectionStatus(bad, "rejected");
+    const promo = repo.insertKbEntry("human-reflection", "已升格反思", "human-reflection:1:3", new Float32Array([1, 0, 0]));
+    repo.insertReflectionMeta(promo, 1, "q3", "a3");
+    repo.setReflectionStatus(promo, "promoted");
+    const hits = repo.searchKb(new Float32Array([1, 0, 0]), 10);
+    const contents = hits.map((h) => h.content);
+    expect(contents).toContain("基础文档");
+    expect(contents).toContain("已入库反思");
+    expect(contents).not.toContain("已驳回反思");
+    expect(contents).not.toContain("已升格反思");
+    expect(hits.some((h) => h.id === base)).toBe(true);
+    expect(hits.some((h) => h.id === ok)).toBe(true);
+    expect(hits.some((h) => h.id === bad)).toBe(false);
+    expect(hits.some((h) => h.id === promo)).toBe(false);
+  });
+
   it("kbTotals / kbDocStats / kbChunksByDoc 供向量库预览", () => {
     const a = repo.insertKbChunk("faq/退款.md", "退款要 7 天", "faq/退款.md");
     repo.insertKbVec(a, new Float32Array([1, 0, 0]));

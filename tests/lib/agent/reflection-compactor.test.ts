@@ -7,6 +7,7 @@ import {
   validateCompacted,
   validateCompactedDetailed,
   COMPACT_OUTPUT_SCHEMA,
+  COMPLETE_MIN_RATIO,
 } from "@/lib/agent/reflection-compactor";
 
 let repo: Repo;
@@ -29,6 +30,14 @@ function seedReflections(n: number) {
   for (let i = 0; i < n; i++) {
     repo.insertKbEntry("human-reflection", `反思${i}`, `human-reflection:100:${i}`, vec());
   }
+}
+
+// 产出 n 条 FAQ 的 JSON(满足 COMPLETE_MIN_RATIO,用于正常整理用例)
+function faqsJson(n: number, prefix = "合并") {
+  return JSON.stringify(Array.from({ length: n }, (_, i) => ({ faq: `${prefix}${i}` })));
+}
+function faqsItems(n: number, prefix = "合并") {
+  return { items: Array.from({ length: n }, (_, i) => ({ faq: `${prefix}${i}` })) };
 }
 
 const opts = (over: Record<string, unknown> = {}) => ({
@@ -57,15 +66,14 @@ describe("runCompact", () => {
   it("正常整理 → 库被替换为新集 + 通知管理群 + source 为 gid 0", async () => {
     seedReflections(5);
     const notice = new Promise<any>((res) => bus.once("action.send", res));
-    await runCompact(
-      opts({ queryFn: fakeQuery('[{"faq":"合并后的条目A"},{"faq":"合并后的条目B"}]') as never })
-    );
+    // 5 条 → 4 条(≥ 70% 下限),模拟近义合并 1 对
+    await runCompact(opts({ queryFn: fakeQuery(faqsJson(4)) as never }));
     const a = await notice;
     expect(a.groupId).toBe(999);
-    expect(a.text).toContain("5 → 2");
+    expect(a.text).toContain("5 → 4");
     const refs = repo.reflectionEntries();
-    expect(refs).toHaveLength(2);
-    expect(refs.map((r) => r.content).sort()).toEqual(["合并后的条目A", "合并后的条目B"]);
+    expect(refs).toHaveLength(4);
+    expect(refs.map((r) => r.content).sort()).toEqual(["合并0", "合并1", "合并2", "合并3"]);
     expect(refs.every((r) => r.groupId === 0 && r.ts === 7_000_000)).toBe(true);
   });
 
@@ -74,14 +82,19 @@ describe("runCompact", () => {
     let captured: { options?: { outputFormat?: unknown } } | undefined;
     const qf = (args: { options?: { outputFormat?: unknown } }) => {
       captured = args;
-      return fakeQuery("", { items: [{ faq: "结构化A" }, { faq: "结构化B" }] })();
+      return fakeQuery("", faqsItems(4, "结构化"))();
     };
     await runCompact(opts({ queryFn: qf as never }));
     expect(captured?.options?.outputFormat).toEqual({
       type: "json_schema",
       schema: COMPACT_OUTPUT_SCHEMA,
     });
-    expect(repo.reflectionEntries().map((r) => r.content).sort()).toEqual(["结构化A", "结构化B"]);
+    expect(repo.reflectionEntries().map((r) => r.content).sort()).toEqual([
+      "结构化0",
+      "结构化1",
+      "结构化2",
+      "结构化3",
+    ]);
   });
 
   it("notifyAdmin=false → 整理成功但不通知管理群", async () => {
@@ -91,21 +104,21 @@ describe("runCompact", () => {
     await runCompact(
       opts({
         notifyAdmin: false,
-        queryFn: fakeQuery('[{"faq":"合并后的条目A"},{"faq":"合并后的条目B"}]') as never,
+        queryFn: fakeQuery(faqsJson(4)) as never,
       })
     );
     expect(spy).not.toHaveBeenCalled();
-    expect(repo.reflectionEntries()).toHaveLength(2);
+    expect(repo.reflectionEntries()).toHaveLength(4);
   });
 
   it("整理成功 → 写入 reflect_compactions 记录(before/after 快照)", async () => {
     seedReflections(5);
-    await runCompact(opts({ queryFn: fakeQuery('[{"faq":"合并A"},{"faq":"合并B"}]') as never }));
+    await runCompact(opts({ queryFn: fakeQuery(faqsJson(4, "合并")) as never }));
     const recs = repo.recentCompactions(10);
     expect(recs).toHaveLength(1);
-    expect(recs[0]).toMatchObject({ ts: 7_000_000, beforeCount: 5, afterCount: 2 });
+    expect(recs[0]).toMatchObject({ ts: 7_000_000, beforeCount: 5, afterCount: 4 });
     expect(recs[0].before.sort()).toEqual(["反思0", "反思1", "反思2", "反思3", "反思4"]);
-    expect(recs[0].after.sort()).toEqual(["合并A", "合并B"]);
+    expect(recs[0].after.sort()).toEqual(["合并0", "合并1", "合并2", "合并3"]);
   });
 
   it("整理失败(空集)→ 不写整理记录", async () => {
@@ -149,8 +162,18 @@ describe("runCompact", () => {
     expect(spy).not.toHaveBeenCalled();
   });
 
+  it("安全底线:完整产出低于 COMPLETE_MIN_RATIO → 保留旧库", async () => {
+    seedReflections(10);
+    // 10 → 2 闭合完整但远低于 70% 下限
+    const err = new Promise<any>((res) => bus.once("error.occurred", res));
+    await runCompact(opts({ queryFn: fakeQuery(faqsJson(2)) as never }));
+    expect((await err).err.message).toMatch(/过度删除|下限/);
+    expect(repo.reflectionEntries()).toHaveLength(10);
+  });
+
   it("截断+嵌套 source 数组:完整对象够下限 → salvage 应用", async () => {
     // 复现线上:LLM 加 source 字段后输出被截断;旧贪婪 /\[...\]/ 吃到嵌套 ] 解析失败
+    // 截断路径用 TRUNCATED_MIN_RATIO=0.2,5 条 floor=1,2 条可过
     seedReflections(5);
     const truncated =
       '[{"faq":"支付方式展示","source":["1"]},{"faq":"auth.json 与 apikey","source":["2","7"]},{"faq":"机器人知识库尚未';
@@ -179,7 +202,8 @@ describe("runCompact", () => {
     let captured = "";
     const qf = (args: { prompt: string }) => {
       captured = args.prompt;
-      return fakeQuery('[{"faq":"甲"}]')();
+      // 3 条输入 floor=ceil(3*0.7)=3,原样 3 条
+      return fakeQuery(faqsJson(3, "甲"))();
     };
     await runCompact(opts({ queryFn: qf as never }));
     expect(captured).toContain("【权威基础文档片段】");
@@ -201,21 +225,21 @@ describe("runCompact", () => {
   });
 
   it("对已压缩集(gid 0)再跑一轮不报错,产出替换成功", async () => {
-    // 首轮:5 → 2
+    // 首轮:5 → 4
     seedReflections(5);
-    await runCompact(opts({ queryFn: fakeQuery('[{"faq":"甲"},{"faq":"乙"}]') as never }));
-    expect(repo.reflectionEntries()).toHaveLength(2);
-    // 次轮:2 条(< minEntries 3)→ 跳过,不变
-    const qf = vi.fn(fakeQuery('[{"faq":"甲"}]'));
-    await runCompact(opts({ queryFn: qf as never, minEntries: 3 }));
+    await runCompact(opts({ queryFn: fakeQuery(faqsJson(4, "甲")) as never }));
+    expect(repo.reflectionEntries()).toHaveLength(4);
+    // 次轮:4 条(≥ minEntries 3)→ 可再跑;此处 minEntries 抬到 5 跳过
+    const qf = vi.fn(fakeQuery(faqsJson(3, "乙")));
+    await runCompact(opts({ queryFn: qf as never, minEntries: 5 }));
     expect(qf).not.toHaveBeenCalled();
-    expect(repo.reflectionEntries()).toHaveLength(2);
+    expect(repo.reflectionEntries()).toHaveLength(4);
   });
 });
 
 describe("validateCompacted", () => {
   it("正常 → 返回 trim 后非空 faq 列表", () => {
-    expect(validateCompacted('[{"faq":" a "},{"faq":"b"}]', 3)).toEqual(["a", "b"]);
+    expect(validateCompacted('[{"faq":" a "},{"faq":"b"},{"faq":"c"}]', 3)).toEqual(["a", "b", "c"]);
   });
   it("非数组 / 非法 → null", () => {
     expect(validateCompacted("不是JSON", 3)).toBeNull();
@@ -229,15 +253,16 @@ describe("validateCompacted", () => {
     expect(validateCompacted(arr, 4)).toBeNull();
   });
   it("过滤空白 faq 后仍有内容 → 返回过滤结果", () => {
-    expect(validateCompacted('[{"faq":"a"},{"faq":"  "},{"faq":""}]', 3)).toEqual(["a"]);
+    // 3 输入 floor=ceil(2.1)=3;过滤后仅 1 条 → 低于完整下限
+    expect(validateCompacted('[{"faq":"a"},{"faq":"  "},{"faq":""}]', 1)).toEqual(["a"]);
   });
   it("完整数组含嵌套 source → 正常解析,忽略额外字段", () => {
     const raw =
-      '[{"faq":"甲","source":["1"]},{"faq":"乙","source":["2","7"]}]';
-    expect(validateCompacted(raw, 5)).toEqual(["甲", "乙"]);
+      '[{"faq":"甲","source":["1"]},{"faq":"乙","source":["2","7"]},{"faq":"丙","source":["3"]},{"faq":"丁"}]';
+    expect(validateCompacted(raw, 5)).toEqual(["甲", "乙", "丙", "丁"]);
   });
   it("截断+嵌套 source:salvage 完整对象且够下限", () => {
-    // 输入 5, floor=ceil(1)=1 → 2 条够
+    // 输入 5, 截断 floor=ceil(1)=1 → 2 条够
     const raw =
       '[{"faq":"支付方式","source":["1"]},{"faq":"auth","source":["2","7"]},{"faq":"半截';
     expect(validateCompacted(raw, 5)).toEqual(["支付方式", "auth"]);
@@ -248,20 +273,41 @@ describe("validateCompacted", () => {
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.reason).toMatch(/截断产出/);
   });
-  it("完整闭合数组可大幅缩减,不受截断下限约束", () => {
-    // 10 → 1 合法(闭合完整)
-    expect(validateCompacted('[{"faq":"合并后唯一条"}]', 10)).toEqual(["合并后唯一条"]);
+  it(`完整闭合数组低于 COMPLETE_MIN_RATIO(${COMPLETE_MIN_RATIO}) → null`, () => {
+    // 10 → 1 闭合完整但过度删除
+    const r = validateCompactedDetailed('[{"faq":"合并后唯一条"}]', 10);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.reason).toMatch(/过度删除/);
+    expect(validateCompacted('[{"faq":"合并后唯一条"}]', 10)).toBeNull();
+  });
+  it("完整闭合数组 ≥ COMPLETE_MIN_RATIO → 通过", () => {
+    // 10 → 7 = 70%
+    const arr = JSON.stringify(Array.from({ length: 7 }, (_, i) => ({ faq: `x${i}` })));
+    expect(validateCompacted(arr, 10)).toHaveLength(7);
   });
   it("markdown 代码块包裹 → 仍可抽出数组", () => {
-    expect(validateCompacted('```json\n[{"faq":"a"},{"faq":"b"}]\n```', 3)).toEqual(["a", "b"]);
+    expect(validateCompacted('```json\n[{"faq":"a"},{"faq":"b"},{"faq":"c"}]\n```', 3)).toEqual([
+      "a",
+      "b",
+      "c",
+    ]);
   });
   it("schema 根对象 {items:[...]} 文本 → 正常", () => {
-    expect(validateCompacted('{"items":[{"faq":"甲"},{"faq":"乙"}]}', 5)).toEqual(["甲", "乙"]);
+    expect(
+      validateCompacted('{"items":[{"faq":"甲"},{"faq":"乙"},{"faq":"丙"},{"faq":"丁"}]}', 5)
+    ).toEqual(["甲", "乙", "丙", "丁"]);
   });
   it("structured_output {items} 优先于文本", () => {
     expect(
-      validateCompacted("抱歉", 5, { items: [{ faq: "  结构A  " }, { faq: "结构B" }] })
-    ).toEqual(["结构A", "结构B"]);
+      validateCompacted("抱歉", 5, {
+        items: [
+          { faq: "  结构A  " },
+          { faq: "结构B" },
+          { faq: "结构C" },
+          { faq: "结构D" },
+        ],
+      })
+    ).toEqual(["结构A", "结构B", "结构C", "结构D"]);
   });
   it("structured_output 非法形状 → null", () => {
     expect(validateCompacted('[{"faq":"文本兜底"}]', 5, { nope: true })).toBeNull();
@@ -302,7 +348,7 @@ describe("registerReflectionCompactor 到期判定 + 持久游标(修复重启�
     vi.useFakeTimers();
     try {
       seedReflections(5);
-      const qf = vi.fn(fakeQuery('[{"faq":"甲"},{"faq":"乙"}]'));
+      const qf = vi.fn(fakeQuery(faqsJson(4, "甲")));
       // compactMs 大(1h),但 compactAt=0 → now-0 已到期;首刷延迟 50ms
       const stop = registerReflectionCompactor(
         opts({ compactMs: 3_600_000, scanMs: 3_600_000, firstDelayMs: 50, queryFn: qf as never })
@@ -339,7 +385,7 @@ describe("registerReflectionCompactor 到期判定 + 持久游标(修复重启�
     try {
       seedReflections(5);
       repo.setCompactAt(7_000_000 - 5000); // 陈旧游标,> compactMs 1000
-      const qf = vi.fn(fakeQuery('[{"faq":"甲"},{"faq":"乙"}]'));
+      const qf = vi.fn(fakeQuery(faqsJson(4, "甲")));
       const stop = registerReflectionCompactor(
         opts({ compactMs: 1000, scanMs: 1000, firstDelayMs: 10, queryFn: qf as never })
       );

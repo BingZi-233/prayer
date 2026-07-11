@@ -87,6 +87,26 @@ describe("config-store", () => {
     expect(cfg2.reflectCompactMinEntries).toBe(5);
   });
 
+  it("自动升格默认值 + env 覆盖", () => {
+    const repo = mkRepo();
+    const cfg = getConfig(repo, { ONEBOT_WS_URL: "ws://x:1", BOT_QQ: "1", ADMIN_GROUP_ID: "2" });
+    expect(cfg.reflectPromoteMs).toBe(86_400_000);
+    expect(cfg.reflectPromoteMinEntries).toBe(1);
+    expect(cfg.reflectPromoteMaxPerRun).toBe(5);
+    const repo2 = mkRepo();
+    const cfg2 = getConfig(repo2, {
+      ONEBOT_WS_URL: "ws://x:1",
+      BOT_QQ: "1",
+      ADMIN_GROUP_ID: "2",
+      REFLECT_PROMOTE_MS: "3600000",
+      REFLECT_PROMOTE_MIN_ENTRIES: "3",
+      REFLECT_PROMOTE_MAX_PER_RUN: "2",
+    });
+    expect(cfg2.reflectPromoteMs).toBe(3_600_000);
+    expect(cfg2.reflectPromoteMinEntries).toBe(3);
+    expect(cfg2.reflectPromoteMaxPerRun).toBe(2);
+  });
+
   it("enabledGroups 默认空数组", () => {
     const repo = mkRepo();
     const cfg = getConfig(repo, { ONEBOT_WS_URL: "ws://x:1", BOT_QQ: "1", ADMIN_GROUP_ID: "2" });

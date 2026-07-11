@@ -43,7 +43,11 @@ export const COMPACT_OUTPUT_SCHEMA = {
       items: {
         type: "object",
         properties: {
-          faq: { type: "string", description: "整理后的问答要点,纯文本一段,尽量简洁" },
+          faq: {
+            type: "string",
+            description:
+              "整理后的完整 FAQ:问题要点+结论/步骤/例外/数字等关键细节须保留,禁止摘要式缩短",
+          },
         },
         required: ["faq"],
         additionalProperties: false,
@@ -54,20 +58,25 @@ export const COMPACT_OUTPUT_SCHEMA = {
   additionalProperties: false,
 } as const;
 
-const COMPACT_SYSTEM = `你是客服知识库整理助手。用户消息会给出两部分:
-一、【权威基础文档片段】——正式产品文档节选,视为最新、最权威。
-二、【现有反思条目】——历史沉淀的客服问答 FAQ,每条带序号。
+// 自学习定位:整理=去重提质,不是删知识。基础文档仅作矛盾校验,不因「已覆盖」删反思。
+const COMPACT_SYSTEM = `你是客服知识库整理助手。反思条目是从人工有效答复中沉淀的自学习知识,整理目的是去重提质,不是遗忘。
+用户消息会给出两部分:
+一、【权威基础文档片段】——正式产品文档节选,仅用于判断反思是否与之明确矛盾。
+二、【现有反思条目】——历史沉淀的客服 FAQ,每条带序号;这些条目已在检索知识库中生效。
 任务:输出整理后的反思条目集,规则:
-- 近义合并:表达同一问题要点的多条合并为一条更完整的 FAQ。
-- 删除被基础文档覆盖:某条反思讲的内容基础文档已清楚覆盖,则删除(基础文档会被单独检索,无需在反思里重复)。
-- 删除矛盾/失效:与基础文档或更完整反思冲突的旧条目删除。
+- 近义合并:表达同一问题要点的多条合并为一条更完整的 FAQ;合并时必须保留各方的关键细节(步骤、条件、例外、数字、口吻要点),禁止只留摘要。
+- 独立保留:主题不同的条目原样保留,不得丢弃。
+- 禁止因「基础文档已覆盖/已写过」而删除——反思可作口语化补充、边界 case 或实操细节,覆盖不等于冗余。
+- 仅当与基础文档明确矛盾、或与更完整反思直接冲突且明显过时/错误时,才删除该条。
+- 禁止无故缩短:未合并的条目应基本保留原信息量,不得把长 FAQ 压成一句话。
 硬约束:只能基于【现有反思条目】做合并与删除,不得新增基础片段之外的新事实,不得把基础文档片段本身写成反思条目。
-输出由 JSON Schema 强制为 {"items":[{"faq":"..."}]};faq 尽量简洁,不要 source/id 等额外字段。
-若全部应删除,仍至少保留信息量最高的若干条,不要输出空 items。`;
+输出由 JSON Schema 强制为 {"items":[{"faq":"..."}]};faq 须完整可用。
+若无可合并/删除,原样输出全部条目。若全部应删除,仍至少保留信息量最高的若干条,不要输出空 items。`;
 
 // 截断 salvage 时的最低保留比例:防止只解析出前 1~2 条就把整库替换掉。
-// 完整解析(外层数组括号闭合)不受此限——合法的大量合并/删除允许大幅缩减。
 const TRUNCATED_MIN_RATIO = 0.2;
+// 完整解析时的最低保留比例:自学习不允许一轮整理把大半知识抹掉(近义合并通常仍 ≥ 此比例)。
+export const COMPLETE_MIN_RATIO = 0.7;
 
 function resolve(deps: ReflectionCompactorDeps): Resolved {
   return {
@@ -215,6 +224,16 @@ export function validateCompactedDetailed(
       };
     }
   }
+  // 完整解析:自学习不允许一轮大幅抹掉知识(近义合并通常仍 ≥ COMPLETE_MIN_RATIO)
+  if (!extracted.truncated && inputCount > 0) {
+    const floor = Math.max(1, Math.ceil(inputCount * COMPLETE_MIN_RATIO));
+    if (faqs.length < floor) {
+      return {
+        ok: false,
+        reason: `完整产出仅 ${faqs.length} 条 < 输入 ${inputCount} ×${COMPLETE_MIN_RATIO} 下限 ${floor}(疑过度删除,保留旧库)`,
+      };
+    }
+  }
   return { ok: true, faqs };
 }
 
@@ -227,11 +246,12 @@ export function validateCompacted(raw: string, inputCount: number, structured?: 
 // 执行一轮压缩整理,供测试直驱。旁路:异常保留旧库并 emit error,不抛。
 export async function runCompact(deps: ReflectionCompactorDeps): Promise<void> {
   const d = resolve(deps);
-  const entries = d.repo.reflectionEntries();
+  // 只整理已入库未升格/未驳回的条目;已升格条目保留作审计,不参与整库替换
+  const entries = d.repo.reflectionEntries().filter((e) => e.status === "approved");
   if (entries.length < d.minEntries) return;
 
   try {
-    // 权威上下文:逐条反思检索基础文档 top-k,按 chunk id 去重
+    // 权威上下文:逐条反思检索基础文档 top-k,按 chunk id 去重(仅供矛盾判断,不因覆盖而删)
     const ctx = new Map<number, string>();
     for (const e of entries) {
       for (const h of d.repo.searchBaseKb(await d.embed(e.content), d.baseContextK)) {
