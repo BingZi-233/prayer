@@ -45,6 +45,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { PageHeader } from "@/components/admin/page-header";
 import { SectionCard } from "@/components/admin/section-card";
+import { MasterDetail } from "@/components/admin/master-detail";
 import { DataState, EmptyState } from "@/components/admin/data-state";
 import { RelativeTime } from "@/components/relative-time";
 import { useGroupNames, useMemberNames } from "@/lib/group-name";
@@ -213,6 +214,13 @@ function SessionsInner() {
     },
     [loadTranscript, syncUrl],
   );
+
+  // 手机端"返回列表":清空选中态,同步 ref/URL,避免 openSession 因 activeKeyRef 未清而误判"已是当前会话"
+  const closeSession = useCallback(() => {
+    activeKeyRef.current = null;
+    setActive(null);
+    syncUrl(null, filterRef.current);
+  }, [syncUrl]);
 
   const loadSessions = useCallback(async (): Promise<Sess[] | null> => {
     const r = await fetch("/api/sessions").then((x) => x.json());
@@ -493,7 +501,12 @@ function SessionsInner() {
         }
       />
 
-      <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[340px_1fr]">
+      <MasterDetail
+        selected={!!active}
+        onBack={closeSession}
+        listWidth="340px"
+        backLabel="返回会话列表"
+        list={
         <SectionCard
           title="会话列表"
           description={`${shown.length} / ${list.length} · 活跃 ${stats.active} · 人工 ${stats.human}`}
@@ -614,7 +627,8 @@ function SessionsInner() {
             </div>
           </DataState>
         </SectionCard>
-
+        }
+        detail={
         <SectionCard
           title={
             activeSess ? (
@@ -838,7 +852,8 @@ function SessionsInner() {
             </DataState>
           )}
         </SectionCard>
-      </div>
+        }
+      />
 
       <AlertDialog open={resetKey !== null} onOpenChange={(o) => !o && setResetKey(null)}>
         <AlertDialogContent>
