@@ -230,7 +230,7 @@ export default function ConfigPage() {
 
       {cfg && (
         <Tabs defaultValue="onebot">
-          <TabsList className="h-auto flex-wrap">
+          <TabsList className="h-auto w-full flex-wrap justify-start">
             <TabsTrigger value="onebot"><Cable data-icon="inline-start" /> OneBot</TabsTrigger>
             <TabsTrigger value="reply"><MessageSquareText data-icon="inline-start" /> 回复体验</TabsTrigger>
             <TabsTrigger value="sdk"><Bot data-icon="inline-start" /> Claude SDK</TabsTrigger>

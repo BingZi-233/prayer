@@ -143,7 +143,7 @@ export default function StatusPage() {
     (ov?.humanSessions ?? 0) > 0 || (s != null && !s.wsConnected);
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden p-px lg:gap-6">
+    <div className="flex flex-col gap-4 p-px lg:min-h-0 lg:flex-1 lg:gap-6 lg:overflow-hidden">
       {/* ── 第 1 行:页头 ── */}
       <PageHeader
         className="shrink-0"
@@ -309,13 +309,13 @@ export default function StatusPage() {
             </div>
           ) : undefined
         }
-        className="flex min-h-0 flex-1 flex-col overflow-hidden"
-        contentClassName="flex min-h-0 flex-1 flex-col overflow-hidden"
+        className="flex flex-col lg:min-h-0 lg:flex-1 lg:overflow-hidden"
+        contentClassName="flex flex-col lg:min-h-0 lg:flex-1 lg:overflow-hidden"
       >
         {!usage ? (
           <div className="text-muted-foreground text-sm">加载中…</div>
         ) : (
-          <div className="min-h-0 flex-1 overflow-auto overscroll-contain">
+          <div className="overflow-x-auto lg:min-h-0 lg:flex-1 lg:overflow-auto lg:overscroll-contain">
             <table className="w-full min-w-[32rem] text-sm">
               <thead className="text-muted-foreground bg-card sticky top-0 z-10 text-xs">
                 <tr className="border-b [&>th]:px-2 [&>th]:py-1.5 [&>th]:text-right [&>th:first-child]:text-left">
