@@ -114,7 +114,7 @@ export default function ConfigPage() {
       .finally(() => setGroupsLoading(false));
   }, []);
 
-  // 生效群变化后重拉跨群管理员名单(去重)
+  // 生效群变化后重拉跨群管理员名单(去重)。服务端 name-cache(含 role)命中时几乎瞬时。
   const enabledKey = cfg?.enabledGroups?.slice().sort((a, b) => a - b).join(",") ?? "";
   useEffect(() => {
     if (!cfg) return;

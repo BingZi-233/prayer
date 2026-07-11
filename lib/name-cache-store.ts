@@ -5,7 +5,8 @@
 import type Database from "better-sqlite3";
 
 export type GroupNameRow = { groupId: number; groupName: string };
-export type UserNameRow = { userId: number; name: string };
+/** role 可选:旧缓存无此字段;新写入含 OneBot role(owner/admin/member),供额外监听 AT 等复用 */
+export type UserNameRow = { userId: number; name: string; role?: string };
 
 export type PersistedGroupsSnap = { rows: GroupNameRow[]; exp: number };
 export type PersistedMembersSnap = { groupId: number; rows: UserNameRow[]; exp: number };
@@ -46,8 +47,10 @@ function parseUserRows(raw: string): UserNameRow[] | null {
     if (!Array.isArray(v)) return null;
     return v
       .map((x) => {
-        const o = x as { userId?: unknown; name?: unknown };
-        return { userId: Number(o.userId), name: String(o.name ?? "") };
+        const o = x as { userId?: unknown; name?: unknown; role?: unknown };
+        const row: UserNameRow = { userId: Number(o.userId), name: String(o.name ?? "") };
+        if (typeof o.role === "string" && o.role) row.role = o.role;
+        return row;
       })
       .filter((r) => Number.isFinite(r.userId) && r.userId > 0);
   } catch {
