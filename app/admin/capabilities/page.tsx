@@ -39,30 +39,6 @@ function CapItem({ title, badge, children }: { title: ReactNode; badge?: ReactNo
   );
 }
 
-/** 运营可读摘要:从插件/MCP 工具名推断能做什么 */
-function humanSummary(caps: Capabilities): { can: string[]; cannot: string[] } {
-  const toolNames = caps.mcpServers.flatMap((m) => m.tools.map((t) => t.name.toLowerCase()));
-  const all = toolNames.join(" ");
-  const can: string[] = [];
-  const cannot = [
-    "查询个人订单 / 到账 / 退款",
-    "账号封禁解封",
-    "代写代码或执行任意系统命令",
-  ];
-  if (all.includes("kb") || all.includes("search") || caps.plugins.some((p) => p.name.includes("cs"))) {
-    can.push("知识库问答(产品 FAQ / 接入文档)");
-  }
-  if (all.includes("packy") || caps.plugins.some((p) => p.name.includes("packy"))) {
-    can.push("实时查价 / 可用模型");
-  }
-  if (caps.skills.length) {
-    can.push(...caps.skills.slice(0, 4).map((s) => `技能: ${s.name}`));
-  }
-  if (can.length === 0) can.push("当前未探测到可用业务工具");
-  can.push("转人工(用户发「人工」转接群管)");
-  return { can, cannot };
-}
-
 export default function CapabilitiesPage() {
   const [caps, setCaps] = useState<Capabilities | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -84,7 +60,6 @@ export default function CapabilitiesPage() {
   useEffect(() => { load(); }, []);
 
   const gatedCount = caps ? caps.toolPolicy.allowlist.length + caps.toolPolicy.gated.length : 0;
-  const summary = caps ? humanSummary(caps) : null;
 
   return (
     <div className="flex flex-col gap-6">
@@ -102,29 +77,6 @@ export default function CapabilitiesPage() {
       {err && <ErrorState title="探测失败" description={err} onRetry={() => load(true)} />}
 
       {!caps && !err && <Skeleton className="h-72 w-full" />}
-
-      {caps && summary && (
-        <SectionCard title="运营摘要" description="给非工程师看的人话能力边界。">
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div>
-              <p className="mb-2 text-sm font-medium text-green-700 dark:text-green-400">当前能</p>
-              <ul className="text-muted-foreground flex flex-col gap-1 text-sm">
-                {summary.can.map((x) => (
-                  <li key={x}>· {x}</li>
-                ))}
-              </ul>
-            </div>
-            <div>
-              <p className="mb-2 text-sm font-medium text-red-700 dark:text-red-400">当前不能</p>
-              <ul className="text-muted-foreground flex flex-col gap-1 text-sm">
-                {summary.cannot.map((x) => (
-                  <li key={x}>· {x}</li>
-                ))}
-              </ul>
-            </div>
-          </div>
-        </SectionCard>
-      )}
 
       {caps && (
         <Tabs defaultValue="plugins">
