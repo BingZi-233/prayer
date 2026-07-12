@@ -331,6 +331,17 @@ describe("ranking repo 写入与游标", () => {
     repo.setTopicCursor(100, 1500)
     expect(repo.topicCursor(100)).toBe(1500)
   })
+
+  it("questionTopics 按 updated_at DESC 返回 {id,title}", () => {
+    const repo = new Repo(openDb(":memory:", 3))
+    const t1 = repo.insertQuestionTopic("退款相关", 1000)
+    const t2 = repo.insertQuestionTopic("改密码", 2000) // updated_at 更新 → 排前
+    const list = repo.questionTopics()
+    expect(list).toEqual([
+      { id: t2, title: "改密码" },
+      { id: t1, title: "退款相关" },
+    ])
+  })
 })
 
 describe("ranking repo 聚合", () => {
@@ -348,11 +359,23 @@ describe("ranking repo 聚合", () => {
     const all = repo.rankingByWindow(0)
     expect(all.map((r) => r.count)).toEqual([2, 1])
     expect(all[0].id).toBe(a)
-    expect(repo.topicSamples(a, 5)).toContain("退款多久")
+    // topicSamples 按 msg_ts DESC:ts=2000 的"退款多久" 在前,ts=1000 的"怎么退款" 在后
+    expect(repo.topicSamples(a, 5)).toEqual(["退款多久", "怎么退款"])
     // minTopicCursor:群100 游标 3000,群200 无游标(0)→ 忽略,取 3000
     repo.setTopicCursor(100, 3000)
     expect(repo.minTopicCursor([100, 200])).toBe(3000)
     // 全部为 0 → MAX_SAFE_INTEGER(不约束 prune)
     expect(repo.minTopicCursor([200])).toBe(Number.MAX_SAFE_INTEGER)
+  })
+
+  it("rankingByWindow count 相同按 lastTs DESC", () => {
+    const repo = new Repo(openDb(":memory:", 3))
+    const c = repo.insertQuestionTopic("c", 0)
+    const d = repo.insertQuestionTopic("d", 0)
+    repo.insertQuestionOccurrence(c, 100, 1, "c1", 2000) // ts 更大 → 排前
+    repo.insertQuestionOccurrence(d, 100, 2, "d1", 1000)
+    const rows = repo.rankingByWindow(0)
+    expect(rows.map((r) => r.count)).toEqual([1, 1]) // count 相同
+    expect(rows.map((r) => r.id)).toEqual([c, d]) // lastTs DESC → c 在前
   })
 })
