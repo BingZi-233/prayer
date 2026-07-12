@@ -1,6 +1,10 @@
 import { describe, it, expect, beforeEach } from "vitest";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { openDb } from "@/lib/db/index";
 import { Repo } from "@/lib/db/repo";
+import BetterSqlite3 from "better-sqlite3";
 import type Database from "better-sqlite3";
 
 let db: Database.Database;
@@ -161,11 +165,71 @@ describe("Repo group_messages buffer", () => {
     expect(repo.groupMessageWindow(100, 0, 10).map((m) => m.text)).toEqual(["新"]);
   });
 
+  it("bufferGroupMessage:同 messageId 重复投递只落一行(双进程/WS 重推防御)", () => {
+    repo.bufferGroupMessage(100, 200, "member", "同一条", 9001);
+    repo.bufferGroupMessage(100, 200, "member", "同一条", 9001); // 第二实例重复投递
+    const dup = db
+      .prepare("SELECT COUNT(*) AS c FROM group_messages WHERE message_id = 9001")
+      .get() as { c: number };
+    expect(dup.c).toBe(1);
+    // 无 messageId(NULL)不受唯一约束限制:SQLite UNIQUE 允许多个 NULL
+    repo.bufferGroupMessage(100, 200, "member", "无 id");
+    repo.bufferGroupMessage(100, 200, "member", "无 id");
+    const nulls = db
+      .prepare("SELECT COUNT(*) AS c FROM group_messages WHERE message_id IS NULL AND text = '无 id'")
+      .get() as { c: number };
+    expect(nulls.c).toBe(2);
+  });
+
   it("groupReflectCursor 缺省 0,按群独立读写 round-trip", () => {
     expect(repo.groupReflectCursor(100)).toBe(0);
     repo.setGroupReflectCursor(100, 123456);
     expect(repo.groupReflectCursor(100)).toBe(123456);
     expect(repo.groupReflectCursor(200)).toBe(0); // 群隔离
+  });
+});
+
+describe("group_messages 迁移去重", () => {
+  it("旧库已有 message_id 重复行:迁移删重(留最早)后建唯一索引;NULL 行不动", () => {
+    const dir = mkdtempSync(join(tmpdir(), "prayer-migrate-"));
+    const p = join(dir, "old.db");
+    // 手工造「加了 message_id 列、尚无唯一索引」的旧库,模拟双进程双写后的脏数据
+    const raw = new BetterSqlite3(p);
+    raw.exec(`CREATE TABLE group_messages (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      group_id INTEGER NOT NULL,
+      user_id INTEGER NOT NULL,
+      sender_role TEXT,
+      text TEXT NOT NULL,
+      created_at INTEGER NOT NULL DEFAULT (unixepoch('subsec') * 1000),
+      message_id INTEGER
+    )`);
+    const ins = raw.prepare(
+      "INSERT INTO group_messages (group_id,user_id,sender_role,text,created_at,message_id) VALUES (?,?,?,?,?,?)"
+    );
+    ins.run(100, 200, "member", "重复", 1000, 42);
+    ins.run(100, 200, "member", "重复", 1010, 42); // 第二进程晚几 ms 的那份
+    ins.run(100, 200, "member", "无id-1", 1020, null);
+    ins.run(100, 200, "member", "无id-2", 1030, null);
+    raw.close();
+
+    const migrated = openDb(p, 3);
+    const kept = migrated
+      .prepare("SELECT created_at FROM group_messages WHERE message_id = 42")
+      .all() as { created_at: number }[];
+    expect(kept).toEqual([{ created_at: 1000 }]); // 只留最早一份
+    const nulls = migrated
+      .prepare("SELECT COUNT(*) AS c FROM group_messages WHERE message_id IS NULL")
+      .get() as { c: number };
+    expect(nulls.c).toBe(2);
+    // 唯一索引已建:再次重复插入被 OR IGNORE 吞掉
+    new Repo(migrated).bufferGroupMessage(100, 200, "member", "重复", 42);
+    const still = migrated
+      .prepare("SELECT COUNT(*) AS c FROM group_messages WHERE message_id = 42")
+      .get() as { c: number };
+    expect(still.c).toBe(1);
+    migrated.close();
+    rmSync(dir, { recursive: true, force: true });
   });
 });
 
@@ -366,6 +430,17 @@ describe("ranking repo 聚合", () => {
     expect(repo.minTopicCursor([100, 200])).toBe(3000)
     // 全部为 0 → MAX_SAFE_INTEGER(不约束 prune)
     expect(repo.minTopicCursor([200])).toBe(Number.MAX_SAFE_INTEGER)
+  })
+
+  it("topicSamples 按 text 去重:同句重复只展示一次,计数不受影响", () => {
+    const repo = new Repo(openDb(":memory:", 3))
+    const a = repo.insertQuestionTopic("超时", 0)
+    repo.insertQuestionOccurrence(a, 100, 1, "任务超时怎么办", 1000)
+    repo.insertQuestionOccurrence(a, 100, 2, "任务超时怎么办", 2000) // 同句重复
+    repo.insertQuestionOccurrence(a, 100, 3, "超时会重复扣费吗", 3000)
+    expect(repo.rankingByWindow(0)[0].count).toBe(3) // 计数含重复
+    // 样例去重 → 只两条,最近的重复句取 max ts 排前
+    expect(repo.topicSamples(a, 5)).toEqual(["超时会重复扣费吗", "任务超时怎么办"])
   })
 
   it("rankingByWindow count 相同按 lastTs DESC", () => {
