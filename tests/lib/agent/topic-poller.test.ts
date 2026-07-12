@@ -31,4 +31,14 @@ describe("classifyItems 校验", () => {
   it("解析失败 → 返回 null(调用方跳过、不推进游标)", () => {
     expect(classifyItems(undefined, "抱歉无法处理", 3, existing)).toBeNull()
   })
+
+  it("structured 直接是数组时也能解析", () => {
+    const out = classifyItems([{ i: 0, topicId: 1 }], "", 1, new Set([1]))
+    expect(out).toEqual([{ i: 0, topicId: 1 }])
+  })
+
+  it("文本兜底解析裸数组", () => {
+    const out = classifyItems(undefined, '前言 [{"i":0,"newTitle":"退款"}] 后语', 1, new Set([1]))
+    expect(out).toEqual([{ i: 0, newTitle: "退款" }])
+  })
 })
