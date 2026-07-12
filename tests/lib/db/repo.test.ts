@@ -305,3 +305,17 @@ describe("repo 主动兜底支持", () => {
     expect(byUser[201]).toBeNull();
   });
 });
+
+describe("question ranking schema", () => {
+  it("question_topics / question_occurrences 表存在且可写", () => {
+    const repo = new Repo(openDb(":memory:", 3))
+    const db = (repo as any).db as import("better-sqlite3").Database
+    db.prepare("INSERT INTO question_topics (title) VALUES (?)").run("退款相关")
+    const tid = (db.prepare("SELECT id FROM question_topics").get() as { id: number }).id
+    db.prepare(
+      "INSERT INTO question_occurrences (topic_id, group_id, user_id, text, msg_ts) VALUES (?,?,?,?,?)"
+    ).run(tid, 100, 200, "怎么退款", 1000)
+    const n = (db.prepare("SELECT COUNT(*) n FROM question_occurrences").get() as { n: number }).n
+    expect(n).toBe(1)
+  })
+})
