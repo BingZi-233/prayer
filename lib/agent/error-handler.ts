@@ -1,7 +1,10 @@
 import { bus } from "../bus";
 import type { ErrorOccurred } from "../events";
+import { logger } from "../logger";
+import { classifyError, errorMessage, groupIdFromSession } from "../log-classify";
 
 export interface ErrorHandlerDeps {
+  /** 自定义记录;缺省走结构化 logger.error(不经 console,避免 ring 双记) */
   logger?: (scope: string, err: unknown) => void;
   /** 兜底文案;缺省引导「人工」+ 支持链接 */
   fallbackText?: string;
@@ -13,68 +16,62 @@ export function defaultFallbackText(supportUrl?: string): string {
   return `系统繁忙,请稍后再试,或回复「人工」转接客服。${link}`.trim();
 }
 
-/** 从 unknown 抽出错误文案 */
-export function errorMessage(err: unknown): string {
-  if (err instanceof Error) return err.message;
-  if (typeof err === "string") return err;
-  try {
-    return JSON.stringify(err);
-  } catch {
-    return String(err);
-  }
-}
+// 再导出,兼容旧测试/调用方
+export { errorMessage, classifyError as explainErrorClassify } from "../log-classify";
 
-/**
- * 对已知上游错误码补人话说明(日志/后台可见)。
- * 保留原始 message,方便对照上游原文。
- */
+/** @deprecated 用 classifyError;保留薄包装兼容旧测试 */
 export function explainError(msg: string): string {
-  // MiniMax 等:输入敏感(1026)。SDK 常误标为「server-side temporary」。
-  if (/new_sensitive|\b1026\b|input\s+new_sensitive/i.test(msg)) {
-    const img = /image is sensitive/i.test(msg);
-    return (
-      `【内容安全】输入被模型侧判定为敏感(input new_sensitive / 1026)` +
-      (img ? "——含敏感图片" : "") +
-      `。这不是临时服务故障,相同输入重试通常仍会失败;` +
-      `反思路径下该群游标不会推进。` +
-      ` | 原始: ${msg}`
-    );
-  }
-  // 输出敏感(1027)
-  if (/\b1027\b|output[_\s]?sensitive/i.test(msg)) {
-    return `【内容安全】模型输出被判定敏感(1027)。 | 原始: ${msg}`;
-  }
-  return msg;
+  const c = classifyError(msg);
+  if (c.code === "unknown") return msg;
+  return `【${c.title}】${c.hint} | 原始: ${msg}`;
 }
 
-/** 组装一条带 scope / 群号 / 人话说明的错误日志行 */
+/** @deprecated 结构化日志后由 logger 负责格式;保留兼容旧测试 */
 export function formatErrorLine(e: {
   scope: string;
   err: unknown;
   sessionKey?: string;
   groupId?: number;
 }): string {
-  const fromSession = e.sessionKey ? Number(e.sessionKey.split(":")[0]) : NaN;
-  const groupId =
-    e.groupId != null && Number.isFinite(e.groupId)
-      ? e.groupId
-      : Number.isFinite(fromSession)
-        ? fromSession
-        : undefined;
+  const raw = errorMessage(e.err);
+  const c = classifyError(raw);
+  const groupId = e.groupId ?? groupIdFromSession(e.sessionKey);
   const ctx: string[] = [];
   if (groupId != null) ctx.push(`群=${groupId}`);
   if (e.sessionKey) ctx.push(`session=${e.sessionKey}`);
   const head = ctx.length ? `[${e.scope}] (${ctx.join(" ")})` : `[${e.scope}]`;
-  return `${head} ${explainError(errorMessage(e.err))}`;
+  if (c.code === "unknown") return `${head} ${raw}`;
+  return `${head} 【${c.title}】${c.hint} | 原始: ${raw}`;
+}
+
+function defaultLogError(scope: string, err: unknown, e: ErrorOccurred): void {
+  const raw = errorMessage(err);
+  const c = classifyError(raw);
+  const groupId = e.groupId ?? groupIdFromSession(e.sessionKey);
+  logger.error(c.title, {
+    scope,
+    groupId,
+    sessionKey: e.sessionKey,
+    code: c.code,
+    category: c.category,
+    title: c.title,
+    hint: c.hint,
+    retryable: c.retryable,
+    raw,
+    skipClassify: true,
+  });
 }
 
 export function registerErrorHandler(deps: ErrorHandlerDeps = {}): () => void {
-  // 默认打整行人话日志;自定义 logger 仍收到 (scope, 已格式化字符串)
-  const logger = deps.logger ?? ((_scope, err) => console.error(err));
   const text = deps.fallbackText ?? defaultFallbackText(deps.supportUrl);
 
   const onError = (e: ErrorOccurred) => {
-    logger(e.scope, formatErrorLine(e));
+    if (deps.logger) {
+      // 自定义 logger 仍给整行人话,便于单测 spy
+      deps.logger(e.scope, formatErrorLine(e));
+    } else {
+      defaultLogError(e.scope, e.err, e);
+    }
     // intent 拦截已自带回复,不再二次发消息
     if (e.scope === "intent") return;
     if (e.sessionKey) {
