@@ -51,9 +51,11 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { PageShell } from "@/components/admin/page-shell";
 import { PageHeader } from "@/components/admin/page-header";
 import { MetricBadge, MetricBadgeRow } from "@/components/admin/stat";
 import { SectionCard } from "@/components/admin/section-card";
+import { ItemCard } from "@/components/admin/item-card";
 import { MasterDetail } from "@/components/admin/master-detail";
 import { DataState, EmptyState } from "@/components/admin/data-state";
 import { cn } from "@/lib/utils";
@@ -551,8 +553,9 @@ export default function KbPage() {
   const orphan = stats ? stats.chunks - stats.vecs : 0;
 
   return (
-    <div className="flex h-[calc(100svh-6.5rem)] min-h-0 flex-col gap-4">
+    <PageShell fill>
       <PageHeader
+        className="shrink-0"
         title="知识库"
         description="编辑知识文档。⌘/Ctrl+S 保存；「保存并生效」会写入并重建检索索引。"
         actions={
@@ -612,6 +615,7 @@ export default function KbPage() {
         breakpoint="md"
         listWidth="280px"
         backLabel="返回文件列表"
+        className="min-h-0 flex-1"
         list={
           <SectionCard
             title="文件"
@@ -775,13 +779,17 @@ export default function KbPage() {
                       <ScrollArea className="h-full pr-3">
                         <div className="flex flex-col gap-2 pb-2">
                           {chunks.map((c, i) => (
-                            <div key={c.id} className="bg-muted/40 rounded-md border p-3">
-                              <div className="text-muted-foreground mb-1.5 flex items-center justify-between text-xs">
-                                <span>#{i + 1}</span>
-                                <span className="tabular-nums">{c.content.length} 字</span>
-                              </div>
+                            <ItemCard
+                              key={c.id}
+                              meta={
+                                <>
+                                  <span>#{i + 1}</span>
+                                  <span className="ml-auto tabular-nums">{c.content.length} 字</span>
+                                </>
+                              }
+                            >
                               <p className="text-sm whitespace-pre-wrap">{c.content}</p>
-                            </div>
+                            </ItemCard>
                           ))}
                         </div>
                       </ScrollArea>
@@ -898,6 +906,6 @@ export default function KbPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </div>
+    </PageShell>
   );
 }

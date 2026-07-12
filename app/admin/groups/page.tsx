@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
-import { Users, Settings2, RotateCcw } from "lucide-react";
+import { Users, Settings2, RotateCcw, Bell, Timer, Zap } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -27,8 +27,10 @@ import {
 import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { RelativeTime } from "@/components/relative-time";
+import { PageShell } from "@/components/admin/page-shell";
 import { PageHeader } from "@/components/admin/page-header";
 import { SectionCard } from "@/components/admin/section-card";
+import { MetricBadge, MetricBadgeRow } from "@/components/admin/stat";
 import { DataState } from "@/components/admin/data-state";
 import { usePolling } from "@/components/admin/use-polling";
 import { useGroupNames } from "@/lib/group-name";
@@ -209,25 +211,29 @@ export default function GroupsPage() {
   }
 
   return (
-    <div className="flex flex-col gap-6">
+    <PageShell>
       <PageHeader
         title="生效群"
         description={`按群开关机器人应答，并覆盖主动补位 / 转人工通知策略。${overrideCount ? `当前 ${overrideCount} 个群有独立策略。` : "未设置覆盖时全部跟随全局配置。"}`}
       />
 
       {globals && (
-        <SectionCard title="全局默认" description="全局默认值，可在配置页修改；此处便于对比各群覆盖。">
-          <div className="text-muted-foreground flex flex-wrap gap-3 text-sm">
-            <Badge variant={globals.proactiveEnabled ? "default" : "secondary"}>
-              主动补位 {globals.proactiveEnabled ? "开" : "关"}
-            </Badge>
-            <Badge variant="outline">静默 {min(globals.proactiveSilenceMs)}</Badge>
-            <Badge variant="outline">转人工通知管理群 开</Badge>
-          </div>
-        </SectionCard>
+        <MetricBadgeRow>
+          <MetricBadge
+            icon={Zap}
+            label="主动补位"
+            value={globals.proactiveEnabled ? "开" : "关"}
+            tone={globals.proactiveEnabled ? "primary" : undefined}
+          />
+          <MetricBadge icon={Timer} label="静默阈值" value={min(globals.proactiveSilenceMs)} />
+          <MetricBadge icon={Bell} label="转人工通知" value="开" tone="primary" />
+          {overrideCount > 0 && (
+            <MetricBadge icon={Settings2} label="独立策略" value={`${overrideCount} 群`} />
+          )}
+        </MetricBadgeRow>
       )}
 
-      <SectionCard title="群活动与策略" icon={Users}>
+      <SectionCard title="群活动与策略" icon={Users} description="可在配置页修改全局默认；表格内可按群覆盖。">
         <DataState
           loading={loading}
           error={error}
@@ -304,25 +310,20 @@ export default function GroupsPage() {
                   </TableCell>
                   <TableCell>
                     <div className="flex gap-1">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="h-7 px-2 text-xs"
-                        onClick={() => openEditor(r)}
-                      >
-                        <Settings2 className="size-3.5" />
+                      <Button size="sm" variant="outline" onClick={() => openEditor(r)}>
+                        <Settings2 data-icon="inline-start" />
                         编辑
                       </Button>
                       {r.hasOverride && (
                         <Button
                           size="sm"
                           variant="ghost"
-                          className="h-7 px-2 text-xs"
                           disabled={busyId === r.groupId}
                           title="清除覆盖，跟随全局"
                           onClick={() => clearPolicy(r.groupId)}
                         >
-                          <RotateCcw className="size-3.5" />
+                          <RotateCcw data-icon="inline-start" />
+                          清除
                         </Button>
                       )}
                     </div>
@@ -429,6 +430,6 @@ export default function GroupsPage() {
           </SheetFooter>
         </SheetContent>
       </Sheet>
-    </div>
+    </PageShell>
   );
 }

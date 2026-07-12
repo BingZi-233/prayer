@@ -10,9 +10,11 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { RelativeTime } from "@/components/relative-time";
+import { PageShell } from "@/components/admin/page-shell";
 import { PageHeader } from "@/components/admin/page-header";
 import { MetricBadge, MetricBadgeRow } from "@/components/admin/stat";
 import { SectionCard } from "@/components/admin/section-card";
+import { ItemCard } from "@/components/admin/item-card";
 import { DataState } from "@/components/admin/data-state";
 import { usePolling } from "@/components/admin/use-polling";
 import { useGroupNames } from "@/lib/group-name";
@@ -89,7 +91,7 @@ export default function ProactivePage() {
   }
 
   return (
-    <div className="flex flex-col gap-6">
+    <PageShell>
       <PageHeader
         title="主动回复"
         description="生效群里有人提问且长时间无人应答时，机器人会谨慎补位。"
@@ -118,7 +120,7 @@ export default function ProactivePage() {
         <MetricBadge icon={Hash} label="单次上限" value={d ? d.config.maxPerScan : "—"} loading={loading} />
       </MetricBadgeRow>
 
-      <SectionCard title="每群进度">
+      <SectionCard title="每群进度" description="各生效群的扫描进度与补位次数。">
         <DataState
           loading={loading}
           error={error}
@@ -144,14 +146,26 @@ export default function ProactivePage() {
               {d?.groups.map((g) => (
                 <TableRow key={g.groupId}>
                   <TableCell className="font-medium">{name(g.groupId)}</TableCell>
-                  <TableCell>{g.enabled ? <Badge variant="secondary">生效</Badge> : <Badge variant="outline" className="text-muted-foreground">未生效</Badge>}</TableCell>
                   <TableCell>
-                    {(g.proactiveEnabled ?? d.config.enabled)
-                      ? <Badge>开</Badge>
-                      : <Badge variant="outline">关</Badge>}
+                    {g.enabled ? (
+                      <Badge variant="default">生效</Badge>
+                    ) : (
+                      <Badge variant="outline">未生效</Badge>
+                    )}
                   </TableCell>
-                  <TableCell className="text-muted-foreground">{g.cursor === 0 ? "未扫描" : <RelativeTime ts={g.cursor} />}</TableCell>
-                  <TableCell className="text-right tabular-nums">{g.lagMs == null ? "未扫描" : g.lagMs > 0 ? min(g.lagMs) : "0"}</TableCell>
+                  <TableCell>
+                    {(g.proactiveEnabled ?? d.config.enabled) ? (
+                      <Badge variant="default">开</Badge>
+                    ) : (
+                      <Badge variant="outline">关</Badge>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {g.cursor === 0 ? "未扫描" : <RelativeTime ts={g.cursor} />}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {g.lagMs == null ? "未扫描" : g.lagMs > 0 ? min(g.lagMs) : "0"}
+                  </TableCell>
                   <TableCell className="text-right tabular-nums">{g.replyCount}</TableCell>
                 </TableRow>
               ))}
@@ -178,42 +192,53 @@ export default function ProactivePage() {
           <ScrollArea className="h-[400px] pr-3">
             <div className="flex flex-col gap-3">
               {d?.replies.map((e) => (
-                <div key={e.id} className="bg-muted/40 rounded-md border p-3">
-                  <div className="text-muted-foreground mb-2 flex flex-wrap items-center gap-2 text-xs">
-                    <Badge variant="secondary">{name(e.groupId)}</Badge>
-                    <span className="flex items-center gap-1"><User className="size-3" />{e.userId}</span>
-                    <RelativeTime ts={e.ts} />
-                    {e.quality === "ok" && <Badge className="bg-green-600">恰当</Badge>}
-                    {e.quality === "bad" && <Badge variant="destructive">不当</Badge>}
-                    <span className="ml-auto flex gap-1">
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="h-7 px-2"
-                        disabled={marking === e.id}
-                        onClick={() => mark(e.id, "ok")}
-                      >
-                        <ThumbsUp className="size-3.5" />
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="h-7 px-2"
-                        disabled={marking === e.id}
-                        onClick={() => mark(e.id, "bad")}
-                      >
-                        <ThumbsDown className="size-3.5" />
-                      </Button>
-                    </span>
-                  </div>
-                  <p className="text-muted-foreground mb-1.5 line-clamp-2 text-xs whitespace-pre-wrap">问:{e.question}</p>
+                <ItemCard
+                  key={e.id}
+                  meta={
+                    <>
+                      <Badge variant="secondary">{name(e.groupId)}</Badge>
+                      <span className="flex items-center gap-1">
+                        <User className="size-3" />
+                        {e.userId}
+                      </span>
+                      <RelativeTime ts={e.ts} />
+                      {e.quality === "ok" && <Badge variant="default">恰当</Badge>}
+                      {e.quality === "bad" && <Badge variant="destructive">不当</Badge>}
+                      <span className="ml-auto flex gap-1">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          disabled={marking === e.id}
+                          onClick={() => mark(e.id, "ok")}
+                          aria-label="标为恰当"
+                          title="恰当"
+                        >
+                          <ThumbsUp data-icon="inline-start" />
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          disabled={marking === e.id}
+                          onClick={() => mark(e.id, "bad")}
+                          aria-label="标为不当"
+                          title="不当"
+                        >
+                          <ThumbsDown data-icon="inline-start" />
+                        </Button>
+                      </span>
+                    </>
+                  }
+                >
+                  <p className="text-muted-foreground mb-1.5 line-clamp-2 text-xs whitespace-pre-wrap">
+                    问:{e.question}
+                  </p>
                   <p className="text-sm whitespace-pre-wrap">{e.answer}</p>
-                </div>
+                </ItemCard>
               ))}
             </div>
           </ScrollArea>
         </DataState>
       </SectionCard>
-    </div>
+    </PageShell>
   );
 }

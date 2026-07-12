@@ -26,6 +26,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
+import { PageShell } from "@/components/admin/page-shell";
 import { PageHeader } from "@/components/admin/page-header";
 import { SectionCard } from "@/components/admin/section-card";
 
@@ -214,7 +215,7 @@ export default function ConfigPage() {
   };
 
   return (
-    <div className="flex flex-col gap-6">
+    <PageShell>
       <PageHeader
         title="配置"
         description="修改后保存即生效。时间类配置按分钟显示。"
@@ -563,6 +564,6 @@ export default function ConfigPage() {
           </TabsContent>
         </Tabs>
       )}
-    </div>
+    </PageShell>
   );
 }

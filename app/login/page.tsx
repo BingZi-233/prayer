@@ -3,10 +3,12 @@
 import { useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
+import { Bot } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Field, FieldLabel, FieldGroup } from "@/components/ui/field";
+import { Field, FieldLabel, FieldGroup, FieldDescription } from "@/components/ui/field";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Spinner } from "@/components/ui/spinner";
 
 function LoginForm() {
   const [token, setToken] = useState("");
@@ -38,10 +40,20 @@ function LoginForm() {
   }
 
   return (
-    <div className="flex min-h-svh items-center justify-center p-4">
+    <div className="bg-background flex min-h-svh flex-col items-center justify-center gap-6 p-4">
+      <div className="flex flex-col items-center gap-3">
+        <div className="bg-primary text-primary-foreground flex size-10 items-center justify-center rounded-lg">
+          <Bot className="size-5" />
+        </div>
+        <div className="flex flex-col items-center gap-0.5 text-center">
+          <span className="text-sm font-semibold">客服 Agent</span>
+          <span className="text-muted-foreground text-xs">管理后台</span>
+        </div>
+      </div>
+
       <Card className="w-full max-w-sm">
         <CardHeader>
-          <CardTitle>管理后台登录</CardTitle>
+          <CardTitle>登录</CardTitle>
           <CardDescription>输入 ADMIN_TOKEN 口令。未配置环境变量时无需登录。</CardDescription>
         </CardHeader>
         <CardContent>
@@ -57,8 +69,10 @@ function LoginForm() {
                   onChange={(e) => setToken(e.target.value)}
                   placeholder="ADMIN_TOKEN"
                 />
+                <FieldDescription>与部署环境中的 ADMIN_TOKEN 一致。</FieldDescription>
               </Field>
               <Button type="submit" disabled={busy || !token} className="w-full">
+                {busy ? <Spinner data-icon="inline-start" /> : null}
                 {busy ? "登录中…" : "登录"}
               </Button>
             </FieldGroup>

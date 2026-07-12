@@ -10,6 +10,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { RelativeTime } from "@/components/relative-time";
+import { PageShell } from "@/components/admin/page-shell";
 import { PageHeader } from "@/components/admin/page-header";
 import { SectionCard } from "@/components/admin/section-card";
 import { DataState } from "@/components/admin/data-state";
@@ -52,7 +53,6 @@ export default function HandoffQueuePage() {
     const nick = memberName(key);
     const base = label(key);
     if (!nick) return base;
-    // label 已是 "群名 · uid",换成昵称更易读
     const [gid] = key.split(":");
     const g = Number(gid);
     return Number.isNaN(g) ? base : `${name(g)} · ${nick}`;
@@ -80,7 +80,7 @@ export default function HandoffQueuePage() {
   }
 
   return (
-    <div className="flex flex-col gap-6">
+    <PageShell>
       <PageHeader
         title="人工队列"
         description={`当前 ${rows.length} 个会话在人工接待。处理完成后可恢复自动答。`}
@@ -133,7 +133,7 @@ export default function HandoffQueuePage() {
                   </TableCell>
                   <TableCell>
                     <div className="flex flex-wrap gap-1">
-                      <Button asChild variant="ghost" size="sm" className="h-7 px-2 text-xs">
+                      <Button asChild variant="ghost" size="sm">
                         <Link href={`/admin/sessions?key=${encodeURIComponent(r.key)}&human=1`}>
                           <MessagesSquare data-icon="inline-start" />
                           查看会话
@@ -142,7 +142,6 @@ export default function HandoffQueuePage() {
                       <Button
                         variant="outline"
                         size="sm"
-                        className="h-7 px-2 text-xs"
                         disabled={busyKey === r.key}
                         onClick={() => void resume(r.key)}
                       >
@@ -161,6 +160,6 @@ export default function HandoffQueuePage() {
           </Table>
         </DataState>
       </SectionCard>
-    </div>
+    </PageShell>
   );
 }

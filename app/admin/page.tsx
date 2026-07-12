@@ -22,6 +22,14 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { RelativeTime } from "@/components/relative-time";
 import {
   Dialog,
@@ -33,9 +41,10 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { PageShell } from "@/components/admin/page-shell";
 import { PageHeader } from "@/components/admin/page-header";
 import { SectionCard } from "@/components/admin/section-card";
-import { MetricBadge } from "@/components/admin/stat";
+import { MetricBadge, MetricBadgeRow } from "@/components/admin/stat";
 
 interface Status {
   state: string;
@@ -139,12 +148,10 @@ export default function StatusPage() {
   }
 
   const m = ov?.metrics;
-  const hasAlerts =
-    (ov?.humanSessions ?? 0) > 0 || (s != null && !s.wsConnected);
+  const hasAlerts = (ov?.humanSessions ?? 0) > 0 || (s != null && !s.wsConnected);
 
   return (
-    <div className="flex flex-col gap-4 p-px lg:min-h-0 lg:flex-1 lg:gap-6 lg:overflow-hidden">
-      {/* ── 第 1 行:页头 ── */}
+    <PageShell fill className="lg:gap-6">
       <PageHeader
         className="shrink-0"
         title="运行状态"
@@ -179,7 +186,6 @@ export default function StatusPage() {
         }
       />
 
-      {/* ── 第 2 行:待办(条件) ── */}
       {hasAlerts ? (
         <SectionCard
           className="border-destructive/50 shrink-0"
@@ -201,14 +207,7 @@ export default function StatusPage() {
         </SectionCard>
       ) : null}
 
-      {/* ── 第 3 行:运行概况,徽章横排整行 ── */}
-      <SectionCard
-        className="shrink-0"
-        title="运行概况"
-        icon={Activity}
-        description="当前状态与关键计数。"
-        contentClassName="flex flex-wrap gap-2"
-      >
+      <MetricBadgeRow className="shrink-0">
         <MetricBadge
           icon={Activity}
           label="状态"
@@ -234,9 +233,8 @@ export default function StatusPage() {
           loading={!ov}
           value={m?.autoResolutionRate != null ? pct(m.autoResolutionRate) : "—"}
         />
-      </SectionCard>
+      </MetricBadgeRow>
 
-      {/* ── 第 4 行:今日结果独占整行,指标徽章化 ── */}
       <SectionCard
         className="shrink-0"
         title="今日结果"
@@ -255,12 +253,7 @@ export default function StatusPage() {
             <MetricBadge icon={MessagesSquare} label="自动答" value={m.auto} />
             <MetricBadge icon={Zap} label="主动补位" value={m.proactive} />
             <MetricBadge icon={LifeBuoy} label="转人工" value={m.handoff} warn={m.handoff > 0} />
-            <MetricBadge
-              icon={TriangleAlert}
-              label="错误"
-              value={m.error}
-              warn={m.error > 0}
-            />
+            <MetricBadge icon={TriangleAlert} label="错误" value={m.error} warn={m.error > 0} />
             <MetricBadge icon={ShieldCheck} label="意图拦截" value={m.blocked} />
             <MetricBadge icon={Zap} label="主动跳过" value={m.proactiveSilent} />
             <MetricBadge
@@ -285,7 +278,6 @@ export default function StatusPage() {
         )}
       </SectionCard>
 
-      {/* ── 第 5 行:LLM 用量独占整行,吃满剩余高度 ── */}
       <SectionCard
         title="模型用量"
         icon={Gauge}
@@ -309,68 +301,78 @@ export default function StatusPage() {
             </div>
           ) : undefined
         }
-        className="flex flex-col lg:min-h-0 lg:flex-1 lg:overflow-hidden"
-        contentClassName="flex flex-col lg:min-h-0 lg:flex-1 lg:overflow-hidden"
+        className="flex min-h-0 flex-col lg:flex-1 lg:overflow-hidden"
+        contentClassName="flex min-h-0 flex-col lg:flex-1 lg:overflow-hidden"
       >
         {!usage ? (
-          <div className="text-muted-foreground text-sm">加载中…</div>
+          <div className="flex flex-wrap gap-2">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <Skeleton key={i} className="h-8 w-24" />
+            ))}
+          </div>
         ) : (
-          <div className="overflow-x-auto lg:min-h-0 lg:flex-1 lg:overflow-auto lg:overscroll-contain">
-            <table className="w-full min-w-[32rem] text-sm">
-              <thead className="text-muted-foreground bg-card sticky top-0 z-10 text-xs">
-                <tr className="border-b [&>th]:px-2 [&>th]:py-1.5 [&>th]:text-right [&>th:first-child]:text-left">
-                  <th className="bg-card sticky left-0 z-20">调用点</th>
-                  <th>次数</th>
-                  <th>命中率</th>
-                  <th className="hidden sm:table-cell">缓存命中/写入</th>
-                  <th className="hidden md:table-cell">未缓存输入</th>
-                  <th className="hidden md:table-cell">输出</th>
-                  <th>成本($)</th>
-                </tr>
-              </thead>
-              <tbody>
+          <div className="lg:min-h-0 lg:flex-1 lg:overflow-auto lg:overscroll-contain">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>调用点</TableHead>
+                  <TableHead className="text-right">次数</TableHead>
+                  <TableHead className="text-right">命中率</TableHead>
+                  <TableHead className="hidden text-right sm:table-cell">缓存命中/写入</TableHead>
+                  <TableHead className="hidden text-right md:table-cell">未缓存输入</TableHead>
+                  <TableHead className="hidden text-right md:table-cell">输出</TableHead>
+                  <TableHead className="text-right">成本($)</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
                 {usage.rows.map((r) => (
-                  <tr
-                    key={r.site}
-                    className="border-b [&>td]:px-2 [&>td]:py-1.5 [&>td]:text-right [&>td:first-child]:text-left"
-                  >
-                    <td className="bg-card sticky left-0 z-10 font-medium whitespace-nowrap">
-                      {r.label}
-                    </td>
-                    <td>{r.count}</td>
-                    <td>
+                  <TableRow key={r.site}>
+                    <TableCell className="font-medium whitespace-nowrap">{r.label}</TableCell>
+                    <TableCell className="text-right tabular-nums">{r.count}</TableCell>
+                    <TableCell className="text-right">
                       <Badge variant={r.hitRatio >= 0.8 ? "default" : "secondary"}>
                         {pct(r.hitRatio)}
                       </Badge>
-                    </td>
-                    <td className="hidden sm:table-cell">
+                    </TableCell>
+                    <TableCell className="hidden text-right tabular-nums sm:table-cell">
                       {kfmt(r.cacheRead)} / {kfmt(r.cacheCreation)}
-                    </td>
-                    <td className="hidden md:table-cell">{kfmt(r.input)}</td>
-                    <td className="hidden md:table-cell">{kfmt(r.output)}</td>
-                    <td>{r.costUsd.toFixed(4)}</td>
-                  </tr>
+                    </TableCell>
+                    <TableCell className="hidden text-right tabular-nums md:table-cell">
+                      {kfmt(r.input)}
+                    </TableCell>
+                    <TableCell className="hidden text-right tabular-nums md:table-cell">
+                      {kfmt(r.output)}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {r.costUsd.toFixed(4)}
+                    </TableCell>
+                  </TableRow>
                 ))}
-                <tr className="font-medium [&>td]:px-2 [&>td]:py-1.5 [&>td]:text-right [&>td:first-child]:text-left">
-                  <td className="bg-card sticky left-0 z-10">合计</td>
-                  <td>{usage.total.count}</td>
-                  <td>
+                <TableRow className="font-medium">
+                  <TableCell>合计</TableCell>
+                  <TableCell className="text-right tabular-nums">{usage.total.count}</TableCell>
+                  <TableCell className="text-right">
                     <Badge variant="secondary">{pct(usage.total.hitRatio)}</Badge>
-                  </td>
-                  <td className="hidden sm:table-cell">
+                  </TableCell>
+                  <TableCell className="hidden text-right tabular-nums sm:table-cell">
                     {kfmt(usage.total.cacheRead)} / {kfmt(usage.total.cacheCreation)}
-                  </td>
-                  <td className="hidden md:table-cell">{kfmt(usage.total.input)}</td>
-                  <td className="hidden md:table-cell">{kfmt(usage.total.output)}</td>
-                  <td>{usage.total.costUsd.toFixed(4)}</td>
-                </tr>
-              </tbody>
-            </table>
+                  </TableCell>
+                  <TableCell className="hidden text-right tabular-nums md:table-cell">
+                    {kfmt(usage.total.input)}
+                  </TableCell>
+                  <TableCell className="hidden text-right tabular-nums md:table-cell">
+                    {kfmt(usage.total.output)}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {usage.total.costUsd.toFixed(4)}
+                  </TableCell>
+                </TableRow>
+              </TableBody>
+            </Table>
           </div>
         )}
       </SectionCard>
 
-      {/* ── 第 6 行:错误(条件) ── */}
       {s?.lastError && (
         <SectionCard
           className="border-destructive/50 shrink-0"
@@ -388,13 +390,12 @@ export default function StatusPage() {
         </SectionCard>
       )}
 
-      {/* ── 第 7 行:页脚 ── */}
       {s?.bootedAt && (
-        <footer className="text-muted-foreground flex shrink-0 items-center gap-1.5 border-t pt-3 text-xs lg:pt-4">
+        <footer className="text-muted-foreground flex shrink-0 items-center gap-1.5 border-t pt-3 text-xs">
           <Clock className="size-3.5 shrink-0" />
           启动于 <RelativeTime ts={s.bootedAt} />
         </footer>
       )}
-    </div>
+    </PageShell>
   );
 }

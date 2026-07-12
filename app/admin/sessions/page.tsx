@@ -43,6 +43,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { PageShell } from "@/components/admin/page-shell";
 import { PageHeader } from "@/components/admin/page-header";
 import { SectionCard } from "@/components/admin/section-card";
 import { MasterDetail } from "@/components/admin/master-detail";
@@ -102,13 +103,13 @@ export default function SessionsPage() {
 
 function SessionsSkeleton() {
   return (
-    <div className="flex h-[calc(100svh-6.5rem)] flex-col gap-6">
-      <Skeleton className="h-12 w-64" />
+    <PageShell fill>
+      <Skeleton className="h-12 w-64 shrink-0" />
       <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[320px_1fr]">
         <Skeleton className="h-full min-h-80" />
         <Skeleton className="h-full min-h-80" />
       </div>
-    </div>
+    </PageShell>
   );
 }
 
@@ -478,8 +479,9 @@ function SessionsInner() {
   ];
 
   return (
-    <div className="flex h-[calc(100svh-6.5rem)] min-h-0 flex-col gap-4">
+    <PageShell fill>
       <PageHeader
+        className="shrink-0"
         title="会话"
         description="查看群聊对话记录；人工接待中的会话可一键恢复自动答。"
         actions={
@@ -506,6 +508,7 @@ function SessionsInner() {
         onBack={closeSession}
         listWidth="340px"
         backLabel="返回会话列表"
+        className="min-h-0 flex-1"
         list={
         <SectionCard
           title="会话列表"
@@ -587,7 +590,7 @@ function SessionsInner() {
                           className={cn(
                             "size-2 shrink-0",
                             sess.active
-                              ? "fill-emerald-500 text-emerald-500"
+                              ? "fill-primary text-primary"
                               : "fill-muted-foreground/40 text-muted-foreground/40",
                           )}
                         />
@@ -909,6 +912,6 @@ function SessionsInner() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </div>
+    </PageShell>
   );
 }

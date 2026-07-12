@@ -20,9 +20,11 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { RelativeTime } from "@/components/relative-time";
+import { PageShell } from "@/components/admin/page-shell";
 import { PageHeader } from "@/components/admin/page-header";
 import { MetricBadge, MetricBadgeRow } from "@/components/admin/stat";
 import { SectionCard } from "@/components/admin/section-card";
+import { ItemCard } from "@/components/admin/item-card";
 import { DataState } from "@/components/admin/data-state";
 import { usePolling } from "@/components/admin/use-polling";
 import { useGroupNames } from "@/lib/group-name";
@@ -138,7 +140,7 @@ export default function ReflectionPage() {
   }
 
   return (
-    <div className="flex flex-col gap-6">
+    <PageShell>
       <PageHeader
         title="反思"
         description="从人工答复中提炼知识，自动写入知识库。"
@@ -204,7 +206,7 @@ export default function ReflectionPage() {
         />
       </MetricBadgeRow>
 
-      <SectionCard title="每群反思进度">
+      <SectionCard title="每群反思进度" description="各生效群的扫描与入库进度。">
         <DataState
           loading={loading}
           error={error}
@@ -229,8 +231,12 @@ export default function ReflectionPage() {
               {d?.groups.map((g) => (
                 <TableRow key={g.groupId}>
                   <TableCell className="font-medium">{name(g.groupId)}</TableCell>
-                  <TableCell className="text-muted-foreground"><RelativeTime ts={g.cursor} /></TableCell>
-                  <TableCell className="text-right tabular-nums">{g.lagMs == null ? "未反思" : g.lagMs > 0 ? min(g.lagMs) : "0"}</TableCell>
+                  <TableCell className="text-muted-foreground">
+                    <RelativeTime ts={g.cursor} />
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {g.lagMs == null ? "未反思" : g.lagMs > 0 ? min(g.lagMs) : "0"}
+                  </TableCell>
                   <TableCell className="text-right tabular-nums">{g.bufferCount}</TableCell>
                   <TableCell className="text-right tabular-nums">{g.sedimentedCount}</TableCell>
                 </TableRow>
@@ -255,14 +261,16 @@ export default function ReflectionPage() {
           emptyDescription={`知识条目达到阈值（${d?.config.compactMinEntries ?? "—"} 条）后会定期整理。`}
           skeleton={<Skeleton className="h-32 w-full" />}
         >
-          <div className="max-h-[calc(3*2.875rem+2*0.5rem)] space-y-2 overflow-y-auto pr-1">
+          <div className="flex max-h-48 flex-col gap-2 overflow-y-auto pr-1">
             {d?.compactions.map((c) => {
               const { removed, added, keptCount } = diff(c.before, c.after);
               return (
                 <details key={c.id} className="bg-muted/40 rounded-md border">
-                  <summary className="flex cursor-pointer items-center gap-3 p-3 text-sm">
+                  <summary className="flex cursor-pointer flex-wrap items-center gap-3 p-3 text-sm">
                     <RelativeTime ts={c.ts} />
-                    <Badge variant="secondary" className="tabular-nums">{c.beforeCount} → {c.afterCount} 条</Badge>
+                    <Badge variant="secondary" className="tabular-nums">
+                      {c.beforeCount} → {c.afterCount} 条
+                    </Badge>
                     <span className="text-muted-foreground text-xs">
                       移除 {removed.length} · 新增 {added.length} · 保留 {keptCount}
                     </span>
@@ -270,20 +278,32 @@ export default function ReflectionPage() {
                   <div className="flex flex-col gap-3 border-t p-3">
                     {removed.length > 0 && (
                       <div>
-                        <p className="mb-1 text-xs font-medium text-red-600 dark:text-red-400">移除 / 被合并 ({removed.length})</p>
+                        <p className="text-destructive mb-1 text-xs font-medium">
+                          移除 / 被合并 ({removed.length})
+                        </p>
                         <div className="flex flex-col gap-1">
                           {removed.map((t, i) => (
-                            <p key={i} className="border-l-2 border-red-400/60 pl-2 text-sm whitespace-pre-wrap">{t}</p>
+                            <p
+                              key={i}
+                              className="border-destructive/40 border-l-2 pl-2 text-sm whitespace-pre-wrap"
+                            >
+                              {t}
+                            </p>
                           ))}
                         </div>
                       </div>
                     )}
                     {added.length > 0 && (
                       <div>
-                        <p className="mb-1 text-xs font-medium text-green-600 dark:text-green-400">新增 / 合并结果 ({added.length})</p>
+                        <p className="mb-1 text-xs font-medium">新增 / 合并结果 ({added.length})</p>
                         <div className="flex flex-col gap-1">
                           {added.map((t, i) => (
-                            <p key={i} className="border-l-2 border-green-400/60 pl-2 text-sm whitespace-pre-wrap">{t}</p>
+                            <p
+                              key={i}
+                              className="border-primary/40 border-l-2 pl-2 text-sm whitespace-pre-wrap"
+                            >
+                              {t}
+                            </p>
                           ))}
                         </div>
                       </div>
@@ -320,58 +340,95 @@ export default function ReflectionPage() {
                 const hasSource = Boolean(e.question || e.answer);
                 const st = e.status ?? "approved";
                 return (
-                  <div key={e.id} className="bg-muted/40 rounded-md border p-3">
-                    <div className="text-muted-foreground mb-1.5 flex flex-wrap items-center gap-2 text-xs">
-                      {e.groupId === 0 ? (
-                        <Badge variant="outline">已整理</Badge>
-                      ) : e.groupId != null ? (
-                        <Badge variant="secondary">{name(e.groupId)}</Badge>
-                      ) : null}
-                      {st === "rejected" ? (
-                        <Badge variant="destructive">已驳回</Badge>
-                      ) : st === "promoted" ? (
-                        <Badge variant="outline">已升格</Badge>
-                      ) : st === "pending" ? (
-                        <Badge variant="secondary">待审</Badge>
-                      ) : (
-                        <Badge variant="default">已入库</Badge>
-                      )}
-                      <RelativeTime ts={e.ts} />
-                      <span className="ml-auto flex gap-1">
-                        {st !== "approved" && st !== "promoted" && (
-                          <Button size="sm" variant="ghost" className="h-7 px-2" disabled={acting === e.id} onClick={() => act(e.id, "approve")} title="恢复入库">
-                            <Check className="size-3.5" />
-                          </Button>
+                  <ItemCard
+                    key={e.id}
+                    meta={
+                      <>
+                        {e.groupId === 0 ? (
+                          <Badge variant="outline">已整理</Badge>
+                        ) : e.groupId != null ? (
+                          <Badge variant="secondary">{name(e.groupId)}</Badge>
+                        ) : null}
+                        {st === "rejected" ? (
+                          <Badge variant="destructive">已驳回</Badge>
+                        ) : st === "promoted" ? (
+                          <Badge variant="outline">已升格</Badge>
+                        ) : st === "pending" ? (
+                          <Badge variant="secondary">待审</Badge>
+                        ) : (
+                          <Badge variant="default">已入库</Badge>
                         )}
-                        {st !== "rejected" && st !== "promoted" && (
-                          <Button size="sm" variant="ghost" className="h-7 px-2" disabled={acting === e.id} onClick={() => act(e.id, "reject")} title="驳回">
-                            <X className="size-3.5" />
-                          </Button>
-                        )}
-                        {st === "approved" && (
-                          <Button size="sm" variant="ghost" className="h-7 px-2" disabled={acting === e.id} onClick={() => act(e.id, "promote")} title="升格为正式文档">
-                            <FileUp className="size-3.5" />
-                          </Button>
-                        )}
-                      </span>
-                    </div>
+                        <RelativeTime ts={e.ts} />
+                        <span className="ml-auto flex gap-1">
+                          {st !== "approved" && st !== "promoted" && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              disabled={acting === e.id}
+                              onClick={() => act(e.id, "approve")}
+                              title="恢复入库"
+                              aria-label="恢复入库"
+                            >
+                              <Check data-icon="inline-start" />
+                            </Button>
+                          )}
+                          {st !== "rejected" && st !== "promoted" && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              disabled={acting === e.id}
+                              onClick={() => act(e.id, "reject")}
+                              title="驳回"
+                              aria-label="驳回"
+                            >
+                              <X data-icon="inline-start" />
+                            </Button>
+                          )}
+                          {st === "approved" && (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              disabled={acting === e.id}
+                              onClick={() => act(e.id, "promote")}
+                              title="升格为正式文档"
+                              aria-label="升格为正式文档"
+                            >
+                              <FileUp data-icon="inline-start" />
+                            </Button>
+                          )}
+                        </span>
+                      </>
+                    }
+                  >
                     <p className="text-sm whitespace-pre-wrap">{e.content}</p>
                     {hasSource && (
                       <details className="mt-2">
-                        <summary className="text-muted-foreground cursor-pointer text-xs">来源问答</summary>
+                        <summary className="text-muted-foreground cursor-pointer text-xs">
+                          来源问答
+                        </summary>
                         <div className="mt-1.5 flex flex-col gap-1 border-l-2 pl-2 text-xs">
-                          {e.question && <p className="whitespace-pre-wrap"><span className="text-muted-foreground">问:</span>{e.question}</p>}
-                          {e.answer && <p className="whitespace-pre-wrap"><span className="text-muted-foreground">答:</span>{e.answer}</p>}
+                          {e.question && (
+                            <p className="whitespace-pre-wrap">
+                              <span className="text-muted-foreground">问:</span>
+                              {e.question}
+                            </p>
+                          )}
+                          {e.answer && (
+                            <p className="whitespace-pre-wrap">
+                              <span className="text-muted-foreground">答:</span>
+                              {e.answer}
+                            </p>
+                          )}
                         </div>
                       </details>
                     )}
-                  </div>
+                  </ItemCard>
                 );
               })}
             </div>
           </ScrollArea>
         </DataState>
       </SectionCard>
-    </div>
+    </PageShell>
   );
 }
