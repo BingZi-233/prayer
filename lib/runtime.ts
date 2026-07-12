@@ -146,6 +146,10 @@ export class RuntimeManager {
         supportUrl: cfg.supportUrl,
         ackEnabled: cfg.ackEnabled,
         maxReplyChars: cfg.maxReplyChars,
+        topicScanMs: cfg.topicScanMs,
+        topicSettleMs: cfg.topicSettleMs,
+        topicWindowMax: cfg.topicWindowMax,
+        topicPromptMax: cfg.topicPromptMax,
         groupPolicies: cfg.groupPolicies,
       });
       const client = builders.makeClient(cfg.onebotWsUrl, cfg.onebotAccessToken || undefined, (c) => {
