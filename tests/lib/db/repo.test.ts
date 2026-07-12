@@ -319,3 +319,16 @@ describe("question ranking schema", () => {
     expect(n).toBe(1)
   })
 })
+
+describe("ranking repo 写入与游标", () => {
+  it("upsertTopic 复用同名主题;insertOccurrence 落库;topicCursor 读写", () => {
+    const repo = new Repo(openDb(":memory:", 3))
+    const t1 = repo.insertQuestionTopic("退款相关", 1000)
+    const t2 = repo.insertQuestionTopic("退款相关", 2000) // 已存在同名 → 复用
+    expect(t2).toBe(t1)
+    repo.insertQuestionOccurrence(t1, 100, 200, "怎么退款", 1500)
+    expect(repo.topicCursor(100)).toBe(0)
+    repo.setTopicCursor(100, 1500)
+    expect(repo.topicCursor(100)).toBe(1500)
+  })
+})

@@ -328,6 +328,54 @@ export class Repo {
     this.setConfigRow(`reflect_cursor:${groupId}`, String(ts));
   }
 
+  // ── 问题排行榜 ──────────────────────────────────────────
+  // 主题目录:同名(精确)复用,返回主题 id。近义归并由 poller 侧 textNearlySame 处理。
+  insertQuestionTopic(title: string, now: number): number {
+    const exist = this.db
+      .prepare("SELECT id FROM question_topics WHERE title = ?")
+      .get(title) as { id: number } | undefined;
+    if (exist) {
+      this.db
+        .prepare("UPDATE question_topics SET updated_at = ? WHERE id = ?")
+        .run(now, exist.id);
+      return exist.id;
+    }
+    const info = this.db
+      .prepare("INSERT INTO question_topics (title, created_at, updated_at) VALUES (?, ?, ?)")
+      .run(title, now, now);
+    return Number(info.lastInsertRowid);
+  }
+
+  insertQuestionOccurrence(
+    topicId: number,
+    groupId: number,
+    userId: number,
+    text: string,
+    msgTs: number
+  ): void {
+    this.db
+      .prepare(
+        "INSERT INTO question_occurrences (topic_id, group_id, user_id, text, msg_ts) VALUES (?,?,?,?,?)"
+      )
+      .run(topicId, groupId, userId, text, msgTs);
+  }
+
+  // 现有主题清单(供 poller 喂 LLM 与近义归并),按最近活跃降序
+  questionTopics(limit = 500): { id: number; title: string }[] {
+    return this.db
+      .prepare("SELECT id, title FROM question_topics ORDER BY updated_at DESC LIMIT ?")
+      .all(limit) as { id: number; title: string }[];
+  }
+
+  // 每群问题排行游标(config key = topic_cursor:{gid}),已处理到的 group_messages.created_at
+  topicCursor(groupId: number): number {
+    return Number(this.getConfigRow(`topic_cursor:${groupId}`) ?? "0");
+  }
+
+  setTopicCursor(groupId: number, ts: number): void {
+    this.setConfigRow(`topic_cursor:${groupId}`, String(ts));
+  }
+
   // 全局反思整理游标(上次整理完成时间戳),复用 config 表。
   // 持久化 → 进程重启/热重载后按 now-cursor 到期判定补跑,不随内存定时器清零(修复整理永不触发)。
   compactAt(): number {
