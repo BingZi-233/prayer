@@ -15,6 +15,7 @@ import {
   Boxes,
   Puzzle,
   LifeBuoy,
+  TrendingUp,
 } from "lucide-react";
 import {
   Sidebar,
@@ -51,6 +52,7 @@ const navGroups = [
     items: [
       { href: "/admin/kb", label: "知识库", icon: BookOpen },
       { href: "/admin/reflection", label: "反思", icon: Brain },
+      { href: "/admin/ranking", label: "问题排行", icon: TrendingUp },
     ],
   },
   {
