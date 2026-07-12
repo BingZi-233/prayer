@@ -332,3 +332,27 @@ describe("ranking repo 写入与游标", () => {
     expect(repo.topicCursor(100)).toBe(1500)
   })
 })
+
+describe("ranking repo 聚合", () => {
+  it("rankingByWindow 按 msg_ts 窗口计数并降序;topicSamples 取样;minTopicCursor 忽略 0", () => {
+    const repo = new Repo(openDb(":memory:", 3))
+    const a = repo.insertQuestionTopic("退款", 0)
+    const b = repo.insertQuestionTopic("改密码", 0)
+    repo.insertQuestionOccurrence(a, 100, 1, "怎么退款", 1000)
+    repo.insertQuestionOccurrence(a, 100, 2, "退款多久", 2000)
+    repo.insertQuestionOccurrence(b, 100, 3, "改密码", 500)
+    // 窗口 [1500, ∞):只剩 a 的 1 条
+    const win = repo.rankingByWindow(1500)
+    expect(win[0]).toMatchObject({ id: a, count: 1 })
+    // 全部窗口(sinceTs=0):a=2 排 b=1 前
+    const all = repo.rankingByWindow(0)
+    expect(all.map((r) => r.count)).toEqual([2, 1])
+    expect(all[0].id).toBe(a)
+    expect(repo.topicSamples(a, 5)).toContain("退款多久")
+    // minTopicCursor:群100 游标 3000,群200 无游标(0)→ 忽略,取 3000
+    repo.setTopicCursor(100, 3000)
+    expect(repo.minTopicCursor([100, 200])).toBe(3000)
+    // 全部为 0 → MAX_SAFE_INTEGER(不约束 prune)
+    expect(repo.minTopicCursor([200])).toBe(Number.MAX_SAFE_INTEGER)
+  })
+})

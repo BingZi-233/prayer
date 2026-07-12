@@ -376,6 +376,43 @@ export class Repo {
     this.setConfigRow(`topic_cursor:${groupId}`, String(ts));
   }
 
+  // 时间窗排行:msg_ts >= sinceTs 的归属按主题计数,降序。sinceTs=0 即全部。
+  rankingByWindow(sinceTs: number): { id: number; title: string; count: number; lastTs: number }[] {
+    return this.db
+      .prepare(
+        `SELECT t.id AS id, t.title AS title, COUNT(o.id) AS count, MAX(o.msg_ts) AS lastTs
+         FROM question_occurrences o
+         JOIN question_topics t ON t.id = o.topic_id
+         WHERE o.msg_ts >= ?
+         GROUP BY t.id
+         ORDER BY count DESC, lastTs DESC`
+      )
+      .all(sinceTs) as { id: number; title: string; count: number; lastTs: number }[];
+  }
+
+  // 某主题窗口内代表问题样例,按最近降序
+  topicSamples(topicId: number, limit: number, sinceTs = 0): string[] {
+    const rows = this.db
+      .prepare(
+        `SELECT text FROM question_occurrences
+         WHERE topic_id = ? AND msg_ts >= ?
+         ORDER BY msg_ts DESC LIMIT ?`
+      )
+      .all(topicId, sinceTs, limit) as { text: string }[];
+    return rows.map((r) => r.text);
+  }
+
+  // 生效群中 topic 游标的最小值(忽略从未处理过的 0 群,避免恒卡 prune)。
+  // 无任何 >0 游标 → MAX_SAFE_INTEGER(prune 不受 topic 侧约束)。
+  minTopicCursor(enabledGroups: number[]): number {
+    let min = Number.MAX_SAFE_INTEGER;
+    for (const g of enabledGroups) {
+      const c = this.topicCursor(g);
+      if (c > 0 && c < min) min = c;
+    }
+    return min;
+  }
+
   // 全局反思整理游标(上次整理完成时间戳),复用 config 表。
   // 持久化 → 进程重启/热重载后按 now-cursor 到期判定补跑,不随内存定时器清零(修复整理永不触发)。
   compactAt(): number {
