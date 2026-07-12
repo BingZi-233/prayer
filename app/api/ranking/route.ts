@@ -4,7 +4,11 @@ import { Repo } from "@/lib/db/repo"
 import { getConfig } from "@/lib/config-store"
 import { ok, fail } from "@/lib/api"
 import { embed } from "@/lib/tools/embed"
-import { isDuplicateOfHits, DEFAULT_DUP_TOP_K, DEFAULT_DUP_MAX_DISTANCE } from "@/lib/agent/reflection-poller"
+import {
+  isDuplicateOfHits,
+  DEFAULT_DUP_TOP_K,
+  DEFAULT_DUP_MAX_DISTANCE,
+} from "@/lib/agent/reflection-poller"
 
 // 窗口 → 起始时间戳(ms)。all → 0。
 function sinceTs(window: string, now: number): number {
@@ -17,10 +21,13 @@ const TOP_KB = 30 // 只对前 N 主题算 KB 命中,控制 embedding 次数
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
   try {
-    const cfg = getConfig(new Repo(sharedDb(process.env.DB_PATH ?? "./data/agent.db")))
+    const cfg = getConfig(
+      new Repo(sharedDb(process.env.DB_PATH ?? "./data/agent.db"))
+    )
     const repo = new Repo(sharedDb(cfg.dbPath))
     const now = Date.now()
-    const window = req.nextUrl.searchParams.get("window") ?? "7d"
+    const raw = req.nextUrl.searchParams.get("window") ?? "7d"
+    const window = raw === "30d" || raw === "all" ? raw : "7d"
     const since = sinceTs(window, now)
 
     const ranked = repo.rankingByWindow(since)
@@ -39,7 +46,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
         const hits = repo.searchKb(await embed(probe), DEFAULT_DUP_TOP_K)
         const dup = isDuplicateOfHits(probe, hits, DEFAULT_DUP_MAX_DISTANCE)
         kbCovered = dup.duplicate
-        kbDistance = hits.length ? hits[0].distance : null
+        kbDistance =
+          dup.hit?.distance ?? (hits.length ? hits[0].distance : null)
         if (!kbCovered) gaps++
       }
       topics.push({
@@ -61,6 +69,9 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       })
     )
   } catch (err) {
-    return NextResponse.json(fail(err instanceof Error ? err.message : String(err)), { status: 500 })
+    return NextResponse.json(
+      fail(err instanceof Error ? err.message : String(err)),
+      { status: 500 }
+    )
   }
 }

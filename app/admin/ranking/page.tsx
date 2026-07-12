@@ -8,7 +8,14 @@ import { SectionCard } from "@/components/admin/section-card"
 import { MetricBadge, MetricBadgeRow } from "@/components/admin/stat"
 import { DataState } from "@/components/admin/data-state"
 import { usePolling } from "@/components/admin/use-polling"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -38,7 +45,12 @@ const WINDOWS: { key: Win; label: string }[] = [
 
 export default function RankingPage() {
   const [win, setWin] = useState<Win>("7d")
-  const { data: d, error, loading, refresh } = usePolling<Data>(`/api/ranking?window=${win}`)
+  const {
+    data: d,
+    error,
+    loading,
+    refresh,
+  } = usePolling<Data>(`/api/ranking?window=${win}`)
 
   return (
     <PageShell>
@@ -62,8 +74,18 @@ export default function RankingPage() {
       />
 
       <MetricBadgeRow>
-        <MetricBadge icon={TrendingUp} label="主题数" value={d ? d.totals.topics : "—"} loading={loading} />
-        <MetricBadge icon={HelpCircle} label="窗口内提问" value={d ? d.totals.questions : "—"} loading={loading} />
+        <MetricBadge
+          icon={TrendingUp}
+          label="主题数"
+          value={d ? d.totals.topics : "—"}
+          loading={loading}
+        />
+        <MetricBadge
+          icon={HelpCircle}
+          label="窗口内提问"
+          value={d ? d.totals.questions : "—"}
+          loading={loading}
+        />
         <MetricBadge
           icon={ShieldAlert}
           label="疑似盲区"
@@ -73,7 +95,11 @@ export default function RankingPage() {
         />
       </MetricBadgeRow>
 
-      <SectionCard icon={TrendingUp} title="问题排行" description="按窗口内提问数降序;命中提示来自知识库向量近邻。">
+      <SectionCard
+        icon={TrendingUp}
+        title="问题排行"
+        description="按窗口内提问数降序;命中提示来自知识库向量近邻。"
+      >
         <DataState
           loading={loading}
           error={error}
@@ -97,10 +123,14 @@ export default function RankingPage() {
             <TableBody>
               {d?.topics.map((t, i) => (
                 <TableRow key={t.id}>
-                  <TableCell className="tabular-nums text-muted-foreground">{i + 1}</TableCell>
+                  <TableCell className="text-muted-foreground tabular-nums">
+                    {i + 1}
+                  </TableCell>
                   <TableCell>
                     <details>
-                      <summary className="cursor-pointer font-medium">{t.title}</summary>
+                      <summary className="cursor-pointer font-medium">
+                        {t.title}
+                      </summary>
                       <div className="mt-1.5 flex flex-col gap-1 border-l-2 pl-2 text-xs text-muted-foreground">
                         {t.samples.map((s, j) => (
                           <p key={j} className="whitespace-pre-wrap">
@@ -110,7 +140,9 @@ export default function RankingPage() {
                       </div>
                     </details>
                   </TableCell>
-                  <TableCell className="text-right tabular-nums">{t.count}</TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {t.count}
+                  </TableCell>
                   <TableCell>
                     {t.kbCovered === null ? (
                       <Badge variant="outline">未评估</Badge>
