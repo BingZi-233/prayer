@@ -598,11 +598,12 @@ describe("topic-poller runScan", () => {
   })
 
   it("newTitle 与现有主题近义 → 归并到现有,不新建", async () => {
-    const t = repo.insertQuestionTopic("退款一般三个工作日到账", 0)
+    // 归一化后仅差空格 → textNearlySame=true(bigramJaccard 对"三↔3"这类字符替换会 <0.72,故用空格差)
+    const t = repo.insertQuestionTopic("退款一般3个工作日到账", 0)
     seed(repo, 100, 200, "member", "退款多久", NOW - 5000)
     await runScan(
       opts(repo, {
-        queryFn: fakeQuery([{ i: 0, newTitle: "退款一般3个工作日到账" }]) as never, // 近义
+        queryFn: fakeQuery([{ i: 0, newTitle: "退款一般 3 个工作日到账" }]) as never, // 仅差空格,近义
       })
     )
     const rows = repo.rankingByWindow(0)
@@ -953,7 +954,8 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       const r = ranked[idx]
       questions += r.count
       const samples = repo.topicSamples(r.id, 5, since)
-      let kbCovered = false
+      // null = 未评估(排名 TOP_KB 之外不算 KB,避免误标盲区)
+      let kbCovered: boolean | null = null
       let kbDistance: number | null = null
       if (idx < TOP_KB) {
         const probe = samples[0] ?? r.title
@@ -1032,7 +1034,7 @@ import { TrendingUp, HelpCircle, ShieldCheck, ShieldAlert } from "lucide-react"
 import { PageShell } from "@/components/admin/page-shell"
 import { PageHeader } from "@/components/admin/page-header"
 import { SectionCard } from "@/components/admin/section-card"
-import { MetricBadgeRow, MetricBadge } from "@/components/admin/metric-badge"
+import { MetricBadge, MetricBadgeRow } from "@/components/admin/stat"
 import { DataState } from "@/components/admin/data-state"
 import { usePolling } from "@/components/admin/use-polling"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -1046,7 +1048,7 @@ interface Topic {
   id: number
   title: string
   count: number
-  kbCovered: boolean
+  kbCovered: boolean | null // null = 未评估(TOP_KB 之外)
   kbDistance: number | null
   lastTs: number
   samples: string[]
@@ -1139,7 +1141,9 @@ export default function RankingPage() {
                   </TableCell>
                   <TableCell className="text-right tabular-nums">{t.count}</TableCell>
                   <TableCell>
-                    {t.kbCovered ? (
+                    {t.kbCovered === null ? (
+                      <Badge variant="outline">未评估</Badge>
+                    ) : t.kbCovered ? (
                       <Badge variant="secondary">
                         <ShieldCheck data-icon="inline-start" />
                         已覆盖
