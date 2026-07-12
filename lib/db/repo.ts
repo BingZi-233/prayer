@@ -13,6 +13,11 @@ export type ReflectionStatus = "pending" | "approved" | "rejected" | "promoted";
 export class Repo {
   constructor(private db: Database.Database) {}
 
+  // 通用事务包装:回调内多次写用同一连接,全成功才提交
+  transaction<T>(fn: () => T): T {
+    return this.db.transaction(fn)();
+  }
+
   // 记住会话:session_id(展示,网页读 transcript)与 resume_id(续接)同步写入
   setSessionId(key: string, sessionId: string): void {
     this.db

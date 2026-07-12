@@ -150,4 +150,46 @@ describe("topic-poller runScan", () => {
     expect(qf).not.toHaveBeenCalled()
     expect(repo.topicCursor(100)).toBe(0)
   })
+
+  it("落库中途抛错 → 事务回滚,无 occurrence、游标不动,报 error.occurred", async () => {
+    seed(repo, 100, 200, "member", "怎么退款", NOW - 5000)
+    seed(repo, 100, 201, "member", "退款要多久", NOW - 4000)
+    const orig = repo.insertQuestionOccurrence.bind(repo)
+    let n = 0
+    ;(repo as any).insertQuestionOccurrence = (...a: any[]) => {
+      if (++n === 2) throw new Error("boom")
+      return (orig as any)(...a)
+    }
+    const errs: unknown[] = []
+    bus.on("error.occurred", (e) => errs.push(e))
+    await runScan(
+      opts(repo, {
+        queryFn: fakeQuery([
+          { i: 0, newTitle: "退款相关" },
+          { i: 1, newTitle: "退款到账时间" },
+        ]) as never,
+      })
+    )
+    expect(repo.rankingByWindow(0)).toHaveLength(0) // 事务回滚:第 1 条也没落
+    expect(repo.topicCursor(100)).toBe(0) // 游标未推进
+    expect(errs.some((e) => (e as any).scope === "topic")).toBe(true)
+  })
+
+  it("windowMax 截断 + 跨轮推进消化剩余", async () => {
+    // seed 60 条递增 created_at 的 member 消息
+    for (let i = 0; i < 60; i++) seed(repo, 100, 200 + i, "member", `问题${i}`, NOW - 60000 + i * 100)
+    const topicId = repo.insertQuestionTopic("批量", 0)
+    // items 生成 60 个都归到已存在 topic;classifyItems 按 batchLen 截断越界项,安全
+    const items = Array.from({ length: 60 }, (_, i) => ({ i, topicId }))
+
+    // 首轮:windowMax=50 → 落 50 条,游标=第 50 条 created_at
+    await runScan(opts(repo, { windowMax: 50, queryFn: fakeQuery(items) as never }))
+    expect(repo.rankingByWindow(0)).toEqual([expect.objectContaining({ id: topicId, count: 50 })])
+    expect(repo.topicCursor(100)).toBe(NOW - 60000 + 49 * 100)
+
+    // 第二轮:消化剩余 10 条,游标=第 60 条 created_at,总计 60
+    await runScan(opts(repo, { windowMax: 50, queryFn: fakeQuery(items) as never }))
+    expect(repo.rankingByWindow(0)).toEqual([expect.objectContaining({ id: topicId, count: 60 })])
+    expect(repo.topicCursor(100)).toBe(NOW - 60000 + 59 * 100)
+  })
 })

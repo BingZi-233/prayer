@@ -155,10 +155,8 @@ async function scanOnce(d: Resolved): Promise<void> {
   const now = d.now()
   const until = now - d.settleMs
   if (until <= 0) return
-  const enabled = new Set(d.enabledGroups)
 
   for (const groupId of d.enabledGroups) {
-    if (!enabled.has(groupId)) continue
     const cursor = d.repo.topicCursor(groupId)
     if (until <= cursor) continue
     try {
@@ -203,22 +201,28 @@ async function scanOnce(d: Resolved): Promise<void> {
         continue
       }
 
-      for (const c of classified) {
-        const m = msgs[c.i]
-        if (!m) continue
-        let topicId: number
-        if (c.topicId != null) {
-          topicId = c.topicId
-        } else {
-          // newTitle:与现有主题近义则归并,否则新建(insertQuestionTopic 同名复用)
-          const near = topics.find((t) => textNearlySame(t.title, c.newTitle!))
-          topicId = near ? near.id : d.repo.insertQuestionTopic(c.newTitle!, now)
-        }
-        d.repo.insertQuestionOccurrence(topicId, groupId, m.userId, m.text, m.createdAt)
-      }
-      // 推进到本批实际取到的最大 created_at
+      // 推进到本批实际取到的最大 created_at。
+      // 极端边界:单窗口 >windowMax 且第 windowMax 条与下一条 created_at 同毫秒时,
+      // 理论上可能漏一条(下轮 cursor > 其 ts),概率可忽略,不特殊处理。
       const maxTs = msgs[msgs.length - 1].createdAt
-      d.repo.setTopicCursor(groupId, maxTs)
+      // 原子性:新建主题 + 插 occurrences + 推进游标同事务,全成功才提交。
+      // 批内中途抛错 → 整体回滚,游标不动,下轮重跑整批,避免 occurrence 重复计数(无去重)。
+      d.repo.transaction(() => {
+        for (const c of classified) {
+          const m = msgs[c.i]
+          if (!m) continue
+          let topicId: number
+          if (c.topicId != null) {
+            topicId = c.topicId
+          } else {
+            // newTitle:与现有主题近义则归并,否则新建(insertQuestionTopic 同名复用)
+            const near = topics.find((t) => textNearlySame(t.title, c.newTitle!))
+            topicId = near ? near.id : d.repo.insertQuestionTopic(c.newTitle!, now)
+          }
+          d.repo.insertQuestionOccurrence(topicId, groupId, m.userId, m.text, m.createdAt)
+        }
+        d.repo.setTopicCursor(groupId, maxTs)
+      })
     } catch (err) {
       bus.emit("error.occurred", { scope: "topic", err, groupId })
     }
