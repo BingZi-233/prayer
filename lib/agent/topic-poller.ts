@@ -103,14 +103,20 @@ interface Resolved {
   now: () => number
 }
 
-const TOPIC_SYSTEM = `你是客服问题归类助手。用户消息给出:
+const TOPIC_SYSTEM = `你是 PackyAPI(API 中转站)客服问题归类助手。用户消息给出:
 一、【现有主题】清单,每行 [id] 标题(可能为空)。
 二、【待归类问题】清单,每行 [序号] 用户提问原文。
-任务:对每条待归类问题,判断它属于哪个已有主题,或需要新建主题,或是无意义噪声。
+任务:仅对「与 PackyAPI / API 中转站产品相关」的咨询归类,其余一律丢弃。
+只记录(归类/建主题)的范围 —— 围绕本中转站使用的咨询:
+- 接入配置(base_url / token / 环境变量 / 各类客户端对接)、可用模型与端点。
+- 价格、计费规则、分组倍率、充值、额度、退款、封禁、账户事务。
+- 调用报错排查、限流、可用性等使用问题。
 规则:
 - 能归入某个现有主题 → 输出该主题的 id(topicId,必须来自【现有主题】清单)。
-- 是有意义的新问题但无匹配主题 → 输出简洁的中文主题标题(newTitle,概括问题要点,如"退款到账时间")。
-- 寒暄/表情/闲聊/纯指令/无信息量 → 标记 noise:true,丢弃。
+- 属上述范围的新问题但无匹配主题 → 输出简洁中文主题标题(newTitle,概括要点,如"退款到账时间")。
+- 与 PackyAPI / API 中转站无关的一切 → 标记 noise:true 丢弃,即使本身是有意义的问题
+  (如通用编程/技术求助、其他产品、时事闲聊、寒暄/表情/纯指令/无信息量)。
+- 拿不准是否与本产品相关 → 判 noise:true(宁可少记,避免统计被无关话题淹没)。
 - 语义相同的多条新问题应共用同一个 newTitle。
 只输出 JSON 对象 {"items":[...]},每项含输入序号 i。不要额外文字、不要 Markdown。
 形如 {"items":[{"i":0,"topicId":3},{"i":1,"newTitle":"退款到账时间"},{"i":2,"noise":true}]}`
@@ -169,7 +175,10 @@ async function scanOnce(d: Resolved): Promise<void> {
         d.repo.setTopicCursor(groupId, until)
         continue
       }
-      const topics = d.repo.questionTopics(d.topicPromptMax)
+      // 近义归并候选池:取更大集合(本地 textNearlySame 比对无 LLM 成本),
+      // 防近义老主题掉出 LLM 提示窗口(top-N)后被重复新建。LLM 提示仍只喂前 N 控 prompt 体积。
+      const mergePool = d.repo.questionTopics(500)
+      const topics = mergePool.slice(0, d.topicPromptMax)
       const existingIds = new Set(topics.map((t) => t.id))
       const topicBlock =
         topics.length > 0 ? topics.map((t) => `[${t.id}] ${t.title}`).join("\n") : "(无)"
@@ -215,9 +224,15 @@ async function scanOnce(d: Resolved): Promise<void> {
           if (c.topicId != null) {
             topicId = c.topicId
           } else {
-            // newTitle:与现有主题近义则归并,否则新建(insertQuestionTopic 同名复用)
-            const near = topics.find((t) => textNearlySame(t.title, c.newTitle!))
-            topicId = near ? near.id : d.repo.insertQuestionTopic(c.newTitle!, now)
+            // newTitle:与候选池近义则归并,否则新建(insertQuestionTopic 同名复用)
+            const near = mergePool.find((t) => textNearlySame(t.title, c.newTitle!))
+            if (near) {
+              topicId = near.id
+            } else {
+              topicId = d.repo.insertQuestionTopic(c.newTitle!, now)
+              // 回填候选池:同批后续近义项归并到此,防批内重复新建
+              mergePool.push({ id: topicId, title: c.newTitle! })
+            }
           }
           d.repo.insertQuestionOccurrence(topicId, groupId, m.userId, m.text, m.createdAt)
           d.repo.touchQuestionTopic(topicId, now)
