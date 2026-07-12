@@ -365,6 +365,11 @@ export class Repo {
       .run(topicId, groupId, userId, text, msgTs);
   }
 
+  // 主题被再次命中时刷新活跃时间,保证热门主题留在 questionTopics 前排(喂 LLM 归并用)
+  touchQuestionTopic(id: number, now: number): void {
+    this.db.prepare("UPDATE question_topics SET updated_at = ? WHERE id = ?").run(now, id);
+  }
+
   // 现有主题清单(供 poller 喂 LLM 与近义归并),按最近活跃降序
   questionTopics(limit = 500): { id: number; title: string }[] {
     return this.db

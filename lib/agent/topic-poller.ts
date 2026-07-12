@@ -220,6 +220,7 @@ async function scanOnce(d: Resolved): Promise<void> {
             topicId = near ? near.id : d.repo.insertQuestionTopic(c.newTitle!, now)
           }
           d.repo.insertQuestionOccurrence(topicId, groupId, m.userId, m.text, m.createdAt)
+          d.repo.touchQuestionTopic(topicId, now)
         }
         d.repo.setTopicCursor(groupId, maxTs)
       })

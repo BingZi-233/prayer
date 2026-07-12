@@ -175,6 +175,21 @@ describe("topic-poller runScan", () => {
     expect(errs.some((e) => (e as any).scope === "topic")).toBe(true)
   })
 
+  it("命中已有 topicId → 刷新 updated_at,保持热门主题留在前排", async () => {
+    const topicId = repo.insertQuestionTopic("老主题", 0)
+    seed(repo, 100, 200, "member", "老主题相关提问", NOW - 5000)
+    await runScan(
+      opts(repo, {
+        queryFn: fakeQuery([{ i: 0, topicId }]) as never,
+      })
+    )
+    expect(repo.questionTopics()[0].id).toBe(topicId)
+    const row = (repo as any).db.prepare("SELECT updated_at FROM question_topics WHERE id=?").get(topicId) as {
+      updated_at: number
+    }
+    expect(row.updated_at).toBe(NOW)
+  })
+
   it("windowMax 截断 + 跨轮推进消化剩余", async () => {
     // seed 60 条递增 created_at 的 member 消息
     for (let i = 0; i < 60; i++) seed(repo, 100, 200 + i, "member", `问题${i}`, NOW - 60000 + i * 100)
