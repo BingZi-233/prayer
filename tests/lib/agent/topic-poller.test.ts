@@ -136,6 +136,39 @@ describe("topic-poller runScan", () => {
     expect(rows[0].id).toBe(t) // 归并到已有
   })
 
+  it("同批多条近义 newTitle → 归并同一主题,不重复新建", async () => {
+    seed(repo, 100, 200, "member", "退款多久到账", NOW - 5000)
+    seed(repo, 100, 201, "member", "退款要几天", NOW - 4000)
+    await runScan(
+      opts(repo, {
+        queryFn: fakeQuery([
+          { i: 0, newTitle: "退款到账时间" },
+          { i: 1, newTitle: "退款到账时间" }, // 完全同名 → insertQuestionTopic 复用
+          { i: 2, newTitle: "退款 到账 时间" }, // 仅差空格,近义 → 批内归并
+        ]) as never,
+      })
+    )
+    const rows = repo.rankingByWindow(0)
+    expect(rows).toHaveLength(1) // 只一个主题
+    expect(rows[0].count).toBe(2) // 两条落库(i=2 越界丢弃)
+  })
+
+  it("近义老主题掉出 LLM 提示窗口(topicPromptMax)仍归并,不重复新建", async () => {
+    // 先塞 topicPromptMax 个新主题把目标主题挤出提示窗口(mergePool 仍含它)
+    const target = repo.insertQuestionTopic("退款到账时间", 0)
+    for (let i = 0; i < 3; i++) repo.insertQuestionTopic(`占位主题${i}`, NOW - i) // 更晚活跃,排前
+    seed(repo, 100, 200, "member", "退款多久", NOW - 5000)
+    await runScan(
+      opts(repo, {
+        topicPromptMax: 2, // 目标主题(updated_at=0)落在前 2 之外
+        queryFn: fakeQuery([{ i: 0, newTitle: "退款 到账 时间" }]) as never, // 近义
+      })
+    )
+    const rows = repo.rankingByWindow(0)
+    expect(rows).toHaveLength(1)
+    expect(rows[0].id).toBe(target) // 归并到窗口外老主题
+  })
+
   it("LLM 畸形输出 → 不落库,游标不动(下轮重试)", async () => {
     seed(repo, 100, 200, "member", "怎么退款", NOW - 5000)
     await runScan(opts(repo, { queryFn: fakeQueryText("抱歉无法处理") as never }))

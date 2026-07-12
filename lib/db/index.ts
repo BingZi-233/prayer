@@ -163,6 +163,24 @@ function migrate(db: Database.Database, dim: number): void {
   } catch {
     /* 列已存在 */
   }
+  // message_id 唯一化:多实例同连一个 NapCat 时每条消息会被广播给所有客户端,
+  // 双写会让排行榜计数翻倍、样例重复。首次建索引前先删存量重复行(留最早),
+  // 之后靠 UNIQUE + bufferGroupMessage 的 INSERT OR IGNORE 挡住一切上游重投。
+  // NULL(无 message_id 的旧行/降级路径)不受 UNIQUE 约束,SQLite 允许多个 NULL。
+  const hasGmMsgIdIdx = db
+    .prepare("SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = 'idx_gm_message_id'")
+    .get();
+  if (!hasGmMsgIdIdx) {
+    db.exec(`
+      DELETE FROM group_messages
+       WHERE message_id IS NOT NULL
+         AND id NOT IN (
+           SELECT MIN(id) FROM group_messages
+            WHERE message_id IS NOT NULL GROUP BY message_id
+         );
+      CREATE UNIQUE INDEX idx_gm_message_id ON group_messages(message_id);
+    `);
+  }
   // 主动补位质检:null=未评 / ok / bad
   try {
     db.exec("ALTER TABLE proactive_replies ADD COLUMN quality TEXT");

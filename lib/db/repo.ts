@@ -104,7 +104,8 @@ export class Repo {
     return rows.map((r) => r.key);
   }
 
-  // 群消息缓冲(被动反思用):落库。messageId 供主动回复引用原消息;缺省 → NULL(不引用)
+  // 群消息缓冲(被动反思用):落库。messageId 供主动回复引用原消息;缺省 → NULL(不引用)。
+  // OR IGNORE + message_id 唯一索引:多实例同连 NapCat / WS 重连重投时同一消息只落一行(NULL 不去重)。
   bufferGroupMessage(
     groupId: number,
     userId: number,
@@ -114,7 +115,7 @@ export class Repo {
   ): void {
     this.db
       .prepare(
-        "INSERT INTO group_messages (group_id, user_id, sender_role, text, message_id) VALUES (?, ?, ?, ?, ?)"
+        "INSERT OR IGNORE INTO group_messages (group_id, user_id, sender_role, text, message_id) VALUES (?, ?, ?, ?, ?)"
       )
       .run(groupId, userId, senderRole, text, messageId ?? null);
   }
@@ -400,15 +401,16 @@ export class Repo {
       .all(sinceTs) as { id: number; title: string; count: number; lastTs: number }[];
   }
 
-  // 某主题窗口内代表问题样例,按最近降序
+  // 某主题窗口内代表问题样例,按最近降序。按 text 去重(同句重复发/转发只展示一次,计数不受影响)。
   topicSamples(topicId: number, limit: number, sinceTs = 0): string[] {
     const rows = this.db
       .prepare(
-        `SELECT text FROM question_occurrences
+        `SELECT text, MAX(msg_ts) AS ts FROM question_occurrences
          WHERE topic_id = ? AND msg_ts >= ?
-         ORDER BY msg_ts DESC LIMIT ?`
+         GROUP BY text
+         ORDER BY ts DESC LIMIT ?`
       )
-      .all(topicId, sinceTs, limit) as { text: string }[];
+      .all(topicId, sinceTs, limit) as { text: string; ts: number }[];
     return rows.map((r) => r.text);
   }
 
