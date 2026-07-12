@@ -13,6 +13,11 @@ export type ReflectionStatus = "pending" | "approved" | "rejected" | "promoted";
 export class Repo {
   constructor(private db: Database.Database) {}
 
+  // 通用事务包装:回调内多次写用同一连接,全成功才提交
+  transaction<T>(fn: () => T): T {
+    return this.db.transaction(fn)();
+  }
+
   // 记住会话:session_id(展示,网页读 transcript)与 resume_id(续接)同步写入
   setSessionId(key: string, sessionId: string): void {
     this.db
@@ -326,6 +331,96 @@ export class Repo {
 
   setGroupReflectCursor(groupId: number, ts: number): void {
     this.setConfigRow(`reflect_cursor:${groupId}`, String(ts));
+  }
+
+  // ── 问题排行榜 ──────────────────────────────────────────
+  // 主题目录:同名(精确)复用,返回主题 id。近义归并由 poller 侧 textNearlySame 处理。
+  insertQuestionTopic(title: string, now: number): number {
+    const exist = this.db
+      .prepare("SELECT id FROM question_topics WHERE title = ?")
+      .get(title) as { id: number } | undefined;
+    if (exist) {
+      this.db
+        .prepare("UPDATE question_topics SET updated_at = ? WHERE id = ?")
+        .run(now, exist.id);
+      return exist.id;
+    }
+    const info = this.db
+      .prepare("INSERT INTO question_topics (title, created_at, updated_at) VALUES (?, ?, ?)")
+      .run(title, now, now);
+    return Number(info.lastInsertRowid);
+  }
+
+  insertQuestionOccurrence(
+    topicId: number,
+    groupId: number,
+    userId: number,
+    text: string,
+    msgTs: number
+  ): void {
+    this.db
+      .prepare(
+        "INSERT INTO question_occurrences (topic_id, group_id, user_id, text, msg_ts) VALUES (?,?,?,?,?)"
+      )
+      .run(topicId, groupId, userId, text, msgTs);
+  }
+
+  // 主题被再次命中时刷新活跃时间,保证热门主题留在 questionTopics 前排(喂 LLM 归并用)
+  touchQuestionTopic(id: number, now: number): void {
+    this.db.prepare("UPDATE question_topics SET updated_at = ? WHERE id = ?").run(now, id);
+  }
+
+  // 现有主题清单(供 poller 喂 LLM 与近义归并),按最近活跃降序
+  questionTopics(limit = 500): { id: number; title: string }[] {
+    return this.db
+      .prepare("SELECT id, title FROM question_topics ORDER BY updated_at DESC LIMIT ?")
+      .all(limit) as { id: number; title: string }[];
+  }
+
+  // 每群问题排行游标(config key = topic_cursor:{gid}),已处理到的 group_messages.created_at
+  topicCursor(groupId: number): number {
+    return Number(this.getConfigRow(`topic_cursor:${groupId}`) ?? "0");
+  }
+
+  setTopicCursor(groupId: number, ts: number): void {
+    this.setConfigRow(`topic_cursor:${groupId}`, String(ts));
+  }
+
+  // 时间窗排行:msg_ts >= sinceTs 的归属按主题计数,降序。sinceTs=0 即全部。
+  rankingByWindow(sinceTs: number): { id: number; title: string; count: number; lastTs: number }[] {
+    return this.db
+      .prepare(
+        `SELECT t.id AS id, t.title AS title, COUNT(o.id) AS count, MAX(o.msg_ts) AS lastTs
+         FROM question_occurrences o
+         JOIN question_topics t ON t.id = o.topic_id
+         WHERE o.msg_ts >= ?
+         GROUP BY t.id
+         ORDER BY count DESC, lastTs DESC`
+      )
+      .all(sinceTs) as { id: number; title: string; count: number; lastTs: number }[];
+  }
+
+  // 某主题窗口内代表问题样例,按最近降序
+  topicSamples(topicId: number, limit: number, sinceTs = 0): string[] {
+    const rows = this.db
+      .prepare(
+        `SELECT text FROM question_occurrences
+         WHERE topic_id = ? AND msg_ts >= ?
+         ORDER BY msg_ts DESC LIMIT ?`
+      )
+      .all(topicId, sinceTs, limit) as { text: string }[];
+    return rows.map((r) => r.text);
+  }
+
+  // 生效群中 topic 游标的最小值(忽略从未处理过的 0 群,避免恒卡 prune)。
+  // 无任何 >0 游标 → MAX_SAFE_INTEGER(prune 不受 topic 侧约束)。
+  minTopicCursor(enabledGroups: number[]): number {
+    let min = Number.MAX_SAFE_INTEGER;
+    for (const g of enabledGroups) {
+      const c = this.topicCursor(g);
+      if (c > 0 && c < min) min = c;
+    }
+    return min;
   }
 
   // 全局反思整理游标(上次整理完成时间戳),复用 config 表。

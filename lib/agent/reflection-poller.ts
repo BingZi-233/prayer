@@ -264,7 +264,10 @@ async function scanOnce(d: Resolved): Promise<void> {
     }
   }
 
-  d.repo.pruneGroupMessages(now - d.lookbackMs - d.settleMs);
+  // 删除下界纳入问题排行游标:只删反思与 topic 两侧都已越过的消息,防止未归类提问被提前 prune。
+  d.repo.pruneGroupMessages(
+    Math.min(now - d.lookbackMs - d.settleMs, d.repo.minTopicCursor(d.enabledGroups))
+  );
 }
 
 // 供测试直接驱动一次扫描

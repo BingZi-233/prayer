@@ -305,3 +305,77 @@ describe("repo 主动兜底支持", () => {
     expect(byUser[201]).toBeNull();
   });
 });
+
+describe("question ranking schema", () => {
+  it("question_topics / question_occurrences 表存在且可写", () => {
+    const repo = new Repo(openDb(":memory:", 3))
+    const db = (repo as any).db as import("better-sqlite3").Database
+    db.prepare("INSERT INTO question_topics (title) VALUES (?)").run("退款相关")
+    const tid = (db.prepare("SELECT id FROM question_topics").get() as { id: number }).id
+    db.prepare(
+      "INSERT INTO question_occurrences (topic_id, group_id, user_id, text, msg_ts) VALUES (?,?,?,?,?)"
+    ).run(tid, 100, 200, "怎么退款", 1000)
+    const n = (db.prepare("SELECT COUNT(*) n FROM question_occurrences").get() as { n: number }).n
+    expect(n).toBe(1)
+  })
+})
+
+describe("ranking repo 写入与游标", () => {
+  it("upsertTopic 复用同名主题;insertOccurrence 落库;topicCursor 读写", () => {
+    const repo = new Repo(openDb(":memory:", 3))
+    const t1 = repo.insertQuestionTopic("退款相关", 1000)
+    const t2 = repo.insertQuestionTopic("退款相关", 2000) // 已存在同名 → 复用
+    expect(t2).toBe(t1)
+    repo.insertQuestionOccurrence(t1, 100, 200, "怎么退款", 1500)
+    expect(repo.topicCursor(100)).toBe(0)
+    repo.setTopicCursor(100, 1500)
+    expect(repo.topicCursor(100)).toBe(1500)
+  })
+
+  it("questionTopics 按 updated_at DESC 返回 {id,title}", () => {
+    const repo = new Repo(openDb(":memory:", 3))
+    const t1 = repo.insertQuestionTopic("退款相关", 1000)
+    const t2 = repo.insertQuestionTopic("改密码", 2000) // updated_at 更新 → 排前
+    const list = repo.questionTopics()
+    expect(list).toEqual([
+      { id: t2, title: "改密码" },
+      { id: t1, title: "退款相关" },
+    ])
+  })
+})
+
+describe("ranking repo 聚合", () => {
+  it("rankingByWindow 按 msg_ts 窗口计数并降序;topicSamples 取样;minTopicCursor 忽略 0", () => {
+    const repo = new Repo(openDb(":memory:", 3))
+    const a = repo.insertQuestionTopic("退款", 0)
+    const b = repo.insertQuestionTopic("改密码", 0)
+    repo.insertQuestionOccurrence(a, 100, 1, "怎么退款", 1000)
+    repo.insertQuestionOccurrence(a, 100, 2, "退款多久", 2000)
+    repo.insertQuestionOccurrence(b, 100, 3, "改密码", 500)
+    // 窗口 [1500, ∞):只剩 a 的 1 条
+    const win = repo.rankingByWindow(1500)
+    expect(win[0]).toMatchObject({ id: a, count: 1 })
+    // 全部窗口(sinceTs=0):a=2 排 b=1 前
+    const all = repo.rankingByWindow(0)
+    expect(all.map((r) => r.count)).toEqual([2, 1])
+    expect(all[0].id).toBe(a)
+    // topicSamples 按 msg_ts DESC:ts=2000 的"退款多久" 在前,ts=1000 的"怎么退款" 在后
+    expect(repo.topicSamples(a, 5)).toEqual(["退款多久", "怎么退款"])
+    // minTopicCursor:群100 游标 3000,群200 无游标(0)→ 忽略,取 3000
+    repo.setTopicCursor(100, 3000)
+    expect(repo.minTopicCursor([100, 200])).toBe(3000)
+    // 全部为 0 → MAX_SAFE_INTEGER(不约束 prune)
+    expect(repo.minTopicCursor([200])).toBe(Number.MAX_SAFE_INTEGER)
+  })
+
+  it("rankingByWindow count 相同按 lastTs DESC", () => {
+    const repo = new Repo(openDb(":memory:", 3))
+    const c = repo.insertQuestionTopic("c", 0)
+    const d = repo.insertQuestionTopic("d", 0)
+    repo.insertQuestionOccurrence(c, 100, 1, "c1", 2000) // ts 更大 → 排前
+    repo.insertQuestionOccurrence(d, 100, 2, "d1", 1000)
+    const rows = repo.rankingByWindow(0)
+    expect(rows.map((r) => r.count)).toEqual([1, 1]) // count 相同
+    expect(rows.map((r) => r.id)).toEqual([c, d]) // lastTs DESC → c 在前
+  })
+})

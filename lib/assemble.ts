@@ -6,6 +6,7 @@ import { registerOrchestrator } from "./agent/orchestrator";
 import { makeIntentClassifier } from "./agent/intent";
 import { registerReplyMapper } from "./agent/reply-mapper";
 import { registerMessageBuffer } from "./agent/message-buffer";
+import { registerTopicPoller } from "./agent/topic-poller";
 import { registerReflectionPoller } from "./agent/reflection-poller";
 import { registerReflectionCompactor } from "./agent/reflection-compactor";
 import { registerReflectionPromoter } from "./agent/reflection-promoter";
@@ -45,6 +46,10 @@ export interface AssembleDeps {
   supportUrl?: string;
   ackEnabled?: boolean;
   maxReplyChars?: number;
+  topicScanMs?: number;
+  topicSettleMs?: number;
+  topicWindowMax?: number;
+  topicPromptMax?: number;
   groupPolicies?: Record<string, GroupPolicy>;
 }
 
@@ -93,6 +98,15 @@ export function assemble(deps: AssembleDeps): () => void {
     }),
     registerReplyMapper({ maxChars: deps.maxReplyChars ?? 900 }),
     registerMessageBuffer({ repo, botQQ, adminGroupId, enabledGroups }),
+    registerTopicPoller({
+      repo,
+      adminGroupId,
+      enabledGroups,
+      scanMs: deps.topicScanMs,
+      settleMs: deps.topicSettleMs,
+      windowMax: deps.topicWindowMax,
+      topicPromptMax: deps.topicPromptMax,
+    }),
     registerReflectionPoller({
       repo,
       adminGroupId,

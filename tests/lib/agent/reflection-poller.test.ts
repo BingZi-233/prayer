@@ -293,6 +293,30 @@ describe("reflection-poller runScan", () => {
   });
 });
 
+describe("reflection-poller prune 下界协调(与 topicCursor)", () => {
+  // NOW=10_000_000, lookbackMs=1_000_000, settleMs=1000(见 opts 默认)
+  // → 未受 topic 侧约束时的反思 prune 阈值 = NOW - lookbackMs - settleMs = 8_999_000
+  it("场景A:某群 topicCursor 小于反思阈值 → prune 下界被压低,阈值内消息不被删", async () => {
+    repo.setTopicCursor(100, 8_000_000); // 小于反思阈值 8_999_000
+    seed(100, 200, "member", "落在(topicCursor, 反思阈值)之间", 8_500_000);
+    await runScan(opts({ queryFn: fakeQuery("[]") as never }));
+    const rows = (repo as any).db
+      .prepare("SELECT created_at FROM group_messages WHERE group_id = 100")
+      .all() as { created_at: number }[];
+    expect(rows).toHaveLength(1); // 未被删:prune 下界压到 topicCursor=8_000_000
+  });
+
+  it("场景B:无任何 topic 游标(全0)→ prune 行为与改动前一致,足够老的消息仍被删", async () => {
+    seed(100, 200, "member", "足够老的消息", 8_000_000); // < 8_999_000 反思阈值
+    seed(100, 200, "member", "较新的消息", 9_500_000); // > 8_999_000 反思阈值
+    await runScan(opts({ queryFn: fakeQuery("[]") as never }));
+    const rows = (repo as any).db
+      .prepare("SELECT created_at FROM group_messages WHERE group_id = 100")
+      .all() as { created_at: number }[];
+    expect(rows.map((r) => r.created_at)).toEqual([9_500_000]); // 老消息已删,新消息保留
+  });
+});
+
 describe("collectKbContext", () => {
   it("检索去重并按距离排序截断", async () => {
     repo.insertKbEntry("a.md", "退款政策说明", "a.md", new Float32Array([1, 0, 0]));

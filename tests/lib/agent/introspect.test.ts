@@ -54,6 +54,10 @@ const cfg: AppConfig = {
   supportUrl: "https://www.packyapi.com",
   ackEnabled: true,
   maxReplyChars: 900,
+  topicScanMs: 300000,
+  topicSettleMs: 60000,
+  topicWindowMax: 50,
+  topicPromptMax: 40,
   usageBudgetUsd: 0,
   groupPolicies: {},
 };

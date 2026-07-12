@@ -52,6 +52,14 @@ export interface AppConfig {
   ackEnabled: boolean;
   /** 单条回复字数上限,超出则拆条;0 = 不拆。默认 900 */
   maxReplyChars: number;
+  /** 问题排行归类扫描周期(ms)。默认 5 分钟 */
+  topicScanMs: number
+  /** 归类静置窗(ms):只处理早于 now-该值的提问。默认 1 分钟 */
+  topicSettleMs: number
+  /** 每群每轮最多归类条数。默认 50 */
+  topicWindowMax: number
+  /** 喂 LLM 的现有主题上限。默认 40 */
+  topicPromptMax: number
   /** 用量日预算(USD),超阈告警管理群;0 = 不告警 */
   usageBudgetUsd: number;
   /** 按群策略覆盖,key 为群号字符串 */
@@ -104,6 +112,10 @@ function seedFromEnv(env: Record<string, string | undefined>): AppConfig {
     supportUrl: env.SUPPORT_URL ?? "https://www.packyapi.com",
     ackEnabled: env.ACK_ENABLED !== "false",
     maxReplyChars: Number(env.MAX_REPLY_CHARS ?? "900"),
+    topicScanMs: Number(env.TOPIC_SCAN_MS ?? "300000"),
+    topicSettleMs: Number(env.TOPIC_SETTLE_MS ?? "60000"),
+    topicWindowMax: Number(env.TOPIC_WINDOW_MAX ?? "50"),
+    topicPromptMax: Number(env.TOPIC_PROMPT_MAX ?? "40"),
     usageBudgetUsd: Number(env.USAGE_BUDGET_USD ?? "0"),
     groupPolicies: {},
   };
