@@ -44,6 +44,19 @@ describe("classifyItems 校验", () => {
     const out = classifyItems(undefined, '前言 [{"i":0,"newTitle":"退款"}] 后语', 1, new Set([1]))
     expect(out).toEqual([{ i: 0, newTitle: "退款" }])
   })
+
+  it("多轮 assistant 文本拼接两段 JSON → 取最后一段(不因贪婪匹配失败)", () => {
+    // drainQuery 在 maxTurns≥2 时会把两轮输出直接拼在一起
+    const a = '{"items":[{"i":0,"topicId":1}]}'
+    const b = '{"items":[{"i":0,"newTitle":"退款到账时间"},{"i":1,"noise":true}]}'
+    const out = classifyItems(undefined, a + b, 2, existing)
+    expect(out).toEqual([{ i: 0, newTitle: "退款到账时间" }])
+  })
+
+  it("markdown 代码块包裹的 JSON 仍可解析", () => {
+    const raw = '```json\n{"items":[{"i":0,"topicId":2}]}\n```'
+    expect(classifyItems(undefined, raw, 1, existing)).toEqual([{ i: 0, topicId: 2 }])
+  })
 })
 
 const embed = async () => new Float32Array([1, 0, 0])

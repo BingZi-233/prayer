@@ -13,30 +13,72 @@ export interface ClassifyItem {
   newTitle?: string
 }
 
+/** 括号配对找闭合位置(尊重字符串转义)。失败返回 -1。 */
+function findBalancedEnd(s: string, start: number): number {
+  const open = s[start]
+  if (open !== "{" && open !== "[") return -1
+  const close = open === "{" ? "}" : "]"
+  let depth = 0
+  let inString = false
+  let escape = false
+  for (let i = start; i < s.length; i++) {
+    const c = s[i]!
+    if (inString) {
+      if (escape) escape = false
+      else if (c === "\\") escape = true
+      else if (c === '"') inString = false
+      continue
+    }
+    if (c === '"') {
+      inString = true
+      continue
+    }
+    if (c === open) depth++
+    else if (c === close) {
+      depth--
+      if (depth === 0) return i
+    }
+  }
+  return -1
+}
+
+/**
+ * 从文本中抽出所有可 parse 的顶层 {...}/{...} 或数组。
+ * 关键:maxTurns≥2 时 drainQuery 会把多轮 assistant 文本直接拼接成
+ * `{"items":[...]}{"items":[...]}`,贪婪 /\{[\s\S]*\}/ 会匹配成非法 JSON。
+ * 用括号配对逐个取出,调用方取最后一个合法 items。
+ */
+function extractJsonValues(rawText: string): unknown[] {
+  const out: unknown[] = []
+  for (let i = 0; i < rawText.length; i++) {
+    const ch = rawText[i]
+    if (ch !== "{" && ch !== "[") continue
+    const end = findBalancedEnd(rawText, i)
+    if (end < 0) continue
+    try {
+      out.push(JSON.parse(rawText.slice(i, end + 1)))
+    } catch {
+      /* 跳过非法片段 */
+    }
+    i = end
+  }
+  return out
+}
+
 // 从 structured_output(优先)或原始文本中抽出 items 数组。
 function rawItems(structured: unknown, rawText: string): unknown[] | null {
   if (structured && typeof structured === "object" && Array.isArray((structured as any).items)) {
     return (structured as any).items
   }
   if (Array.isArray(structured)) return structured
-  // 文本兜底:匹配 {"items":[...]} 或裸数组
-  const objMatch = rawText.match(/\{[\s\S]*\}/)
-  if (objMatch) {
-    try {
-      const v = JSON.parse(objMatch[0])
-      if (v && Array.isArray(v.items)) return v.items
-    } catch {
-      /* fall through */
+  // 文本兜底:取最后一个带 items 的对象,或最后一个数组(多轮拼接时后轮通常更完整)
+  const values = extractJsonValues(rawText)
+  for (let i = values.length - 1; i >= 0; i--) {
+    const v = values[i]
+    if (v && typeof v === "object" && !Array.isArray(v) && Array.isArray((v as { items?: unknown }).items)) {
+      return (v as { items: unknown[] }).items
     }
-  }
-  const arrMatch = rawText.match(/\[[\s\S]*\]/)
-  if (arrMatch) {
-    try {
-      const v = JSON.parse(arrMatch[0])
-      if (Array.isArray(v)) return v
-    } catch {
-      /* noop */
-    }
+    if (Array.isArray(v)) return v
   }
   return null
 }
@@ -204,10 +246,14 @@ async function scanOnce(d: Resolved): Promise<void> {
       const classified = classifyItems(structuredOutput, out, msgs.length, existingIds)
       if (classified === null) {
         // 解析失败 → 本群不推进,下轮重试(不落库)。可预期失败走 warn,不占 error 通道
-        logger.warn("LLM 归类输出解析失败", {
-          scope: "topic",
-          groupId,
-        })
+        const preview = (out || JSON.stringify(structuredOutput ?? ""))
+          .slice(0, 300)
+          .replace(/\s+/g, " ")
+          .trim()
+        logger.warn(
+          `LLM 归类输出解析失败 len=${out.length} structured=${structuredOutput != null} 预览: ${preview || "(空)"}`,
+          { scope: "topic", groupId }
+        )
         continue
       }
 
