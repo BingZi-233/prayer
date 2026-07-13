@@ -1,5 +1,6 @@
 import { query as sdkQuery } from "@anthropic-ai/claude-agent-sdk"
 import { bus } from "../bus"
+import { logger } from "../logger"
 import type { Repo } from "../db/repo"
 import { embed as defaultEmbed } from "../tools/embed"
 import { noToolQueryOptions, drainQuery } from "./agent"
@@ -202,10 +203,9 @@ async function scanOnce(d: Resolved): Promise<void> {
 
       const classified = classifyItems(structuredOutput, out, msgs.length, existingIds)
       if (classified === null) {
-        // 解析失败 → 本群不推进,下轮重试(不落库)
-        bus.emit("error.occurred", {
+        // 解析失败 → 本群不推进,下轮重试(不落库)。可预期失败走 warn,不占 error 通道
+        logger.warn("LLM 归类输出解析失败", {
           scope: "topic",
-          err: new Error("LLM 归类输出解析失败"),
           groupId,
         })
         continue

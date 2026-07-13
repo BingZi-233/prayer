@@ -99,7 +99,18 @@ export function classifyError(raw: string): ClassifiedError {
     };
   }
 
-  if (/产出未过|安全校验|非 JSON|校验失败|structured_output|json_schema/i.test(msg)) {
+  // 主题归类专属(优先于通用 LLM 校验)
+  if (/归类输出解析失败|LLM 归类/i.test(msg)) {
+    return {
+      code: "topic.parse_fail",
+      category: "validation",
+      title: "主题归类解析失败",
+      hint: "LLM 输出非预期 JSON;本群游标不推进,下轮重试。",
+      retryable: true,
+    };
+  }
+
+  if (/产出未过|安全校验|非 JSON|校验失败|structured_output|json_schema|解析失败/i.test(msg)) {
     return {
       code: "llm.validation",
       category: "validation",

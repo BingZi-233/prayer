@@ -60,6 +60,20 @@ describe("error handler", () => {
     expect(hits).toHaveLength(1);
     expect(hits[0].count).toBe(3);
   });
+
+  it("unknown 错误 msg 保留 raw 摘要而非仅「未分类错误」", () => {
+    registerErrorHandler();
+    bus.emit("error.occurred", {
+      scope: "topic",
+      groupId: 9,
+      err: new Error("something totally unexpected xyz"),
+    });
+    const e = logger.tail().find((l) => l.scope === "topic");
+    expect(e).toBeTruthy();
+    expect(e!.code).toBe("unknown");
+    expect(e!.msg).toContain("something totally unexpected xyz");
+    expect(e!.raw).toContain("something totally unexpected xyz");
+  });
 });
 
 describe("explainError / formatErrorLine 兼容", () => {

@@ -1,4 +1,5 @@
 import { bus } from "../bus";
+import { logger } from "../logger";
 import type { Agent } from "./agent";
 import type { SessionStore } from "./session";
 import type { QualifiedMessage } from "../events";
@@ -37,11 +38,21 @@ export function registerOrchestrator(deps: OrchestratorDeps): () => void {
       const probe = [q.text, q.quoted, q.forwarded].filter(Boolean).join("\n");
       const intent = await classify(probe);
       if (BLOCKED_INTENTS.has(intent)) {
-        // 拦截:不跑 agent,回模板婉拒。同时记日志审计(不带 sessionKey → error-handler 不另发消息)
-        bus.emit("error.occurred", {
-          scope: "intent",
-          err: `blocked intent=${intent}(${INTENT_LABELS[intent]}) session=${q.sessionKey}`,
-        });
+        // 拦截:不跑 agent,回模板婉拒。业务审计走 info,不占 error 通道
+        logger.info(
+          `blocked intent=${intent}(${INTENT_LABELS[intent]}) session=${q.sessionKey}`,
+          {
+            scope: "intent",
+            groupId: q.groupId,
+            sessionKey: q.sessionKey,
+            code: "business.intent_block",
+            category: "business",
+            title: "意图拦截",
+            hint: "用户触发滥用意图门,已回模板婉拒(非系统故障)。",
+            retryable: false,
+            skipClassify: true,
+          }
+        );
         bus.emit("reply.ready", { groupId: q.groupId, text: BLOCKED_REPLY, replyToId: q.messageId });
         bus.emit("resolution.recorded", {
           kind: "blocked",

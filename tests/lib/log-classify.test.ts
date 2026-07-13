@@ -57,6 +57,14 @@ describe("classifyError", () => {
     expect(c.category).toBe("validation");
   });
 
+  it("主题归类解析失败 → topic.parse_fail", () => {
+    const c = classifyError("LLM 归类输出解析失败");
+    expect(c.code).toBe("topic.parse_fail");
+    expect(c.category).toBe("validation");
+    expect(c.title).toContain("主题归类");
+    expect(c.retryable).toBe(true);
+  });
+
   it("数据库连接", () => {
     const c = classifyError("The database connection is not open");
     expect(c.code).toBe("infra.db");

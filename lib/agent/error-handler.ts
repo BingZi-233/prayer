@@ -48,7 +48,10 @@ function defaultLogError(scope: string, err: unknown, e: ErrorOccurred): void {
   const raw = errorMessage(err);
   const c = classifyError(raw);
   const groupId = e.groupId ?? groupIdFromSession(e.sessionKey);
-  logger.error(c.title, {
+  // unknown:msg 用 raw 首行,避免 ring/stdout 只剩「未分类错误」;已分类用 title
+  const msg =
+    c.code === "unknown" ? raw.split("\n")[0].slice(0, 300) : c.title;
+  logger.error(msg, {
     scope,
     groupId,
     sessionKey: e.sessionKey,

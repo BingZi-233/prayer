@@ -48,16 +48,22 @@ export interface LogMeta {
 const MAX = 500;
 /** 去重时在 ring 内向后扫描的最大条数 */
 const DEDUP_SCAN = 80;
+/** 合并后再次写 stdout 的 count 步长(首次必写;之后每 N 次汇总一行) */
+const STDOUT_DEDUP_EVERY = 10;
 
-function fingerprintOf(e: Pick<LogEntry, "level" | "code" | "scope" | "groupId" | "sessionKey" | "msg">): string {
+function fingerprintOf(
+  e: Pick<LogEntry, "level" | "code" | "scope" | "groupId" | "sessionKey" | "msg" | "raw">
+): string {
   if (e.code && e.code !== "unknown") {
     return [e.level, e.code, e.scope ?? "", e.groupId ?? "", e.sessionKey ?? ""].join("|");
   }
-  // 无稳定 code:用 msg 前缀,避免无关 info 互并
-  return [e.level, e.scope ?? "", e.groupId ?? "", e.sessionKey ?? "", e.msg.slice(0, 120)].join("|");
+  // unknown / 无稳定 code:用 raw 或 msg 前缀,避免不同根因被合成一条「未分类错误」
+  const body = (e.raw ?? e.msg).split("\n")[0].slice(0, 80);
+  return [e.level, e.scope ?? "", e.groupId ?? "", e.sessionKey ?? "", body].join("|");
 }
 
-function consoleLine(e: LogEntry): string {
+/** 供单测/导出:格式化一行 stdout */
+export function consoleLine(e: LogEntry): string {
   const bits: string[] = [];
   if (e.scope) bits.push(`[${e.scope}]`);
   if (e.groupId != null) bits.push(`群=${e.groupId}`);
@@ -66,12 +72,21 @@ function consoleLine(e: LogEntry): string {
     bits.push(`[${CATEGORY_LABELS[e.category] ?? e.category}]`);
   }
   const head = bits.length ? bits.join(" ") + " " : "";
-  // 已分类:短标题 + 处置;未分类:msg 首行(避免 stack 刷屏)
+  // 已分类:短标题 + 处置
   if (e.code && e.code !== "unknown" && e.title) {
     return `${head}${e.title}${e.hint ? ` | ${e.hint}` : ""}`;
   }
-  const first = (e.msg || "").split("\n")[0].slice(0, 300);
+  // unknown / 未分类:优先 raw 首行,避免只剩「未分类错误」
+  const bodySrc =
+    e.raw && e.raw !== e.title && e.raw !== "未分类错误" ? e.raw : e.msg || e.raw || "";
+  const first = bodySrc.split("\n")[0].slice(0, 300);
   return `${head}${first}`;
+}
+
+function shouldWriteStdout(count: number, isNew: boolean): boolean {
+  if (isNew) return true;
+  // 合并后:每 STDOUT_DEDUP_EVERY 次再打一行汇总(含 ×N)
+  return count > 0 && count % STDOUT_DEDUP_EVERY === 0;
 }
 
 class RingLogger {
@@ -83,7 +98,7 @@ class RingLogger {
     error: (...a: unknown[]) => void;
   } | null = null;
 
-  setOrigConsole(c: RingLogger["origConsole"]): void {
+  setOrigConsole(c: RingLogger["origConsole"] | null): void {
     this.origConsole = c;
   }
 
@@ -139,8 +154,10 @@ class RingLogger {
     }
     base.fingerprint = fingerprintOf(base);
 
-    const merged = this.mergeOrPush(base);
-    this.writeStdout(merged);
+    const { entry: merged, isNew } = this.mergeOrPush(base);
+    if (shouldWriteStdout(merged.count ?? 1, isNew)) {
+      this.writeStdout(merged);
+    }
     return merged;
   }
 
@@ -165,7 +182,7 @@ class RingLogger {
     };
   }
 
-  private mergeOrPush(entry: LogEntry): LogEntry {
+  private mergeOrPush(entry: LogEntry): { entry: LogEntry; isNew: boolean } {
     const fp = entry.fingerprint!;
     const start = Math.max(0, this.buf.length - DEDUP_SCAN);
     for (let i = this.buf.length - 1; i >= start; i--) {
@@ -176,12 +193,12 @@ class RingLogger {
         // 保留最新 raw,便于对照上游最新文案
         if (entry.raw) cur.raw = entry.raw;
         if (entry.hint) cur.hint = entry.hint;
-        return cur;
+        return { entry: cur, isNew: false };
       }
     }
     this.buf.push(entry);
     if (this.buf.length > MAX) this.buf.splice(0, this.buf.length - MAX);
-    return entry;
+    return { entry, isNew: true };
   }
 
   private writeStdout(e: LogEntry): void {

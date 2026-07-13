@@ -21,6 +21,9 @@ module.exports = {
       error_file: path.join(__dirname, "logs/pm2-error.log"),
       out_file: path.join(__dirname, "logs/pm2-out.log"),
       time: true,
+      // 需配合 `pm2 install pm2-logrotate`;模块会读取这些字段做轮转
+      max_size: "10M",
+      retain: 5,
     },
   ],
 };
