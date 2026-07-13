@@ -4,9 +4,9 @@ import { openDb } from "@/lib/db/index"
 import { Repo } from "@/lib/db/repo"
 import { bus } from "@/lib/bus"
 
-describe("classifyItems 校验", () => {
+describe("classifyItems 业务对齐(只信 structured_output)", () => {
   const existing = new Set([1, 2])
-  it("结构化优先:合法项对齐;越界/重复/缺 i 丢弃;幻觉 topicId 丢弃", () => {
+  it("合法项对齐;越界/重复/缺 i 丢弃;幻觉 topicId 丢弃", () => {
     const structured = {
       items: [
         { i: 0, topicId: 1 }, // 归入已有
@@ -18,51 +18,37 @@ describe("classifyItems 校验", () => {
         { topicId: 1 }, // 缺 i → 丢弃
       ],
     }
-    const out = classifyItems(structured, "", 4, existing)
+    const out = classifyItems(structured, 4, existing)
     expect(out).toEqual([
       { i: 0, topicId: 1 },
       { i: 1, newTitle: "新主题" },
     ])
   })
 
-  it("无结构化时回退文本解析", () => {
-    const raw = '这是解释 {"items":[{"i":0,"topicId":2}]} 结尾'
-    const out = classifyItems(undefined, raw, 1, existing)
-    expect(out).toEqual([{ i: 0, topicId: 2 }])
+  it("无 structured_output → null(不解析文本)", () => {
+    expect(classifyItems(undefined, 3, existing)).toBeNull()
+    expect(classifyItems(null, 3, existing)).toBeNull()
   })
 
-  it("解析失败 → 返回 null(调用方跳过、不推进游标)", () => {
-    expect(classifyItems(undefined, "抱歉无法处理", 3, existing)).toBeNull()
-  })
-
-  it("structured 直接是数组时也能解析", () => {
-    const out = classifyItems([{ i: 0, topicId: 1 }], "", 1, new Set([1]))
-    expect(out).toEqual([{ i: 0, topicId: 1 }])
-  })
-
-  it("文本兜底解析裸数组", () => {
-    const out = classifyItems(undefined, '前言 [{"i":0,"newTitle":"退款"}] 后语', 1, new Set([1]))
-    expect(out).toEqual([{ i: 0, newTitle: "退款" }])
-  })
-
-  it("多轮 assistant 文本拼接两段 JSON → 取最后一段(不因贪婪匹配失败)", () => {
-    // drainQuery 在 maxTurns≥2 时会把两轮输出直接拼在一起
-    const a = '{"items":[{"i":0,"topicId":1}]}'
-    const b = '{"items":[{"i":0,"newTitle":"退款到账时间"},{"i":1,"noise":true}]}'
-    const out = classifyItems(undefined, a + b, 2, existing)
-    expect(out).toEqual([{ i: 0, newTitle: "退款到账时间" }])
-  })
-
-  it("markdown 代码块包裹的 JSON 仍可解析", () => {
-    const raw = '```json\n{"items":[{"i":0,"topicId":2}]}\n```'
-    expect(classifyItems(undefined, raw, 1, existing)).toEqual([{ i: 0, topicId: 2 }])
+  it("structured 非 {items} → null", () => {
+    expect(classifyItems([{ i: 0, topicId: 1 }], 1, new Set([1]))).toBeNull()
+    expect(classifyItems({ nope: true }, 1, existing)).toBeNull()
   })
 })
 
 const embed = async () => new Float32Array([1, 0, 0])
-function seed(repo: Repo, groupId: number, userId: number, role: string | null, text: string, at: number) {
+function seed(
+  repo: Repo,
+  groupId: number,
+  userId: number,
+  role: string | null,
+  text: string,
+  at: number
+) {
   ;(repo as any).db
-    .prepare("INSERT INTO group_messages (group_id,user_id,sender_role,text,created_at) VALUES (?,?,?,?,?)")
+    .prepare(
+      "INSERT INTO group_messages (group_id,user_id,sender_role,text,created_at) VALUES (?,?,?,?,?)"
+    )
     .run(groupId, userId, role, text, at)
 }
 // 假 query:返回带 structured 的 result(仿 drainQuery 消费形状)
@@ -123,7 +109,9 @@ describe("topic-poller runScan", () => {
 
   it("noise 全丢 → 无 occurrence,游标仍推进", async () => {
     seed(repo, 100, 200, "member", "在吗", NOW - 5000)
-    await runScan(opts(repo, { queryFn: fakeQuery([{ i: 0, noise: true }]) as never }))
+    await runScan(
+      opts(repo, { queryFn: fakeQuery([{ i: 0, noise: true }]) as never })
+    )
     expect(repo.rankingByWindow(0)).toHaveLength(0)
     expect(repo.topicCursor(100)).toBe(NOW - 5000)
   })
@@ -141,7 +129,9 @@ describe("topic-poller runScan", () => {
     seed(repo, 100, 200, "member", "退款多久", NOW - 5000)
     await runScan(
       opts(repo, {
-        queryFn: fakeQuery([{ i: 0, newTitle: "退款一般 3 个工作日到账" }]) as never, // 仅差空格
+        queryFn: fakeQuery([
+          { i: 0, newTitle: "退款一般 3 个工作日到账" },
+        ]) as never, // 仅差空格
       })
     )
     const rows = repo.rankingByWindow(0)
@@ -169,7 +159,8 @@ describe("topic-poller runScan", () => {
   it("近义老主题掉出 LLM 提示窗口(topicPromptMax)仍归并,不重复新建", async () => {
     // 先塞 topicPromptMax 个新主题把目标主题挤出提示窗口(mergePool 仍含它)
     const target = repo.insertQuestionTopic("退款到账时间", 0)
-    for (let i = 0; i < 3; i++) repo.insertQuestionTopic(`占位主题${i}`, NOW - i) // 更晚活跃,排前
+    for (let i = 0; i < 3; i++)
+      repo.insertQuestionTopic(`占位主题${i}`, NOW - i) // 更晚活跃,排前
     seed(repo, 100, 200, "member", "退款多久", NOW - 5000)
     await runScan(
       opts(repo, {
@@ -182,9 +173,11 @@ describe("topic-poller runScan", () => {
     expect(rows[0].id).toBe(target) // 归并到窗口外老主题
   })
 
-  it("LLM 畸形输出 → 不落库,游标不动(下轮重试)", async () => {
+  it("无 structured_output → 不落库,游标不动(下轮重试)", async () => {
     seed(repo, 100, 200, "member", "怎么退款", NOW - 5000)
-    await runScan(opts(repo, { queryFn: fakeQueryText("抱歉无法处理") as never }))
+    await runScan(
+      opts(repo, { queryFn: fakeQueryText("抱歉无法处理") as never })
+    )
     expect(repo.rankingByWindow(0)).toHaveLength(0)
     expect(repo.topicCursor(100)).toBe(0)
   })
@@ -230,7 +223,9 @@ describe("topic-poller runScan", () => {
       })
     )
     expect(repo.questionTopics()[0].id).toBe(topicId)
-    const row = (repo as any).db.prepare("SELECT updated_at FROM question_topics WHERE id=?").get(topicId) as {
+    const row = (repo as any).db
+      .prepare("SELECT updated_at FROM question_topics WHERE id=?")
+      .get(topicId) as {
       updated_at: number
     }
     expect(row.updated_at).toBe(NOW)
@@ -238,19 +233,28 @@ describe("topic-poller runScan", () => {
 
   it("windowMax 截断 + 跨轮推进消化剩余", async () => {
     // seed 60 条递增 created_at 的 member 消息
-    for (let i = 0; i < 60; i++) seed(repo, 100, 200 + i, "member", `问题${i}`, NOW - 60000 + i * 100)
+    for (let i = 0; i < 60; i++)
+      seed(repo, 100, 200 + i, "member", `问题${i}`, NOW - 60000 + i * 100)
     const topicId = repo.insertQuestionTopic("批量", 0)
     // items 生成 60 个都归到已存在 topic;classifyItems 按 batchLen 截断越界项,安全
     const items = Array.from({ length: 60 }, (_, i) => ({ i, topicId }))
 
     // 首轮:windowMax=50 → 落 50 条,游标=第 50 条 created_at
-    await runScan(opts(repo, { windowMax: 50, queryFn: fakeQuery(items) as never }))
-    expect(repo.rankingByWindow(0)).toEqual([expect.objectContaining({ id: topicId, count: 50 })])
+    await runScan(
+      opts(repo, { windowMax: 50, queryFn: fakeQuery(items) as never })
+    )
+    expect(repo.rankingByWindow(0)).toEqual([
+      expect.objectContaining({ id: topicId, count: 50 }),
+    ])
     expect(repo.topicCursor(100)).toBe(NOW - 60000 + 49 * 100)
 
     // 第二轮:消化剩余 10 条,游标=第 60 条 created_at,总计 60
-    await runScan(opts(repo, { windowMax: 50, queryFn: fakeQuery(items) as never }))
-    expect(repo.rankingByWindow(0)).toEqual([expect.objectContaining({ id: topicId, count: 60 })])
+    await runScan(
+      opts(repo, { windowMax: 50, queryFn: fakeQuery(items) as never })
+    )
+    expect(repo.rankingByWindow(0)).toEqual([
+      expect.objectContaining({ id: topicId, count: 60 }),
+    ])
     expect(repo.topicCursor(100)).toBe(NOW - 60000 + 59 * 100)
   })
 })

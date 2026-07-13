@@ -13,85 +13,27 @@ export interface ClassifyItem {
   newTitle?: string
 }
 
-/** 括号配对找闭合位置(尊重字符串转义)。失败返回 -1。 */
-function findBalancedEnd(s: string, start: number): number {
-  const open = s[start]
-  if (open !== "{" && open !== "[") return -1
-  const close = open === "{" ? "}" : "]"
-  let depth = 0
-  let inString = false
-  let escape = false
-  for (let i = start; i < s.length; i++) {
-    const c = s[i]!
-    if (inString) {
-      if (escape) escape = false
-      else if (c === "\\") escape = true
-      else if (c === '"') inString = false
-      continue
-    }
-    if (c === '"') {
-      inString = true
-      continue
-    }
-    if (c === open) depth++
-    else if (c === close) {
-      depth--
-      if (depth === 0) return i
-    }
-  }
-  return -1
-}
-
-/**
- * 从文本中抽出所有可 parse 的顶层 {...}/{...} 或数组。
- * 关键:maxTurns≥2 时 drainQuery 会把多轮 assistant 文本直接拼接成
- * `{"items":[...]}{"items":[...]}`,贪婪 /\{[\s\S]*\}/ 会匹配成非法 JSON。
- * 用括号配对逐个取出,调用方取最后一个合法 items。
- */
-function extractJsonValues(rawText: string): unknown[] {
-  const out: unknown[] = []
-  for (let i = 0; i < rawText.length; i++) {
-    const ch = rawText[i]
-    if (ch !== "{" && ch !== "[") continue
-    const end = findBalancedEnd(rawText, i)
-    if (end < 0) continue
-    try {
-      out.push(JSON.parse(rawText.slice(i, end + 1)))
-    } catch {
-      /* 跳过非法片段 */
-    }
-    i = end
-  }
-  return out
-}
-
-// 从 structured_output(优先)或原始文本中抽出 items 数组。
-function rawItems(structured: unknown, rawText: string): unknown[] | null {
-  if (structured && typeof structured === "object" && Array.isArray((structured as any).items)) {
+// 只信 SDK outputFormat.json_schema → structured_output(形状已由 schema 强制)。
+// 不做文本 JSON 二次解析。
+function rawItems(structured: unknown): unknown[] | null {
+  if (
+    structured &&
+    typeof structured === "object" &&
+    Array.isArray((structured as any).items)
+  ) {
     return (structured as any).items
-  }
-  if (Array.isArray(structured)) return structured
-  // 文本兜底:取最后一个带 items 的对象,或最后一个数组(多轮拼接时后轮通常更完整)
-  const values = extractJsonValues(rawText)
-  for (let i = values.length - 1; i >= 0; i--) {
-    const v = values[i]
-    if (v && typeof v === "object" && !Array.isArray(v) && Array.isArray((v as { items?: unknown }).items)) {
-      return (v as { items: unknown[] }).items
-    }
-    if (Array.isArray(v)) return v
   }
   return null
 }
 
-// 解析 + 对齐 + 校验。batchLen=本轮问题条数,existingIds=本轮传入 LLM 的现有主题 id 集。
-// 返回对齐后的合法归类项(noise/非法项已剔除);解析失败返回 null(调用方本轮跳过、不推进游标)。
+// 业务对齐:batchLen=本轮问题条数,existingIds=本轮传入 LLM 的现有主题 id 集。
+// 返回对齐后的合法归类项(noise/越界/幻觉 id 已剔除);无 structured → null(本轮跳过、不推进游标)。
 export function classifyItems(
   structured: unknown,
-  rawText: string,
   batchLen: number,
   existingIds: Set<number>
 ): ClassifyItem[] | null {
-  const items = rawItems(structured, rawText)
+  const items = rawItems(structured)
   if (!items) return null
   const seen = new Set<number>()
   const out: ClassifyItem[] = []
@@ -99,7 +41,8 @@ export function classifyItems(
     if (!it || typeof it !== "object") continue
     const rec = it as Record<string, unknown>
     const i = rec.i
-    if (typeof i !== "number" || !Number.isInteger(i) || i < 0 || i >= batchLen) continue
+    if (typeof i !== "number" || !Number.isInteger(i) || i < 0 || i >= batchLen)
+      continue
     if (seen.has(i)) continue
     if (rec.noise === true) {
       seen.add(i)
@@ -162,7 +105,7 @@ const TOPIC_SYSTEM = `你是 API 中转站的客服问题归类助手。用户�
   寒暄/表情/纯指令/无信息量)。
 - 拿不准是否与本产品相关 → 判 noise:true(宁可少记,避免统计被无关话题淹没)。
 - 语义相同的多条新问题应共用同一个 newTitle。
-只输出 JSON 对象 {"items":[...]},每项含输入序号 i。不要额外文字、不要 Markdown。
+输出由 JSON Schema 强制为 {"items":[...]};每项含输入序号 i。
 形如 {"items":[{"i":0,"topicId":3},{"i":1,"newTitle":"退款到账时间"},{"i":2,"noise":true}]}`
 
 const TOPIC_SCHEMA = {
@@ -225,33 +168,42 @@ async function scanOnce(d: Resolved): Promise<void> {
       const topics = mergePool.slice(0, d.topicPromptMax)
       const existingIds = new Set(topics.map((t) => t.id))
       const topicBlock =
-        topics.length > 0 ? topics.map((t) => `[${t.id}] ${t.title}`).join("\n") : "(无)"
+        topics.length > 0
+          ? topics.map((t) => `[${t.id}] ${t.title}`).join("\n")
+          : "(无)"
       const qBlock = msgs.map((m, i) => `[${i}] ${m.text}`).join("\n")
       const prompt = `【现有主题】\n${topicBlock}\n\n【待归类问题】\n${qBlock}`
 
-      const { text: out, structuredOutput } = await drainQuery(
+      const { structuredOutput } = await drainQuery(
         d.queryFn({
           prompt,
           options: noToolQueryOptions({
             systemPrompt: TOPIC_SYSTEM,
             outputFormat: { type: "json_schema", schema: TOPIC_SCHEMA },
             thinking: { type: "disabled" },
-            canUseTool: async () => ({ behavior: "deny" as const, message: "归类阶段不使用工具" }),
+            canUseTool: async () => ({
+              behavior: "deny" as const,
+              message: "归类阶段不使用工具",
+            }),
             maxTurns: 2,
           }) as never,
         }) as AsyncIterable<any>,
         "topic"
       )
 
-      const classified = classifyItems(structuredOutput, out, msgs.length, existingIds)
+      // 只信 SDK structured_output;无则本群不推进,下轮重试
+      const classified = classifyItems(
+        structuredOutput,
+        msgs.length,
+        existingIds
+      )
       if (classified === null) {
-        // 解析失败 → 本群不推进,下轮重试(不落库)。可预期失败走 warn,不占 error 通道
-        const preview = (out || JSON.stringify(structuredOutput ?? ""))
+        const preview = JSON.stringify(structuredOutput ?? "")
           .slice(0, 300)
           .replace(/\s+/g, " ")
           .trim()
         logger.warn(
-          `LLM 归类输出解析失败 len=${out.length} structured=${structuredOutput != null} 预览: ${preview || "(空)"}`,
+          `LLM 归类无有效 structured_output 预览: ${preview || "(空)"}`,
           { scope: "topic", groupId }
         )
         continue
@@ -272,7 +224,9 @@ async function scanOnce(d: Resolved): Promise<void> {
             topicId = c.topicId
           } else {
             // newTitle:与候选池近义则归并,否则新建(insertQuestionTopic 同名复用)
-            const near = mergePool.find((t) => textNearlySame(t.title, c.newTitle!))
+            const near = mergePool.find((t) =>
+              textNearlySame(t.title, c.newTitle!)
+            )
             if (near) {
               topicId = near.id
             } else {
@@ -281,7 +235,13 @@ async function scanOnce(d: Resolved): Promise<void> {
               mergePool.push({ id: topicId, title: c.newTitle! })
             }
           }
-          d.repo.insertQuestionOccurrence(topicId, groupId, m.userId, m.text, m.createdAt)
+          d.repo.insertQuestionOccurrence(
+            topicId,
+            groupId,
+            m.userId,
+            m.text,
+            m.createdAt
+          )
           d.repo.touchQuestionTopic(topicId, now)
         }
         d.repo.setTopicCursor(groupId, maxTs)

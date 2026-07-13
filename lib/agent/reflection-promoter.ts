@@ -1,44 +1,44 @@
-import { query as sdkQuery } from "@anthropic-ai/claude-agent-sdk";
-import { bus } from "../bus";
-import { logger } from "../logger";
-import type { Repo } from "../db/repo";
-import { embed as defaultEmbed } from "../tools/embed";
-import { applyPromote } from "../reflect-promote";
-import { noToolQueryOptions, drainQuery } from "./agent";
+import { query as sdkQuery } from "@anthropic-ai/claude-agent-sdk"
+import { bus } from "../bus"
+import { logger } from "../logger"
+import type { Repo } from "../db/repo"
+import { embed as defaultEmbed } from "../tools/embed"
+import { applyPromote } from "../reflect-promote"
+import { noToolQueryOptions, drainQuery } from "./agent"
 
 export interface ReflectionPromoterDeps {
-  repo: Repo;
-  adminGroupId: number;
+  repo: Repo
+  adminGroupId: number
   /** 升格周期。缺省 24h;≤0 时装配层不注册 */
-  promoteMs?: number;
-  scanMs?: number;
-  firstDelayMs?: number;
+  promoteMs?: number
+  scanMs?: number
+  firstDelayMs?: number
   /** 候选条目至少这么多才调 LLM。缺省 1 */
-  minEntries?: number;
+  minEntries?: number
   /** 单轮最多升格条数,防一次冲太猛。缺省 5 */
-  maxPerRun?: number;
-  baseContextK?: number;
-  notifyAdmin?: boolean;
-  embed?: (text: string) => Promise<Float32Array>;
-  queryFn?: typeof sdkQuery;
-  now?: () => number;
+  maxPerRun?: number
+  baseContextK?: number
+  notifyAdmin?: boolean
+  embed?: (text: string) => Promise<Float32Array>
+  queryFn?: typeof sdkQuery
+  now?: () => number
   /** 测试可注入升格实现 */
-  promoteFn?: typeof applyPromote;
-  cwd?: string;
+  promoteFn?: typeof applyPromote
+  cwd?: string
 }
 
 interface Resolved {
-  repo: Repo;
-  adminGroupId: number;
-  minEntries: number;
-  maxPerRun: number;
-  baseContextK: number;
-  notifyAdmin: boolean;
-  embed: (text: string) => Promise<Float32Array>;
-  queryFn: typeof sdkQuery;
-  now: () => number;
-  promoteFn: typeof applyPromote;
-  cwd?: string;
+  repo: Repo
+  adminGroupId: number
+  minEntries: number
+  maxPerRun: number
+  baseContextK: number
+  notifyAdmin: boolean
+  embed: (text: string) => Promise<Float32Array>
+  queryFn: typeof sdkQuery
+  now: () => number
+  promoteFn: typeof applyPromote
+  cwd?: string
 }
 
 export const PROMOTE_OUTPUT_SCHEMA = {
@@ -60,7 +60,7 @@ export const PROMOTE_OUTPUT_SCHEMA = {
   },
   required: ["decisions"],
   additionalProperties: false,
-} as const;
+} as const
 
 const PROMOTE_SYSTEM = `你是客服知识库升格评审助手。反思条目是从人工有效答复中自动沉淀的自学习知识,已在检索库中可用。
 「升格」= 固化为正式产品文档(docs/kb/promoted/),长期维护、与基础文档同等权威。
@@ -84,7 +84,7 @@ const PROMOTE_SYSTEM = `你是客服知识库升格评审助手。反思条目�
 
 硬约束:只能对给出的 id 决策,不得编造 id;不得修改 FAQ 正文。
 输出 JSON Schema 强制为 {"decisions":[{"id":number,"promote":boolean,"reason":string}]}。
-每条候选都应有一条 decision;若全部不升格也返回完整 decisions。`;
+每条候选都应有一条 decision;若全部不升格也返回完整 decisions。`
 
 function resolve(deps: ReflectionPromoterDeps): Resolved {
   return {
@@ -99,65 +99,31 @@ function resolve(deps: ReflectionPromoterDeps): Resolved {
     now: deps.now ?? (() => Date.now()),
     promoteFn: deps.promoteFn ?? applyPromote,
     cwd: deps.cwd,
-  };
+  }
 }
 
-type Decision = { id: number; promote: boolean; reason: string };
+type Decision = { id: number; promote: boolean; reason: string }
 
-function decisionsFromPayload(structured: unknown | undefined, rawText: string): Decision[] | null {
-  let root: unknown = structured;
-  if (root === undefined || root === null) {
-    const start = rawText.indexOf("{");
-    if (start < 0) return null;
-    // 简易:找最外层对象
-    let depth = 0;
-    let end = -1;
-    let inStr = false;
-    let esc = false;
-    for (let i = start; i < rawText.length; i++) {
-      const c = rawText[i]!;
-      if (inStr) {
-        if (esc) esc = false;
-        else if (c === "\\") esc = true;
-        else if (c === '"') inStr = false;
-        continue;
-      }
-      if (c === '"') {
-        inStr = true;
-        continue;
-      }
-      if (c === "{") depth++;
-      else if (c === "}") {
-        depth--;
-        if (depth === 0) {
-          end = i;
-          break;
-        }
-      }
-    }
-    if (end < 0) return null;
-    try {
-      root = JSON.parse(rawText.slice(start, end + 1));
-    } catch {
-      return null;
-    }
-  }
-  if (!root || typeof root !== "object") return null;
-  const arr = (root as { decisions?: unknown }).decisions;
-  if (!Array.isArray(arr)) return null;
-  const out: Decision[] = [];
+// 只信 SDK structured_output(schema 已强制 decisions 形状);不做文本 JSON 二次解析。
+function decisionsFromPayload(
+  structured: unknown | undefined
+): Decision[] | null {
+  if (!structured || typeof structured !== "object") return null
+  const arr = (structured as { decisions?: unknown }).decisions
+  if (!Array.isArray(arr)) return null
+  const out: Decision[] = []
   for (const it of arr) {
-    if (!it || typeof it !== "object") continue;
-    const o = it as { id?: unknown; promote?: unknown; reason?: unknown };
-    if (typeof o.id !== "number" || !Number.isFinite(o.id)) continue;
-    if (typeof o.promote !== "boolean") continue;
+    if (!it || typeof it !== "object") continue
+    const o = it as { id?: unknown; promote?: unknown; reason?: unknown }
+    if (typeof o.id !== "number" || !Number.isFinite(o.id)) continue
+    if (typeof o.promote !== "boolean") continue
     out.push({
       id: o.id,
       promote: o.promote,
       reason: typeof o.reason === "string" ? o.reason : "",
-    });
+    })
   }
-  return out;
+  return out
 }
 
 /** 校验决策:只保留候选 id 内的;promote=true 截断到 maxPerRun */
@@ -166,123 +132,150 @@ export function selectPromoteIds(
   candidateIds: number[],
   maxPerRun: number
 ): { ok: true; ids: number[] } | { ok: false; reason: string } {
-  if (!decisions) return { ok: false, reason: "无法解析 decisions" };
-  const allowed = new Set(candidateIds);
-  const ids: number[] = [];
-  const seen = new Set<number>();
+  if (!decisions) return { ok: false, reason: "无法解析 decisions" }
+  const allowed = new Set(candidateIds)
+  const ids: number[] = []
+  const seen = new Set<number>()
   for (const d of decisions) {
-    if (!d.promote) continue;
-    if (!allowed.has(d.id)) continue; // 忽略编造 id
-    if (seen.has(d.id)) continue;
-    seen.add(d.id);
-    ids.push(d.id);
-    if (ids.length >= maxPerRun) break;
+    if (!d.promote) continue
+    if (!allowed.has(d.id)) continue // 忽略编造 id
+    if (seen.has(d.id)) continue
+    seen.add(d.id)
+    ids.push(d.id)
+    if (ids.length >= maxPerRun) break
   }
-  return { ok: true, ids };
+  return { ok: true, ids }
 }
 
-export async function runPromote(deps: ReflectionPromoterDeps): Promise<{ considered: number; promoted: number }> {
-  const d = resolve(deps);
-  const candidates = d.repo.reflectionEntries().filter((e) => e.status === "approved");
-  if (candidates.length < d.minEntries) return { considered: candidates.length, promoted: 0 };
+export async function runPromote(
+  deps: ReflectionPromoterDeps
+): Promise<{ considered: number; promoted: number }> {
+  const d = resolve(deps)
+  const candidates = d.repo
+    .reflectionEntries()
+    .filter((e) => e.status === "approved")
+  if (candidates.length < d.minEntries)
+    return { considered: candidates.length, promoted: 0 }
 
   try {
-    const ctx = new Map<number, string>();
+    const ctx = new Map<number, string>()
     for (const e of candidates) {
-      for (const h of d.repo.searchBaseKb(await d.embed(e.content), d.baseContextK)) {
-        ctx.set(h.id, h.content);
+      for (const h of d.repo.searchBaseKb(
+        await d.embed(e.content),
+        d.baseContextK
+      )) {
+        ctx.set(h.id, h.content)
       }
     }
-    const baseBlock = [...ctx.values()].map((c, i) => `(${i + 1}) ${c}`).join("\n");
+    const baseBlock = [...ctx.values()]
+      .map((c, i) => `(${i + 1}) ${c}`)
+      .join("\n")
     const candBlock = candidates
-      .map((e) => `[id=${e.id}] ${e.content}${e.question || e.answer ? ` | 来源问:${e.question ?? ""} 答:${e.answer ?? ""}` : ""}`)
-      .join("\n");
-    const prompt = `【权威基础文档片段】\n${baseBlock || "(无)"}\n\n【候选反思条目】\n${candBlock}`;
+      .map(
+        (e) =>
+          `[id=${e.id}] ${e.content}${e.question || e.answer ? ` | 来源问:${e.question ?? ""} 答:${e.answer ?? ""}` : ""}`
+      )
+      .join("\n")
+    const prompt = `【权威基础文档片段】\n${baseBlock || "(无)"}\n\n【候选反思条目】\n${candBlock}`
 
-    const { text: out, structuredOutput } = await drainQuery(
+    const { structuredOutput } = await drainQuery(
       d.queryFn({
         prompt,
         options: noToolQueryOptions({
           systemPrompt: PROMOTE_SYSTEM,
           outputFormat: { type: "json_schema", schema: PROMOTE_OUTPUT_SCHEMA },
           thinking: { type: "disabled" },
-          canUseTool: async () => ({ behavior: "deny" as const, message: "升格阶段不使用工具" }),
+          canUseTool: async () => ({
+            behavior: "deny" as const,
+            message: "升格阶段不使用工具",
+          }),
           maxTurns: 2,
         }) as never,
       }) as AsyncIterable<any>,
       "promote"
-    );
+    )
 
-    const decisions = decisionsFromPayload(structuredOutput, out);
+    const decisions = decisionsFromPayload(structuredOutput)
     const selected = selectPromoteIds(
       decisions,
       candidates.map((c) => c.id),
       d.maxPerRun
-    );
+    )
     if (!selected.ok) {
-      logger.log("warn", `[reflection-promote] 校验失败(${selected.reason}),本轮不升格`);
+      logger.log(
+        "warn",
+        `[reflection-promote] 校验失败(${selected.reason}),本轮不升格`
+      )
       bus.emit("error.occurred", {
         scope: "reflection-promote",
         err: new Error(`LLM 产出未过校验:${selected.reason}`),
-      });
-      return { considered: candidates.length, promoted: 0 };
+      })
+      return { considered: candidates.length, promoted: 0 }
     }
 
-    let promoted = 0;
+    let promoted = 0
     for (const id of selected.ids) {
       const r = await d.promoteFn({
         repo: d.repo,
         chunkId: id,
         embed: d.embed,
         cwd: d.cwd,
-      });
+      })
       if (r.ok && !r.already) {
-        promoted++;
+        promoted++
         if (d.notifyAdmin) {
-          const preview = r.content.slice(0, 40) + (r.content.length > 40 ? "…" : "");
+          const preview =
+            r.content.slice(0, 40) + (r.content.length > 40 ? "…" : "")
           bus.emit("action.send", {
             action: "send_group_msg",
             groupId: d.adminGroupId,
             text: `反思自动升格: #${id} → ${r.file}\n${preview}`,
-          });
+          })
         }
       } else if (!r.ok) {
-        logger.log("warn", `[reflection-promote] 升格 #${id} 失败: ${r.reason}`);
+        logger.log("warn", `[reflection-promote] 升格 #${id} 失败: ${r.reason}`)
       }
     }
 
     if (promoted > 0) {
-      logger.log("info", `[reflection-promote] ${candidates.length} 候选 → 升格 ${promoted} 条`);
+      logger.log(
+        "info",
+        `[reflection-promote] ${candidates.length} 候选 → 升格 ${promoted} 条`
+      )
     }
-    return { considered: candidates.length, promoted };
+    return { considered: candidates.length, promoted }
   } catch (err) {
-    bus.emit("error.occurred", { scope: "reflection-promote", err });
-    return { considered: candidates.length, promoted: 0 };
+    bus.emit("error.occurred", { scope: "reflection-promote", err })
+    return { considered: candidates.length, promoted: 0 }
   }
 }
 
-export function registerReflectionPromoter(deps: ReflectionPromoterDeps): () => void {
-  const promoteMs = deps.promoteMs ?? 86_400_000;
-  const scanMs = deps.scanMs ?? Math.min(promoteMs, 3_600_000);
-  const now = deps.now ?? (() => Date.now());
-  const repo = deps.repo;
-  let running = false;
+export function registerReflectionPromoter(
+  deps: ReflectionPromoterDeps
+): () => void {
+  const promoteMs = deps.promoteMs ?? 86_400_000
+  const scanMs = deps.scanMs ?? Math.min(promoteMs, 3_600_000)
+  const now = deps.now ?? (() => Date.now())
+  const repo = deps.repo
+  let running = false
   const tick = () => {
-    if (running) return;
-    if (now() - repo.promoteAt() < promoteMs) return;
-    running = true;
-    logger.log("info", "[reflection-promote] due, running");
+    if (running) return
+    if (now() - repo.promoteAt() < promoteMs) return
+    running = true
+    logger.log("info", "[reflection-promote] due, running")
     void runPromote(deps)
-      .catch((err) => bus.emit("error.occurred", { scope: "reflection-promote", err }))
+      .catch((err) =>
+        bus.emit("error.occurred", { scope: "reflection-promote", err })
+      )
       .finally(() => {
-        repo.setPromoteAt(now());
-        running = false;
-      });
-  };
-  const timer = setInterval(tick, scanMs);
-  const kick = setTimeout(tick, deps.firstDelayMs ?? 45_000); // 略晚于 compact 首刷
+        repo.setPromoteAt(now())
+        running = false
+      })
+  }
+  const timer = setInterval(tick, scanMs)
+  const kick = setTimeout(tick, deps.firstDelayMs ?? 45_000) // 略晚于 compact 首刷
   return () => {
-    clearInterval(timer);
-    clearTimeout(kick);
-  };
+    clearInterval(timer)
+    clearTimeout(kick)
+  }
 }
