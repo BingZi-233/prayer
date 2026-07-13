@@ -1,10 +1,11 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, vi, type Mock } from "vitest";
 import {
   parseGroupMembers,
   membersHaveRoles,
   toAdminMemberShape,
   loadGroupMembers,
   resetMembersInflight,
+  type FetchMembers,
 } from "@/lib/onebot/members-fetch";
 import { NameCache, resetNameCache } from "@/lib/name-cache";
 import { collectAdmins } from "@/lib/onebot/admins";
@@ -37,12 +38,12 @@ describe("membersHaveRoles", () => {
 
 describe("loadGroupMembers", () => {
   let cache: NameCache;
-  let fetchFn: ReturnType<typeof vi.fn>;
+  let fetchFn: Mock<FetchMembers>;
 
   beforeEach(() => {
     resetMembersInflight();
     cache = resetNameCache(new NameCache());
-    fetchFn = vi.fn(async () => [
+    fetchFn = vi.fn<FetchMembers>(async () => [
       { user_id: 10, nickname: "甲", role: "owner" },
       { user_id: 11, nickname: "乙", role: "admin" },
       { user_id: 12, nickname: "丙", role: "member" },
@@ -84,8 +85,8 @@ describe("loadGroupMembers", () => {
     let resolveFetch!: (v: unknown[]) => void;
     fetchFn.mockImplementation(
       () =>
-        new Promise((res) => {
-          resolveFetch = res as (v: unknown[]) => void;
+        new Promise<unknown[]>((res) => {
+          resolveFetch = res;
         }),
     );
 

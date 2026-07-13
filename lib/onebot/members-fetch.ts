@@ -47,7 +47,7 @@ export function toAdminMemberShape(rows: UserNameRow[]): unknown[] {
 // 按群并发冷 miss 共用一次 OneBot 拉取
 const membersInflight = new Map<number, Promise<UserNameRow[] | null>>();
 
-type FetchMembers = (groupId: number) => Promise<unknown[] | undefined>;
+export type FetchMembers = (groupId: number) => Promise<unknown[] | undefined>;
 
 export type LoadGroupMembersOpts = {
   /** 强制绕过缓存 */
