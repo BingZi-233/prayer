@@ -239,7 +239,7 @@ describe("runCompact", () => {
   })
 })
 
-describe("validateCompacted(只信 structured_output)", () => {
+describe("validateCompacted(structured 优先 + 文本兜底)", () => {
   it("正常 → 返回 trim 后非空 faq 列表", () => {
     expect(
       validateCompacted(
@@ -248,10 +248,19 @@ describe("validateCompacted(只信 structured_output)", () => {
       )
     ).toEqual(["a", "b", "c"])
   })
-  it("无 structured / 非法形状 → null", () => {
+  it("无 structured / 非法形状且无文本 → null", () => {
     expect(validateCompacted(undefined, 3)).toBeNull()
     expect(validateCompacted({ faq: "a" }, 3)).toBeNull()
     expect(validateCompacted({ nope: true }, 3)).toBeNull()
+  })
+  it("文本 JSON 兜底", () => {
+    expect(
+      validateCompacted(
+        undefined,
+        3,
+        `{"items":[{"faq":"甲"},{"faq":"乙"},{"faq":"丙"}]}`
+      )
+    ).toEqual(["甲", "乙", "丙"])
   })
   it("空集而输入非空 → null", () => {
     expect(validateCompacted({ items: [] }, 5)).toBeNull()

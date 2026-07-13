@@ -5,6 +5,7 @@ import type { Repo } from "../db/repo"
 import { embed as defaultEmbed } from "../tools/embed"
 import { applyPromote } from "../reflect-promote"
 import { noToolQueryOptions, drainQuery } from "./agent"
+import { pickArrayFieldDual, previewJsonPayload } from "./json-output"
 
 export interface ReflectionPromoterDeps {
   repo: Repo
@@ -83,7 +84,8 @@ const PROMOTE_SYSTEM = `你是客服知识库升格评审助手。反思条目�
 - 闲聊、寒暄、隐私(手机号/订单号)
 
 硬约束:只能对给出的 id 决策,不得编造 id;不得修改 FAQ 正文。
-输出 JSON Schema 强制为 {"decisions":[{"id":number,"promote":boolean,"reason":string}]}。
+输出一个 JSON 对象(优先 StructuredOutput 工具;若只输出文本则不要 Markdown 代码块):
+{"decisions":[{"id":number,"promote":boolean,"reason":string}]}。
 每条候选都应有一条 decision;若全部不升格也返回完整 decisions。`
 
 function resolve(deps: ReflectionPromoterDeps): Resolved {
@@ -104,15 +106,17 @@ function resolve(deps: ReflectionPromoterDeps): Resolved {
 
 type Decision = { id: number; promote: boolean; reason: string }
 
-// 只信 SDK structured_output(schema 已强制 decisions 形状);不做文本 JSON 二次解析。
+// structured 优先 + 文本 JSON 兜底(decisions 字段;不接受裸数组以免误吃其它 JSON)。
 function decisionsFromPayload(
-  structured: unknown | undefined
+  structured: unknown | undefined,
+  rawText = ""
 ): Decision[] | null {
-  if (!structured || typeof structured !== "object") return null
-  const arr = (structured as { decisions?: unknown }).decisions
-  if (!Array.isArray(arr)) return null
+  const picked = pickArrayFieldDual(structured, rawText, "decisions", {
+    allowBareArray: false,
+  })
+  if (!picked) return null
   const out: Decision[] = []
-  for (const it of arr) {
+  for (const it of picked.items) {
     if (!it || typeof it !== "object") continue
     const o = it as { id?: unknown; promote?: unknown; reason?: unknown }
     if (typeof o.id !== "number" || !Number.isFinite(o.id)) continue
@@ -178,7 +182,7 @@ export async function runPromote(
       .join("\n")
     const prompt = `【权威基础文档片段】\n${baseBlock || "(无)"}\n\n【候选反思条目】\n${candBlock}`
 
-    const { structuredOutput } = await drainQuery(
+    const { text: out, structuredOutput } = await drainQuery(
       d.queryFn({
         prompt,
         options: noToolQueryOptions({
@@ -195,16 +199,17 @@ export async function runPromote(
       "promote"
     )
 
-    const decisions = decisionsFromPayload(structuredOutput)
+    const decisions = decisionsFromPayload(structuredOutput, out)
     const selected = selectPromoteIds(
       decisions,
       candidates.map((c) => c.id),
       d.maxPerRun
     )
     if (!selected.ok) {
+      const preview = previewJsonPayload(structuredOutput, out)
       logger.log(
         "warn",
-        `[reflection-promote] 校验失败(${selected.reason}),本轮不升格`
+        `[reflection-promote] 校验失败(${selected.reason}),本轮不升格。预览: ${preview || "(空)"}`
       )
       bus.emit("error.occurred", {
         scope: "reflection-promote",

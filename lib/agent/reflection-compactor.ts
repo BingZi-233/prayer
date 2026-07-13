@@ -4,6 +4,7 @@ import { logger } from "../logger"
 import type { Repo } from "../db/repo"
 import { embed as defaultEmbed } from "../tools/embed"
 import { noToolQueryOptions, drainQuery } from "./agent"
+import { pickArrayFieldDual, previewJsonPayload } from "./json-output"
 
 export interface ReflectionCompactorDeps {
   repo: Repo
@@ -70,11 +71,13 @@ const COMPACT_SYSTEM = `你是客服知识库整理助手。反思条目是从�
 - 仅当与基础文档明确矛盾、或与更完整反思直接冲突且明显过时/错误时,才删除该条。
 - 禁止无故缩短:未合并的条目应基本保留原信息量,不得把长 FAQ 压成一句话。
 硬约束:只能基于【现有反思条目】做合并与删除,不得新增基础片段之外的新事实,不得把基础文档片段本身写成反思条目。
-输出由 JSON Schema 强制为 {"items":[{"faq":"..."}]};faq 须完整可用。
+输出一个 JSON 对象(优先 StructuredOutput 工具;若只输出文本则不要 Markdown 代码块):
+{"items":[{"faq":"..."}]};faq 须完整可用。
 若无可合并/删除,原样输出全部条目。若全部应删除,仍至少保留信息量最高的若干条,不要输出空 items。`
 
+// 截断 salvage 时的最低保留比例:防止只解析出前 1~2 条就把整库替换掉。
+const TRUNCATED_MIN_RATIO = 0.2
 // 业务安全:自学习不允许一轮整理把大半知识抹掉(近义合并通常仍 ≥ 此比例)。
-// 形状校验交给 SDK outputFormat.json_schema,此处不再做文本 JSON 解析。
 export const COMPLETE_MIN_RATIO = 0.7
 
 function resolve(deps: ReflectionCompactorDeps): Resolved {
@@ -90,37 +93,27 @@ function resolve(deps: ReflectionCompactorDeps): Resolved {
   }
 }
 
-// 只信 structured_output.items(schema 已强制)。
-function itemsFromStructured(
-  structured: unknown | undefined
-): unknown[] | null {
-  if (structured === undefined || structured === null) return null
-  if (
-    typeof structured === "object" &&
-    Array.isArray((structured as { items?: unknown }).items)
-  ) {
-    return (structured as { items: unknown[] }).items
-  }
-  return null
-}
-
-// 业务安全底线(非 schema 重验):空集/暴涨/过度删除。ok=false 时带 reason 供 log。
+// 业务安全底线:空集/暴涨/过度删除;structured 优先、文本兜底(+截断 salvage)。
 type CompactCheck = { ok: true; faqs: string[] } | { ok: false; reason: string }
 export function validateCompactedDetailed(
   structured: unknown | undefined,
-  inputCount: number
+  inputCount: number,
+  rawText = ""
 ): CompactCheck {
-  const items = itemsFromStructured(structured)
-  if (!items) {
+  const picked = pickArrayFieldDual(structured, rawText, "items", {
+    allowBareArray: true,
+    salvageTruncated: true,
+  })
+  if (!picked) {
     return {
       ok: false,
       reason:
-        structured === undefined || structured === null
-          ? "无 structured_output"
-          : "structured_output 非 {items:[...]}",
+        structured == null && !rawText.trim()
+          ? "无 structured_output 且无文本 JSON"
+          : "无法解析为 {items:[...]} 或数组",
     }
   }
-  const faqs = items
+  const faqs = picked.items
     .map((x) =>
       x && typeof (x as { faq?: unknown }).faq === "string"
         ? (x as { faq: string }).faq.trim()
@@ -135,11 +128,14 @@ export function validateCompactedDetailed(
       reason: `条目暴涨 ${faqs.length} > 输入 ${inputCount} ×1.5(疑无视约束)`,
     }
   if (inputCount > 0) {
-    const floor = Math.max(1, Math.ceil(inputCount * COMPLETE_MIN_RATIO))
+    const ratio = picked.truncated ? TRUNCATED_MIN_RATIO : COMPLETE_MIN_RATIO
+    const floor = Math.max(1, Math.ceil(inputCount * ratio))
     if (faqs.length < floor) {
       return {
         ok: false,
-        reason: `完整产出仅 ${faqs.length} 条 < 输入 ${inputCount} ×${COMPLETE_MIN_RATIO} 下限 ${floor}(疑过度删除,保留旧库)`,
+        reason: picked.truncated
+          ? `截断 salvage 仅 ${faqs.length} 条 < 输入 ${inputCount} ×${TRUNCATED_MIN_RATIO} 下限 ${floor}(保留旧库)`
+          : `完整产出仅 ${faqs.length} 条 < 输入 ${inputCount} ×${COMPLETE_MIN_RATIO} 下限 ${floor}(疑过度删除,保留旧库)`,
       }
     }
   }
@@ -149,9 +145,10 @@ export function validateCompactedDetailed(
 // 返回整理后 faq 列表;任一异常返回 null(调用方保留旧库)。
 export function validateCompacted(
   structured: unknown | undefined,
-  inputCount: number
+  inputCount: number,
+  rawText = ""
 ): string[] | null {
-  const r = validateCompactedDetailed(structured, inputCount)
+  const r = validateCompactedDetailed(structured, inputCount, rawText)
   return r.ok ? r.faqs : null
 }
 
@@ -181,12 +178,12 @@ export async function runCompact(deps: ReflectionCompactorDeps): Promise<void> {
     const refBlock = entries.map((e, i) => `[${i + 1}] ${e.content}`).join("\n")
     const prompt = `【权威基础文档片段】\n${baseBlock || "(无)"}\n\n【现有反思条目】\n${refBlock}`
 
-    const { structuredOutput } = await drainQuery(
+    const { text: out, structuredOutput } = await drainQuery(
       d.queryFn({
         prompt,
         options: noToolQueryOptions({
           systemPrompt: COMPACT_SYSTEM,
-          // SDK 强制 JSON Schema;形状校验交给 CLI StructuredOutput,本地只做业务安全底线
+          // 仍挂 schema;失败时文本 JSON(+截断 salvage)兜底
           outputFormat: { type: "json_schema", schema: COMPACT_OUTPUT_SCHEMA },
           // JSON 整理任务,关思考省成本/延迟;单次覆盖全局 alwaysThinkingEnabled
           thinking: { type: "disabled" },
@@ -201,12 +198,13 @@ export async function runCompact(deps: ReflectionCompactorDeps): Promise<void> {
       "compact"
     )
 
-    const check = validateCompactedDetailed(structuredOutput, entries.length)
+    const check = validateCompactedDetailed(
+      structuredOutput,
+      entries.length,
+      out
+    )
     if (!check.ok) {
-      const preview = JSON.stringify(structuredOutput ?? "")
-        .slice(0, 300)
-        .replace(/\s+/g, " ")
-        .trim()
+      const preview = previewJsonPayload(structuredOutput, out)
       logger.log(
         "warn",
         `[reflection-compact] 校验失败(${check.reason}),保留旧库。预览: ${preview || "(空)"}`

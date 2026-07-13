@@ -4,6 +4,7 @@ import { logger } from "../logger"
 import type { Repo, KbHit } from "../db/repo"
 import { embed as defaultEmbed } from "../tools/embed"
 import { noToolQueryOptions, drainQuery } from "./agent"
+import { pickArrayFieldDual, previewJsonPayload } from "./json-output"
 
 export interface ReflectionPollerDeps {
   repo: Repo
@@ -79,7 +80,8 @@ const REFLECT_SYSTEM = `你是客服知识运营助手。用户消息会给出:
 排除(判为无效/跳过):闲聊寒暄、纯指令、与提问无关、信息不足、一次性、含隐私(订单号/手机号)。
 去重(重要):若有效解答的知识要点已被【已有知识库相关片段】清楚覆盖、无实质增量(新步骤/新条件/新例外/纠正),则不要输出该条(或 effective=false)。仅当有可复用的新信息时才沉淀。
 对每条应沉淀的有效解答输出一个对象,faq 需脱离本次上下文、含问题要点与结论,纯文本一段。
-输出由 JSON Schema 强制为 {"items":[{"question":"...","answer":"...","effective":true,"faq":"..."}]};
+输出一个 JSON 对象(优先 StructuredOutput 工具;若只输出文本则不要 Markdown 代码块):
+{"items":[{"question":"...","answer":"...","effective":true,"faq":"..."}]};
 无可沉淀时 items 为空数组。`
 
 const PRE_CONTEXT = 10 // band 前作为问题上下文的消息条数
@@ -94,14 +96,17 @@ export type ReflectItem = {
   faq: string
 }
 
-// 只信 SDK structured_output.items;不做文本 JSON 二次解析。
-// 无有效载荷 → null(调用方本群不推进游标,下轮重试)。
-export function itemsFromStructured(structured: unknown): ReflectItem[] | null {
-  if (!structured || typeof structured !== "object") return null
-  const arr = (structured as { items?: unknown }).items
-  if (!Array.isArray(arr)) return null
+// structured 优先 + 文本 JSON 兜底;无有效载荷 → null(调用方本群不推进游标)。
+export function itemsFromStructured(
+  structured: unknown,
+  rawText = ""
+): ReflectItem[] | null {
+  const picked = pickArrayFieldDual(structured, rawText, "items", {
+    allowBareArray: true,
+  })
+  if (!picked) return null
   const out: ReflectItem[] = []
-  for (const it of arr) {
+  for (const it of picked.items) {
     if (!it || typeof it !== "object") continue
     const o = it as Record<string, unknown>
     if (typeof o.effective !== "boolean") continue
@@ -289,7 +294,7 @@ async function scanOnce(d: Resolved): Promise<void> {
           ? kbHits.map((h, i) => `(${i + 1}) ${h.content}`).join("\n")
           : "(无相近片段)"
       const prompt = `已沉降时间区间(只判定此区间内客服发言):(${cursor}, ${until}]\n\n【已有知识库相关片段】\n${kbBlock}\n\n对话记录:\n${transcript}`
-      const { structuredOutput } = await drainQuery(
+      const { text: out, structuredOutput } = await drainQuery(
         d.queryFn({
           prompt,
           options: noToolQueryOptions({
@@ -310,15 +315,12 @@ async function scanOnce(d: Resolved): Promise<void> {
         }) as AsyncIterable<any>,
         "reflect"
       )
-      const items = itemsFromStructured(structuredOutput)
+      const items = itemsFromStructured(structuredOutput, out)
       if (items === null) {
-        // 无 structured_output → 本群不推进,下轮重试
-        const preview = JSON.stringify(structuredOutput ?? "")
-          .slice(0, 300)
-          .replace(/\s+/g, " ")
-          .trim()
+        // 双源皆无 → 本群不推进,下轮重试
+        const preview = previewJsonPayload(structuredOutput, out)
         logger.warn(
-          `LLM 反思无有效 structured_output 预览: ${preview || "(空)"}`,
+          `LLM 反思输出解析失败 len=${out.length} structured=${structuredOutput != null} 预览: ${preview || "(空)"}`,
           {
             scope: "reflection",
             groupId,

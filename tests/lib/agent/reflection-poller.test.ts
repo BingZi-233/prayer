@@ -77,7 +77,7 @@ beforeEach(() => {
   repo = new Repo(openDb(":memory:", 3))
 })
 
-describe("itemsFromStructured", () => {
+describe("itemsFromStructured(structured 优先 + 文本兜底)", () => {
   it("抽出有效 items;缺字段跳过", () => {
     expect(
       itemsFromStructured({
@@ -96,10 +96,29 @@ describe("itemsFromStructured", () => {
       },
     ])
   })
-  it("无 structured / 非 {items} → null", () => {
+  it("无 structured 且无文本 → null", () => {
     expect(itemsFromStructured(undefined)).toBeNull()
     expect(itemsFromStructured(null)).toBeNull()
-    expect(itemsFromStructured([{ effective: true, faq: "x" }])).toBeNull()
+  })
+  it("裸数组 structured 可解析", () => {
+    expect(itemsFromStructured([{ effective: true, faq: "x" }])).toEqual([
+      { question: "", answer: "", effective: true, faq: "x" },
+    ])
+  })
+  it("文本 JSON 兜底", () => {
+    expect(
+      itemsFromStructured(
+        undefined,
+        `{"items":[{"effective":true,"faq":"从文本来","question":"q","answer":"a"}]}`
+      )
+    ).toEqual([
+      {
+        question: "q",
+        answer: "a",
+        effective: true,
+        faq: "从文本来",
+      },
+    ])
   })
   it("空 items → []", () => {
     expect(itemsFromStructured({ items: [] })).toEqual([])
@@ -241,11 +260,37 @@ describe("reflection-poller runScan", () => {
     expect(qf).not.toHaveBeenCalled()
   })
 
-  it("无 structured_output → 不入库,游标不动(下轮重试)", async () => {
+  it("无 structured 且无文本 → 不入库,游标不动(下轮重试)", async () => {
     seed(100, 201, "admin", "答案", NOW - 4000)
     await runScan(opts({ queryFn: fakeQuery(undefined) as never }))
     expect(repo.searchKb(new Float32Array([1, 0, 0]), 1)).toHaveLength(0)
     expect(repo.groupReflectCursor(100)).toBe(0)
+  })
+
+  it("无 structured 但文本 JSON 合法 → 入库并推进游标", async () => {
+    seed(100, 200, "member", "怎么退款", NOW - 5000)
+    seed(100, 201, "admin", "一般三天", NOW - 4000)
+    await runScan(
+      opts({
+        queryFn: (async function* () {
+          yield {
+            type: "assistant",
+            message: {
+              content: [
+                {
+                  type: "text",
+                  text: `{"items":[{"question":"怎么退款","answer":"一般三天","effective":true,"faq":"退款一般三天到账"}]}`,
+                },
+              ],
+            },
+          }
+          yield { type: "result", subtype: "success" }
+        }) as never,
+      })
+    )
+    const hits = repo.searchKb(new Float32Array([1, 0, 0]), 5)
+    expect(hits.some((h) => h.content.includes("退款一般三天"))).toBe(true)
+    expect(repo.groupReflectCursor(100)).toBe(NOW - 1000)
   })
 
   it("空 items → 不入库,仍推进游标", async () => {

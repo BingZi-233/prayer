@@ -4,7 +4,7 @@ import { openDb } from "@/lib/db/index"
 import { Repo } from "@/lib/db/repo"
 import { bus } from "@/lib/bus"
 
-describe("classifyItems 业务对齐(只信 structured_output)", () => {
+describe("classifyItems 业务对齐(structured 优先 + 文本兜底)", () => {
   const existing = new Set([1, 2])
   it("合法项对齐;越界/重复/缺 i 丢弃;幻觉 topicId 丢弃", () => {
     const structured = {
@@ -25,14 +25,44 @@ describe("classifyItems 业务对齐(只信 structured_output)", () => {
     ])
   })
 
-  it("无 structured_output → null(不解析文本)", () => {
+  it("无 structured 且无文本 → null", () => {
     expect(classifyItems(undefined, 3, existing)).toBeNull()
     expect(classifyItems(null, 3, existing)).toBeNull()
   })
 
-  it("structured 非 {items} → null", () => {
-    expect(classifyItems([{ i: 0, topicId: 1 }], 1, new Set([1]))).toBeNull()
+  it("裸数组 structured 可解析", () => {
+    expect(classifyItems([{ i: 0, topicId: 1 }], 1, new Set([1]))).toEqual([
+      { i: 0, topicId: 1 },
+    ])
+  })
+
+  it("structured 非法形状 → null(无文本)", () => {
     expect(classifyItems({ nope: true }, 1, existing)).toBeNull()
+  })
+
+  it("无 structured 时文本 JSON 兜底", () => {
+    const text = `{"items":[{"i":0,"topicId":1},{"i":1,"newTitle":"退款"}]}`
+    expect(classifyItems(undefined, 2, existing, text)).toEqual([
+      { i: 0, topicId: 1 },
+      { i: 1, newTitle: "退款" },
+    ])
+  })
+
+  it("多轮拼接文本取最后一个 items", () => {
+    const text =
+      `{"items":[{"i":0,"topicId":1}]}` +
+      `{"items":[{"i":0,"newTitle":"最终"}]}`
+    expect(classifyItems(undefined, 1, existing, text)).toEqual([
+      { i: 0, newTitle: "最终" },
+    ])
+  })
+
+  it("structured 优先于文本", () => {
+    const text = `{"items":[{"i":0,"newTitle":"文本侧"}]}`
+    const structured = { items: [{ i: 0, topicId: 1 }] }
+    expect(classifyItems(structured, 1, existing, text)).toEqual([
+      { i: 0, topicId: 1 },
+    ])
   })
 })
 
@@ -173,13 +203,28 @@ describe("topic-poller runScan", () => {
     expect(rows[0].id).toBe(target) // 归并到窗口外老主题
   })
 
-  it("无 structured_output → 不落库,游标不动(下轮重试)", async () => {
+  it("无 structured 且文本非 JSON → 不落库,游标不动(下轮重试)", async () => {
     seed(repo, 100, 200, "member", "怎么退款", NOW - 5000)
     await runScan(
       opts(repo, { queryFn: fakeQueryText("抱歉无法处理") as never })
     )
     expect(repo.rankingByWindow(0)).toHaveLength(0)
     expect(repo.topicCursor(100)).toBe(0)
+  })
+
+  it("无 structured 但文本 JSON 合法 → 落库并推进游标", async () => {
+    seed(repo, 100, 200, "member", "怎么退款", NOW - 5000)
+    await runScan(
+      opts(repo, {
+        queryFn: fakeQueryText(
+          `{"items":[{"i":0,"newTitle":"退款相关"}]}`
+        ) as never,
+      })
+    )
+    const rows = repo.rankingByWindow(0)
+    expect(rows).toHaveLength(1)
+    expect(rows[0].title).toBe("退款相关")
+    expect(repo.topicCursor(100)).toBe(NOW - 5000)
   })
 
   it("非生效群跳过,不调 LLM,游标不动", async () => {

@@ -4,6 +4,7 @@ import { logger } from "../logger"
 import type { Repo } from "../db/repo"
 import { embed as defaultEmbed } from "../tools/embed"
 import { noToolQueryOptions, drainQuery } from "./agent"
+import { pickArrayFieldDual, previewJsonPayload } from "./json-output"
 import { textNearlySame } from "./reflection-poller"
 
 // LLM 每条问题的归类结果:归入已有 topicId / 新建 newTitle / 噪声 noise。
@@ -13,28 +14,20 @@ export interface ClassifyItem {
   newTitle?: string
 }
 
-// 只信 SDK outputFormat.json_schema → structured_output(形状已由 schema 强制)。
-// 不做文本 JSON 二次解析。
-function rawItems(structured: unknown): unknown[] | null {
-  if (
-    structured &&
-    typeof structured === "object" &&
-    Array.isArray((structured as any).items)
-  ) {
-    return (structured as any).items
-  }
-  return null
-}
-
 // 业务对齐:batchLen=本轮问题条数,existingIds=本轮传入 LLM 的现有主题 id 集。
-// 返回对齐后的合法归类项(noise/越界/幻觉 id 已剔除);无 structured → null(本轮跳过、不推进游标)。
+// structured 优先,文本 JSON 兜底;返回合法归类项(noise/越界/幻觉 id 已剔除);
+// 双源皆无 → null(本轮跳过、不推进游标)。
 export function classifyItems(
   structured: unknown,
   batchLen: number,
-  existingIds: Set<number>
+  existingIds: Set<number>,
+  rawText = ""
 ): ClassifyItem[] | null {
-  const items = rawItems(structured)
-  if (!items) return null
+  const picked = pickArrayFieldDual(structured, rawText, "items", {
+    allowBareArray: true,
+  })
+  if (!picked) return null
+  const items = picked.items
   const seen = new Set<number>()
   const out: ClassifyItem[] = []
   for (const it of items) {
@@ -105,8 +98,9 @@ const TOPIC_SYSTEM = `你是 API 中转站的客服问题归类助手。用户�
   寒暄/表情/纯指令/无信息量)。
 - 拿不准是否与本产品相关 → 判 noise:true(宁可少记,避免统计被无关话题淹没)。
 - 语义相同的多条新问题应共用同一个 newTitle。
-输出由 JSON Schema 强制为 {"items":[...]};每项含输入序号 i。
-形如 {"items":[{"i":0,"topicId":3},{"i":1,"newTitle":"退款到账时间"},{"i":2,"noise":true}]}`
+输出一个 JSON 对象(优先 StructuredOutput 工具;若只输出文本则不要 Markdown 代码块):
+{"items":[{"i":0,"topicId":3},{"i":1,"newTitle":"退款到账时间"},{"i":2,"noise":true}]}
+每项含输入序号 i。`
 
 const TOPIC_SCHEMA = {
   type: "object",
@@ -174,11 +168,12 @@ async function scanOnce(d: Resolved): Promise<void> {
       const qBlock = msgs.map((m, i) => `[${i}] ${m.text}`).join("\n")
       const prompt = `【现有主题】\n${topicBlock}\n\n【待归类问题】\n${qBlock}`
 
-      const { structuredOutput } = await drainQuery(
+      const { text: out, structuredOutput } = await drainQuery(
         d.queryFn({
           prompt,
           options: noToolQueryOptions({
             systemPrompt: TOPIC_SYSTEM,
+            // 仍挂 schema:StructuredOutput 成功时形状更稳;失败则文本兜底
             outputFormat: { type: "json_schema", schema: TOPIC_SCHEMA },
             thinking: { type: "disabled" },
             canUseTool: async () => ({
@@ -191,19 +186,17 @@ async function scanOnce(d: Resolved): Promise<void> {
         "topic"
       )
 
-      // 只信 SDK structured_output;无则本群不推进,下轮重试
+      // structured 优先 + 文本 JSON 兜底;皆无则本群不推进,下轮重试
       const classified = classifyItems(
         structuredOutput,
         msgs.length,
-        existingIds
+        existingIds,
+        out
       )
       if (classified === null) {
-        const preview = JSON.stringify(structuredOutput ?? "")
-          .slice(0, 300)
-          .replace(/\s+/g, " ")
-          .trim()
+        const preview = previewJsonPayload(structuredOutput, out)
         logger.warn(
-          `LLM 归类无有效 structured_output 预览: ${preview || "(空)"}`,
+          `LLM 归类输出解析失败 len=${out.length} structured=${structuredOutput != null} 预览: ${preview || "(空)"}`,
           { scope: "topic", groupId }
         )
         continue
