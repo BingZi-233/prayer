@@ -15,7 +15,7 @@ import {
   Info,
 } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Input } from "@/components/ui/input";
+import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -241,15 +241,16 @@ export default function LogsPage() {
                 </Badge>
               );
             })}
-            <div className="relative">
-              <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2" />
-              <Input
+            <InputGroup className="h-8 w-52">
+              <InputGroupAddon>
+                <Search />
+              </InputGroupAddon>
+              <InputGroupInput
                 placeholder="搜索 scope / 群 / 文案…"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                className="h-8 w-52 pl-8"
               />
-            </div>
+            </InputGroup>
             <Button variant="ghost" size="sm" onClick={() => setPaused((p) => !p)}>
               {paused ? <Play data-icon="inline-start" /> : <Pause data-icon="inline-start" />}
               {paused ? "继续滚动" : "暂停滚动"}
