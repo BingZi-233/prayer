@@ -169,7 +169,7 @@ function defaultDbPath(): string {
   // 与 runtime 一致:优先 env(启动后会写成绝对路径),否则相对路径 resolve 成绝对
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { resolve } = require("node:path") as typeof import("node:path");
-  return resolve(process.env.DB_PATH ?? "./data/agent.db");
+  return resolve(/* turbopackIgnore: true */ process.env.DB_PATH ?? "./data/agent.db");
 }
 
 /** 进程单例;首次创建时挂 SQLite 持久化并灌回未过期条目 */

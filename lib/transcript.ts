@@ -120,7 +120,7 @@ export function parseTranscript(jsonl: string): TranscriptMsg[] {
 
 export function findTranscript(configDir: string, sessionId: string): string | null {
   // configDir 为运行时配置(常在项目外)。fs 参数加 turbopackIgnore,避免 NFT 把整仓 trace 进来。
-  const root = join(resolve(configDir), "projects");
+  const root = join(/* turbopackIgnore: true */ resolve(configDir), "projects");
   if (!existsSync(/* turbopackIgnore: true */ root)) return null;
   const target = `${sessionId}.jsonl`;
   const stack = [root];
