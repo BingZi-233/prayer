@@ -11,8 +11,29 @@ export interface EnrichTelegramDeps {
   getRole: (chatId: string, userId: string) => Promise<SenderRole>
   /** 下载单图；缺省则不下载 */
   downloadImage?: (fileId: string) => Promise<ImageInput | null>
-  /** Privacy 启发式观察 */
-  observeMessage?: (chatId: string, botMentioned: boolean) => void
+  /**
+   * Privacy 启发式观察。
+   * 第二参为 botRelated（@bot / 回复 bot / bot_command），非仅 botMentioned。
+   */
+  observeMessage?: (chatId: string, botRelated: boolean) => void
+  /** 本 bot 的 user id，用于判定 reply-to-bot */
+  botId?: number
+}
+
+/**
+ * Privacy Mode 下 bot 仍能收到的消息：@ 提及、回复 bot、以命令实体出现。
+ * 普通群聊闲聊不算 botRelated。
+ */
+export function isBotRelatedMessage(
+  raw: Message,
+  botId: number | undefined,
+  botMentioned: boolean
+): boolean {
+  if (botMentioned) return true
+  if (botId != null && raw.reply_to_message?.from?.id === botId) return true
+  const entities = raw.entities ?? raw.caption_entities
+  if (entities?.some((e) => e.type === "bot_command")) return true
+  return false
 }
 
 /**
@@ -32,7 +53,12 @@ export async function enrichTelegramMessage(
   }
 
   try {
-    deps.observeMessage?.(msg.chatId, !!msg.botMentioned)
+    const botRelated = isBotRelatedMessage(
+      raw,
+      deps.botId,
+      !!msg.botMentioned
+    )
+    deps.observeMessage?.(msg.chatId, botRelated)
   } catch {
     /* 观察失败忽略 */
   }

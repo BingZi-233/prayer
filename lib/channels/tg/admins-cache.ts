@@ -1,5 +1,8 @@
+import { logger } from "../../logger"
 import {
   clearTgBypassBlocked,
+  getTgBypassBlockReason,
+  listTgBypassBlocks,
   setTgBypassBlocked,
 } from "./bypass-state"
 
@@ -19,11 +22,11 @@ export interface AdminsCacheOpts {
   /** 缓存 TTL，默认 15 min */
   ttlMs?: number
   /**
-   * Privacy 启发式：累计观察 ≥ 此条后，若几乎全是 botMentioned 则关旁路。
+   * Privacy 启发式：累计观察 ≥ 此条后，若几乎全是 bot 可见消息则关旁路。
    * 默认 20。
    */
   privacyMinObservations?: number
-  /** 非 @ 消息占比低于此阈值 → 疑似 Privacy Mode。默认 0.05 */
+  /** 非 bot 可见消息占比低于此阈值 → 疑似 Privacy Mode。默认 0.05 */
   privacyNonMentionShareMin?: number
 }
 
@@ -35,8 +38,8 @@ interface CacheEntry {
 }
 
 interface PrivacyStats {
-  total: number
-  nonMention: number
+  /** 连续 bot 可见消息计数（见到非 bot 可见则清零） */
+  botRelatedStreak: number
   blocked: boolean
 }
 
@@ -77,73 +80,54 @@ export class AdminsCache {
     return entry.admins.get(String(userId)) ?? "member"
   }
 
-  /** 该 chat 旁路是否因 admins 失败 / Privacy 被关 */
+  /** 该 chat 旁路是否因 admins 失败 / Privacy 被关（以 module 状态为真相源） */
   isBypassBlocked(chatId: string): boolean {
-    const id = String(chatId)
-    const c = this.cache.get(id)
-    if (c?.failed) return true
-    return this.privacy.get(id)?.blocked === true
+    return getTgBypassBlockReason(String(chatId)) != null
   }
 
   bypassBlockReason(chatId: string): string | undefined {
-    const id = String(chatId)
-    const c = this.cache.get(id)
-    if (c?.failed) return c.failReason ?? "admins-failed"
-    if (this.privacy.get(id)?.blocked) return "privacy-mode?"
-    return undefined
+    return getTgBypassBlockReason(String(chatId))
   }
 
+  /** 与 poller 共用 module 状态，避免 reconfigure 后实例/module 双源不一致 */
   listBypassBlocks(): { chatId: string; reason: string }[] {
-    const out: { chatId: string; reason: string }[] = []
-    for (const [chatId, c] of this.cache) {
-      if (c.failed) {
-        out.push({ chatId, reason: c.failReason ?? "admins-failed" })
-      }
-    }
-    for (const [chatId, p] of this.privacy) {
-      if (p.blocked && !this.cache.get(chatId)?.failed) {
-        out.push({ chatId, reason: "privacy-mode?" })
-      }
-    }
-    return out
+    return listTgBypassBlocks()
   }
 
   /**
    * 观察一条入站消息（用于 Privacy 启发式）。
-   * 应在 parse/enrich 后调用；非 @ 消息会解除 privacy 封锁。
+   * `botRelated`：Privacy Mode 下仍可见的消息（@bot / 回复 bot / 命令）。
+   * 非 botRelated 消息解除 privacy 封锁并**重置 streak**，避免解封 thrash。
    */
-  observeMessage(chatId: string, botMentioned: boolean): void {
+  observeMessage(chatId: string, botRelated: boolean): void {
     const id = String(chatId)
     let s = this.privacy.get(id)
     if (!s) {
-      s = { total: 0, nonMention: 0, blocked: false }
+      s = { botRelatedStreak: 0, blocked: false }
       this.privacy.set(id, s)
     }
-    s.total++
-    if (!botMentioned) {
-      s.nonMention++
-      if (s.blocked) {
+    // 非 bot 可见：证明有全量消息，解封并重置窗口
+    if (!botRelated) {
+      s.botRelatedStreak = 0
+      if (s.blocked || getTgBypassBlockReason(id) === "privacy-mode?") {
         s.blocked = false
-        // 仅当 admins 未失败时清全局旁路封锁
-        if (!this.cache.get(id)?.failed) {
+        if (getTgBypassBlockReason(id) === "privacy-mode?") {
           clearTgBypassBlocked(id)
         }
       }
       return
     }
-    // 启发式：样本够大且几乎全是 @bot 相关
-    if (
-      s.total >= this.privacyMin &&
-      s.nonMention / s.total < this.privacyShareMin
-    ) {
-      if (!s.blocked) {
-        s.blocked = true
-        // admins 失败优先；否则写 privacy
-        if (!this.cache.get(id)?.failed) {
-          setTgBypassBlocked(id, "privacy-mode?")
-        }
+    s.botRelatedStreak++
+    // 连续 ≥ N 条仅 bot 可见 → 疑似 Privacy Mode
+    // privacyShareMin 保留配置兼容；streak 模型下等价于「几乎全 bot 可见」
+    if (s.botRelatedStreak >= this.privacyMin && !s.blocked) {
+      s.blocked = true
+      // admins 失败优先，不覆盖
+      if (getTgBypassBlockReason(id) !== "admins-failed") {
+        setTgBypassBlocked(id, "privacy-mode?")
       }
     }
+    void this.privacyShareMin
   }
 
   /** 强制刷新（测试 / 手动） */
@@ -178,9 +162,8 @@ export class AdminsCache {
         failed: false,
       }
       this.cache.set(chatId, entry)
-      // 管理员拉取成功：清 admins-failed；privacy 封锁保留直至看到非 @ 消息
-      const p = this.privacy.get(chatId)
-      if (!p?.blocked) {
+      // 仅清 admins-failed；privacy-mode? 保留到见到非 bot 可见消息
+      if (getTgBypassBlockReason(chatId) === "admins-failed") {
         clearTgBypassBlocked(chatId)
       }
       return entry
@@ -194,8 +177,10 @@ export class AdminsCache {
       }
       this.cache.set(chatId, entry)
       setTgBypassBlocked(chatId, "admins-failed")
-      // 保留 raw 便于排查，但不抛
-      void msg
+      logger.log(
+        "warn",
+        `[tg] getChatAdministrators chat=${chatId} failed: ${msg}`
+      )
       return entry
     }
   }

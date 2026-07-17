@@ -9,6 +9,7 @@ import {
   mapChatMembersToAdmins,
   type AdminEntry,
 } from "./admins-cache"
+import { clearAllTgBypassBlocked } from "./bypass-state"
 import {
   enrichTelegramMessage,
   makeTelegramImageDownloader,
@@ -166,6 +167,8 @@ export class TelegramChannel implements Channel {
     this.loopPromise = undefined
     this.abort = undefined
     this.setConnected(false)
+    // 清 module 旁路封锁，避免 reconfigure 后 poller 仍 skip 而 status 已空
+    clearAllTgBypassBlocked()
   }
 
   isConnected(): boolean {
@@ -291,8 +294,9 @@ export class TelegramChannel implements Channel {
             getRole: (chatId, userId) =>
               this.adminsCache.getRole(chatId, userId),
             downloadImage: this.downloadImage ?? undefined,
-            observeMessage: (chatId, botMentioned) =>
-              this.adminsCache.observeMessage(chatId, botMentioned),
+            observeMessage: (chatId, botRelated) =>
+              this.adminsCache.observeMessage(chatId, botRelated),
+            botId: this.botId,
           })
         }
       } catch (err) {

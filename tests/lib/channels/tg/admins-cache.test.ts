@@ -116,13 +116,28 @@ describe("AdminsCache", () => {
     expect(isTgChatBypassEnabled("-p")).toBe(false)
   })
 
-  it("非 @ 消息解除 privacy 封锁", () => {
+  it("非 bot 可见消息解除 privacy 封锁", () => {
     const c = make()
     for (let i = 0; i < 20; i++) c.observeMessage("-p", true)
     expect(c.isBypassBlocked("-p")).toBe(true)
     c.observeMessage("-p", false)
     expect(c.isBypassBlocked("-p")).toBe(false)
     expect(isTgChatBypassEnabled("-p")).toBe(true)
+  })
+
+  it("解封后重置 streak：紧随 bot 可见消息不立刻再封", () => {
+    const c = make()
+    for (let i = 0; i < 20; i++) c.observeMessage("-p", true)
+    expect(c.isBypassBlocked("-p")).toBe(true)
+    c.observeMessage("-p", false)
+    expect(c.isBypassBlocked("-p")).toBe(false)
+    // 解封后仅 1 条 bot 可见不应 thrash 再封
+    c.observeMessage("-p", true)
+    expect(c.isBypassBlocked("-p")).toBe(false)
+    expect(isTgChatBypassEnabled("-p")).toBe(true)
+    // 再连续 20 条才重新封锁
+    for (let i = 0; i < 19; i++) c.observeMessage("-p", true)
+    expect(c.isBypassBlocked("-p")).toBe(true)
   })
 
   it("listBypassBlocks 汇总", async () => {

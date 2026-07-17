@@ -29,6 +29,11 @@ export function listTgBypassBlocks(): { chatId: string; reason: string }[] {
   return [...blocked.entries()].map(([chatId, reason]) => ({ chatId, reason }))
 }
 
+/** 清空全部封锁（channel stop / reconfigure 时调用，避免双状态残留） */
+export function clearAllTgBypassBlocked(): void {
+  blocked.clear()
+}
+
 /** 仅单测用 */
 export function _resetTgBypassStateForTests(): void {
   blocked.clear()

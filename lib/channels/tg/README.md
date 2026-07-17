@@ -23,6 +23,6 @@
 ## 旁路降级
 
 - `getChatAdministrators` 失败 → 该 chat `senderRole=member`，`isTgChatBypassEnabled=false`，反思/补位跳过
-- Privacy Mode 启发式：累计 ≥20 条几乎全是 botMentioned → 同关闭；见到非 @ 消息后恢复
+- Privacy Mode 启发式：连续 ≥20 条仅 bot 可见（@bot / 回复 bot / bot_command）→ 同关闭；见到非 bot 可见消息后解封并重置计数（避免 thrash）
 - 主链路 @ 问答始终可用；消息仍缓冲（修复 Privacy 后有原料）
 - `ChannelStatus.detail` 形如：`@bot offset=N bypass-off:-1001:admins-failed`

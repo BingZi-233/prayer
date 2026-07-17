@@ -1,6 +1,9 @@
-import { describe, it, expect } from "vitest"
+import { describe, it, expect, vi } from "vitest"
 import type { Message } from "grammy/types"
-import { enrichTelegramMessage } from "@/lib/channels/tg/enrich"
+import {
+  enrichTelegramMessage,
+  isBotRelatedMessage,
+} from "@/lib/channels/tg/enrich"
 import type { IncomingMessage } from "@/lib/events"
 
 function baseMsg(over: Partial<IncomingMessage> = {}): IncomingMessage {
@@ -85,18 +88,72 @@ describe("enrichTelegramMessage", () => {
     expect(out.images).toBeUndefined()
   })
 
-  it("observeMessage 被调用", async () => {
+  it("observeMessage 被调用（botMentioned → botRelated）", async () => {
     const seen: { chatId: string; bot: boolean }[] = []
     await enrichTelegramMessage(
       baseMsg({ botMentioned: true }),
       rawMsg(),
       {
         getRole: async () => "member",
-        observeMessage: (chatId, botMentioned) => {
-          seen.push({ chatId, bot: botMentioned })
+        observeMessage: (chatId, botRelated) => {
+          seen.push({ chatId, bot: botRelated })
         },
       }
     )
     expect(seen).toEqual([{ chatId: "-1001", bot: true }])
+  })
+
+  it("observeMessage：reply-to-bot 视为 botRelated", async () => {
+    const observe = vi.fn()
+    await enrichTelegramMessage(
+      baseMsg({ botMentioned: false }),
+      rawMsg({
+        reply_to_message: {
+          message_id: 1,
+          date: 1,
+          chat: { id: -1001, type: "supergroup", title: "g" },
+          from: { id: 999, is_bot: true, first_name: "bot" },
+        } as Message["reply_to_message"],
+      }),
+      {
+        getRole: async () => "member",
+        observeMessage: observe,
+        botId: 999,
+      }
+    )
+    expect(observe).toHaveBeenCalledWith("-1001", true)
+  })
+})
+
+describe("isBotRelatedMessage", () => {
+  it("@ / reply-to-bot / bot_command 为 true，普通文本为 false", () => {
+    expect(isBotRelatedMessage(rawMsg(), 1, true)).toBe(true)
+    expect(
+      isBotRelatedMessage(
+        rawMsg({
+          reply_to_message: {
+            message_id: 1,
+            date: 1,
+            chat: { id: -1001, type: "supergroup", title: "g" },
+            from: { id: 42, is_bot: true, first_name: "b" },
+          } as Message["reply_to_message"],
+        }),
+        42,
+        false
+      )
+    ).toBe(true)
+    expect(
+      isBotRelatedMessage(
+        rawMsg({
+          text: "/start",
+          entities: [{ type: "bot_command", offset: 0, length: 6 }],
+        }),
+        1,
+        false
+      )
+    ).toBe(true)
+    expect(isBotRelatedMessage(rawMsg({ text: "闲聊" }), 1, false)).toBe(
+      false
+    )
   })
 })
