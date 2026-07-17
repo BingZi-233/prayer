@@ -38,7 +38,8 @@ describe("logger ring buffer", () => {
     for (let i = 0; i < 5; i++) {
       logger.error("输入被内容安全拦截", {
         scope: "reflection",
-        groupId: 100,
+        channel: "qq",
+        chatId: "100",
         code: "content_safety.input",
         category: "content_safety",
         title: "输入被内容安全拦截",
@@ -51,20 +52,23 @@ describe("logger ring buffer", () => {
     const lines = logger.tail();
     expect(lines).toHaveLength(1);
     expect(lines[0].count).toBe(5);
-    expect(lines[0].groupId).toBe(100);
+    expect(lines[0].channel).toBe("qq");
+    expect(lines[0].chatId).toBe("100");
     expect(lines[0].scope).toBe("reflection");
   });
 
-  it("不同群不合并", () => {
+  it("不同会话不合并", () => {
     logger.error("输入被内容安全拦截", {
       scope: "reflection",
-      groupId: 1,
+      channel: "qq",
+      chatId: "1",
       code: "content_safety.input",
       skipClassify: true,
     });
     logger.error("输入被内容安全拦截", {
       scope: "reflection",
-      groupId: 2,
+      channel: "tg",
+      chatId: "-1001",
       code: "content_safety.input",
       skipClassify: true,
     });
@@ -81,7 +85,8 @@ describe("logger ring buffer", () => {
   it("unknown 不同 raw 不合并", () => {
     logger.error("boom-a", {
       scope: "topic",
-      groupId: 1,
+      channel: "qq",
+      chatId: "1",
       code: "unknown",
       title: "未分类错误",
       raw: "first root cause alpha",
@@ -89,7 +94,8 @@ describe("logger ring buffer", () => {
     });
     logger.error("boom-b", {
       scope: "topic",
-      groupId: 1,
+      channel: "qq",
+      chatId: "1",
       code: "unknown",
       title: "未分类错误",
       raw: "second root cause beta",
@@ -105,14 +111,15 @@ describe("logger ring buffer", () => {
       level: "error",
       msg: "未分类错误",
       scope: "topic",
-      groupId: 42,
+      channel: "qq",
+      chatId: "42",
       code: "unknown",
       title: "未分类错误",
       raw: "LLM 归类输出解析失败\nstack here",
       count: 1,
     });
     expect(line).toContain("[topic]");
-    expect(line).toContain("群=42");
+    expect(line).toContain("会话=qq:42");
     expect(line).toContain("LLM 归类输出解析失败");
     expect(line).not.toMatch(/未分类错误\s*$/);
   });
@@ -128,7 +135,8 @@ describe("logger ring buffer", () => {
     for (let i = 0; i < 10; i++) {
       logger.error("输入被内容安全拦截", {
         scope: "reflection",
-        groupId: 100,
+        channel: "qq",
+        chatId: "100",
         code: "content_safety.input",
         category: "content_safety",
         title: "输入被内容安全拦截",

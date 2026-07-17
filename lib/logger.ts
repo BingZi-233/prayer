@@ -4,6 +4,7 @@ import {
   type LogCategory,
   type ClassifiedError,
 } from "./log-classify";
+import type { ChannelId } from "./channels/types";
 
 export type { LogCategory };
 export type LogLevel = "info" | "warn" | "error";
@@ -21,6 +22,12 @@ export interface LogEntry {
   title?: string;
   hint?: string;
   retryable?: boolean;
+  /** 通道 + 会话 id（chat-ref）；新写入优先 */
+  channel?: ChannelId;
+  chatId?: string;
+  /**
+   * @deprecated 用 channel+chatId；仅旧 ring / 回读兼容
+   */
   groupId?: number;
   sessionKey?: string;
   raw?: string;
@@ -33,6 +40,9 @@ export type LogLine = LogEntry;
 
 export interface LogMeta {
   scope?: string;
+  channel?: ChannelId;
+  chatId?: string;
+  /** @deprecated 用 channel+chatId */
   groupId?: number;
   sessionKey?: string;
   raw?: string;
@@ -51,22 +61,44 @@ const DEDUP_SCAN = 80;
 /** 合并后再次写 stdout 的 count 步长(首次必写;之后每 N 次汇总一行) */
 const STDOUT_DEDUP_EVERY = 10;
 
-function fingerprintOf(
-  e: Pick<LogEntry, "level" | "code" | "scope" | "groupId" | "sessionKey" | "msg" | "raw">
+/** 会话标识：优先 channel:chatId，回退旧 groupId */
+function chatIdentity(
+  e: Pick<LogEntry, "channel" | "chatId" | "groupId">
 ): string {
+  if (e.channel && e.chatId) return `${e.channel}:${e.chatId}`;
+  if (e.groupId != null) return `qq:${e.groupId}`;
+  return "";
+}
+
+function fingerprintOf(
+  e: Pick<
+    LogEntry,
+    | "level"
+    | "code"
+    | "scope"
+    | "channel"
+    | "chatId"
+    | "groupId"
+    | "sessionKey"
+    | "msg"
+    | "raw"
+  >
+): string {
+  const chat = chatIdentity(e);
   if (e.code && e.code !== "unknown") {
-    return [e.level, e.code, e.scope ?? "", e.groupId ?? "", e.sessionKey ?? ""].join("|");
+    return [e.level, e.code, e.scope ?? "", chat, e.sessionKey ?? ""].join("|");
   }
   // unknown / 无稳定 code:用 raw 或 msg 前缀,避免不同根因被合成一条「未分类错误」
   const body = (e.raw ?? e.msg).split("\n")[0].slice(0, 80);
-  return [e.level, e.scope ?? "", e.groupId ?? "", e.sessionKey ?? "", body].join("|");
+  return [e.level, e.scope ?? "", chat, e.sessionKey ?? "", body].join("|");
 }
 
 /** 供单测/导出:格式化一行 stdout */
 export function consoleLine(e: LogEntry): string {
   const bits: string[] = [];
   if (e.scope) bits.push(`[${e.scope}]`);
-  if (e.groupId != null) bits.push(`群=${e.groupId}`);
+  const chat = chatIdentity(e);
+  if (chat) bits.push(`会话=${chat}`);
   if (e.count && e.count > 1) bits.push(`×${e.count}`);
   if (e.category && e.category !== "unknown") {
     bits.push(`[${CATEGORY_LABELS[e.category] ?? e.category}]`);
@@ -133,6 +165,8 @@ class RingLogger {
       title: partial.title,
       hint: partial.hint,
       retryable: partial.retryable,
+      channel: partial.channel,
+      chatId: partial.chatId,
       groupId: partial.groupId,
       sessionKey: partial.sessionKey,
       raw: partial.raw,
