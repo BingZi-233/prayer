@@ -45,6 +45,8 @@ import { PageShell } from "@/components/admin/page-shell";
 import { PageHeader } from "@/components/admin/page-header";
 import { SectionCard } from "@/components/admin/section-card";
 import { MetricBadge, MetricBadgeRow } from "@/components/admin/stat";
+import { ChannelStatusLights } from "@/components/channel-status-lights";
+import type { ChannelStatusView } from "@/components/live-provider";
 
 interface Status {
   state: string;
@@ -53,6 +55,7 @@ interface Status {
   lastError?: string;
   bootedAt?: number;
   handoffQueue: number;
+  channels?: ChannelStatusView[];
 }
 interface UsageRow {
   site: string;
@@ -98,6 +101,23 @@ const STATE_LABEL: Record<string, string> = {
   starting: "启动中",
   error: "错误",
 };
+
+function channelOf(s: Status, id: string): ChannelStatusView | undefined {
+  return s.channels?.find((c) => c.id === id);
+}
+function channelPresent(s: Status, id: string): boolean {
+  return !!channelOf(s, id);
+}
+function channelConnected(s: Status, id: string): boolean {
+  const ch = channelOf(s, id);
+  if (ch) return ch.connected && !ch.lastError;
+  // 无 channels 时 QQ 回退 wsConnected
+  if (id === "qq") return s.wsConnected;
+  return false;
+}
+function channelError(s: Status, id: string): boolean {
+  return !!channelOf(s, id)?.lastError;
+}
 
 export default function StatusPage() {
   const [s, setS] = useState<Status | null>(null);
@@ -148,14 +168,19 @@ export default function StatusPage() {
   }
 
   const m = ov?.metrics;
-  const hasAlerts = (ov?.humanSessions ?? 0) > 0 || (s != null && !s.wsConnected);
+  const channelDown =
+    s != null &&
+    (s.channels?.length
+      ? s.channels.some((c) => !c.connected || !!c.lastError)
+      : !s.wsConnected);
+  const hasAlerts = (ov?.humanSessions ?? 0) > 0 || channelDown;
 
   return (
     <PageShell fill className="lg:gap-6">
       <PageHeader
         className="shrink-0"
         title="运行状态"
-        description="查看运行状态、连接与今日业务结果。"
+        description="查看运行状态、各通道连接与今日业务结果。"
         actions={
           <Dialog>
             <DialogTrigger asChild>
@@ -203,7 +228,18 @@ export default function StatusPage() {
               <Link href="/admin/handoff">人工会话 {ov!.humanSessions}</Link>
             </Button>
           )}
-          {s && !s.wsConnected && <Badge variant="destructive">WS 未连接</Badge>}
+          {s?.channels?.map(
+            (c) =>
+              (!c.connected || c.lastError) && (
+                <Badge key={c.id} variant="destructive">
+                  {c.id.toUpperCase()} {c.lastError ? "异常" : "未连接"}
+                  {c.lastError ? ` · ${c.lastError.slice(0, 40)}` : ""}
+                </Badge>
+              )
+          )}
+          {!s?.channels?.length && s && !s.wsConnected && (
+            <Badge variant="destructive">WS 未连接</Badge>
+          )}
         </SectionCard>
       ) : null}
 
@@ -218,11 +254,35 @@ export default function StatusPage() {
         />
         <MetricBadge
           icon={Plug}
-          label="WS"
+          label="QQ"
           loading={!s}
-          value={s ? (s.wsConnected ? "已连接" : "断开") : "—"}
-          warn={!!s && !s.wsConnected}
-          tone={s?.wsConnected ? "primary" : undefined}
+          value={
+            s
+              ? channelConnected(s, "qq")
+                ? "已连接"
+                : "断开"
+              : "—"
+          }
+          warn={!!s && !channelConnected(s, "qq")}
+          tone={s && channelConnected(s, "qq") ? "primary" : undefined}
+        />
+        <MetricBadge
+          icon={Plug}
+          label="TG"
+          loading={!s}
+          value={
+            !s
+              ? "—"
+              : !channelPresent(s, "tg")
+                ? "未配置"
+                : channelConnected(s, "tg")
+                  ? "已连接"
+                  : channelError(s, "tg")
+                    ? "异常"
+                    : "断开"
+          }
+          warn={!!s && channelPresent(s, "tg") && !channelConnected(s, "tg")}
+          tone={s && channelConnected(s, "tg") ? "primary" : undefined}
         />
         <MetricBadge icon={Users} label="活动会话" loading={!s} value={s?.sessionCount ?? "—"} />
         <MetricBadge icon={ShieldCheck} label="生效群" loading={!ov} value={ov?.enabledGroups ?? "—"} />
@@ -234,6 +294,38 @@ export default function StatusPage() {
           value={m?.autoResolutionRate != null ? pct(m.autoResolutionRate) : "—"}
         />
       </MetricBadgeRow>
+
+      {s && (s.channels?.length || s.lastError) ? (
+        <SectionCard
+          className="shrink-0"
+          title="通道详情"
+          icon={Plug}
+          description="QQ 为 OneBot 正向 WS；TG 为 grammY long poll。detail 含 username / offset / 旁路降级原因。"
+          contentClassName="space-y-2 text-sm"
+        >
+          <ChannelStatusLights channels={s.channels} wsConnected={s.wsConnected} />
+          {s.channels?.map((c) => (
+            <div
+              key={c.id}
+              className="text-muted-foreground flex flex-wrap items-baseline gap-x-2 gap-y-0.5 border-t pt-2 first:border-t-0 first:pt-0"
+            >
+              <span className="text-foreground font-medium uppercase">{c.id}</span>
+              <span>{c.connected ? "connected" : "disconnected"}</span>
+              {c.detail && (
+                <code className="bg-muted rounded px-1.5 py-0.5 font-mono text-xs break-all">
+                  {c.detail}
+                </code>
+              )}
+              {c.lastError && (
+                <span className="text-destructive text-xs break-all">{c.lastError}</span>
+              )}
+            </div>
+          ))}
+          {s.lastError && (
+            <p className="text-destructive text-xs">runtime: {s.lastError}</p>
+          )}
+        </SectionCard>
+      ) : null}
 
       <SectionCard
         className="shrink-0"

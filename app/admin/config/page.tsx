@@ -7,6 +7,7 @@ import {
   ChevronsUpDown,
   X,
   Cable,
+  Send,
   MessageSquareText,
   Bot,
   MessagesSquare,
@@ -14,10 +15,12 @@ import {
   Zap,
   Bell,
   HardDrive,
+  Plus,
 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
@@ -40,6 +43,10 @@ interface Cfg {
   dbPath: string;
   claudeConfigDir: string;
   enabledGroups: number[];
+  /** 空 = 不启 TG；掩码显示，留空不覆盖 */
+  telegramBotToken: string;
+  /** 字符串 chat id（可负号），禁止 Number 比较 */
+  telegramEnabledChats: string[];
   reflectScanMs: number;
   reflectLookbackMs: number;
   reflectSettleMs: number;
@@ -104,11 +111,23 @@ export default function ConfigPage() {
   const [groupsLoading, setGroupsLoading] = useState(true);
   const [admins, setAdmins] = useState<AdminCandidate[] | null>(null);
   const [adminsLoading, setAdminsLoading] = useState(false);
+  /** 待加入的 TG chat id 草稿 */
+  const [tgChatDraft, setTgChatDraft] = useState("");
 
   useEffect(() => {
     fetch("/api/config").then((x) => x.json()).then((r) => {
       if (r.ok) {
-        setCfg({ groupPolicies: {}, supportUrl: "https://www.packyapi.com", ackEnabled: true, maxReplyChars: 900, usageBudgetUsd: 0, extraAtQQs: [], ...r.data });
+        setCfg({
+          groupPolicies: {},
+          supportUrl: "https://www.packyapi.com",
+          ackEnabled: true,
+          maxReplyChars: 900,
+          usageBudgetUsd: 0,
+          extraAtQQs: [],
+          telegramBotToken: "",
+          telegramEnabledChats: [],
+          ...r.data,
+        });
       }
     });
   }, []);
@@ -163,6 +182,9 @@ export default function ConfigPage() {
     if (typeof payload.onebotAccessToken === "string" && payload.onebotAccessToken.includes("•")) {
       delete payload.onebotAccessToken;
     }
+    if (typeof payload.telegramBotToken === "string" && payload.telegramBotToken.includes("•")) {
+      delete payload.telegramBotToken;
+    }
     try {
       const r = await fetch("/api/config", {
         method: "PUT",
@@ -170,7 +192,13 @@ export default function ConfigPage() {
         body: JSON.stringify(payload),
       }).then((x) => x.json());
       if (r.ok) {
-        setCfg({ groupPolicies: {}, extraAtQQs: [], ...r.data });
+        setCfg({
+          groupPolicies: {},
+          extraAtQQs: [],
+          telegramBotToken: "",
+          telegramEnabledChats: [],
+          ...r.data,
+        });
         toast.success("配置已保存并生效");
       } else {
         toast.error(`保存失败:${r.error}`);
@@ -180,6 +208,40 @@ export default function ConfigPage() {
     } finally {
       setBusy(false);
     }
+  }
+
+  function addTgChat() {
+    if (!cfg) return;
+    const id = tgChatDraft.trim();
+    if (!id) return;
+    // 禁止 Number 化：超级群 id 常为负大整数，字符串原样保留
+    if (cfg.telegramEnabledChats.includes(id)) {
+      setTgChatDraft("");
+      return;
+    }
+    setCfg({ ...cfg, telegramEnabledChats: [...cfg.telegramEnabledChats, id] });
+    setTgChatDraft("");
+  }
+
+  function removeTgChat(id: string) {
+    if (!cfg) return;
+    setCfg({
+      ...cfg,
+      telegramEnabledChats: cfg.telegramEnabledChats.filter((c) => c !== id),
+    });
+  }
+
+  /** 批量粘贴：按空白 / 逗号 / 分号拆分 */
+  function importTgChatsFromText(text: string) {
+    if (!cfg) return;
+    const parts = text
+      .split(/[\s,;]+/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (!parts.length) return;
+    const set = new Set(cfg.telegramEnabledChats);
+    for (const p of parts) set.add(p);
+    setCfg({ ...cfg, telegramEnabledChats: Array.from(set) });
   }
 
   const num = (k: keyof Cfg) => (cfg ? String(cfg[k] ?? "") : "");
@@ -233,6 +295,7 @@ export default function ConfigPage() {
         <Tabs defaultValue="onebot">
           <TabsList className="h-auto w-full flex-wrap justify-start">
             <TabsTrigger value="onebot"><Cable data-icon="inline-start" /> OneBot</TabsTrigger>
+            <TabsTrigger value="telegram"><Send data-icon="inline-start" /> Telegram</TabsTrigger>
             <TabsTrigger value="reply"><MessageSquareText data-icon="inline-start" /> 回复体验</TabsTrigger>
             <TabsTrigger value="sdk"><Bot data-icon="inline-start" /> Claude SDK</TabsTrigger>
             <TabsTrigger value="session"><MessagesSquare data-icon="inline-start" /> 会话</TabsTrigger>
@@ -394,6 +457,136 @@ export default function ConfigPage() {
                   )}
                 </Field>
               </FieldGroup>
+            </SectionCard>
+          </TabsContent>
+
+          <TabsContent value="telegram" className="space-y-4">
+            <SectionCard
+              title="Telegram Bot"
+              description="token 非空时注册 TG long poll；与 QQ 并行。同 token 仅允许单进程 poll（pm2 fork 单实例）。"
+            >
+              <FieldGroup>
+                <Field>
+                  <FieldLabel htmlFor="telegramBotToken">Bot Token</FieldLabel>
+                  <Input
+                    id="telegramBotToken"
+                    value={cfg.telegramBotToken ?? ""}
+                    placeholder="留空不修改；清空需先保存再在环境/库中清"
+                    onChange={(e) => setCfg({ ...cfg, telegramBotToken: e.target.value })}
+                    autoComplete="off"
+                  />
+                  <FieldDescription>
+                    来自 @BotFather。已保存密钥以掩码显示，留空或不改动则保留原值。token 为空则不启动 TG 通道。
+                  </FieldDescription>
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor="tgChatDraft">生效 Chat ID</FieldLabel>
+                  <div className="flex flex-col gap-2 sm:flex-row">
+                    <Input
+                      id="tgChatDraft"
+                      value={tgChatDraft}
+                      placeholder="如 -1001234567890"
+                      onChange={(e) => setTgChatDraft(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          addTgChat();
+                        }
+                      }}
+                    />
+                    <Button type="button" variant="outline" onClick={addTgChat} className="shrink-0">
+                      <Plus data-icon="inline-start" />
+                      添加
+                    </Button>
+                  </div>
+                  {(cfg.telegramEnabledChats?.length ?? 0) > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-1">
+                      {cfg.telegramEnabledChats.map((id) => (
+                        <Badge
+                          key={id}
+                          variant="secondary"
+                          className="cursor-pointer gap-1 font-mono text-xs"
+                          onClick={() => removeTgChat(id)}
+                        >
+                          {id}
+                          <X className="size-3" />
+                        </Badge>
+                      ))}
+                    </div>
+                  )}
+                  <FieldDescription>
+                    仅这些超级群/群里 bot 才会应答。id 按<strong>字符串</strong>保存（可负号），勿用 Number 转换。
+                    点击徽章可移除。
+                  </FieldDescription>
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor="tgChatBulk">批量粘贴 Chat ID</FieldLabel>
+                  <Textarea
+                    id="tgChatBulk"
+                    placeholder={"每行一个，或用逗号分隔\n-1001234567890\n-1009876543210"}
+                    rows={3}
+                    className="font-mono text-xs"
+                    onBlur={(e) => {
+                      const v = e.target.value.trim();
+                      if (v) {
+                        importTgChatsFromText(v);
+                        e.target.value = "";
+                      }
+                    }}
+                  />
+                  <FieldDescription>失焦时合并进上方列表（去重）。</FieldDescription>
+                </Field>
+              </FieldGroup>
+            </SectionCard>
+
+            <SectionCard
+              title="部署清单与帮助"
+              description="旁路（反思 / 主动补位）依赖全量群消息与管理员角色；主链路 @ 问答在 Privacy 开启时仍可用。"
+            >
+              <div className="text-muted-foreground space-y-3 text-sm leading-relaxed">
+                <div>
+                  <p className="text-foreground mb-1 font-medium">1. 关闭 Group Privacy Mode（必做）</p>
+                  <ol className="list-decimal space-y-1 pl-5">
+                    <li>打开 @BotFather → 你的 bot → Bot Settings → Group Privacy → <strong>Turn off</strong>。</li>
+                    <li>
+                      开启时 bot 只能收到 @ 自己、回复 bot 与命令，<strong>收不到普通群聊</strong>；
+                      反思 / 补位原料不足，运行时会对该 chat 降级关闭旁路（状态 detail 见{" "}
+                      <code className="text-xs">bypass-off:…:privacy-mode?</code>）。
+                    </li>
+                    <li>关闭后建议将 bot 踢出再重新拉进目标群，确保权限生效。</li>
+                  </ol>
+                </div>
+                <div>
+                  <p className="text-foreground mb-1 font-medium">2. 如何取得 Chat ID</p>
+                  <ul className="list-disc space-y-1 pl-5">
+                    <li>
+                      把 bot 拉进超级群后，在群里发一条消息，再请求{" "}
+                      <code className="text-xs">getUpdates</code>（或临时看运行日志）里的{" "}
+                      <code className="text-xs">message.chat.id</code>。
+                    </li>
+                    <li>
+                      也可用第三方查询 bot（如 @userinfobot / @getidsbot）转发群消息查看 id。
+                    </li>
+                    <li>
+                      超级群 id 通常形如 <code className="text-xs">-100…</code>，整串复制，不要丢负号或前缀。
+                    </li>
+                  </ul>
+                </div>
+                <div>
+                  <p className="text-foreground mb-1 font-medium">3. 单实例 long poll</p>
+                  <p>
+                    同一 bot token 同一时刻只能有一个 <code className="text-xs">getUpdates</code> 消费者。
+                    多实例（pm2 cluster / 多进程）会 409 Conflict，状态灯显示 lastError，QQ 不受影响。
+                  </p>
+                </div>
+                <div>
+                  <p className="text-foreground mb-1 font-medium">4. 触发方式</p>
+                  <p>
+                    群内 <code className="text-xs">@你的bot</code> 提问即可（username 大小写不敏感）。
+                    人工关键词不会抄送 QQ 管理群，用户侧引导 supportUrl。
+                  </p>
+                </div>
+              </div>
             </SectionCard>
           </TabsContent>
 

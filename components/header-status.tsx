@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils";
 import { useLive } from "@/components/live-provider";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { PollingIndicator } from "@/components/polling-indicator";
+import { ChannelStatusLights } from "@/components/channel-status-lights";
 
 const STATE_LABEL: Record<string, string> = {
   running: "运行中",
@@ -24,12 +25,25 @@ export function HeaderStatus() {
   return (
     <div className="ml-auto flex shrink-0 items-center gap-2 text-xs sm:gap-3">
       <span className="flex items-center gap-1.5">
-        <span className={cn("size-2 shrink-0 rounded-full", dot, state === "running" && "animate-pulse")} />
-        <span className="text-muted-foreground">{status ? (STATE_LABEL[state!] ?? state) : "…"}</span>
-        {status && !status.wsConnected && (
-          <span className="text-muted-foreground hidden sm:inline">· WS 断开</span>
-        )}
+        <span
+          className={cn(
+            "size-2 shrink-0 rounded-full",
+            dot,
+            state === "running" && "animate-pulse"
+          )}
+        />
+        <span className="text-muted-foreground">
+          {status ? (STATE_LABEL[state!] ?? state) : "…"}
+        </span>
       </span>
+      {status && (
+        <ChannelStatusLights
+          className="hidden sm:inline-flex"
+          channels={status.channels}
+          wsConnected={status.wsConnected}
+          compact
+        />
+      )}
       <PollingIndicator />
       <ThemeToggle />
     </div>
