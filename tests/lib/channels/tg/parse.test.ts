@@ -186,13 +186,16 @@ describe("channels/tg/parseTelegramUpdate", () => {
     expect(parseTelegramUpdate(update, CTX)).toBeNull()
   })
 
-  it("forum thread（有 message_thread_id）→ null", () => {
+  it("forum thread（有 message_thread_id）仍解析，靠 reply_to 回同话题", () => {
     const update = groupUpdate({
       message_thread_id: 99,
       text: "@PrayerBot hi",
       entities: [{ type: "mention", offset: 0, length: 10 }],
     })
-    expect(parseTelegramUpdate(update, CTX)).toBeNull()
+    const msg = parseTelegramUpdate(update, CTX)
+    expect(msg).not.toBeNull()
+    expect(msg!.botMentioned).toBe(true)
+    expect(msg!.rawText).toBe("hi")
   })
 
   it("edited_message 忽略（仅 message）→ null", () => {

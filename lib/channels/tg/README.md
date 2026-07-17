@@ -12,7 +12,7 @@
 
 | 文件               | 职责                                                                 |
 | ------------------ | -------------------------------------------------------------------- |
-| `parse.ts`         | Update → `IncomingMessage`（仅 group/supergroup message）            |
+| `parse.ts`         | Update → `IncomingMessage`（group/supergroup；含 forum topic）       |
 | `trigger.ts`       | @bot 判定与 UTF-16 剥离 mention                                      |
 | `client.ts`        | long poll / sendMessage / enrich 后 emit；offset 在 emit 后推进      |
 | `admins-cache.ts`  | `getChatAdministrators` + TTL；creator→owner；失败关旁路             |

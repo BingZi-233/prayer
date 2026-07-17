@@ -14,8 +14,8 @@ export interface TelegramParseContext {
 
 /**
  * Telegram Update → IncomingMessage。
- * 仅处理群/超级群的 message；忽略 edited_message、private、channel、forum thread。
- * Phase 1 不下载媒体；senderRole 留给 admins-cache（Phase 2）。
+ * 仅处理群/超级群的 message；忽略 edited_message、private、channel。
+ * Forum topic：接受消息；发送侧用 reply_to_message_id 留在同话题（不必丢弃）。
  */
 export function parseTelegramUpdate(
   update: Update,
@@ -27,9 +27,6 @@ export function parseTelegramUpdate(
 
   const chatType = message.chat?.type
   if (chatType !== "group" && chatType !== "supergroup") return null
-
-  // forum topic 消息回错 General，整条丢弃
-  if (message.message_thread_id != null) return null
 
   const from = message.from
   if (!from) return null

@@ -105,7 +105,19 @@ export function registerGateway(deps: GatewayDeps): () => void {
     if (!triggered) return
     if (repo.seenMessage(makeDedupeKey(channel, chatId, messageId))) return
     const sessionKey = makeSessionKey(channel, chatId, userId)
-    if (!msg.rawText && !msg.images?.length) return // 纯图消息也放行
+    // 纯 @bot 无正文：回用法说明（常见「@ 了但无回复」）
+    if (!msg.rawText?.trim() && !msg.images?.length) {
+      sendText(channel, chatId, helpText(supportUrl), messageId)
+      bus.emit("resolution.recorded", {
+        kind: "ack",
+        sessionKey,
+        channel,
+        chatId,
+        userId,
+        detail: "empty-after-mention",
+      })
+      return
+    }
 
     // human-mode:已转人工 → 丢弃(不抢答)
     if (repo.isHumanMode(sessionKey)) {
