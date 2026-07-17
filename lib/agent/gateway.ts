@@ -3,18 +3,24 @@ import type { Repo } from "../db/repo"
 import type { IncomingMessage } from "../events"
 import type { ChannelId } from "../channels/types"
 import { makeDedupeKey, makeSessionKey } from "../channels/ids"
-import { isChatEnabled } from "../channels/enabled-chats"
-import type { AppConfig } from "../config-store"
+import {
+  isAdminSurface,
+  isChatEnabled,
+  type ChatRef,
+} from "../channels/enabled-chats"
 
 export interface GatewayDeps {
   repo: Repo
   botQQ: number
   /** 额外监听的 QQ:atList 命中其中任一时也当 @bot */
   extraAtQQs?: number[]
-  adminGroupId: number
-  enabledGroups: number[]
-  /** TG 白名单 chatId；缺省空 */
-  telegramEnabledChats?: string[]
+  /** 统一生效会话（chat-ref）；由 assemble 从 config 解析后注入 */
+  enabledChats: ChatRef[]
+  /**
+   * 管理命令面 + 转人工通知目标。
+   * null = 无管理侧（人工关键词改引导官网）。
+   */
+  adminSurface: ChatRef | null
   /** 固定支持链接,办不了/人工时附带 */
   supportUrl?: string
 }
@@ -57,38 +63,26 @@ function sendText(
 }
 
 export function registerGateway(deps: GatewayDeps): () => void {
-  const {
-    repo,
-    botQQ,
-    adminGroupId,
-    enabledGroups,
-    supportUrl,
-    telegramEnabledChats = [],
-  } = deps
+  const { repo, botQQ, supportUrl, enabledChats, adminSurface } = deps
   const extraAtQQs = (deps.extraAtQQs ?? []).map(String)
   const botQQStr = String(botQQ)
-  const adminChatId = String(adminGroupId)
-  // isChatEnabled 只读这两项;其余 AppConfig 字段不在此路径使用
-  const enabledCfg = {
-    enabledGroups,
-    telegramEnabledChats,
-  } as Pick<AppConfig, "enabledGroups" | "telegramEnabledChats"> as AppConfig
+  const enabledCfg = { enabledChats }
 
   const onReceived = (msg: IncomingMessage) => {
     const { channel, chatId, userId, messageId } = msg
-    const isAdminGroup = channel === "qq" && chatId === adminChatId
+    const onAdmin = isAdminSurface(adminSurface, channel, chatId)
 
-    // 生效会话门:非白名单且非 QQ 管理群 → 完全忽略
-    if (!isAdminGroup && !isChatEnabled(enabledCfg, channel, chatId)) return
+    // 生效会话门:非白名单且非管理面 → 完全忽略
+    if (!onAdmin && !isChatEnabled(enabledCfg, channel, chatId)) return
 
-    // 管理群命令优先(仅 QQ 管理群)
-    if (isAdminGroup) {
+    // 管理面命令优先（!reset / !resume）
+    if (onAdmin && adminSurface) {
       const mReset = msg.rawText.match(/^!reset\s+(\S+)/)
       if (mReset) {
         repo.clearResumeId(mReset[1])
         sendText(
-          "qq",
-          adminChatId,
+          adminSurface.channel,
+          adminSurface.chatId,
           `已重置会话 ${mReset[1]} 的对话上下文。`
         )
         return
@@ -154,17 +148,16 @@ export function registerGateway(deps: GatewayDeps): () => void {
       return
     }
 
-    // 转人工
+    // 转人工：有管理面 → handoff 事件（通知走 adminSurface）；无管理面 → 引导官网
     if (HANDOFF_KEYWORDS.test(msg.rawText)) {
-      // TG:一期无管理侧队列,只回用户引导文案,不发 handoff.requested
-      if (channel === "tg") {
+      if (!adminSurface) {
         const link = supportUrl
           ? ` 也可访问 ${supportUrl} 联系支持。`
           : ""
         sendText(
           channel,
           chatId,
-          `当前频道暂不支持群内转人工,请通过官网支持渠道联系客服。${link}`.trim(),
+          `当前未配置管理侧转人工通道,请通过官网支持渠道联系客服。${link}`.trim(),
           messageId
         )
         return

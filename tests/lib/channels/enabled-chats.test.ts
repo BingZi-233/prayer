@@ -5,6 +5,9 @@ import {
   isChatEnabled,
   policyKey,
   getGroupPolicy,
+  resolveAdminSurface,
+  isAdminSurface,
+  resolveRuntimeChatConfig,
 } from "@/lib/channels/enabled-chats"
 
 function baseCfg(over: Partial<AppConfig> = {}): AppConfig {
@@ -13,7 +16,7 @@ function baseCfg(over: Partial<AppConfig> = {}): AppConfig {
     onebotAccessToken: "",
     botQQ: 0,
     extraAtQQs: [],
-    adminGroupId: 0,
+    adminSurface: null,
     handoffTimeoutMin: 30,
     dbPath: "./data/agent.db",
     claudeConfigDir: "./data/claude-config",
@@ -28,9 +31,8 @@ function baseCfg(over: Partial<AppConfig> = {}): AppConfig {
     reflectPromoteMaxPerRun: 5,
     reflectNotifyAdmin: true,
     resumeTtlMs: 300000,
-    enabledGroups: [],
+    enabledChats: [],
     telegramBotToken: "",
-    telegramEnabledChats: [],
     proactiveEnabled: false,
     proactiveScanMs: 60000,
     proactiveSilenceMs: 180000,
@@ -56,10 +58,14 @@ describe("policyKey", () => {
 })
 
 describe("listEnabledChats", () => {
-  it("合并 QQ enabledGroups 与 TG telegramEnabledChats", () => {
+  it("返回 enabledChats", () => {
     const cfg = baseCfg({
-      enabledGroups: [111, 222],
-      telegramEnabledChats: ["-100123", "42"],
+      enabledChats: [
+        { channel: "qq", chatId: "111" },
+        { channel: "qq", chatId: "222" },
+        { channel: "tg", chatId: "-100123" },
+        { channel: "tg", chatId: "42" },
+      ],
     })
     expect(listEnabledChats(cfg)).toEqual([
       { channel: "qq", chatId: "111" },
@@ -71,36 +77,87 @@ describe("listEnabledChats", () => {
 
   it("空配置 → []", () => {
     expect(listEnabledChats(baseCfg())).toEqual([])
+    expect(listEnabledChats({})).toEqual([])
+  })
+})
+
+describe("resolveAdminSurface / isAdminSurface", () => {
+  it("显式 adminSurface", () => {
+    expect(
+      resolveAdminSurface({
+        adminSurface: { channel: "tg", chatId: "-1" },
+      })
+    ).toEqual({ channel: "tg", chatId: "-1" })
+  })
+
+  it("null / 缺省 → null", () => {
+    expect(resolveAdminSurface({ adminSurface: null })).toBeNull()
+    expect(resolveAdminSurface({})).toBeNull()
+  })
+
+  it("isAdminSurface 精确匹配 channel+chatId", () => {
+    const s = { channel: "qq" as const, chatId: "999" }
+    expect(isAdminSurface(s, "qq", "999")).toBe(true)
+    expect(isAdminSurface(s, "qq", "1")).toBe(false)
+    expect(isAdminSurface(s, "tg", "999")).toBe(false)
+    expect(isAdminSurface(null, "qq", "999")).toBe(false)
+  })
+})
+
+describe("resolveRuntimeChatConfig", () => {
+  it("一次解析 enabledChats + adminSurface", () => {
+    const r = resolveRuntimeChatConfig(
+      baseCfg({
+        enabledChats: [
+          { channel: "qq", chatId: "10" },
+          { channel: "tg", chatId: "-100" },
+        ],
+        adminSurface: { channel: "qq", chatId: "7" },
+      })
+    )
+    expect(r.enabledChats).toEqual([
+      { channel: "qq", chatId: "10" },
+      { channel: "tg", chatId: "-100" },
+    ])
+    expect(r.adminSurface).toEqual({ channel: "qq", chatId: "7" })
   })
 })
 
 describe("isChatEnabled", () => {
-  it("QQ 群号命中 enabledGroups", () => {
-    const cfg = baseCfg({ enabledGroups: [100, 200] })
+  it("QQ chatId 命中", () => {
+    const cfg = baseCfg({
+      enabledChats: [
+        { channel: "qq", chatId: "100" },
+        { channel: "qq", chatId: "200" },
+      ],
+    })
     expect(isChatEnabled(cfg, "qq", "100")).toBe(true)
     expect(isChatEnabled(cfg, "qq", "200")).toBe(true)
     expect(isChatEnabled(cfg, "qq", "999")).toBe(false)
   })
 
   it("TG chatId 字符串比较（含负 id）", () => {
-    const cfg = baseCfg({ telegramEnabledChats: ["-100123456", "42"] })
+    const cfg = baseCfg({
+      enabledChats: [
+        { channel: "tg", chatId: "-100123456" },
+        { channel: "tg", chatId: "42" },
+      ],
+    })
     expect(isChatEnabled(cfg, "tg", "-100123456")).toBe(true)
     expect(isChatEnabled(cfg, "tg", "42")).toBe(true)
     expect(isChatEnabled(cfg, "tg", "100123456")).toBe(false)
-    // 数字比较会误伤负 id；必须严格字符串
     expect(isChatEnabled(cfg, "tg", "-100123456.0")).toBe(false)
   })
 
   it("其它通道 / 错通道不命中", () => {
     const cfg = baseCfg({
-      enabledGroups: [100],
-      telegramEnabledChats: ["-100"],
+      enabledChats: [
+        { channel: "qq", chatId: "100" },
+        { channel: "tg", chatId: "-100" },
+      ],
     })
-    // QQ 白名单不让 TG 过
     expect(isChatEnabled(cfg, "tg", "100")).toBe(false)
-    // TG 白名单不让 QQ 过
     expect(isChatEnabled(cfg, "qq", "-100")).toBe(false)
-    // discord 一期未实现
     expect(isChatEnabled(cfg, "discord", "100")).toBe(false)
   })
 })

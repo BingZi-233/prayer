@@ -12,11 +12,6 @@ import {
   itemsFromStructured,
   REFLECT_OUTPUT_SCHEMA,
 } from "@/lib/agent/reflection-poller"
-import {
-  setTgBypassBlocked,
-  _resetTgBypassStateForTests,
-} from "@/lib/channels/tg/bypass-state"
-
 let repo: Repo
 const embed = async () => new Float32Array([1, 0, 0]) // 与 openDb(:memory:,3) 一致
 
@@ -65,20 +60,19 @@ function seed(
 const NOW = 10_000_000
 const opts = (over: Record<string, unknown> = {}) => ({
   repo,
-  adminGroupId: 999,
+  adminSurface: { channel: "qq" as const, chatId: "999" },
   embed,
   now: () => NOW,
   scanMs: 1, // 不用于 runScan
   lookbackMs: 1_000_000,
   settleMs: 1000,
   windowMax: 60,
-  enabledGroups: [100],
+  enabledChats: [{ channel: "qq" as const, chatId: "100" }],
   ...over,
 })
 
 beforeEach(() => {
   bus.removeAllListeners()
-  _resetTgBypassStateForTests()
   repo = new Repo(openDb(":memory:", 3))
 })
 
@@ -385,7 +379,10 @@ describe("reflection-poller runScan", () => {
     seed(200, 202, "admin", "群200答案", NOW - 4000)
     await runScan(
       opts({
-        enabledGroups: [100, 200],
+        enabledChats: [
+          { channel: "qq" as const, chatId: "100" },
+          { channel: "qq" as const, chatId: "200" },
+        ],
         queryFn: fakeQuery({
           items: [item({ question: "q", answer: "a", faq: "通用知识条" })],
         }) as never,
@@ -423,7 +420,10 @@ describe("reflection-poller runScan", () => {
         ],
       })()
     }
-    await runScan(opts({ enabledGroups: [100, 200], queryFn: qf as never }))
+    await runScan(opts({ enabledChats: [
+          { channel: "qq" as const, chatId: "100" },
+          { channel: "qq" as const, chatId: "200" },
+        ], queryFn: qf as never }))
     const refs = repo.reflectionEntries()
     expect(refs).toHaveLength(2)
   })
@@ -439,7 +439,10 @@ describe("reflection-poller runScan", () => {
       })()
     }
     const err = new Promise<any>((res) => bus.once("error.occurred", res))
-    await runScan(opts({ enabledGroups: [100, 200], queryFn: qf as never }))
+    await runScan(opts({ enabledChats: [
+          { channel: "qq" as const, chatId: "100" },
+          { channel: "qq" as const, chatId: "200" },
+        ], queryFn: qf as never }))
     const e = await err
     expect(e.scope).toBe("reflection")
     expect(e.chatId).toBe("100")
@@ -453,13 +456,12 @@ describe("reflection-poller runScan", () => {
     seed(100, 200, "member", "退款多久?", NOW - 5000)
     seed(100, 201, "admin", "3 个工作日", NOW - 4000)
     const qf = vi.fn(fakeQuery({ items: [] }))
-    await runScan(opts({ enabledGroups: [], queryFn: qf as never }))
+    await runScan(opts({ enabledChats: [], queryFn: qf as never }))
     expect(qf).not.toHaveBeenCalled()
     expect(repo.groupReflectCursor("qq", "100")).toBe(0)
   })
 
-  it("TG bypass 关闭时跳过该 chat，不调 LLM", async () => {
-    setTgBypassBlocked("-1001", "admins-failed")
+  it("isBypassEnabled=false 时跳过该 chat，不调 LLM", async () => {
     ;(repo as any).db
       .prepare(
         "INSERT INTO group_messages (channel,group_id,user_id,sender_role,text,created_at) VALUES (?,?,?,?,?,?)"
@@ -473,9 +475,9 @@ describe("reflection-poller runScan", () => {
     const qf = vi.fn(fakeQuery({ items: [] }))
     await runScan(
       opts({
-        enabledGroups: [],
-        telegramEnabledChats: ["-1001"],
+        enabledChats: [{ channel: "tg" as const, chatId: "-1001" }],
         queryFn: qf as never,
+        isBypassEnabled: () => false,
       })
     )
     expect(qf).not.toHaveBeenCalled()

@@ -3,11 +3,6 @@ import { classifyItems, runScan } from "@/lib/agent/topic-poller"
 import { openDb } from "@/lib/db/index"
 import { Repo } from "@/lib/db/repo"
 import { bus } from "@/lib/bus"
-import {
-  setTgBypassBlocked,
-  _resetTgBypassStateForTests,
-} from "@/lib/channels/tg/bypass-state"
-
 describe("classifyItems 业务对齐(structured 优先 + 文本兜底)", () => {
   const existing = new Set([1, 2])
   it("合法项对齐;越界/重复/缺 i 丢弃;幻觉 topicId 丢弃", () => {
@@ -105,8 +100,7 @@ function fakeQueryText(text: string) {
 const NOW = 10_000_000
 const opts = (repo: Repo, over: Record<string, unknown> = {}) => ({
   repo,
-  adminGroupId: 999,
-  enabledGroups: [100],
+  enabledChats: [{ channel: "qq" as const, chatId: "100" }],
   embed,
   now: () => NOW,
   scanMs: 1,
@@ -120,7 +114,6 @@ describe("topic-poller runScan", () => {
   let repo: Repo
   beforeEach(() => {
     bus.removeAllListeners()
-    _resetTgBypassStateForTests()
     repo = new Repo(openDb(":memory:", 3))
   })
 
@@ -235,7 +228,7 @@ describe("topic-poller runScan", () => {
   it("非生效群跳过,不调 LLM,游标不动", async () => {
     seed(repo, 100, 200, "member", "怎么退款", NOW - 5000)
     const qf = vi.fn(fakeQuery([{ i: 0, newTitle: "x" }]))
-    await runScan(opts(repo, { enabledGroups: [], queryFn: qf as never }))
+    await runScan(opts(repo, { enabledChats: [], queryFn: qf as never }))
     expect(qf).not.toHaveBeenCalled()
     expect(repo.topicCursor("qq", "100")).toBe(0)
   })
@@ -308,8 +301,7 @@ describe("topic-poller runScan", () => {
     expect(repo.topicCursor("qq", "100")).toBe(NOW - 60000 + 59 * 100)
   })
 
-  it("TG bypass 关闭时跳过该 chat，不调 LLM", async () => {
-    setTgBypassBlocked("-1001", "privacy-mode?")
+  it("isBypassEnabled=false 时跳过该 chat，不调 LLM", async () => {
     ;(repo as any).db
       .prepare(
         "INSERT INTO group_messages (channel,group_id,user_id,sender_role,text,created_at) VALUES (?,?,?,?,?,?)"
@@ -318,9 +310,9 @@ describe("topic-poller runScan", () => {
     const qf = vi.fn(fakeQuery([{ i: 0, newTitle: "x" }]))
     await runScan(
       opts(repo, {
-        enabledGroups: [],
-        telegramEnabledChats: ["-1001"],
+        enabledChats: [{ channel: "tg" as const, chatId: "-1001" }],
         queryFn: qf as never,
+        isBypassEnabled: () => false,
       })
     )
     expect(qf).not.toHaveBeenCalled()

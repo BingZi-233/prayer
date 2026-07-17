@@ -6,10 +6,11 @@ import { embed as defaultEmbed } from "../tools/embed"
 import { applyPromote } from "../reflect-promote"
 import { noToolQueryOptions, drainQuery } from "./agent"
 import { pickArrayFieldDual, previewJsonPayload } from "./json-output"
+import type { ChatRef } from "../channels/enabled-chats"
 
 export interface ReflectionPromoterDeps {
   repo: Repo
-  adminGroupId: number
+  adminSurface: ChatRef | null
   /** 升格周期。缺省 24h;≤0 时装配层不注册 */
   promoteMs?: number
   scanMs?: number
@@ -30,7 +31,7 @@ export interface ReflectionPromoterDeps {
 
 interface Resolved {
   repo: Repo
-  adminGroupId: number
+  adminSurface: ChatRef | null
   minEntries: number
   maxPerRun: number
   baseContextK: number
@@ -91,7 +92,7 @@ const PROMOTE_SYSTEM = `你是客服知识库升格评审助手。反思条目�
 function resolve(deps: ReflectionPromoterDeps): Resolved {
   return {
     repo: deps.repo,
-    adminGroupId: deps.adminGroupId,
+    adminSurface: deps.adminSurface,
     minEntries: deps.minEntries ?? 1,
     maxPerRun: deps.maxPerRun ?? 5,
     baseContextK: deps.baseContextK ?? 3,
@@ -228,12 +229,12 @@ export async function runPromote(
       })
       if (r.ok && !r.already) {
         promoted++
-        if (d.notifyAdmin) {
+        if (d.notifyAdmin && d.adminSurface) {
           const preview =
             r.content.slice(0, 40) + (r.content.length > 40 ? "…" : "")
           bus.emit("action.send", {
-            channel: "qq",
-            chatId: String(d.adminGroupId),
+            channel: d.adminSurface.channel,
+            chatId: d.adminSurface.chatId,
             text: `反思自动升格: #${id} → ${r.file}\n${preview}`,
           })
         }

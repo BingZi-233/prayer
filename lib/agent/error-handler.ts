@@ -9,7 +9,7 @@ import { logger } from "../logger"
 import {
   classifyError,
   errorMessage,
-  groupIdFromSession,
+  chatRefFromSession,
 } from "../log-classify"
 
 export interface ErrorHandlerDeps {
@@ -36,37 +36,19 @@ function resolveTarget(e: {
   channel?: ChannelId
   chatId?: string
   sessionKey?: string
-  groupId?: number
-}): { channel?: ChannelId; chatId?: string; groupId?: number } {
+}): { channel?: ChannelId; chatId?: string } {
   if (e.channel && e.chatId) {
-    const groupId =
-      e.channel === "qq" && Number.isFinite(Number(e.chatId))
-        ? Number(e.chatId)
-        : e.groupId
-    return { channel: e.channel, chatId: e.chatId, groupId }
+    return { channel: e.channel, chatId: e.chatId }
   }
   if (e.sessionKey) {
     const parsed = parseSessionKey(legacySessionKeyToCanonical(e.sessionKey))
     if (parsed) {
-      const groupId =
-        parsed.channel === "qq" && Number.isFinite(Number(parsed.chatId))
-          ? Number(parsed.chatId)
-          : undefined
-      return {
-        channel: parsed.channel,
-        chatId: parsed.chatId,
-        groupId,
-      }
+      return { channel: parsed.channel, chatId: parsed.chatId }
     }
+    const fromLog = chatRefFromSession(e.sessionKey)
+    if (fromLog) return fromLog
   }
-  if (e.groupId != null) {
-    return {
-      channel: "qq",
-      chatId: String(e.groupId),
-      groupId: e.groupId,
-    }
-  }
-  return { groupId: e.groupId }
+  return {}
 }
 
 /** @deprecated 用 classifyError;保留薄包装兼容旧测试 */
@@ -81,17 +63,14 @@ export function formatErrorLine(e: {
   scope: string
   err: unknown
   sessionKey?: string
-  groupId?: number
   channel?: ChannelId
   chatId?: string
 }): string {
   const raw = errorMessage(e.err)
   const c = classifyError(raw)
-  const { groupId, chatId, channel } = resolveTarget(e)
-  const gid = groupId ?? groupIdFromSession(e.sessionKey)
+  const { chatId, channel } = resolveTarget(e)
   const ctx: string[] = []
-  if (gid != null) ctx.push(`群=${gid}`)
-  else if (channel && chatId) ctx.push(`${channel}:${chatId}`)
+  if (channel && chatId) ctx.push(`${channel}:${chatId}`)
   if (e.sessionKey) ctx.push(`session=${e.sessionKey}`)
   const head = ctx.length
     ? `[${e.scope}] (${ctx.join(" ")})`
@@ -103,13 +82,14 @@ export function formatErrorLine(e: {
 function defaultLogError(scope: string, err: unknown, e: ErrorOccurred): void {
   const raw = errorMessage(err)
   const c = classifyError(raw)
-  const { groupId } = resolveTarget(e)
+  const { channel, chatId } = resolveTarget(e)
   // unknown:msg 用 raw 首行,避免 ring/stdout 只剩「未分类错误」;已分类用 title
   const msg =
     c.code === "unknown" ? raw.split("\n")[0].slice(0, 300) : c.title
   logger.error(msg, {
     scope,
-    groupId,
+    channel,
+    chatId,
     sessionKey: e.sessionKey,
     code: c.code,
     category: c.category,

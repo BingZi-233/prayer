@@ -6,10 +6,16 @@ import {
   legacySessionKeyToCanonical,
   parseSessionKey,
 } from "../channels/ids"
+import type { ChatRef } from "../channels/enabled-chats"
 
 export interface HandoffHandlerDeps {
   repo: Repo
-  adminGroupId: number
+  /**
+   * 管理侧通知目标（chat-ref）。
+   * 用户回复始终回 e.channel；通知只发到此 surface。
+   * null = 不抄送管理侧。
+   */
+  adminSurface: ChatRef | null
   handoffTimeoutMin: number
   /** 转人工时是否通知管理群;默认 true。也可按事件 reason 覆盖 */
   notifyAdmin?: boolean
@@ -23,14 +29,13 @@ export interface HandoffHandlerDeps {
 export function registerHandoffHandler(deps: HandoffHandlerDeps): () => void {
   const {
     repo,
-    adminGroupId,
+    adminSurface,
     handoffTimeoutMin,
     notifyAdmin = true,
     shouldNotify,
     now = () => Date.now(),
     scanMs = 60_000,
   } = deps
-  const adminChatId = String(adminGroupId)
 
   const onRequested = (e: HandoffRequested) => {
     // 已在人工模式 → 不重复通知(避免连刷「人工」)
@@ -62,11 +67,11 @@ export function registerHandoffHandler(deps: HandoffHandlerDeps): () => void {
     const doNotify = shouldNotify
       ? shouldNotify(e.channel, e.chatId)
       : notifyAdmin
-    if (doNotify && adminGroupId > 0) {
+    if (doNotify && adminSurface) {
       const q = (e.lastQuestion || "").slice(0, 200)
       bus.emit("action.send", {
-        channel: "qq",
-        chatId: adminChatId,
+        channel: adminSurface.channel,
+        chatId: adminSurface.chatId,
         text: `【转人工】会话 ${e.sessionKey}\n用户 ${e.userId} 在 ${e.channel}:${e.chatId}\n问题:${q || "(无)"}\n恢复自动答:!resume ${e.sessionKey}`,
       })
     }
@@ -87,10 +92,10 @@ export function registerHandoffHandler(deps: HandoffHandlerDeps): () => void {
         text: "已恢复自动客服,有问题 @我 即可~",
       })
     }
-    if (adminGroupId > 0) {
+    if (adminSurface) {
       bus.emit("action.send", {
-        channel: "qq",
-        chatId: adminChatId,
+        channel: adminSurface.channel,
+        chatId: adminSurface.chatId,
         text: `已恢复自动答: ${e.sessionKey}${e.by ? ` (${e.by})` : ""}`,
       })
     }

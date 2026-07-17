@@ -8,6 +8,8 @@ import type { AssembleDeps } from "./assemble"
 import { bindUsagePersistence } from "./usage-stats"
 import type { Channel, ChannelId, ChannelStatus } from "./channels/types"
 import { ChannelRegistry } from "./channels/registry"
+import { createChannels } from "./channels/factory"
+import { resolveRuntimeChatConfig } from "./channels/enabled-chats"
 
 export type RuntimeState = "stopped" | "starting" | "running" | "error"
 
@@ -28,17 +30,17 @@ export interface RuntimeBuilders {
   makeAgent: (cfg: AppConfig, repo: Repo) => Agent
   assemble: (args: AssembleDeps) => () => void
   /**
-   * 构造 QQ 通道。url 为空时 runtime 不 register。
-   * 默认实现返回 QqChannel。
+   * 测试注入：覆盖默认 QQ 工厂。
+   * url 为空时 factory 不调用本函数。生产路径可不传（用 createChannels 默认表）。
    */
-  makeQqChannel: (
+  makeQqChannel?: (
     url: string,
     token: string | undefined,
     onStatus: (c: boolean) => void
   ) => Channel
   /**
-   * 构造 TG 通道。token 为空时 runtime 不 register。
-   * 缺省实现用 TelegramChannel + repo 持久化 offset。
+   * 测试注入：覆盖默认 TG 工厂。
+   * token 为空时 factory 不调用本函数。
    */
   makeTgChannel?: (
     token: string,
@@ -52,8 +54,6 @@ async function defaultBuilders(): Promise<RuntimeBuilders> {
   const { Repo } = await import("./db/repo")
   const { Agent } = await import("./agent/agent")
   const { assemble } = await import("./assemble")
-  const { QqChannel } = await import("./channels/qq")
-  const { TelegramChannel } = await import("./channels/tg/client")
   return {
     // 复用 API 路由的进程级共享连接:reconfigure 不关它,in-flight 的
     // 异步 scanOnce(await agent.run 期间)不会撞到 "database connection is not open"
@@ -70,14 +70,7 @@ async function defaultBuilders(): Promise<RuntimeBuilders> {
         // 知识库检索由 cs 插件的 MCP server 承载,其子进程经 env DB_PATH(见 start)打开 DB。
       }),
     assemble,
-    makeQqChannel: (url, token, onStatus) =>
-      new QqChannel(url, token, onStatus),
-    makeTgChannel: (token, repo, onStatus) =>
-      new TelegramChannel(token, {
-        getOffset: () => Number(repo.getConfigRow("tg:update_offset") ?? "0"),
-        setOffset: (n) => repo.setConfigRow("tg:update_offset", String(n)),
-        onStatus,
-      }),
+    // 通道构造走 createChannels 默认工厂表；测试通过 makeQqChannel/makeTgChannel 覆盖
   }
 }
 
@@ -90,7 +83,6 @@ export class RuntimeManager {
   private teardown?: () => void
   private unbindUsage?: () => void
   private wsConnected = false
-  private adminGroupId = 0
   private usageBudgetUsd = 0
 
   getStatus(): RuntimeStatus {
@@ -136,27 +128,36 @@ export class RuntimeManager {
       const db = builders.openDb(cfg.dbPath)
       const repo = builders.makeRepo(db)
       const agent = builders.makeAgent(cfg, repo)
-      this.adminGroupId = cfg.adminGroupId
       this.usageBudgetUsd = cfg.usageBudgetUsd
+
+      const { enabledChats, adminSurface } = resolveRuntimeChatConfig(cfg)
+
       this.unbindUsage = bindUsagePersistence(repo, {
         budgetUsd: cfg.usageBudgetUsd,
         onBudgetExceeded: (day, cost) => {
-          if (cfg.adminGroupId > 0) {
+          if (adminSurface) {
             bus.emit("action.send", {
-              channel: "qq",
-              chatId: String(cfg.adminGroupId),
+              channel: adminSurface.channel,
+              chatId: adminSurface.chatId,
               text: `【用量告警】${day} 累计约 $${cost.toFixed(4)},已超过预算 $${cfg.usageBudgetUsd}`,
             })
           }
         },
       })
+
+      // 空 registry 先挂上：assemble 闭包引用 isBypassEnabled；
+      // register 在 assemble 之后同步完成，poller 首轮 tick 前通道已就绪。
+      const registry = new ChannelRegistry()
+      this.registry = registry
+
       this.teardown = builders.assemble({
         repo,
         botQQ: cfg.botQQ,
         extraAtQQs: cfg.extraAtQQs,
-        adminGroupId: cfg.adminGroupId,
-        enabledGroups: cfg.enabledGroups,
-        telegramEnabledChats: cfg.telegramEnabledChats,
+        enabledChats,
+        adminSurface,
+        isBypassEnabled: (channel, chatId) =>
+          registry.isBypassEnabled(channel, chatId),
         agent,
         reflectScanMs: cfg.reflectScanMs,
         reflectLookbackMs: cfg.reflectLookbackMs,
@@ -184,38 +185,51 @@ export class RuntimeManager {
         groupPolicies: cfg.groupPolicies,
       })
 
-      const registry = new ChannelRegistry()
-      // 仅当 onebotWsUrl 非空时注册 QQ 通道
-      if (cfg.onebotWsUrl) {
-        const qq = builders.makeQqChannel(
-          cfg.onebotWsUrl,
-          cfg.onebotAccessToken || undefined,
-          (c) => {
+      // 表驱动注册：默认工厂 + 测试 overrides
+      const channels = createChannels({
+        cfg,
+        repo,
+        onStatus: {
+          qq: (c) => {
             this.wsConnected = c
-          }
-        )
-        registry.register(qq)
+          },
+        },
+        overrides: {
+          ...(builders.makeQqChannel
+            ? {
+                qq: (ctx) => {
+                  const url = ctx.cfg.onebotWsUrl?.trim()
+                  if (!url) return null
+                  return builders.makeQqChannel!(
+                    url,
+                    ctx.cfg.onebotAccessToken || undefined,
+                    ctx.onStatus?.qq ?? (() => {})
+                  )
+                },
+              }
+            : {}),
+          ...(builders.makeTgChannel
+            ? {
+                tg: (ctx) => {
+                  const token = ctx.cfg.telegramBotToken?.trim()
+                  if (!token) return null
+                  return builders.makeTgChannel!(
+                    token,
+                    ctx.repo,
+                    ctx.onStatus?.tg
+                  )
+                },
+              }
+            : {}),
+        },
+      })
+      for (const ch of channels) {
+        registry.register(ch)
       }
-      // telegramBotToken 非空时注册 TG long-poll 通道
-      const tgToken = cfg.telegramBotToken?.trim()
-      if (tgToken) {
-        let tg: Channel
-        if (builders.makeTgChannel) {
-          tg = builders.makeTgChannel(tgToken, repo)
-        } else {
-          const { TelegramChannel } = await import("./channels/tg/client")
-          tg = new TelegramChannel(tgToken, {
-            getOffset: () =>
-              Number(repo.getConfigRow("tg:update_offset") ?? "0"),
-            setOffset: (n) => repo.setConfigRow("tg:update_offset", String(n)),
-          })
-        }
-        registry.register(tg)
-      }
+
       await registry.startAll()
 
       this.repo = repo
-      this.registry = registry
       this.bootedAt = Date.now()
       this.state = "running"
       logger.log("info", "[runtime] started")

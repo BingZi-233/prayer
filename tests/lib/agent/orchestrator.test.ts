@@ -15,7 +15,7 @@ function qmsg(
   over: Partial<QualifiedMessage> & Pick<QualifiedMessage, "messageId" | "text">
 ): QualifiedMessage {
   return {
-    channel: "qq",
+    channel: "qq" as const,
     sessionKey: SK,
     chatId: "1",
     userId: "2",
@@ -56,7 +56,7 @@ describe("orchestrator", () => {
       undefined,
       expect.objectContaining({
         sessionKey: SK,
-        channel: "qq",
+        channel: "qq" as const,
         chatId: "1",
         userId: "2",
       }),
@@ -183,7 +183,7 @@ describe("orchestrator", () => {
     registerReplyMapper({ maxChars: 0 })
     const p = new Promise<any>((res) => bus.once("action.send", res))
     bus.emit("reply.ready", {
-      channel: "qq",
+      channel: "qq" as const,
       chatId: "5",
       text: "hi",
     })
@@ -198,7 +198,7 @@ describe("orchestrator", () => {
     registerReplyMapper({ maxChars: 0 })
     const p = new Promise<any>((res) => bus.once("action.send", res))
     bus.emit("reply.ready", {
-      channel: "qq",
+      channel: "qq" as const,
       chatId: "5",
       text: "hi",
       replyToId: "88",

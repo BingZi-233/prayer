@@ -15,7 +15,7 @@ function qqMsg(
     Pick<IncomingMessage, "messageId" | "rawText">
 ): IncomingMessage {
   return {
-    channel: "qq",
+    channel: "qq" as const,
     chatId: "1",
     userId: "2",
     atList: [BOT],
@@ -30,8 +30,8 @@ beforeEach(() => {
     repo,
     botQQ: 555,
     extraAtQQs: [888],
-    adminGroupId: 999,
-    enabledGroups: [1],
+    adminSurface: { channel: "qq" as const, chatId: "999" },
+    enabledChats: [{ channel: "qq" as const, chatId: "1" }],
     supportUrl: "https://example.com",
   })
 })
@@ -175,24 +175,51 @@ describe("gateway", () => {
     expect(h.chatId).toBe("1")
   })
 
-  it("TG 人工关键词 → 用户引导文案,不 emit handoff.requested", async () => {
+  it("TG 人工关键词 + 有 adminSurface → emit handoff.requested", async () => {
     bus.removeAllListeners()
     registerGateway({
       repo,
       botQQ: 555,
-      adminGroupId: 999,
-      enabledGroups: [1],
-      telegramEnabledChats: ["-1001"],
+      adminSurface: { channel: "qq" as const, chatId: "999" },
+      enabledChats: [
+        { channel: "qq" as const, chatId: "1" },
+        { channel: "tg" as const, chatId: "-1001" },
+      ],
+      supportUrl: "https://example.com",
+    })
+    const p = new Promise<any>((res) => bus.once("handoff.requested", res))
+    bus.emit("message.received", {
+      channel: "tg" as const,
+      chatId: "-1001",
+      userId: "42",
+      messageId: "9",
+      rawText: "人工",
+      atList: [],
+      botMentioned: true,
+    })
+    const h = await p
+    expect(h.channel).toBe("tg")
+    expect(h.chatId).toBe("-1001")
+    expect(h.sessionKey).toBe("tg:-1001:42")
+  })
+
+  it("无 adminSurface 时人工关键词 → 引导官网,不 emit handoff", async () => {
+    bus.removeAllListeners()
+    registerGateway({
+      repo,
+      botQQ: 555,
+      adminSurface: null,
+      enabledChats: [{ channel: "tg" as const, chatId: "-1001" }],
       supportUrl: "https://example.com",
     })
     const handoff = vi.fn()
     bus.on("handoff.requested", handoff)
     const p = new Promise<any>((res) => bus.once("action.send", res))
     bus.emit("message.received", {
-      channel: "tg",
+      channel: "tg" as const,
       chatId: "-1001",
       userId: "42",
-      messageId: "9",
+      messageId: "10",
       rawText: "人工",
       atList: [],
       botMentioned: true,
@@ -220,7 +247,7 @@ describe("gateway", () => {
     repo.setSessionId(SK, "sid-old")
     const p = new Promise<any>((res) => bus.once("action.send", res))
     bus.emit("message.received", {
-      channel: "qq",
+      channel: "qq" as const,
       chatId: "999",
       userId: "7",
       messageId: "22",
@@ -238,7 +265,7 @@ describe("gateway", () => {
   it("管理群 !resume <key> → handoff.resumed", async () => {
     const p = new Promise<any>((res) => bus.once("handoff.resumed", res))
     bus.emit("message.received", {
-      channel: "qq",
+      channel: "qq" as const,
       chatId: "999",
       userId: "7",
       messageId: "23",
@@ -254,7 +281,7 @@ describe("gateway", () => {
     const spy = vi.fn()
     bus.on("message.qualified", spy)
     bus.emit("message.received", {
-      channel: "qq",
+      channel: "qq" as const,
       chatId: "777",
       userId: "2",
       messageId: "30",
@@ -269,7 +296,7 @@ describe("gateway", () => {
     repo.setSessionId(SK, "sid-old")
     const p = new Promise<any>((res) => bus.once("action.send", res))
     bus.emit("message.received", {
-      channel: "qq",
+      channel: "qq" as const,
       chatId: "999",
       userId: "7",
       messageId: "31",

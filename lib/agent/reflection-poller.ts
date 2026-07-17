@@ -1,23 +1,22 @@
 import { query as sdkQuery } from "@anthropic-ai/claude-agent-sdk"
 import { bus } from "../bus"
 import { logger } from "../logger"
-import type { Repo, KbHit, ChatRef } from "../db/repo"
+import type { Repo, KbHit } from "../db/repo"
 import { embed as defaultEmbed } from "../tools/embed"
 import { noToolQueryOptions, drainQuery } from "./agent"
 import { pickArrayFieldDual, previewJsonPayload } from "./json-output"
 import type { ChannelId } from "../channels/types"
-import { isTgChatBypassEnabled } from "../channels/tg/bypass-state"
+import type { ChatRef } from "../channels/enabled-chats"
 
 export interface ReflectionPollerDeps {
   repo: Repo
-  adminGroupId: number
+  /** 统一生效会话 */
+  enabledChats: ChatRef[]
+  adminSurface: ChatRef | null
   scanMs?: number
   lookbackMs?: number
   settleMs?: number
   windowMax?: number
-  enabledGroups?: number[]
-  /** TG 白名单 chatId；缺省空 */
-  telegramEnabledChats?: string[]
   // 沉淀成功后是否向管理群发通知。缺省 true
   notifyAdmin?: boolean
   /** 入库前向量近邻条数。缺省 5 */
@@ -29,11 +28,16 @@ export interface ReflectionPollerDeps {
   embed?: (text: string) => Promise<Float32Array>
   queryFn?: typeof sdkQuery
   now?: () => number
+  /**
+   * per-chat 旁路是否可用（由 ChannelRegistry / channel.isBypassEnabled 注入）。
+   * 缺省恒 true（不额外封锁）。
+   */
+  isBypassEnabled?: (channel: ChannelId, chatId: string) => boolean
 }
 
 interface Resolved {
   repo: Repo
-  adminGroupId: number
+  adminSurface: ChatRef | null
   lookbackMs: number
   settleMs: number
   windowMax: number
@@ -45,20 +49,7 @@ interface Resolved {
   embed: (text: string) => Promise<Float32Array>
   queryFn: typeof sdkQuery
   now: () => number
-}
-
-function resolveEnabledChats(
-  enabledGroups: number[] = [],
-  telegramEnabledChats: string[] = []
-): ChatRef[] {
-  const out: ChatRef[] = []
-  for (const g of enabledGroups) {
-    out.push({ channel: "qq", chatId: String(g) })
-  }
-  for (const id of telegramEnabledChats) {
-    out.push({ channel: "tg", chatId: id })
-  }
-  return out
+  isBypassEnabled: (channel: ChannelId, chatId: string) => boolean
 }
 
 // SDK outputFormat.json_schema 强制根对象;items 为候选沉淀条目。
@@ -91,7 +82,7 @@ export const REFLECT_OUTPUT_SCHEMA = {
 } as const
 
 const REFLECT_SYSTEM = `你是客服知识运营助手。用户消息会给出:
-一、一段 QQ 群对话记录,每行格式 [ts=毫秒][角色 QQ] 文本,角色为"客服"(群主/群管)或"用户",并给出一个已沉降时间区间。
+一、一段群对话记录,每行格式 [ts=毫秒][角色 用户id] 文本,角色为"客服"(群主/群管)或"用户",并给出一个已沉降时间区间。
 二、【已有知识库相关片段】——与本段对话语义相近的正式文档/历史沉淀摘录(可能为空)。
 任务:只针对 ts 落在该区间内、且角色为"客服"的发言,判断它是否在有效解答某个用户问题。区间外与用户发言仅作上下文。
 有效性(两信号):优先看后续 —— 该客服回答之后,提问用户是否表示感谢/确认解决/不再追问,是则有效;若窗口内该问题没有用户后续,则退回判断回答本身是否完整、正确、可复用。
@@ -246,14 +237,11 @@ export async function collectKbContext(
 function resolve(deps: ReflectionPollerDeps): Resolved {
   return {
     repo: deps.repo,
-    adminGroupId: deps.adminGroupId,
+    adminSurface: deps.adminSurface,
     lookbackMs: deps.lookbackMs ?? 7_200_000,
     settleMs: deps.settleMs ?? 600_000,
     windowMax: deps.windowMax ?? 60,
-    enabledChats: resolveEnabledChats(
-      deps.enabledGroups,
-      deps.telegramEnabledChats
-    ),
+    enabledChats: deps.enabledChats,
     notifyAdmin: deps.notifyAdmin ?? true,
     dupTopK: deps.dupTopK ?? DEFAULT_DUP_TOP_K,
     dupMaxDistance: deps.dupMaxDistance ?? DEFAULT_DUP_MAX_DISTANCE,
@@ -261,6 +249,7 @@ function resolve(deps: ReflectionPollerDeps): Resolved {
     embed: deps.embed ?? defaultEmbed,
     queryFn: deps.queryFn ?? sdkQuery,
     now: deps.now ?? (() => Date.now()),
+    isBypassEnabled: deps.isBypassEnabled ?? (() => true),
   }
 }
 
@@ -269,14 +258,13 @@ async function scanOnce(d: Resolved): Promise<void> {
   const until = now - d.settleMs // 已沉降上界
   if (until <= 0) return
 
-  const adminChatId = String(d.adminGroupId)
   const enabled = new Set(
     d.enabledChats.map((c) => `${c.channel}:${c.chatId}`)
   )
   for (const { channel, chatId } of d.repo.groupsWithAdminMessagesUpTo(until)) {
     if (!enabled.has(`${channel}:${chatId}`)) continue // 生效会话门
-    // TG 旁路降级（admins 失败 / Privacy 启发式）：跳过反思
-    if (channel === "tg" && !isTgChatBypassEnabled(chatId)) continue
+    // 旁路降级（TG admins 失败 / Privacy 等）：由 channel.isBypassEnabled 决定
+    if (!d.isBypassEnabled(channel as ChannelId, chatId)) continue
     const cursor = d.repo.groupReflectCursor(channel, chatId)
     if (until <= cursor) continue // 该会话已处理到此
     // band 内无新管理发言(旧发言早已处理) → 直接推进跳过,不喂 LLM
@@ -377,10 +365,10 @@ async function scanOnce(d: Resolved): Promise<void> {
           it.question,
           it.answer
         )
-        if (d.notifyAdmin) {
+        if (d.notifyAdmin && d.adminSurface) {
           bus.emit("action.send", {
-            channel: "qq",
-            chatId: adminChatId,
+            channel: d.adminSurface.channel,
+            chatId: d.adminSurface.chatId,
             text: `已从 ${channel}:${chatId} 的人工回复沉淀 1 条知识:${faq.slice(0, 40)}${faq.length > 40 ? "…" : ""}`,
           })
         }

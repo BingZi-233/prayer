@@ -8,8 +8,11 @@ import type { AnswerabilityClassifier } from "./answerability"
 import type { GroupPolicy } from "../config-store"
 import type { ChannelId } from "../channels/types"
 import { makeSessionKey } from "../channels/ids"
-import { policyKey } from "../channels/enabled-chats"
-import { isTgChatBypassEnabled } from "../channels/tg/bypass-state"
+import {
+  getGroupPolicy,
+  isAdminSurface,
+  type ChatRef,
+} from "../channels/enabled-chats"
 
 // 主动模式哨兵:无把握时 agent 只输出此串 → poller 判为非答案,沉默不发。
 export const PROACTIVE_SUFFIX =
@@ -20,10 +23,9 @@ export interface UnansweredPollerDeps {
   agent: Agent
   store: SessionStore
   classify: AnswerabilityClassifier
-  adminGroupId: number
-  enabledGroups: number[]
-  /** TG 白名单 chatId；缺省空 */
-  telegramEnabledChats?: string[]
+  /** 统一生效会话 */
+  enabledChats: ChatRef[]
+  adminSurface: ChatRef | null
   scanMs?: number
   silenceMs?: number
   maxPerScan?: number
@@ -31,11 +33,11 @@ export interface UnansweredPollerDeps {
   /** 全局主动开关 */
   globalProactiveEnabled?: boolean
   groupPolicies?: Record<string, GroupPolicy>
-}
-
-interface EnabledChat {
-  channel: ChannelId
-  chatId: string
+  /**
+   * per-chat 旁路是否可用（ChannelRegistry 注入）。
+   * 缺省恒 true。
+   */
+  isBypassEnabled?: (channel: ChannelId, chatId: string) => boolean
 }
 
 interface Resolved {
@@ -43,27 +45,14 @@ interface Resolved {
   agent: Agent
   store: SessionStore
   classify: AnswerabilityClassifier
-  adminGroupId: number
-  enabledChats: EnabledChat[]
+  adminSurface: ChatRef | null
+  enabledChats: ChatRef[]
   silenceMs: number
   maxPerScan: number
   now: () => number
   globalProactiveEnabled: boolean
   groupPolicies: Record<string, GroupPolicy>
-}
-
-function resolveEnabledChats(
-  enabledGroups: number[] = [],
-  telegramEnabledChats: string[] = []
-): EnabledChat[] {
-  const out: EnabledChat[] = []
-  for (const g of enabledGroups) {
-    out.push({ channel: "qq", chatId: String(g) })
-  }
-  for (const id of telegramEnabledChats) {
-    out.push({ channel: "tg", chatId: id })
-  }
-  return out
+  isBypassEnabled: (channel: ChannelId, chatId: string) => boolean
 }
 
 function resolve(d: UnansweredPollerDeps): Resolved {
@@ -72,16 +61,14 @@ function resolve(d: UnansweredPollerDeps): Resolved {
     agent: d.agent,
     store: d.store,
     classify: d.classify,
-    adminGroupId: d.adminGroupId,
-    enabledChats: resolveEnabledChats(
-      d.enabledGroups,
-      d.telegramEnabledChats
-    ),
+    adminSurface: d.adminSurface,
+    enabledChats: d.enabledChats,
     silenceMs: d.silenceMs ?? 180_000,
     maxPerScan: d.maxPerScan ?? 2,
     now: d.now ?? (() => Date.now()),
     globalProactiveEnabled: d.globalProactiveEnabled ?? true,
     groupPolicies: d.groupPolicies ?? {},
+    isBypassEnabled: d.isBypassEnabled ?? (() => true),
   }
 }
 
@@ -90,10 +77,7 @@ function chatPolicy(
   channel: ChannelId,
   chatId: string
 ): GroupPolicy | undefined {
-  return (
-    d.groupPolicies[policyKey(channel, chatId)] ??
-    (channel === "qq" ? d.groupPolicies[chatId] : undefined)
-  )
+  return getGroupPolicy({ groupPolicies: d.groupPolicies }, channel, chatId)
 }
 
 function chatEnabled(d: Resolved, channel: ChannelId, chatId: string): boolean {
@@ -118,12 +102,11 @@ function isAnswer(text: string): boolean {
 
 async function scanOnce(d: Resolved): Promise<void> {
   const now = d.now()
-  const adminChatId = String(d.adminGroupId)
 
   for (const { channel, chatId } of d.enabledChats) {
-    if (channel === "qq" && chatId === adminChatId) continue
-    // TG 旁路降级（admins 失败 / Privacy 启发式）：跳过主动补位
-    if (channel === "tg" && !isTgChatBypassEnabled(chatId)) continue
+    if (isAdminSurface(d.adminSurface, channel, chatId)) continue
+    // 旁路降级：由 channel.isBypassEnabled 决定
+    if (!d.isBypassEnabled(channel, chatId)) continue
     if (!chatEnabled(d, channel, chatId)) continue
     const silenceMs = chatSilence(d, channel, chatId)
     const until = now - silenceMs

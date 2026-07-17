@@ -45,7 +45,7 @@ function faqsItems(n: number, prefix = "合并") {
 
 const opts = (over: Record<string, unknown> = {}) => ({
   repo,
-  adminGroupId: 999,
+  adminSurface: { channel: "qq" as const, chatId: "999" },
   embed,
   now: () => 7_000_000,
   minEntries: 3,

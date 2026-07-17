@@ -48,7 +48,7 @@ describe("error handler", () => {
     bus.emit("error.occurred", {
       scope: "channel.send.qq",
       err: new Error("send fail"),
-      channel: "qq",
+      channel: "qq" as const,
       chatId: "1",
       userVisible: false,
     })
@@ -63,7 +63,7 @@ describe("error handler", () => {
     bus.emit("error.occurred", {
       scope: "channel.send.tg",
       err: new Error("send fail"),
-      channel: "tg",
+      channel: "tg" as const,
       chatId: "-100",
     })
     await new Promise((r) => setTimeout(r, 20))
@@ -77,11 +77,11 @@ describe("error handler", () => {
     expect(log).toHaveBeenCalled()
   })
 
-  it("默认路径写入结构化 logger(含分类与群号)", () => {
+  it("默认路径写入结构化 logger(含分类与 chat-ref)", () => {
     registerErrorHandler()
     bus.emit("error.occurred", {
       scope: "reflection",
-      channel: "qq",
+      channel: "qq" as const,
       chatId: "10086",
       err: new Error(
         "Claude Code returned an error result: API Error: 500 input new_sensitive (1026). This is a server-side issue, usually temporary"
@@ -93,7 +93,8 @@ describe("error handler", () => {
       lines.find((l) => l.code === "content_safety.input") ??
       lines[lines.length - 1]
     expect(e.scope).toBe("reflection")
-    expect(e.groupId).toBe(10086)
+    expect(e.channel).toBe("qq")
+    expect(e.chatId).toBe("10086")
     expect(e.category).toBe("content_safety")
     expect(e.retryable).toBe(false)
     expect(e.hint).toBeTruthy()
@@ -106,23 +107,39 @@ describe("error handler", () => {
     for (let i = 0; i < 3; i++) {
       bus.emit("error.occurred", {
         scope: "reflection",
-        channel: "qq",
+        channel: "qq" as const,
         chatId: "1",
         err,
       })
     }
     const hits = logger
       .tail()
-      .filter((l) => l.scope === "reflection" && l.groupId === 1)
+      .filter(
+        (l) =>
+          l.scope === "reflection" && l.channel === "qq" && l.chatId === "1"
+      )
     expect(hits).toHaveLength(1)
     expect(hits[0].count).toBe(3)
+  })
+
+  it("TG 错误日志带 channel+chatId", () => {
+    registerErrorHandler()
+    bus.emit("error.occurred", {
+      scope: "proactive",
+      channel: "tg" as const,
+      chatId: "-1001",
+      err: new Error("boom"),
+    })
+    const e = logger.tail().find((l) => l.scope === "proactive")
+    expect(e?.channel).toBe("tg")
+    expect(e?.chatId).toBe("-1001")
   })
 
   it("unknown 错误 msg 保留 raw 摘要而非仅「未分类错误」", () => {
     registerErrorHandler()
     bus.emit("error.occurred", {
       scope: "topic",
-      channel: "qq",
+      channel: "qq" as const,
       chatId: "9",
       err: new Error("something totally unexpected xyz"),
     })
@@ -149,14 +166,14 @@ describe("explainError / formatErrorLine 兼容", () => {
     expect(out).toContain("原始:")
   })
 
-  it("formatErrorLine 从 sessionKey 解析群号", () => {
+  it("formatErrorLine 从 sessionKey 解析 chat-ref", () => {
     const line = formatErrorLine({
       scope: "orchestrator",
       sessionKey: "qq:42:9",
       err: "oops",
     })
     expect(line).toContain("[orchestrator]")
-    expect(line).toContain("群=42")
+    expect(line).toContain("qq:42")
     expect(line).toContain("oops")
   })
 
@@ -166,6 +183,6 @@ describe("explainError / formatErrorLine 兼容", () => {
       sessionKey: "42:9",
       err: "oops",
     })
-    expect(line).toContain("群=42")
+    expect(line).toContain("qq:42")
   })
 })

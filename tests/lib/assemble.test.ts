@@ -15,8 +15,8 @@ describe("assemble e2e(总线级)", () => {
     assemble({
       repo,
       botQQ: 555,
-      adminGroupId: 999,
-      enabledGroups: [1],
+      adminSurface: { channel: "qq", chatId: "999" },
+      enabledChats: [{ channel: "qq", chatId: "1" }],
       agent: fakeAgent as any,
       ackEnabled: false, // 测主答案,不测 ACK(意图门可能耗时)
     })
@@ -48,8 +48,8 @@ describe("assemble e2e(总线级)", () => {
         assemble({
           repo,
           botQQ: 555,
-          adminGroupId: 999,
-          enabledGroups: [1],
+          adminSurface: { channel: "qq", chatId: "999" },
+          enabledChats: [{ channel: "qq", chatId: "1" }],
           agent: fakeAgent as any,
           ...extra,
         })

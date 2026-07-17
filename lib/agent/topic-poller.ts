@@ -7,7 +7,7 @@ import { noToolQueryOptions, drainQuery } from "./agent"
 import { pickArrayFieldDual, previewJsonPayload } from "./json-output"
 import { textNearlySame } from "./reflection-poller"
 import type { ChannelId } from "../channels/types"
-import { isTgChatBypassEnabled } from "../channels/tg/bypass-state"
+import type { ChatRef } from "../channels/enabled-chats"
 
 // LLM 每条问题的归类结果:归入已有 topicId / 新建 newTitle / 噪声 noise。
 export interface ClassifyItem {
@@ -61,10 +61,8 @@ export function classifyItems(
 
 export interface TopicPollerDeps {
   repo: Repo
-  adminGroupId: number
-  enabledGroups?: number[]
-  /** TG 白名单 chatId；缺省空 */
-  telegramEnabledChats?: string[]
+  /** 统一生效会话 */
+  enabledChats: ChatRef[]
   scanMs?: number
   settleMs?: number
   windowMax?: number
@@ -72,37 +70,23 @@ export interface TopicPollerDeps {
   embed?: (text: string) => Promise<Float32Array>
   queryFn?: typeof sdkQuery
   now?: () => number
-}
-
-interface EnabledChat {
-  channel: ChannelId
-  chatId: string
+  /**
+   * per-chat 旁路是否可用（ChannelRegistry 注入）。
+   * 缺省恒 true。
+   */
+  isBypassEnabled?: (channel: ChannelId, chatId: string) => boolean
 }
 
 interface Resolved {
   repo: Repo
-  adminGroupId: number
-  enabledChats: EnabledChat[]
+  enabledChats: ChatRef[]
   settleMs: number
   windowMax: number
   topicPromptMax: number
   embed: (text: string) => Promise<Float32Array>
   queryFn: typeof sdkQuery
   now: () => number
-}
-
-function resolveEnabledChats(
-  enabledGroups: number[] = [],
-  telegramEnabledChats: string[] = []
-): EnabledChat[] {
-  const out: EnabledChat[] = []
-  for (const g of enabledGroups) {
-    out.push({ channel: "qq", chatId: String(g) })
-  }
-  for (const id of telegramEnabledChats) {
-    out.push({ channel: "tg", chatId: id })
-  }
-  return out
+  isBypassEnabled: (channel: ChannelId, chatId: string) => boolean
 }
 
 const TOPIC_SYSTEM = `你是 API 中转站的客服问题归类助手。用户消息给出:
@@ -150,17 +134,14 @@ const TOPIC_SCHEMA = {
 function resolve(deps: TopicPollerDeps): Resolved {
   return {
     repo: deps.repo,
-    adminGroupId: deps.adminGroupId,
-    enabledChats: resolveEnabledChats(
-      deps.enabledGroups,
-      deps.telegramEnabledChats
-    ),
+    enabledChats: deps.enabledChats,
     settleMs: deps.settleMs ?? 60_000,
     windowMax: deps.windowMax ?? 50,
     topicPromptMax: deps.topicPromptMax ?? 40,
     embed: deps.embed ?? defaultEmbed,
     queryFn: deps.queryFn ?? sdkQuery,
     now: deps.now ?? (() => Date.now()),
+    isBypassEnabled: deps.isBypassEnabled ?? (() => true),
   }
 }
 
@@ -170,8 +151,8 @@ async function scanOnce(d: Resolved): Promise<void> {
   if (until <= 0) return
 
   for (const { channel, chatId } of d.enabledChats) {
-    // TG 旁路降级：跳过主题归类
-    if (channel === "tg" && !isTgChatBypassEnabled(chatId)) continue
+    // 旁路降级：由 channel.isBypassEnabled 决定
+    if (!d.isBypassEnabled(channel, chatId)) continue
     const cursor = d.repo.topicCursor(channel, chatId)
     if (until <= cursor) continue
     try {

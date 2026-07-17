@@ -60,7 +60,8 @@ export function registerOrchestrator(deps: OrchestratorDeps): () => void {
           `blocked intent=${intent}(${INTENT_LABELS[intent]}) session=${q.sessionKey}`,
           {
             scope: "intent",
-            groupId: q.channel === "qq" ? Number(q.chatId) : undefined,
+            channel: q.channel,
+            chatId: q.chatId,
             sessionKey: q.sessionKey,
             code: "business.intent_block",
             category: "business",

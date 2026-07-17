@@ -8,10 +8,9 @@ const cfg: AppConfig = {
   onebotAccessToken: "",
   botQQ: 1,
   extraAtQQs: [],
-  adminGroupId: 2,
-  enabledGroups: [],
+  adminSurface: { channel: "qq", chatId: "2" },
+  enabledChats: [],
   telegramBotToken: "",
-  telegramEnabledChats: [],
   proactiveEnabled: false,
   proactiveScanMs: 60000,
   proactiveSilenceMs: 180000,
@@ -70,6 +69,9 @@ function fakeChannel(
     },
     status() {
       return { id: "qq" as const, connected: this.isConnected() }
+    },
+    async send() {
+      /* no-op for runtime unit tests */
     },
     ...overrides,
   }
@@ -314,14 +316,24 @@ describe("RuntimeManager", () => {
     expect(m.getChannel("tg")).toBeUndefined()
   })
 
-  it("assemble 收到 resumeTtlMs 与 telegramEnabledChats", async () => {
+  it("assemble 收到 resumeTtlMs 与解析后的 enabledChats/adminSurface", async () => {
     let got:
-      { resumeTtlMs?: number; telegramEnabledChats?: string[] } | undefined
+      | {
+          resumeTtlMs?: number
+          enabledChats?: { channel: string; chatId: string }[]
+          adminSurface?: { channel: string; chatId: string } | null
+        }
+      | undefined
     await m.start(
       {
         ...cfg,
         resumeTtlMs: 120000,
-        telegramEnabledChats: ["-1001", "-1002"],
+        enabledChats: [
+          { channel: "qq", chatId: "100" },
+          { channel: "tg", chatId: "-1001" },
+          { channel: "tg", chatId: "-1002" },
+        ],
+        adminSurface: { channel: "qq", chatId: "2" },
       },
       fakeBuilders({
         assemble: (args) => {
@@ -331,6 +343,11 @@ describe("RuntimeManager", () => {
       })
     )
     expect(got?.resumeTtlMs).toBe(120000)
-    expect(got?.telegramEnabledChats).toEqual(["-1001", "-1002"])
+    expect(got?.enabledChats).toEqual([
+      { channel: "qq", chatId: "100" },
+      { channel: "tg", chatId: "-1001" },
+      { channel: "tg", chatId: "-1002" },
+    ])
+    expect(got?.adminSurface).toEqual({ channel: "qq", chatId: "2" })
   })
 })

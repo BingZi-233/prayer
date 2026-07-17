@@ -1,40 +1,32 @@
 import { bus } from "../bus"
 import type { Repo } from "../db/repo"
 import type { IncomingMessage } from "../events"
-import { isChatEnabled } from "../channels/enabled-chats"
-import type { AppConfig } from "../config-store"
+import {
+  isAdminSurface,
+  isChatEnabled,
+  type ChatRef,
+} from "../channels/enabled-chats"
 
 export interface MessageBufferDeps {
   repo: Repo
   botQQ: number
-  adminGroupId: number
-  enabledGroups: number[]
-  /** TG 白名单 chatId；缺省空 */
-  telegramEnabledChats?: string[]
+  /** 统一生效会话 */
+  enabledChats: ChatRef[]
+  /** 管理面：不缓冲 */
+  adminSurface: ChatRef | null
 }
 
 // 旁路缓冲:每条用户群消息落 group_messages,供反思轮询回看。
-// 排除管理群、bot 自己、空文本、非生效会话;不做 @bot 过滤(反思要看全量对话上下文)。
+// 排除管理面、bot 自己、空文本、非生效会话;不做 @bot 过滤(反思要看全量对话上下文)。
 export function registerMessageBuffer(deps: MessageBufferDeps): () => void {
-  const {
-    repo,
-    botQQ,
-    adminGroupId,
-    enabledGroups,
-    telegramEnabledChats = [],
-  } = deps
+  const { repo, botQQ, enabledChats, adminSurface } = deps
   const botId = String(botQQ)
-  const adminChatId = String(adminGroupId)
-  // isChatEnabled 只读这两项
-  const enabledCfg = {
-    enabledGroups,
-    telegramEnabledChats,
-  } as Pick<AppConfig, "enabledGroups" | "telegramEnabledChats"> as AppConfig
+  const enabledCfg = { enabledChats }
 
   const onReceived = (msg: IncomingMessage) => {
     const { channel, chatId, userId } = msg
-    // 管理群仅 QQ,不缓冲
-    if (channel === "qq" && chatId === adminChatId) return
+    // 管理面不缓冲
+    if (isAdminSurface(adminSurface, channel, chatId)) return
     // bot 自己:字符串比较(userId 已是 string)
     if (userId === botId) return
     if (!msg.rawText?.trim()) return

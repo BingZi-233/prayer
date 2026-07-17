@@ -9,7 +9,7 @@ let repo: Repo
 
 function msg(over: Partial<IncomingMessage> = {}): IncomingMessage {
   return {
-    channel: "qq",
+    channel: "qq" as const,
     chatId: "100",
     userId: "200",
     messageId: "1",
@@ -29,8 +29,8 @@ describe("message-buffer", () => {
     const stop = registerMessageBuffer({
       repo,
       botQQ: 1,
-      adminGroupId: 999,
-      enabledGroups: [100],
+      adminSurface: { channel: "qq" as const, chatId: "999" },
+      enabledChats: [{ channel: "qq" as const, chatId: "100" }],
     })
     bus.emit(
       "message.received",
@@ -46,8 +46,8 @@ describe("message-buffer", () => {
     const stop = registerMessageBuffer({
       repo,
       botQQ: 1,
-      adminGroupId: 999,
-      enabledGroups: [100],
+      adminSurface: { channel: "qq" as const, chatId: "999" },
+      enabledChats: [{ channel: "qq" as const, chatId: "100" }],
     })
     bus.emit(
       "message.received",
@@ -68,8 +68,8 @@ describe("message-buffer", () => {
     const stop = registerMessageBuffer({
       repo,
       botQQ: 555,
-      adminGroupId: 999,
-      enabledGroups: [100],
+      adminSurface: { channel: "qq" as const, chatId: "999" },
+      enabledChats: [{ channel: "qq" as const, chatId: "100" }],
     })
     bus.emit(
       "message.received",
@@ -89,8 +89,8 @@ describe("message-buffer", () => {
     const stop = registerMessageBuffer({
       repo,
       botQQ: 1,
-      adminGroupId: 999,
-      enabledGroups: [100],
+      adminSurface: { channel: "qq" as const, chatId: "999" },
+      enabledChats: [{ channel: "qq" as const, chatId: "100" }],
     })
     stop()
     bus.emit("message.received", msg({ rawText: "之后" }))
@@ -101,8 +101,8 @@ describe("message-buffer", () => {
     const stop = registerMessageBuffer({
       repo,
       botQQ: 1,
-      adminGroupId: 999,
-      enabledGroups: [100],
+      adminSurface: { channel: "qq" as const, chatId: "999" },
+      enabledChats: [{ channel: "qq" as const, chatId: "100" }],
     })
     bus.emit(
       "message.received",
@@ -116,14 +116,13 @@ describe("message-buffer", () => {
     const stop = registerMessageBuffer({
       repo,
       botQQ: 1,
-      adminGroupId: 999,
-      enabledGroups: [],
-      telegramEnabledChats: ["-100123"],
+      adminSurface: { channel: "qq" as const, chatId: "999" },
+      enabledChats: [{ channel: "tg" as const, chatId: "-100123" }],
     })
     bus.emit(
       "message.received",
       msg({
-        channel: "tg",
+        channel: "tg" as const,
         chatId: "-100123",
         userId: "42",
         rawText: "tg 消息",

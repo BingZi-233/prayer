@@ -172,7 +172,7 @@ describe("runPromote", () => {
     const qf = vi.fn(fakeQuery({ decisions: [] }))
     const r = await runPromote({
       repo,
-      adminGroupId: 999,
+      adminSurface: { channel: "qq" as const, chatId: "999" },
       embed,
       queryFn: qf as never,
       minEntries: 3,
@@ -203,7 +203,7 @@ describe("runPromote", () => {
     }
     const r = await runPromote({
       repo,
-      adminGroupId: 999,
+      adminSurface: { channel: "qq" as const, chatId: "999" },
       embed,
       queryFn: qf as never,
       minEntries: 1,
@@ -229,7 +229,7 @@ describe("runPromote", () => {
     }))
     await runPromote({
       repo,
-      adminGroupId: 999,
+      adminSurface: { channel: "qq" as const, chatId: "999" },
       embed,
       queryFn: fakeQuery({
         decisions: ids.map((id) => ({ id, promote: true, reason: "yes" })),
@@ -248,7 +248,7 @@ describe("runPromote", () => {
     const promoteFn = vi.fn()
     const r = await runPromote({
       repo,
-      adminGroupId: 999,
+      adminSurface: { channel: "qq" as const, chatId: "999" },
       embed,
       queryFn: fakeQuery({ nope: true }) as never,
       minEntries: 1,
@@ -280,7 +280,7 @@ describe("runPromote", () => {
     const called: number[] = []
     await runPromote({
       repo,
-      adminGroupId: 999,
+      adminSurface: { channel: "qq" as const, chatId: "999" },
       embed,
       queryFn: fakeQuery({
         decisions: [
@@ -313,7 +313,7 @@ describe("registerReflectionPromoter", () => {
       // 空 decisions → 0 promote,但会调 LLM
       const stop = registerReflectionPromoter({
         repo,
-        adminGroupId: 999,
+        adminSurface: { channel: "qq" as const, chatId: "999" },
         embed,
         now: () => 7_000_000,
         promoteMs: 1000,
