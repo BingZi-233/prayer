@@ -66,7 +66,7 @@ describe("OneBotClient", () => {
     expect(statuses[statuses.length - 1]).toBe(false)
   })
 
-  it("action.send channel=qq → 对端收到 send_group_msg", async () => {
+  it("client.send → 对端收到 send_group_msg", async () => {
     const gotAction = new Promise<any>((res) => {
       startServer((ws) => {
         ws.on("message", (raw: Buffer) => res(JSON.parse(raw.toString())))
@@ -75,7 +75,7 @@ describe("OneBotClient", () => {
         client.start()
         setTimeout(
           () =>
-            bus.emit("action.send", {
+            client!.send({
               channel: "qq",
               chatId: "9",
               text: "hello",
@@ -90,7 +90,7 @@ describe("OneBotClient", () => {
     expect(action.params.message).toBe("hello")
   })
 
-  it("action.send channel≠qq → 不发往 OneBot", async () => {
+  it("client.send 不订阅 bus：action.send 事件本身不触发 OneBot", async () => {
     let got: any
     const port = await startServer((ws) => {
       ws.on("message", (raw: Buffer) => {
@@ -101,15 +101,15 @@ describe("OneBotClient", () => {
     client.start()
     await new Promise((r) => setTimeout(r, 50))
     bus.emit("action.send", {
-      channel: "tg",
-      chatId: "-100",
+      channel: "qq",
+      chatId: "9",
       text: "nope",
     })
     await new Promise((r) => setTimeout(r, 100))
     expect(got).toBeUndefined()
   })
 
-  it("action.send 带 replyToId → message 为 reply+text 消息段数组", async () => {
+  it("client.send 带 replyToId → message 为 reply+text 消息段数组", async () => {
     const gotAction = new Promise<any>((res) => {
       startServer((ws) => {
         ws.on("message", (raw: Buffer) => res(JSON.parse(raw.toString())))
@@ -118,7 +118,7 @@ describe("OneBotClient", () => {
         client.start()
         setTimeout(
           () =>
-            bus.emit("action.send", {
+            client!.send({
               channel: "qq",
               chatId: "9",
               text: "答案",

@@ -1,6 +1,12 @@
-import { describe, it, expect } from "vitest"
+import { describe, it, expect, afterEach } from "vitest"
+import { bus } from "@/lib/bus"
 import { ChannelRegistry } from "@/lib/channels/registry"
-import type { Channel, ChannelCapabilities, ChannelId } from "@/lib/channels/types"
+import type {
+  Channel,
+  ChannelCapabilities,
+  ChannelId,
+} from "@/lib/channels/types"
+import type { ActionSend } from "@/lib/events"
 
 const caps: ChannelCapabilities = {
   canNotifyOwnAdminSurface: false,
@@ -17,6 +23,8 @@ function makeChannel(
     failStart?: boolean
     onStart?: () => void
     onStop?: () => void
+    onSend?: (a: ActionSend) => void | Promise<void>
+    isBypassEnabled?: (chatId: string) => boolean
   } = {}
 ): Channel & { lastError?: string; setLastError: (e: string) => void } {
   let connected = false
@@ -45,8 +53,16 @@ function makeChannel(
     status() {
       return { id, connected, lastError }
     },
+    async send(a: ActionSend) {
+      await opts.onSend?.(a)
+    },
+    isBypassEnabled: opts.isBypassEnabled,
   }
 }
+
+afterEach(() => {
+  bus.removeAllListeners()
+})
 
 describe("ChannelRegistry", () => {
   it("register + get", () => {
@@ -60,17 +76,14 @@ describe("ChannelRegistry", () => {
   it("startAll 并行启动所有通道", async () => {
     const reg = new ChannelRegistry()
     const order: string[] = []
-    reg.register(
-      makeChannel("qq", { onStart: () => order.push("qq") })
-    )
-    reg.register(
-      makeChannel("tg", { onStart: () => order.push("tg") })
-    )
+    reg.register(makeChannel("qq", { onStart: () => order.push("qq") }))
+    reg.register(makeChannel("tg", { onStart: () => order.push("tg") }))
     const results = await reg.startAll()
     expect(results.every((r) => r.status === "fulfilled")).toBe(true)
     expect(order.sort()).toEqual(["qq", "tg"])
     expect(reg.get("qq")!.isConnected()).toBe(true)
     expect(reg.get("tg")!.isConnected()).toBe(true)
+    await reg.stopAll()
   })
 
   it("startAll 单通道失败不阻断其它,记 lastError", async () => {
@@ -85,6 +98,7 @@ describe("ChannelRegistry", () => {
     expect(qq.lastError).toContain("qq-boom")
     expect(tg.isConnected()).toBe(true)
     expect(qq.isConnected()).toBe(false)
+    await reg.stopAll()
   })
 
   it("stopAll 停止并清空", async () => {
@@ -104,5 +118,90 @@ describe("ChannelRegistry", () => {
     await reg.startAll()
     const st = reg.status()
     expect(st).toEqual([{ id: "qq", connected: true, lastError: undefined }])
+    await reg.stopAll()
+  })
+
+  it("action.send 经 registry 路由到匹配 channel.send", async () => {
+    const reg = new ChannelRegistry()
+    const sent: ActionSend[] = []
+    reg.register(
+      makeChannel("qq", {
+        onSend: (a) => {
+          sent.push(a)
+        },
+      })
+    )
+    reg.register(
+      makeChannel("tg", {
+        onSend: () => {
+          throw new Error("tg should not receive qq action")
+        },
+      })
+    )
+    await reg.startAll()
+
+    bus.emit("action.send", {
+      channel: "qq",
+      chatId: "1",
+      text: "hello",
+      replyToId: "9",
+    })
+    // dispatch 是 async void
+    await new Promise((r) => setTimeout(r, 20))
+    expect(sent).toHaveLength(1)
+    expect(sent[0]).toMatchObject({
+      channel: "qq",
+      chatId: "1",
+      text: "hello",
+      replyToId: "9",
+    })
+    await reg.stopAll()
+  })
+
+  it("未注册 channel 的 action.send → error.occurred(channel.unregistered)，不静默", async () => {
+    const reg = new ChannelRegistry()
+    reg.register(makeChannel("qq"))
+    await reg.startAll()
+
+    const err = new Promise<{ scope: string; channel?: string }>((res) =>
+      bus.once("error.occurred", (e) =>
+        res(e as { scope: string; channel?: string })
+      )
+    )
+    bus.emit("action.send", {
+      channel: "tg",
+      chatId: "-100",
+      text: "orphan",
+    })
+    const e = await err
+    expect(e.scope).toBe("channel.unregistered")
+    expect(e.channel).toBe("tg")
+    await reg.stopAll()
+  })
+
+  it("stopAll 后 action.send 不再分发到已清通道", async () => {
+    const reg = new ChannelRegistry()
+    let n = 0
+    reg.register(makeChannel("qq", { onSend: () => { n++ } }))
+    await reg.startAll()
+    await reg.stopAll()
+    bus.emit("action.send", { channel: "qq", chatId: "1", text: "x" })
+    await new Promise((r) => setTimeout(r, 20))
+    expect(n).toBe(0)
+  })
+
+  it("isBypassEnabled 委托 channel；未实现则 true", () => {
+    const reg = new ChannelRegistry()
+    reg.register(
+      makeChannel("tg", {
+        isBypassEnabled: (chatId) => chatId !== "blocked",
+      })
+    )
+    reg.register(makeChannel("qq"))
+    expect(reg.isBypassEnabled("tg", "ok")).toBe(true)
+    expect(reg.isBypassEnabled("tg", "blocked")).toBe(false)
+    expect(reg.isBypassEnabled("qq", "any")).toBe(true)
+    // 未注册
+    expect(reg.isBypassEnabled("discord", "x")).toBe(true)
   })
 })

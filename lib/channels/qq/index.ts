@@ -1,9 +1,10 @@
-import { OneBotClient } from "../../onebot/client"
+import type { ActionSend } from "../../events"
 import type {
   Channel,
   ChannelCapabilities,
   ChannelStatus,
 } from "../types"
+import { OneBotClient } from "./client"
 
 const QQ_CAPABILITIES: ChannelCapabilities = {
   canNotifyOwnAdminSurface: true,
@@ -16,7 +17,7 @@ const QQ_CAPABILITIES: ChannelCapabilities = {
 
 /**
  * QQ / OneBot 通道适配器。
- * 内部仍用 OneBotClient；对外满足 Channel 接口。
+ * 拥有 start/stop/send/status 生命周期；传输细节在 OneBotClient。
  */
 export class QqChannel implements Channel {
   readonly id = "qq" as const
@@ -61,6 +62,12 @@ export class QqChannel implements Channel {
     this.lastError = err
   }
 
+  async send(action: ActionSend): Promise<void> {
+    // 防御：仅本通道（registry 已过滤，双保险）
+    if (action.channel !== "qq") return
+    this.client.send(action)
+  }
+
   async listChats(): Promise<{ id: string; name: string }[] | undefined> {
     const raw = await this.client.getGroupList()
     if (!Array.isArray(raw)) return undefined
@@ -75,3 +82,5 @@ export class QqChannel implements Channel {
     return this.client.getGroupMemberList(Number(chatId))
   }
 }
+
+export { OneBotClient } from "./client"
