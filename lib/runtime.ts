@@ -36,6 +36,15 @@ export interface RuntimeBuilders {
     token: string | undefined,
     onStatus: (c: boolean) => void
   ) => Channel
+  /**
+   * 构造 TG 通道。token 为空时 runtime 不 register。
+   * 缺省实现用 TelegramChannel + repo 持久化 offset。
+   */
+  makeTgChannel?: (
+    token: string,
+    repo: Repo,
+    onStatus?: (c: boolean) => void
+  ) => Channel
 }
 
 async function defaultBuilders(): Promise<RuntimeBuilders> {
@@ -44,6 +53,7 @@ async function defaultBuilders(): Promise<RuntimeBuilders> {
   const { Agent } = await import("./agent/agent")
   const { assemble } = await import("./assemble")
   const { QqChannel } = await import("./channels/qq")
+  const { TelegramChannel } = await import("./channels/tg/client")
   return {
     // 复用 API 路由的进程级共享连接:reconfigure 不关它,in-flight 的
     // 异步 scanOnce(await agent.run 期间)不会撞到 "database connection is not open"
@@ -62,6 +72,12 @@ async function defaultBuilders(): Promise<RuntimeBuilders> {
     assemble,
     makeQqChannel: (url, token, onStatus) =>
       new QqChannel(url, token, onStatus),
+    makeTgChannel: (token, repo, onStatus) =>
+      new TelegramChannel(token, {
+        getOffset: () => Number(repo.getConfigRow("tg:update_offset") ?? "0"),
+        setOffset: (n) => repo.setConfigRow("tg:update_offset", String(n)),
+        onStatus,
+      }),
   }
 }
 
@@ -140,6 +156,7 @@ export class RuntimeManager {
         extraAtQQs: cfg.extraAtQQs,
         adminGroupId: cfg.adminGroupId,
         enabledGroups: cfg.enabledGroups,
+        telegramEnabledChats: cfg.telegramEnabledChats,
         agent,
         reflectScanMs: cfg.reflectScanMs,
         reflectLookbackMs: cfg.reflectLookbackMs,
@@ -168,7 +185,7 @@ export class RuntimeManager {
       })
 
       const registry = new ChannelRegistry()
-      // 仅当 onebotWsUrl 非空时注册 QQ 通道(TG 留 Task 9/10)
+      // 仅当 onebotWsUrl 非空时注册 QQ 通道
       if (cfg.onebotWsUrl) {
         const qq = builders.makeQqChannel(
           cfg.onebotWsUrl,
@@ -178,6 +195,22 @@ export class RuntimeManager {
           }
         )
         registry.register(qq)
+      }
+      // telegramBotToken 非空时注册 TG long-poll 通道
+      const tgToken = cfg.telegramBotToken?.trim()
+      if (tgToken) {
+        let tg: Channel
+        if (builders.makeTgChannel) {
+          tg = builders.makeTgChannel(tgToken, repo)
+        } else {
+          const { TelegramChannel } = await import("./channels/tg/client")
+          tg = new TelegramChannel(tgToken, {
+            getOffset: () =>
+              Number(repo.getConfigRow("tg:update_offset") ?? "0"),
+            setOffset: (n) => repo.setConfigRow("tg:update_offset", String(n)),
+          })
+        }
+        registry.register(tg)
       }
       await registry.startAll()
 
@@ -218,7 +251,9 @@ export class RuntimeManager {
       /* ignore */
     }
     // 兜底断言:正常路径应已由 assemble disposer + channel.stop 卸掉监听器
-    const leftover = bus.eventNames().reduce((n, name) => n + bus.listenerCount(name), 0)
+    const leftover = bus
+      .eventNames()
+      .reduce((n, name) => n + bus.listenerCount(name), 0)
     if (leftover > 0) {
       logger.log(
         "warn",
@@ -239,10 +274,7 @@ export class RuntimeManager {
     logger.log("info", "[runtime] stopped")
   }
 
-  async reconfigure(
-    cfg: AppConfig,
-    builders: RuntimeBuilders
-  ): Promise<void> {
+  async reconfigure(cfg: AppConfig, builders: RuntimeBuilders): Promise<void> {
     await this.stop()
     await this.start(cfg, builders)
   }

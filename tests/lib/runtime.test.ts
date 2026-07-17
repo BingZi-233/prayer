@@ -263,10 +263,66 @@ describe("RuntimeManager", () => {
     expect(m.getChannel("qq")).toBeUndefined()
   })
 
-  it("assemble 收到 resumeTtlMs", async () => {
-    let got: { resumeTtlMs?: number } | undefined
+  it("telegramBotToken 非空 → 注册 tg 通道", async () => {
+    const tg = fakeChannel({
+      id: "tg" as const,
+      capabilities: {
+        canNotifyOwnAdminSurface: false,
+        supportsAdminCommands: false,
+        supportsMemberList: true,
+        supportsGroupList: false,
+        supportsMediaDownload: false,
+        supportsBypassPipeline: false,
+      },
+      status() {
+        return { id: "tg" as const, connected: false, detail: "offset=0" }
+      },
+    })
+    const repo = {
+      countSessions: () => 0,
+      listSessions: () => [],
+      getConfigRow: () => undefined,
+      setConfigRow: () => {},
+    }
     await m.start(
-      { ...cfg, resumeTtlMs: 120000 },
+      { ...cfg, telegramBotToken: "tg-token-xyz" },
+      fakeBuilders({
+        makeRepo: () => repo as never,
+        makeTgChannel: () => tg,
+      })
+    )
+    const s = m.getStatus()
+    expect(s.state).toBe("running")
+    expect(s.channels?.some((c) => c.id === "tg")).toBe(true)
+    expect(m.getChannel("tg")).toBe(tg)
+    // QQ 仍在
+    expect(m.getChannel("qq")).toBeDefined()
+  })
+
+  it("telegramBotToken 为空 → 不注册 tg", async () => {
+    let made = 0
+    await m.start(
+      { ...cfg, telegramBotToken: "  " },
+      fakeBuilders({
+        makeTgChannel: () => {
+          made++
+          return fakeChannel({ id: "tg" as const })
+        },
+      })
+    )
+    expect(made).toBe(0)
+    expect(m.getChannel("tg")).toBeUndefined()
+  })
+
+  it("assemble 收到 resumeTtlMs 与 telegramEnabledChats", async () => {
+    let got:
+      { resumeTtlMs?: number; telegramEnabledChats?: string[] } | undefined
+    await m.start(
+      {
+        ...cfg,
+        resumeTtlMs: 120000,
+        telegramEnabledChats: ["-1001", "-1002"],
+      },
       fakeBuilders({
         assemble: (args) => {
           got = args
@@ -275,5 +331,6 @@ describe("RuntimeManager", () => {
       })
     )
     expect(got?.resumeTtlMs).toBe(120000)
+    expect(got?.telegramEnabledChats).toEqual(["-1001", "-1002"])
   })
 })
