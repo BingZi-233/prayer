@@ -9,6 +9,7 @@ import type { GroupPolicy } from "../config-store"
 import type { ChannelId } from "../channels/types"
 import { makeSessionKey } from "../channels/ids"
 import { policyKey } from "../channels/enabled-chats"
+import { isTgChatBypassEnabled } from "../channels/tg/bypass-state"
 
 // 主动模式哨兵:无把握时 agent 只输出此串 → poller 判为非答案,沉默不发。
 export const PROACTIVE_SUFFIX =
@@ -121,6 +122,8 @@ async function scanOnce(d: Resolved): Promise<void> {
 
   for (const { channel, chatId } of d.enabledChats) {
     if (channel === "qq" && chatId === adminChatId) continue
+    // TG 旁路降级（admins 失败 / Privacy 启发式）：跳过主动补位
+    if (channel === "tg" && !isTgChatBypassEnabled(chatId)) continue
     if (!chatEnabled(d, channel, chatId)) continue
     const silenceMs = chatSilence(d, channel, chatId)
     const until = now - silenceMs

@@ -7,6 +7,7 @@ import {
   splitTelegramText,
   type TelegramBotApi,
 } from "@/lib/channels/tg/client"
+import { _resetTgBypassStateForTests } from "@/lib/channels/tg/bypass-state"
 
 function groupUpdate(updateId: number, text = "hi"): Update {
   return {
@@ -45,9 +46,12 @@ function makeMockApi(opts?: {
   updatesQueue?: Update[][]
   /** getUpdates 挂起直到 abort（测 stop） */
   hangUntilAbort?: boolean
+  admins?: { userId: string; role: "owner" | "admin" }[]
+  adminsError?: Error
 }): TelegramBotApi & {
   sent: { chatId: string | number; text: string; replyTo?: number }[]
   getUpdatesCalls: number
+  adminCalls: number
 } {
   const sent: { chatId: string | number; text: string; replyTo?: number }[] = []
   let batchIdx = 0
@@ -55,6 +59,7 @@ function makeMockApi(opts?: {
   const api = {
     sent,
     getUpdatesCalls: 0,
+    adminCalls: 0,
     async getMe() {
       if (opts?.getMeError) throw opts.getMeError
       return { id: 900001, username: "PrayerBot" }
@@ -105,6 +110,14 @@ function makeMockApi(opts?: {
       })
       return {}
     },
+    async getChatAdministrators() {
+      api.adminCalls++
+      if (opts?.adminsError) throw opts.adminsError
+      return opts?.admins ?? [{ userId: "55", role: "admin" as const }]
+    },
+    async getFile() {
+      return { file_path: "photos/x.jpg", file_size: 3 }
+    },
   }
   return api
 }
@@ -144,6 +157,7 @@ describe("TelegramChannel", () => {
     offset = 0
     received = []
     channels = []
+    _resetTgBypassStateForTests()
     onMsg = (m) => received.push(m)
     bus.on("message.received", onMsg)
   })
@@ -190,9 +204,10 @@ describe("TelegramChannel", () => {
     expect(ch.isConnected()).toBe(false)
   })
 
-  it("群消息 parse 后 emit 并推进 offset；私聊丢弃仍推进", async () => {
+  it("群消息 parse 后 enrich senderRole 再 emit 并推进 offset；私聊丢弃仍推进", async () => {
     const api = makeMockApi({
       updatesQueue: [[groupUpdate(5, "hello group"), privateUpdate(6)], []],
+      admins: [{ userId: "55", role: "admin" }],
     })
     const ch = track(
       new TelegramChannel("tok", {
@@ -203,6 +218,7 @@ describe("TelegramChannel", () => {
         api,
         pollTimeoutSec: 0,
         sleep: (ms) => delay(ms),
+        downloadImage: null, // 单测不走真实下载
       })
     )
     await ch.start()
@@ -211,6 +227,32 @@ describe("TelegramChannel", () => {
     expect(received[0]!.channel).toBe("tg")
     expect(received[0]!.chatId).toBe("-100111")
     expect(received[0]!.rawText).toBe("hello group")
+    expect(received[0]!.senderRole).toBe("admin")
+    expect(api.adminCalls).toBeGreaterThanOrEqual(1)
+  })
+
+  it("admins 失败时仍 emit 降级消息并推进 offset，status 含 bypass-off", async () => {
+    const api = makeMockApi({
+      updatesQueue: [[groupUpdate(8, "hi")], []],
+      adminsError: new Error("forbidden"),
+    })
+    const ch = track(
+      new TelegramChannel("tok", {
+        getOffset: () => offset,
+        setOffset: (n) => {
+          offset = n
+        },
+        api,
+        pollTimeoutSec: 0,
+        sleep: (ms) => delay(ms),
+        downloadImage: null,
+      })
+    )
+    await ch.start()
+    await waitFor(() => received.length === 1, "message.received")
+    await waitFor(() => offset === 9, "offset=9")
+    expect(received[0]!.senderRole).toBe("member")
+    expect(ch.status().detail).toMatch(/bypass-off:-100111:admins-failed/)
   })
 
   it("action.send 仅处理 channel=tg，超长文本拆分，首条带 reply", async () => {

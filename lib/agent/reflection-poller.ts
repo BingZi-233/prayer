@@ -6,6 +6,7 @@ import { embed as defaultEmbed } from "../tools/embed"
 import { noToolQueryOptions, drainQuery } from "./agent"
 import { pickArrayFieldDual, previewJsonPayload } from "./json-output"
 import type { ChannelId } from "../channels/types"
+import { isTgChatBypassEnabled } from "../channels/tg/bypass-state"
 
 export interface ReflectionPollerDeps {
   repo: Repo
@@ -274,6 +275,8 @@ async function scanOnce(d: Resolved): Promise<void> {
   )
   for (const { channel, chatId } of d.repo.groupsWithAdminMessagesUpTo(until)) {
     if (!enabled.has(`${channel}:${chatId}`)) continue // 生效会话门
+    // TG 旁路降级（admins 失败 / Privacy 启发式）：跳过反思
+    if (channel === "tg" && !isTgChatBypassEnabled(chatId)) continue
     const cursor = d.repo.groupReflectCursor(channel, chatId)
     if (until <= cursor) continue // 该会话已处理到此
     // band 内无新管理发言(旧发言早已处理) → 直接推进跳过,不喂 LLM

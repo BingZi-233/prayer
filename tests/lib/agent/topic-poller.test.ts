@@ -3,6 +3,10 @@ import { classifyItems, runScan } from "@/lib/agent/topic-poller"
 import { openDb } from "@/lib/db/index"
 import { Repo } from "@/lib/db/repo"
 import { bus } from "@/lib/bus"
+import {
+  setTgBypassBlocked,
+  _resetTgBypassStateForTests,
+} from "@/lib/channels/tg/bypass-state"
 
 describe("classifyItems 业务对齐(structured 优先 + 文本兜底)", () => {
   const existing = new Set([1, 2])
@@ -116,6 +120,7 @@ describe("topic-poller runScan", () => {
   let repo: Repo
   beforeEach(() => {
     bus.removeAllListeners()
+    _resetTgBypassStateForTests()
     repo = new Repo(openDb(":memory:", 3))
   })
 
@@ -301,5 +306,24 @@ describe("topic-poller runScan", () => {
       expect.objectContaining({ id: topicId, count: 60 }),
     ])
     expect(repo.topicCursor("qq", "100")).toBe(NOW - 60000 + 59 * 100)
+  })
+
+  it("TG bypass 关闭时跳过该 chat，不调 LLM", async () => {
+    setTgBypassBlocked("-1001", "privacy-mode?")
+    ;(repo as any).db
+      .prepare(
+        "INSERT INTO group_messages (channel,group_id,user_id,sender_role,text,created_at) VALUES (?,?,?,?,?,?)"
+      )
+      .run("tg", "-1001", "200", "member", "怎么退款", NOW - 5000)
+    const qf = vi.fn(fakeQuery([{ i: 0, newTitle: "x" }]))
+    await runScan(
+      opts(repo, {
+        enabledGroups: [],
+        telegramEnabledChats: ["-1001"],
+        queryFn: qf as never,
+      })
+    )
+    expect(qf).not.toHaveBeenCalled()
+    expect(repo.topicCursor("tg", "-1001")).toBe(0)
   })
 })

@@ -5,6 +5,10 @@ import { bus } from "@/lib/bus";
 import { SessionStore } from "@/lib/agent/session";
 import { runScan } from "@/lib/agent/unanswered-poller";
 import { AGENT_FALLBACK_TEXT } from "@/lib/agent/agent";
+import {
+  setTgBypassBlocked,
+  _resetTgBypassStateForTests,
+} from "@/lib/channels/tg/bypass-state";
 
 let repo: Repo;
 const NOW = 10_000_000;
@@ -35,6 +39,7 @@ const base = (over: Record<string, unknown> = {}) => ({
 
 beforeEach(() => {
   bus.removeAllListeners();
+  _resetTgBypassStateForTests();
   repo = new Repo(openDb(":memory:"));
 });
 
@@ -206,5 +211,25 @@ describe("unanswered-poller runScan", () => {
     expect(e.scope).toBe("proactive");
     expect(e.chatId).toBe("100");
     expect(e.channel).toBe("qq");
+  });
+
+  it("TG bypass 关闭时跳过该 chat，不调 agent", async () => {
+    setTgBypassBlocked("-1001", "admins-failed");
+    ;(repo as any).db
+      .prepare(
+        "INSERT INTO group_messages (channel,group_id,user_id,sender_role,text,created_at) VALUES (?,?,?,?,?,?)"
+      )
+      .run("tg", "-1001", "200", "member", "价格?", NOW - 5000);
+    repo.setGroupProactiveCursor("tg", "-1001", 1);
+    const agent = fakeAgent("答案");
+    await runScan(
+      base({
+        agent: agent as never,
+        enabledGroups: [],
+        telegramEnabledChats: ["-1001"],
+      })
+    );
+    expect(agent.run).not.toHaveBeenCalled();
+    expect(repo.groupProactiveCursor("tg", "-1001")).toBe(1);
   });
 });

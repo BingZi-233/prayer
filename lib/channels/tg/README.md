@@ -10,10 +10,19 @@
 
 ## 模块
 
-| 文件                     | 职责                                                      |
-| ------------------------ | --------------------------------------------------------- |
-| `parse.ts`               | Update → `IncomingMessage`（仅 group/supergroup message） |
-| `trigger.ts`             | @bot 判定与 UTF-16 剥离 mention                           |
-| `client.ts`              | long poll / sendMessage（Task 10）                        |
-| `admins-cache.ts`        | 管理员角色缓存（Phase 2）                                 |
-| `media.ts` / `enrich.ts` | 图片下载（Phase 2）                                       |
+| 文件               | 职责                                                                 |
+| ------------------ | -------------------------------------------------------------------- |
+| `parse.ts`         | Update → `IncomingMessage`（仅 group/supergroup message）            |
+| `trigger.ts`       | @bot 判定与 UTF-16 剥离 mention                                      |
+| `client.ts`        | long poll / sendMessage / enrich 后 emit；offset 在 emit 后推进      |
+| `admins-cache.ts`  | `getChatAdministrators` + TTL；creator→owner；失败关旁路             |
+| `bypass-state.ts`  | per-chat 旁路开关（poller 读取）；Privacy 启发式                     |
+| `media.ts`         | `getFile` + 限额下载（5MB / 15s / image/*）→ base64                  |
+| `enrich.ts`        | 填 `senderRole` + 下载图；失败降级不抛                               |
+
+## 旁路降级
+
+- `getChatAdministrators` 失败 → 该 chat `senderRole=member`，`isTgChatBypassEnabled=false`，反思/补位跳过
+- Privacy Mode 启发式：累计 ≥20 条几乎全是 botMentioned → 同关闭；见到非 @ 消息后恢复
+- 主链路 @ 问答始终可用；消息仍缓冲（修复 Privacy 后有原料）
+- `ChannelStatus.detail` 形如：`@bot offset=N bypass-off:-1001:admins-failed`

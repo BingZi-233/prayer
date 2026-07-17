@@ -12,6 +12,10 @@ import {
   itemsFromStructured,
   REFLECT_OUTPUT_SCHEMA,
 } from "@/lib/agent/reflection-poller"
+import {
+  setTgBypassBlocked,
+  _resetTgBypassStateForTests,
+} from "@/lib/channels/tg/bypass-state"
 
 let repo: Repo
 const embed = async () => new Float32Array([1, 0, 0]) // 与 openDb(:memory:,3) 一致
@@ -74,6 +78,7 @@ const opts = (over: Record<string, unknown> = {}) => ({
 
 beforeEach(() => {
   bus.removeAllListeners()
+  _resetTgBypassStateForTests()
   repo = new Repo(openDb(":memory:", 3))
 })
 
@@ -451,6 +456,30 @@ describe("reflection-poller runScan", () => {
     await runScan(opts({ enabledGroups: [], queryFn: qf as never }))
     expect(qf).not.toHaveBeenCalled()
     expect(repo.groupReflectCursor("qq", "100")).toBe(0)
+  })
+
+  it("TG bypass 关闭时跳过该 chat，不调 LLM", async () => {
+    setTgBypassBlocked("-1001", "admins-failed")
+    ;(repo as any).db
+      .prepare(
+        "INSERT INTO group_messages (channel,group_id,user_id,sender_role,text,created_at) VALUES (?,?,?,?,?,?)"
+      )
+      .run("tg", "-1001", "200", "member", "退款多久?", NOW - 5000)
+    ;(repo as any).db
+      .prepare(
+        "INSERT INTO group_messages (channel,group_id,user_id,sender_role,text,created_at) VALUES (?,?,?,?,?,?)"
+      )
+      .run("tg", "-1001", "201", "admin", "3 天", NOW - 4000)
+    const qf = vi.fn(fakeQuery({ items: [] }))
+    await runScan(
+      opts({
+        enabledGroups: [],
+        telegramEnabledChats: ["-1001"],
+        queryFn: qf as never,
+      })
+    )
+    expect(qf).not.toHaveBeenCalled()
+    expect(repo.groupReflectCursor("tg", "-1001")).toBe(0)
   })
 
   it("防重入:上一轮扫描未结束时,下一 tick 跳过,不重复判定", async () => {

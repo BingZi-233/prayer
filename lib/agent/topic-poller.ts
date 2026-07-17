@@ -7,6 +7,7 @@ import { noToolQueryOptions, drainQuery } from "./agent"
 import { pickArrayFieldDual, previewJsonPayload } from "./json-output"
 import { textNearlySame } from "./reflection-poller"
 import type { ChannelId } from "../channels/types"
+import { isTgChatBypassEnabled } from "../channels/tg/bypass-state"
 
 // LLM 每条问题的归类结果:归入已有 topicId / 新建 newTitle / 噪声 noise。
 export interface ClassifyItem {
@@ -169,6 +170,8 @@ async function scanOnce(d: Resolved): Promise<void> {
   if (until <= 0) return
 
   for (const { channel, chatId } of d.enabledChats) {
+    // TG 旁路降级：跳过主题归类
+    if (channel === "tg" && !isTgChatBypassEnabled(chatId)) continue
     const cursor = d.repo.topicCursor(channel, chatId)
     if (until <= cursor) continue
     try {

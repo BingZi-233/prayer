@@ -4,6 +4,16 @@ import { bus } from "../../bus"
 import type { ActionSend } from "../../events"
 import { logger } from "../../logger"
 import type { Channel, ChannelCapabilities, ChannelStatus } from "../types"
+import {
+  AdminsCache,
+  mapChatMembersToAdmins,
+  type AdminEntry,
+} from "./admins-cache"
+import {
+  enrichTelegramMessage,
+  makeTelegramImageDownloader,
+} from "./enrich"
+import type { TelegramFileInfo } from "./media"
 import { parseTelegramUpdate } from "./parse"
 
 /** Telegram Bot API 文本上限 */
@@ -29,6 +39,14 @@ export interface TelegramBotApi {
     other?: { reply_to_message_id?: number },
     signal?: AbortSignal
   ): Promise<unknown>
+  getChatAdministrators?(
+    chatId: string | number,
+    signal?: AbortSignal
+  ): Promise<AdminEntry[]>
+  getFile?(
+    fileId: string,
+    signal?: AbortSignal
+  ): Promise<TelegramFileInfo>
 }
 
 export interface TelegramChannelOpts {
@@ -41,15 +59,22 @@ export interface TelegramChannelOpts {
   pollTimeoutSec?: number
   /** 可注入 sleep（退避 / 单测加速） */
   sleep?: (ms: number) => Promise<void>
+  /** 可注入 admins 缓存（单测） */
+  adminsCache?: AdminsCache
+  /** 可注入图片下载；传 null 禁用下载 */
+  downloadImage?:
+    | ((fileId: string) => Promise<import("../../events").ImageInput | null>)
+    | null
 }
 
 const TG_CAPABILITIES: ChannelCapabilities = {
   canNotifyOwnAdminSurface: false,
   supportsAdminCommands: false,
-  supportsMemberList: true, // 可后续实现 getChatAdministrators
+  supportsMemberList: true,
   supportsGroupList: false,
-  supportsMediaDownload: false, // Phase 1
-  supportsBypassPipeline: false, // Phase 2：Privacy Mode + admins-cache
+  supportsMediaDownload: true,
+  // 通道级 true；per-chat 由 admins-cache / Privacy 启发式关旁路
+  supportsBypassPipeline: true,
 }
 
 /**
@@ -77,6 +102,10 @@ export class TelegramChannel implements Channel {
   private readonly setOffset: (n: number) => void
   private readonly pollTimeoutSec: number
   private readonly sleep: (ms: number) => Promise<void>
+  private readonly adminsCache: AdminsCache
+  private readonly downloadImage:
+    | ((fileId: string) => Promise<import("../../events").ImageInput | null>)
+    | null
 
   private readonly onAction = (a: ActionSend) => {
     if (a.channel !== "tg") return
@@ -93,6 +122,21 @@ export class TelegramChannel implements Channel {
     this.pollTimeoutSec = opts.pollTimeoutSec ?? DEFAULT_POLL_TIMEOUT_SEC
     this.sleep = opts.sleep ?? defaultSleep
     this.api = opts.api ?? createGrammyApi(token)
+    this.adminsCache =
+      opts.adminsCache ??
+      new AdminsCache({
+        getChatAdministrators: (chatId) => this.fetchAdmins(chatId),
+      })
+    if (opts.downloadImage === null) {
+      this.downloadImage = null
+    } else if (opts.downloadImage) {
+      this.downloadImage = opts.downloadImage
+    } else {
+      this.downloadImage = makeTelegramImageDownloader({
+        token: this.token,
+        getFile: (fileId) => this.fetchFile(fileId),
+      })
+    }
   }
 
   async start(): Promise<void> {
@@ -132,6 +176,9 @@ export class TelegramChannel implements Channel {
     const detailParts: string[] = []
     if (this.botUsername) detailParts.push(`@${this.botUsername}`)
     detailParts.push(`offset=${this.safeOffset()}`)
+    for (const b of this.adminsCache.listBypassBlocks()) {
+      detailParts.push(`bypass-off:${b.chatId}:${b.reason}`)
+    }
     return {
       id: this.id,
       connected: this.connected,
@@ -231,16 +278,53 @@ export class TelegramChannel implements Channel {
         botId: this.botId!,
         botUsername: this.botUsername ?? "",
       })
-      if (msg) {
-        bus.emit("message.received", msg)
+      if (!msg) {
+        // 明确丢弃（私聊/频道/forum/非 message），仍推进 offset
+        return
       }
-      // null = 明确丢弃（私聊/频道/forum/非 message），仍推进 offset
+      // enrich 失败仍 emit 降级消息；offset 由调用方在 await 后推进
+      let enriched = msg
+      try {
+        const raw = update.message
+        if (raw) {
+          enriched = await enrichTelegramMessage(msg, raw, {
+            getRole: (chatId, userId) =>
+              this.adminsCache.getRole(chatId, userId),
+            downloadImage: this.downloadImage ?? undefined,
+            observeMessage: (chatId, botMentioned) =>
+              this.adminsCache.observeMessage(chatId, botMentioned),
+          })
+        }
+      } catch (err) {
+        const m = err instanceof Error ? err.message : String(err)
+        logger.log(
+          "warn",
+          `[tg] enrich update ${update.update_id} failed: ${m}; emit degraded`
+        )
+        // 降级：至少带 member 角色
+        enriched = { ...msg, senderRole: msg.senderRole ?? "member" }
+      }
+      bus.emit("message.received", enriched)
     } catch (err) {
       // 解析异常：记日志后仍推进 offset，避免卡死同一 update
       const m = err instanceof Error ? err.message : String(err)
       logger.log("warn", `[tg] parse update ${update.update_id} failed: ${m}`)
       bus.emit("error.occurred", { scope: "tg.parse", err })
     }
+  }
+
+  private async fetchAdmins(chatId: string): Promise<AdminEntry[]> {
+    if (!this.api.getChatAdministrators) {
+      throw new Error("getChatAdministrators not available")
+    }
+    return this.api.getChatAdministrators(chatId)
+  }
+
+  private async fetchFile(fileId: string): Promise<TelegramFileInfo> {
+    if (!this.api.getFile) {
+      throw new Error("getFile not available")
+    }
+    return this.api.getFile(fileId)
   }
 
   private async handlePollError(err: unknown): Promise<void> {
@@ -325,6 +409,17 @@ function createGrammyApi(token: string): TelegramBotApi {
       bot.api.getUpdates(args as never, sig(signal)),
     sendMessage: (chatId, text, other, signal) =>
       bot.api.sendMessage(chatId, text, other, sig(signal)),
+    getChatAdministrators: async (chatId, signal) => {
+      const members = await bot.api.getChatAdministrators(
+        chatId,
+        sig(signal)
+      )
+      return mapChatMembersToAdmins(members)
+    },
+    getFile: async (fileId, signal) => {
+      const f = await bot.api.getFile(fileId, sig(signal))
+      return { file_path: f.file_path, file_size: f.file_size }
+    },
   }
 }
 
