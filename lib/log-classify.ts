@@ -170,9 +170,23 @@ export function errorMessage(err: unknown): string {
   }
 }
 
-/** 从 sessionKey `groupId:userId` 解析群号 */
+/**
+ * 从 sessionKey 解析 QQ 群号。
+ * 支持规范键 `qq:chatId:userId` 与历史两段键 `groupId:userId`。
+ */
 export function groupIdFromSession(sessionKey?: string): number | undefined {
-  if (!sessionKey) return undefined;
-  const n = Number(sessionKey.split(":")[0]);
-  return Number.isFinite(n) ? n : undefined;
+  if (!sessionKey) return undefined
+  // 懒依赖:避免 log-classify ↔ channels 循环;内联解析即可
+  const parts = sessionKey.split(":")
+  if (parts.length >= 3 && parts[0] === "qq") {
+    const chatId = parts.slice(1, -1).join(":")
+    const n = Number(chatId)
+    return Number.isFinite(n) ? n : undefined
+  }
+  // 历史两段键 groupId:userId
+  if (parts.length === 2) {
+    const n = Number(parts[0])
+    return Number.isFinite(n) ? n : undefined
+  }
+  return undefined
 }

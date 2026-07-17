@@ -24,6 +24,8 @@ export interface AssembleDeps {
   extraAtQQs?: number[];
   adminGroupId: number;
   enabledGroups: number[];
+  /** TG 白名单 chatId；缺省空(gateway 用) */
+  telegramEnabledChats?: string[];
   agent: Agent;
   reflectScanMs?: number;
   reflectLookbackMs?: number;
@@ -63,8 +65,10 @@ export function assemble(deps: AssembleDeps): () => void {
   const policies = deps.groupPolicies ?? {};
   const store = new SessionStore(repo, deps.resumeTtlMs ?? DEFAULT_RESUME_TTL_MS);
 
-  const shouldNotifyHandoff = (groupId: number) => {
-    const p = policies[String(groupId)];
+  const shouldNotifyHandoff = (channel: string, chatId: string) => {
+    const p =
+      policies[`${channel}:${chatId}`] ??
+      (channel === "qq" ? policies[chatId] : undefined);
     if (p?.notifyAdminOnHandoff !== undefined) return p.notifyAdminOnHandoff;
     return true;
   };
@@ -88,6 +92,7 @@ export function assemble(deps: AssembleDeps): () => void {
       extraAtQQs: deps.extraAtQQs,
       adminGroupId,
       enabledGroups,
+      telegramEnabledChats: deps.telegramEnabledChats,
       supportUrl: deps.supportUrl,
     }),
     registerOrchestrator({

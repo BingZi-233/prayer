@@ -4,8 +4,13 @@ import { usageStats, type UsageSite, type UsageDelta } from "../usage-stats"
 // 当前消息的会话上下文(orchestrator/poller 绑定,透传给 run;工具改由 cs 插件承载后当前未使用,保留签名)
 export interface ToolContext {
   sessionKey: string
-  groupId: number
-  userId: number
+  /** 通道;主链路已传,旁路迁完前可选 */
+  channel?: string
+  /** 会话 id(字符串);主链路用此字段 */
+  chatId?: string
+  userId: string | number
+  /** @deprecated 用 chatId;未迁完的旁路仍传 number */
+  groupId?: number
 }
 
 // 交给 SDK spawn 的 CLI 子进程环境:剥掉继承自父进程的 ANTHROPIC_*,让
