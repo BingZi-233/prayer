@@ -39,9 +39,10 @@ export async function GET(): Promise<NextResponse> {
       ...enabled.map((c) => chatKey(c.channel, c.chatId)),
       ...counts.keys(),
     ])
-    // QQ 管理群不展示(adminGroupId 仅 QQ 侧)
-    const adminKey =
-      cfg.adminGroupId > 0 ? chatKey("qq", String(cfg.adminGroupId)) : null
+    // 管理面会话不展示
+    const adminKey = cfg.adminSurface
+      ? chatKey(cfg.adminSurface.channel, cfg.adminSurface.chatId)
+      : null
 
     const groups = [...ids]
       .filter((key) => key !== adminKey)

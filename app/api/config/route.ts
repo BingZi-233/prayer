@@ -17,18 +17,23 @@ const groupPolicySchema = z.object({
   notifyAdminOnHandoff: z.boolean().optional(),
 });
 
+const chatRefSchema = z.object({
+  channel: z.enum(["qq", "tg", "discord"]),
+  chatId: z.string().min(1),
+});
+
 const patchSchema = z.object({
   onebotWsUrl: z.string().optional(),
   onebotAccessToken: z.string().optional(),
   botQQ: z.number().optional(),
   extraAtQQs: z.array(z.number()).optional(),
-  adminGroupId: z.number().optional(),
+  /** null = 清除管理面 */
+  adminSurface: chatRefSchema.nullable().optional(),
   handoffTimeoutMin: z.number().optional(),
   dbPath: z.string().optional(),
   claudeConfigDir: z.string().optional(),
-  enabledGroups: z.array(z.number()).optional(),
+  enabledChats: z.array(chatRefSchema).optional(),
   telegramBotToken: z.string().optional(),
-  telegramEnabledChats: z.array(z.string()).optional(),
   reflectScanMs: z.number().optional(),
   reflectLookbackMs: z.number().optional(),
   reflectSettleMs: z.number().optional(),

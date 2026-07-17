@@ -27,7 +27,7 @@ function parseGroupsParam(raw: string | null): number[] | null {
 /**
  * 拉取群内 owner/admin 名单,跨群按 QQ 去重。
  * - ?groups=1,2,3 指定群(配置页草稿用)
- * - 缺省用配置里的 enabledGroups
+ * - 缺省用配置里 QQ 通道的 enabledChats
  * 排除 Bot QQ。
  * 成员列表走 name-cache(24h TTL,含 role);旧缓存无 role 时自动刷新一次。
  * bot 未连接或部分群拉失败时:有结果仍返回 ok,全失败 503。
@@ -35,7 +35,10 @@ function parseGroupsParam(raw: string | null): number[] | null {
 export async function GET(req: NextRequest): Promise<NextResponse> {
   const cfg = getConfig(repo());
   const fromQuery = parseGroupsParam(req.nextUrl.searchParams.get("groups"));
-  const groups = (fromQuery ?? cfg.enabledGroups).filter((g) => Number.isFinite(g) && g > 0);
+  const fromCfg = cfg.enabledChats
+    .filter((c) => c.channel === "qq")
+    .map((c) => Number(c.chatId));
+  const groups = (fromQuery ?? fromCfg).filter((g) => Number.isFinite(g) && g > 0);
   if (groups.length === 0) {
     return NextResponse.json(ok([]));
   }
