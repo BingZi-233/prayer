@@ -79,4 +79,20 @@ describe("enrich", () => {
     expect(m.quoted).toBeUndefined();
     expect(m.forwarded).toBeUndefined();
   });
+
+  it("映射为 channelized IncomingMessage(string ids + atList)", async () => {
+    const m = await enrich(
+      { ...base, groupId: 100, userId: 200, messageId: 9, atList: [555, 666] },
+      { call: vi.fn(), dl }
+    );
+    expect(m).toMatchObject({
+      channel: "qq",
+      chatId: "100",
+      userId: "200",
+      messageId: "9",
+      atList: ["555", "666"],
+      rawText: "看看",
+    });
+    expect(m.botMentioned).toBeUndefined();
+  });
 });

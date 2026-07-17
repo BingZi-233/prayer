@@ -96,6 +96,6 @@ export async function PUT(req: NextRequest): Promise<NextResponse> {
   const next = setConfig(r, patch as Partial<AppConfig>);
 
   const builders = await defaultBuilders();
-  getRuntime().reconfigure(next, builders);
+  await getRuntime().reconfigure(next, builders);
   return NextResponse.json(ok(maskConfig(next)));
 }

@@ -1,24 +1,28 @@
-import WebSocket from "ws";
-import { bus } from "../bus";
-import { parseGroupMessage } from "./parse";
-import { enrich } from "./enrich";
-import type { ActionSend } from "../events";
+import WebSocket from "ws"
+import { bus } from "../bus"
+import { parseGroupMessage } from "./parse"
+import { enrich } from "./enrich"
+import type { ActionSend } from "../events"
 
 interface Pending {
-  resolve: (v: any) => void;
-  timer: ReturnType<typeof setTimeout>;
+  resolve: (v: any) => void
+  timer: ReturnType<typeof setTimeout>
 }
 
 export class OneBotClient {
-  private ws?: WebSocket;
-  private stopped = false;
-  private backoff = 1000;
-  private connected = false;
-  private reconnectTimer?: ReturnType<typeof setTimeout>;
-  private readonly onAction = (a: ActionSend) => this.sendAction(a);
+  private ws?: WebSocket
+  private stopped = false
+  private backoff = 1000
+  private connected = false
+  private reconnectTimer?: ReturnType<typeof setTimeout>
+  private readonly onAction = (a: ActionSend) => {
+    // 仅处理本通道动作，防 TG 等其它 channel 被 OneBot 误发
+    if (a.channel !== "qq") return
+    this.sendAction(a)
+  }
   // echo 请求-响应:get_msg / get_forward_msg 回查内容用
-  private pending = new Map<string, Pending>();
-  private echoSeq = 0;
+  private pending = new Map<string, Pending>()
+  private echoSeq = 0
 
   constructor(
     private url: string,
@@ -27,79 +31,87 @@ export class OneBotClient {
   ) {}
 
   isConnected(): boolean {
-    return this.connected;
+    return this.connected
   }
 
   start(): void {
-    this.stopped = false;
-    bus.on("action.send", this.onAction);
-    this.connect();
+    this.stopped = false
+    bus.on("action.send", this.onAction)
+    this.connect()
   }
 
   stop(): void {
-    this.stopped = true;
-    bus.off("action.send", this.onAction);
+    this.stopped = true
+    bus.off("action.send", this.onAction)
     if (this.reconnectTimer) {
-      clearTimeout(this.reconnectTimer);
-      this.reconnectTimer = undefined;
+      clearTimeout(this.reconnectTimer)
+      this.reconnectTimer = undefined
     }
-    this.setConnected(false);
-    this.clearPending();
-    this.ws?.close();
-    this.ws = undefined;
+    this.setConnected(false)
+    this.clearPending()
+    this.ws?.close()
+    this.ws = undefined
   }
 
   private setConnected(v: boolean): void {
-    if (this.connected === v) return;
-    this.connected = v;
-    this.onStatus?.(v);
+    if (this.connected === v) return
+    this.connected = v
+    this.onStatus?.(v)
   }
 
   private connect(): void {
-    if (this.stopped) return; // 拆卸后挂起的重连不再建连
-    const headers = this.accessToken ? { Authorization: `Bearer ${this.accessToken}` } : undefined;
-    const ws = new WebSocket(this.url, { headers });
-    this.ws = ws;
+    if (this.stopped) return // 拆卸后挂起的重连不再建连
+    const headers = this.accessToken
+      ? { Authorization: `Bearer ${this.accessToken}` }
+      : undefined
+    const ws = new WebSocket(this.url, { headers })
+    this.ws = ws
 
     ws.on("open", () => {
-      this.backoff = 1000;
-      this.setConnected(true);
-    });
+      this.backoff = 1000
+      this.setConnected(true)
+    })
 
     ws.on("message", (raw: WebSocket.RawData) => {
-      let evt: any;
-      try { evt = JSON.parse(raw.toString()); } catch { return; }
+      let evt: any
+      try {
+        evt = JSON.parse(raw.toString())
+      } catch {
+        return
+      }
       // API 回执:按 echo 匹配挂起请求
       if (evt?.echo && this.pending.has(evt.echo)) {
-        const p = this.pending.get(evt.echo)!;
-        this.pending.delete(evt.echo);
-        clearTimeout(p.timer);
-        p.resolve(evt.data);
-        return;
+        const p = this.pending.get(evt.echo)!
+        this.pending.delete(evt.echo)
+        clearTimeout(p.timer)
+        p.resolve(evt.data)
+        return
       }
-      const parsed = parseGroupMessage(evt);
-      if (!parsed) return;
+      const parsed = parseGroupMessage(evt)
+      if (!parsed) return
       // 富化(回查引用/转发 + 下载图)后再 emit;失败兜底不阻断
       enrich(parsed, { call: (action, params) => this.call(action, params) })
         .then((msg) => bus.emit("message.received", msg))
-        .catch((err) => bus.emit("error.occurred", { scope: "onebot.enrich", err }));
-    });
+        .catch((err) =>
+          bus.emit("error.occurred", { scope: "onebot.enrich", err })
+        )
+    })
 
     ws.on("close", () => {
-      this.setConnected(false);
-      this.scheduleReconnect();
-    });
-    ws.on("error", () => ws.close());
+      this.setConnected(false)
+      this.scheduleReconnect()
+    })
+    ws.on("error", () => ws.close())
   }
 
   private scheduleReconnect(): void {
-    if (this.stopped) return;
-    this.reconnectTimer = setTimeout(() => this.connect(), this.backoff);
-    this.backoff = Math.min(this.backoff * 2, 30000);
+    if (this.stopped) return
+    this.reconnectTimer = setTimeout(() => this.connect(), this.backoff)
+    this.backoff = Math.min(this.backoff * 2, 30000)
   }
 
   private sendAction(a: ActionSend): void {
-    if (this.ws?.readyState !== WebSocket.OPEN) return;
+    if (this.ws?.readyState !== WebSocket.OPEN) return
     // 有 replyToId → 用消息段数组(reply + text),避免答案文本里的 [...] 被 CQ 误解析;
     // 无则保持纯字符串(向后兼容)。
     const message =
@@ -108,47 +120,53 @@ export class OneBotClient {
             { type: "reply", data: { id: String(a.replyToId) } },
             { type: "text", data: { text: a.text } },
           ]
-        : a.text;
-    this.ws.send(JSON.stringify({
-      action: a.action,
-      params: { group_id: a.groupId, message },
-    }));
+        : a.text
+    this.ws.send(
+      JSON.stringify({
+        action: "send_group_msg",
+        params: { group_id: Number(a.chatId), message },
+      })
+    )
   }
 
   // 拉群列表(get_group_list)。未连接/超时 → undefined(不抛)。
   getGroupList(): Promise<unknown[] | undefined> {
     return this.call("get_group_list", {}).then((data) =>
       Array.isArray(data) ? data : undefined
-    );
+    )
   }
 
   // 拉整群成员列表(get_group_member_list)。未连接/超时 → undefined(不抛)。
   // 一次返回整群成员(含 card/nickname/user_id),供批量解析群友名,免逐成员单查。
   getGroupMemberList(groupId: number): Promise<unknown[] | undefined> {
-    return this.call("get_group_member_list", { group_id: groupId }).then((data) =>
-      Array.isArray(data) ? data : undefined
-    );
+    return this.call("get_group_member_list", { group_id: groupId }).then(
+      (data) => (Array.isArray(data) ? data : undefined)
+    )
   }
 
   // 发 OneBot API 请求并等回执(echo 关联)。超时/未连接 → resolve undefined(降级不抛)。
-  private call(action: string, params: Record<string, unknown>, timeoutMs = 8000): Promise<any> {
-    if (this.ws?.readyState !== WebSocket.OPEN) return Promise.resolve(undefined);
-    const echo = `req_${++this.echoSeq}`;
+  private call(
+    action: string,
+    params: Record<string, unknown>,
+    timeoutMs = 8000
+  ): Promise<any> {
+    if (this.ws?.readyState !== WebSocket.OPEN) return Promise.resolve(undefined)
+    const echo = `req_${++this.echoSeq}`
     return new Promise((resolve) => {
       const timer = setTimeout(() => {
-        this.pending.delete(echo);
-        resolve(undefined);
-      }, timeoutMs);
-      this.pending.set(echo, { resolve, timer });
-      this.ws!.send(JSON.stringify({ action, params, echo }));
-    });
+        this.pending.delete(echo)
+        resolve(undefined)
+      }, timeoutMs)
+      this.pending.set(echo, { resolve, timer })
+      this.ws!.send(JSON.stringify({ action, params, echo }))
+    })
   }
 
   private clearPending(): void {
     for (const p of this.pending.values()) {
-      clearTimeout(p.timer);
-      p.resolve(undefined);
+      clearTimeout(p.timer)
+      p.resolve(undefined)
     }
-    this.pending.clear();
+    this.pending.clear()
   }
 }
