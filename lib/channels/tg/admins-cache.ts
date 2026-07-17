@@ -120,12 +120,8 @@ export class AdminsCache {
     s.botRelatedStreak++
     // 连续 ≥ N 条仅 bot 可见 → 疑似 Privacy Mode
     // privacyShareMin 保留配置兼容；streak 模型下等价于「几乎全 bot 可见」
-    if (s.botRelatedStreak >= this.privacyMin && !s.blocked) {
-      s.blocked = true
-      // admins 失败优先，不覆盖
-      if (getTgBypassBlockReason(id) !== "admins-failed") {
-        setTgBypassBlocked(id, "privacy-mode?")
-      }
+    if (s.botRelatedStreak >= this.privacyMin) {
+      this.reapplyPrivacyBlock(id)
     }
     void this.privacyShareMin
   }
@@ -162,10 +158,12 @@ export class AdminsCache {
         failed: false,
       }
       this.cache.set(chatId, entry)
-      // 仅清 admins-failed；privacy-mode? 保留到见到非 bot 可见消息
+      // 清 admins-failed；若 privacy streak 仍达标则重新挂 privacy-mode?
+      // （admins-failed 会覆盖 reason，不能只靠 s.blocked 门闩）
       if (getTgBypassBlockReason(chatId) === "admins-failed") {
         clearTgBypassBlocked(chatId)
       }
+      this.reapplyPrivacyBlock(chatId)
       return entry
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
@@ -183,6 +181,15 @@ export class AdminsCache {
       )
       return entry
     }
+  }
+
+  /** streak 仍 ≥ 阈值时把 privacy-mode? 写回 module（不覆盖 admins-failed） */
+  private reapplyPrivacyBlock(chatId: string): void {
+    const p = this.privacy.get(chatId)
+    if (!p || p.botRelatedStreak < this.privacyMin) return
+    p.blocked = true
+    if (getTgBypassBlockReason(chatId) === "admins-failed") return
+    setTgBypassBlocked(chatId, "privacy-mode?")
   }
 }
 

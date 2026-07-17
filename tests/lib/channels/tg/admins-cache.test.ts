@@ -140,6 +140,21 @@ describe("AdminsCache", () => {
     expect(c.isBypassBlocked("-p")).toBe(true)
   })
 
+  it("admins 失败覆盖 privacy 后恢复成功仍重挂 privacy-mode?", async () => {
+    const c = make(1000)
+    for (let i = 0; i < 20; i++) c.observeMessage("-mix", true)
+    expect(getTgBypassBlockReason("-mix")).toBe("privacy-mode?")
+    failNext = true
+    await c.getRole("-mix", "1")
+    expect(getTgBypassBlockReason("-mix")).toBe("admins-failed")
+    failNext = false
+    now += 2000
+    await c.getRole("-mix", "10")
+    // admins 恢复后，streak 仍 ≥ 阈值 → 重新 privacy 封锁
+    expect(getTgBypassBlockReason("-mix")).toBe("privacy-mode?")
+    expect(isTgChatBypassEnabled("-mix")).toBe(false)
+  })
+
   it("listBypassBlocks 汇总", async () => {
     failNext = true
     const c = make()
