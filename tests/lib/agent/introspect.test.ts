@@ -33,6 +33,8 @@ const cfg: AppConfig = {
   extraAtQQs: [],
   adminGroupId: 2,
   enabledGroups: [],
+  telegramBotToken: "",
+  telegramEnabledChats: [],
   proactiveEnabled: false,
   proactiveScanMs: 60000,
   proactiveSilenceMs: 180000,

@@ -10,5 +10,9 @@ export function fail(error: string): { ok: false; error: string } {
 }
 
 export function maskConfig(cfg: AppConfig): AppConfig {
-  return { ...cfg, onebotAccessToken: maskSecret(cfg.onebotAccessToken) };
+  return {
+    ...cfg,
+    onebotAccessToken: maskSecret(cfg.onebotAccessToken),
+    telegramBotToken: maskSecret(cfg.telegramBotToken),
+  };
 }

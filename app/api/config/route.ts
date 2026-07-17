@@ -27,6 +27,8 @@ const patchSchema = z.object({
   dbPath: z.string().optional(),
   claudeConfigDir: z.string().optional(),
   enabledGroups: z.array(z.number()).optional(),
+  telegramBotToken: z.string().optional(),
+  telegramEnabledChats: z.array(z.string()).optional(),
   reflectScanMs: z.number().optional(),
   reflectLookbackMs: z.number().optional(),
   reflectSettleMs: z.number().optional(),
@@ -69,6 +71,9 @@ export async function PUT(req: NextRequest): Promise<NextResponse> {
   // secret 留空则保留
   if ("onebotAccessToken" in patch) {
     patch.onebotAccessToken = mergeSecret(current.onebotAccessToken, patch.onebotAccessToken ?? "");
+  }
+  if ("telegramBotToken" in patch) {
+    patch.telegramBotToken = mergeSecret(current.telegramBotToken, patch.telegramBotToken ?? "");
   }
   // 按群: null 删除覆盖; object 整份替换(便于 UI「跟随全局」清字段)
   if (patch.groupPolicies) {

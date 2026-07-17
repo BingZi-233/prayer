@@ -42,6 +42,13 @@ export interface AppConfig {
   // 会话空闲 TTL:超时后不 resume,下条消息开全新对话。默认 5 分钟
   resumeTtlMs: number;
   enabledGroups: number[];
+  /** Telegram Bot API token；空 = 未配置 */
+  telegramBotToken: string;
+  /**
+   * Telegram 生效 chat id 列表（字符串，保留负号超群 id）。
+   * 切勿 Number()：JS 大整数会丢精度。
+   */
+  telegramEnabledChats: string[];
   proactiveEnabled: boolean;
   proactiveScanMs: number;
   proactiveSilenceMs: number;
@@ -80,6 +87,23 @@ export function parseQQList(raw: string | undefined): number[] {
   return out;
 }
 
+/**
+ * 解析逗号/空白分隔的 chat id 列表,trim + 去重,保留字符串原样。
+ * 用于 Telegram：负 id / 大整数绝不能 Number()。
+ */
+export function parseChatIdList(raw: string | undefined): string[] {
+  if (!raw?.trim()) return [];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const part of raw.split(/[,\s]+/)) {
+    const s = part.trim();
+    if (!s || seen.has(s)) continue;
+    seen.add(s);
+    out.push(s);
+  }
+  return out;
+}
+
 function seedFromEnv(env: Record<string, string | undefined>): AppConfig {
   return {
     onebotWsUrl: env.ONEBOT_WS_URL ?? "",
@@ -105,6 +129,8 @@ function seedFromEnv(env: Record<string, string | undefined>): AppConfig {
     reflectNotifyAdmin: env.REFLECT_NOTIFY_ADMIN !== "false",
     resumeTtlMs: Number(env.RESUME_TTL_MS ?? "300000"),
     enabledGroups: [],
+    telegramBotToken: env.TELEGRAM_BOT_TOKEN ?? "",
+    telegramEnabledChats: parseChatIdList(env.TELEGRAM_ENABLED_CHATS),
     proactiveEnabled: env.PROACTIVE_ENABLED === "true",
     proactiveScanMs: Number(env.PROACTIVE_SCAN_MS ?? "60000"),
     proactiveSilenceMs: Number(env.PROACTIVE_SILENCE_MS ?? "180000"),

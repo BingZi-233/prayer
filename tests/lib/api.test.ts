@@ -23,6 +23,8 @@ const cfg: AppConfig = {
   reflectNotifyAdmin: true,
   resumeTtlMs: 300000,
   enabledGroups: [],
+  telegramBotToken: "tg-secret-1234",
+  telegramEnabledChats: [],
   proactiveEnabled: false,
   proactiveScanMs: 60000,
   proactiveSilenceMs: 180000,
@@ -44,6 +46,7 @@ describe("api helpers", () => {
   it("maskConfig 掩码 token", () => {
     const m = maskConfig(cfg);
     expect(m.onebotAccessToken).toBe("••••9999");
+    expect(m.telegramBotToken).toBe("••••1234");
     expect(m.onebotWsUrl).toBe("ws://x:1"); // 非 secret 不动
   });
 });

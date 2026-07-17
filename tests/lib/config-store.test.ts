@@ -1,7 +1,12 @@
 import { describe, it, expect } from "vitest";
 import { openDb } from "@/lib/db/index";
 import { Repo } from "@/lib/db/repo";
-import { getConfig, setConfig, parseQQList } from "@/lib/config-store";
+import {
+  getConfig,
+  setConfig,
+  parseQQList,
+  parseChatIdList,
+} from "@/lib/config-store";
 
 function mkRepo(): Repo {
   return new Repo(openDb(":memory:", 3));
@@ -15,6 +20,27 @@ describe("parseQQList", () => {
     expect(parseQQList(undefined)).toEqual([]);
     expect(parseQQList("")).toEqual([]);
     expect(parseQQList("0, -1, abc")).toEqual([]);
+  });
+});
+
+describe("parseChatIdList", () => {
+  it("逗号/空白分隔并去重,保留字符串(含负 id)", () => {
+    expect(parseChatIdList("-100123, 42 -100123,99")).toEqual([
+      "-100123",
+      "42",
+      "99",
+    ]);
+  });
+  it("空 → []", () => {
+    expect(parseChatIdList(undefined)).toEqual([]);
+    expect(parseChatIdList("")).toEqual([]);
+    expect(parseChatIdList("  ,  ")).toEqual([]);
+  });
+  it("绝不 Number():大整数/负号原样", () => {
+    // 若 Number() 会丢精度的量级;这里只断言字符串保真
+    expect(parseChatIdList("-100123456789012345")).toEqual([
+      "-100123456789012345",
+    ]);
   });
 });
 
@@ -119,6 +145,37 @@ describe("config-store", () => {
     expect(getConfig(repo, {}).enabledGroups).toEqual([]); // 缺失补默认
     setConfig(repo, { enabledGroups: [100, 200] });
     expect(getConfig(repo, {}).enabledGroups).toEqual([100, 200]); // 存储值优先
+  });
+
+  it("telegram 字段默认空;env 可种子;setConfig 可写", () => {
+    const repo = mkRepo();
+    const cfg = getConfig(repo, {});
+    expect(cfg.telegramBotToken).toBe("");
+    expect(cfg.telegramEnabledChats).toEqual([]);
+
+    const repo2 = mkRepo();
+    const cfg2 = getConfig(repo2, {
+      TELEGRAM_BOT_TOKEN: "tok-abc",
+      TELEGRAM_ENABLED_CHATS: "-100123, 42 -100123",
+    });
+    expect(cfg2.telegramBotToken).toBe("tok-abc");
+    expect(cfg2.telegramEnabledChats).toEqual(["-100123", "42"]);
+
+    setConfig(repo, {
+      telegramBotToken: "new-tok",
+      telegramEnabledChats: ["-99"],
+    });
+    const again = getConfig(repo, {});
+    expect(again.telegramBotToken).toBe("new-tok");
+    expect(again.telegramEnabledChats).toEqual(["-99"]);
+  });
+
+  it("旧库缺 telegram 字段补默认", () => {
+    const repo = mkRepo();
+    repo.setConfigRow("app", JSON.stringify({ botQQ: 5 }));
+    const cfg = getConfig(repo, {});
+    expect(cfg.telegramBotToken).toBe("");
+    expect(cfg.telegramEnabledChats).toEqual([]);
   });
 
   it("extraAtQQs 默认 [];env EXTRA_AT_QQS;setConfig 可改", () => {
