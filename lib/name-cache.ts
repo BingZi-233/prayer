@@ -1,7 +1,9 @@
-// 进程级名称缓存:群名与 QQ 用户名分表存放(数字 id 会撞车,绝不能混 key)。
+// 进程级名称缓存:会话名(channel:chatId)与 QQ 用户名分表存放(绝不能混 key)。
 // TTL 24h;命中则 API 层不再打 OneBot。
 // 默认挂 SQLite 持久化(agent.db),进程重启后未过期条目继续命中。
+// 磁盘层仍用 INTEGER group_id(正=QQ、负=TG 启发式);内存与 API 以 chat-ref 为准。
 
+import type { ChannelId } from "@/lib/channels/types"
 import {
   createSqliteNameCachePersistence,
   type GroupNameRow,
@@ -12,16 +14,32 @@ import {
 export type { GroupNameRow, UserNameRow, NameCachePersistence }
 export const NAME_CACHE_TTL_MS = 24 * 60 * 60 * 1000
 
+/** 通道无关会话显示名 */
+export type ChatNameRow = {
+  channel: ChannelId
+  chatId: string
+  chatName: string
+}
+
 type ExpEntry = { name: string; exp: number }
 type MembersSnap = { rows: UserNameRow[]; exp: number }
 type GroupsSnap = { rows: GroupNameRow[]; exp: number }
 
+/** 历史数字 id → 通道启发式:负号 TG,否则 QQ */
+export function channelOfNumericGroupId(groupId: number): ChannelId {
+  return groupId < 0 ? "tg" : "qq"
+}
+
+function chatNameKey(channel: ChannelId, chatId: string): string {
+  return `${channel}:${chatId}`
+}
+
 export class NameCache {
-  /** 群 id → 群名 */
-  private groups = new Map<number, ExpEntry>()
+  /** `${channel}:${chatId}` → 会话名 */
+  private chatNames = new Map<string, ExpEntry>()
   /** QQ 号 → 显示名(名片/昵称) */
   private users = new Map<number, ExpEntry>()
-  /** 群列表整包快照(含顺序);过期后需重新拉 OneBot */
+  /** 群列表整包快照(含顺序);过期后需重新拉 OneBot（QQ 列表） */
   private groupsSnap: GroupsSnap | null = null
   /** 某群成员列表整包快照;过期后需重新拉 OneBot */
   private membersSnap = new Map<number, MembersSnap>()
@@ -38,6 +56,28 @@ export class NameCache {
     return this.now() < exp
   }
 
+  private putChatName(
+    channel: ChannelId,
+    chatId: string,
+    name: string,
+    exp: number,
+    persistNow?: number
+  ): void {
+    const id = String(chatId).trim()
+    if (!id || !name) return
+    this.chatNames.set(chatNameKey(channel, id), { name, exp })
+    if (persistNow !== undefined) {
+      const n = Number(id)
+      if (Number.isFinite(n)) {
+        try {
+          this.persist?.saveGroup(n, name, exp, persistNow)
+        } catch {
+          /* 写盘失败不阻断主链路 */
+        }
+      }
+    }
+  }
+
   /** 挂载持久化层并立即从盘灌回(幂等:只 hydrate 一次) */
   attachPersistence(p: NameCachePersistence): void {
     this.persist = p
@@ -52,8 +92,9 @@ export class NameCache {
         }
       }
       for (const g of snap.groups) {
-        if (this.alive(g.exp))
-          this.groups.set(g.groupId, { name: g.name, exp: g.exp })
+        if (!this.alive(g.exp)) continue
+        const channel = channelOfNumericGroupId(g.groupId)
+        this.putChatName(channel, String(g.groupId), g.name, g.exp)
       }
       for (const u of snap.users) {
         if (this.alive(u.exp))
@@ -71,43 +112,72 @@ export class NameCache {
     }
   }
 
-  getGroupName(groupId: number): string | undefined {
-    const e = this.groups.get(groupId)
+  getChatName(channel: ChannelId, chatId: string): string | undefined {
+    const key = chatNameKey(channel, String(chatId).trim())
+    const e = this.chatNames.get(key)
     if (!e) return undefined
     if (!this.alive(e.exp)) {
-      this.groups.delete(groupId)
+      this.chatNames.delete(key)
       return undefined
     }
     return e.name
   }
 
   /**
-   * 写入/刷新单个群名(不改动 get_group_list 整包快照)。
-   * TG 用负 chatId(如 -100…);QQ 用正群号。
+   * 写入/刷新单会话名(不改动 get_group_list 整包快照)。
+   * chatId 保持字符串(TG 大整数/负号原样)。
+   */
+  setChatName(
+    channel: ChannelId,
+    chatId: string,
+    name: string,
+    ttlMs = NAME_CACHE_TTL_MS
+  ): void {
+    if (!name) return
+    const t = this.now()
+    this.putChatName(channel, chatId, name, t + ttlMs, t)
+  }
+
+  /** 当前仍有效的会话名,供多通道列表合并 */
+  listCachedChatNames(): ChatNameRow[] {
+    const out: ChatNameRow[] = []
+    for (const [key, e] of this.chatNames) {
+      if (!this.alive(e.exp)) {
+        this.chatNames.delete(key)
+        continue
+      }
+      const i = key.indexOf(":")
+      if (i <= 0) continue
+      const channel = key.slice(0, i) as ChannelId
+      const chatId = key.slice(i + 1)
+      out.push({ channel, chatId, chatName: e.name })
+    }
+    return out
+  }
+
+  /** @deprecated 用 getChatName;数字 id 启发式通道 */
+  getGroupName(groupId: number): string | undefined {
+    if (!Number.isFinite(groupId)) return undefined
+    return this.getChatName(channelOfNumericGroupId(groupId), String(groupId))
+  }
+
+  /**
+   * @deprecated 用 setChatName
+   * TG 用负 chatId;QQ 用正群号。
    */
   setGroupName(groupId: number, name: string, ttlMs = NAME_CACHE_TTL_MS): void {
     if (!Number.isFinite(groupId) || !name) return
-    const t = this.now()
-    const exp = t + ttlMs
-    this.groups.set(groupId, { name, exp })
-    try {
-      this.persist?.saveGroup(groupId, name, exp, t)
-    } catch {
-      /* 写盘失败不阻断主链路 */
-    }
+    this.setChatName(channelOfNumericGroupId(groupId), String(groupId), name, ttlMs)
   }
 
-  /** 当前仍有效的单群名(含 TG 负 id),供 /api/chats/names 合并 */
+  /** @deprecated 用 listCachedChatNames;兼容旧 UI 数字 groupId */
   listCachedGroupNames(): GroupNameRow[] {
-    const out: GroupNameRow[] = []
-    for (const [groupId, e] of this.groups) {
-      if (!this.alive(e.exp)) {
-        this.groups.delete(groupId)
-        continue
-      }
-      out.push({ groupId, groupName: e.name })
-    }
-    return out
+    return this.listCachedChatNames()
+      .map((r) => {
+        const groupId = Number(r.chatId)
+        return { groupId, groupName: r.chatName }
+      })
+      .filter((r) => Number.isFinite(r.groupId))
   }
 
   getUserName(userId: number): string | undefined {
@@ -136,7 +206,8 @@ export class NameCache {
     const exp = t + ttlMs
     this.groupsSnap = { rows: rows.map((r) => ({ ...r })), exp }
     for (const r of rows) {
-      this.groups.set(r.groupId, { name: r.groupName, exp })
+      // QQ 群列表整包 → channel=qq
+      this.putChatName("qq", String(r.groupId), r.groupName, exp)
     }
     try {
       this.persist?.saveGroupsList(rows, exp, t)
@@ -176,7 +247,7 @@ export class NameCache {
 
   /** 测试 / 运维:清空全部(含持久化) */
   clear(): void {
-    this.groups.clear()
+    this.chatNames.clear()
     this.users.clear()
     this.groupsSnap = null
     this.membersSnap.clear()
@@ -195,7 +266,7 @@ export class NameCache {
     hasGroupsSnap: boolean
   } {
     return {
-      groups: this.groups.size,
+      groups: this.chatNames.size,
       users: this.users.size,
       memberSnaps: this.membersSnap.size,
       hasGroupsSnap: this.groupsSnap != null && this.alive(this.groupsSnap.exp),
@@ -220,7 +291,9 @@ export function getNameCache(): NameCache {
   const existing = g.__nameCache as NameCache | undefined
   if (
     existing &&
-    (typeof existing.listCachedGroupNames !== "function" ||
+    (typeof existing.listCachedChatNames !== "function" ||
+      typeof existing.setChatName !== "function" ||
+      typeof existing.listCachedGroupNames !== "function" ||
       typeof existing.setGroupName !== "function")
   ) {
     g.__nameCache = undefined

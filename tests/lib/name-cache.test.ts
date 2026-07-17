@@ -33,6 +33,25 @@ describe("NameCache", () => {
     ])
   })
 
+  it("setChatName / getChatName / listCachedChatNames 以 channel:chatId 为键", () => {
+    cache.setChatName("tg", "-1002816910724", "Packycode Chat")
+    cache.setChatName("qq", "10001", "客服大群")
+    expect(cache.getChatName("tg", "-1002816910724")).toBe("Packycode Chat")
+    expect(cache.getChatName("qq", "10001")).toBe("客服大群")
+    // 错通道不命中
+    expect(cache.getChatName("qq", "-1002816910724")).toBeUndefined()
+    expect(cache.listCachedChatNames()).toEqual(
+      expect.arrayContaining([
+        {
+          channel: "tg",
+          chatId: "-1002816910724",
+          chatName: "Packycode Chat",
+        },
+        { channel: "qq", chatId: "10001", chatName: "客服大群" },
+      ])
+    )
+  })
+
   it("群列表命中后返回拷贝,写回不影响缓存", () => {
     cache.setGroupsList([
       { groupId: 1, groupName: "甲" },

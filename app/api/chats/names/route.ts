@@ -22,9 +22,11 @@ export async function GET(): Promise<NextResponse> {
   )
   const byId = new Map<number, string>()
 
-  // 1) 已缓存的单群名(含 TG 消息侧写入)
-  for (const r of cache.listCachedGroupNames()) {
-    byId.set(r.groupId, r.groupName)
+  // 1) 已缓存的单会话名(含 TG 消息侧写入)
+  for (const r of cache.listCachedChatNames()) {
+    const id = Number(r.chatId)
+    if (!Number.isFinite(id)) continue
+    byId.set(id, r.chatName)
   }
 
   // 2) QQ 整包列表(有则覆盖/补全)
@@ -50,13 +52,15 @@ export async function GET(): Promise<NextResponse> {
   }
 
   // 3) TG 白名单:缓存 miss 则 getChat
-  for (const chatId of cfg.telegramEnabledChats ?? []) {
+  for (const c of cfg.enabledChats) {
+    if (c.channel !== "tg") continue
+    const chatId = c.chatId
     const id = Number(chatId)
     if (!Number.isFinite(id)) continue
     const existing = byId.get(id)
     // 已有真人名(非裸 id 回退)则跳过
     if (existing && existing !== chatId && existing !== String(id)) continue
-    const title = await resolveTgTitle(chatId, id, cache, cfg.telegramBotToken)
+    const title = await resolveTgTitle(chatId, cache, cfg.telegramBotToken)
     byId.set(id, title ?? chatId)
   }
 
@@ -69,11 +73,10 @@ export async function GET(): Promise<NextResponse> {
 
 async function resolveTgTitle(
   chatId: string,
-  id: number,
   cache: ReturnType<typeof getNameCache>,
   token: string | undefined
 ): Promise<string | undefined> {
-  const hit = cache.getGroupName(id)
+  const hit = cache.getChatName("tg", chatId)
   if (hit) return hit
 
   const ch = getRuntime().getChannel("tg")
@@ -90,7 +93,7 @@ async function resolveTgTitle(
     const c = await bot.api.getChat(chatId)
     const title = "title" in c && c.title ? String(c.title).trim() : ""
     if (title) {
-      cache.setGroupName(id, title)
+      cache.setChatName("tg", chatId, title)
       return title
     }
   } catch {

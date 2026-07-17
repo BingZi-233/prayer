@@ -10,7 +10,10 @@ import {
   mapChatMembersToAdmins,
   type AdminEntry,
 } from "./admins-cache"
-import { clearAllTgBypassBlocked } from "./bypass-state"
+import {
+  clearAllTgBypassBlocked,
+  isTgChatBypassEnabled,
+} from "./bypass-state"
 import { enrichTelegramMessage, makeTelegramImageDownloader } from "./enrich"
 import type { TelegramFileInfo } from "./media"
 import { parseTelegramUpdate } from "./parse"
@@ -108,11 +111,6 @@ export class TelegramChannel implements Channel {
     | ((fileId: string) => Promise<import("../../events").ImageInput | null>)
     | null
 
-  private readonly onAction = (a: ActionSend) => {
-    if (a.channel !== "tg") return
-    void this.sendAction(a)
-  }
-
   constructor(
     private readonly token: string,
     opts: TelegramChannelOpts
@@ -145,8 +143,8 @@ export class TelegramChannel implements Channel {
     this.stopped = false
     this.lastError = undefined
     this.backoffMs = 1000
-    bus.on("action.send", this.onAction)
     // 后台 long poll；start 立即返回，不阻塞 registry.startAll
+    // 出站由 ChannelRegistry 统一 dispatch → this.send
     this.loopPromise = this.runLoop().catch((err) => {
       const msg = err instanceof Error ? err.message : String(err)
       logger.log("error", `[tg] poll loop crashed: ${msg}`)
@@ -158,7 +156,6 @@ export class TelegramChannel implements Channel {
   async stop(): Promise<void> {
     this.stopped = true
     this.abort?.abort()
-    bus.off("action.send", this.onAction)
     try {
       await this.loopPromise
     } catch {
@@ -193,6 +190,23 @@ export class TelegramChannel implements Channel {
   /** registry startAll 失败时写入 */
   setLastError(err: string): void {
     this.lastError = err
+  }
+
+  /**
+   * 出站：由 ChannelRegistry 在 channel===tg 时调用。
+   * 不订阅 bus。
+   */
+  async send(action: ActionSend): Promise<void> {
+    if (action.channel !== "tg") return
+    await this.sendAction(action)
+  }
+
+  /**
+   * per-chat 旁路开关（反思 / 主动补位 / 主题）。
+   * admins 失败或 Privacy 启发式命中后 false；主链路 @ 问答不受影响。
+   */
+  isBypassEnabled(chatId: string): boolean {
+    return isTgChatBypassEnabled(chatId)
   }
 
   // ── 内部 ──────────────────────────────────────────
@@ -338,17 +352,14 @@ export class TelegramChannel implements Channel {
    * 供管理后台 /api/chats/names 使用。
    */
   async resolveChatTitle(chatId: string): Promise<string | undefined> {
-    const id = Number(chatId)
-    if (Number.isFinite(id)) {
-      const hit = getNameCache().getGroupName(id)
-      if (hit) return hit
-    }
+    const hit = getNameCache().getChatName("tg", chatId)
+    if (hit) return hit
     if (!this.api.getChat) return undefined
     try {
       const chat = await this.api.getChat(chatId)
       const title = chat.title?.trim()
-      if (title && Number.isFinite(id)) {
-        getNameCache().setGroupName(id, title)
+      if (title) {
+        getNameCache().setChatName("tg", chatId, title)
       }
       return title || undefined
     } catch (err) {
@@ -466,10 +477,8 @@ export function cacheTelegramChatTitle(
 ): void {
   const title = chat?.title?.trim()
   if (!title) return
-  const id = Number(chatId)
-  if (!Number.isFinite(id)) return
   try {
-    getNameCache().setGroupName(id, title)
+    getNameCache().setChatName("tg", chatId, title)
   } catch {
     /* 缓存失败不阻断入站 */
   }

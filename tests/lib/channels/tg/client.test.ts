@@ -255,7 +255,7 @@ describe("TelegramChannel", () => {
     expect(ch.status().detail).toMatch(/bypass-off:-100111:admins-failed/)
   })
 
-  it("action.send 仅处理 channel=tg，超长文本拆分，首条带 reply", async () => {
+  it("channel.send 仅处理 channel=tg，超长文本拆分，首条带 reply", async () => {
     const api = makeMockApi({ updatesQueue: [[]] })
     const ch = track(
       new TelegramChannel("tok", {
@@ -271,17 +271,16 @@ describe("TelegramChannel", () => {
     await ch.start()
     await waitFor(() => ch.isConnected(), "connected")
 
-    // QQ 动作应被忽略
-    bus.emit("action.send", {
+    // 非 tg 动作应被忽略（防御）
+    await ch.send({
       channel: "qq",
       chatId: "1",
       text: "nope",
     })
-    await delay(30)
     expect(api.sent).toHaveLength(0)
 
     const long = "x".repeat(4096 + 10)
-    bus.emit("action.send", {
+    await ch.send({
       channel: "tg",
       chatId: "-100111",
       text: long,
@@ -294,12 +293,12 @@ describe("TelegramChannel", () => {
     expect(api.sent[1]!.text.length).toBe(10)
     expect(api.sent[1]!.replyTo).toBeUndefined()
 
-    await ch.stop()
+    // 不订阅 bus：直接 emit 不应触发 send
     const before = api.sent.length
     bus.emit("action.send", {
       channel: "tg",
       chatId: "-1",
-      text: "after-stop",
+      text: "no-bus",
     })
     await delay(30)
     expect(api.sent.length).toBe(before)
