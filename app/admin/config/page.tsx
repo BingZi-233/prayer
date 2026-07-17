@@ -111,22 +111,29 @@ export default function ConfigPage() {
   const [groupsLoading, setGroupsLoading] = useState(true);
   const [admins, setAdmins] = useState<AdminCandidate[] | null>(null);
   const [adminsLoading, setAdminsLoading] = useState(false);
-  /** 待加入的 TG chat id 草稿 */
+  /** 待加入的 TG chat id 草稿（点添加 / 保存时合并） */
   const [tgChatDraft, setTgChatDraft] = useState("");
+  /** 批量粘贴区（保存时合并，避免只贴未失焦就丢） */
+  const [tgChatBulk, setTgChatBulk] = useState("");
 
   useEffect(() => {
     fetch("/api/config").then((x) => x.json()).then((r) => {
       if (r.ok) {
+        const data = r.data as Cfg;
+        const chats = Array.isArray(data.telegramEnabledChats)
+          ? data.telegramEnabledChats.map(String)
+          : [];
+        // defaults 在前，data 覆盖；chats 最后强制 string[]
         setCfg({
-          groupPolicies: {},
-          supportUrl: "https://www.packyapi.com",
-          ackEnabled: true,
-          maxReplyChars: 900,
-          usageBudgetUsd: 0,
-          extraAtQQs: [],
-          telegramBotToken: "",
-          telegramEnabledChats: [],
-          ...r.data,
+          ...data,
+          groupPolicies: data.groupPolicies ?? {},
+          supportUrl: data.supportUrl ?? "https://www.packyapi.com",
+          ackEnabled: data.ackEnabled !== false,
+          maxReplyChars: data.maxReplyChars ?? 900,
+          usageBudgetUsd: data.usageBudgetUsd ?? 0,
+          extraAtQQs: data.extraAtQQs ?? [],
+          telegramBotToken: data.telegramBotToken ?? "",
+          telegramEnabledChats: chats,
         });
       }
     });
@@ -175,10 +182,35 @@ export default function ConfigPage() {
     setCfg({ ...cfg, [k]: NUM_KEYS.includes(k) ? Number(v) : v });
   }
 
+  /** 从草稿/批量文本拆出 chat id（字符串原样，禁止 Number） */
+  function parseChatIdParts(text: string): string[] {
+    return text
+      .split(/[\s,;]+/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+  }
+
+  function mergeTgChats(base: string[], ...extraTexts: string[]): string[] {
+    const set = new Set((base ?? []).map(String));
+    for (const t of extraTexts) {
+      for (const id of parseChatIdParts(t)) set.add(id);
+    }
+    return Array.from(set);
+  }
+
   async function save() {
     if (!cfg) return;
     setBusy(true);
-    const payload: Partial<Cfg> = { ...cfg };
+    // 保存前把输入框/批量区未点「添加」的内容一并写入，避免刷新后像「丢了」
+    const chats = mergeTgChats(
+      cfg.telegramEnabledChats ?? [],
+      tgChatDraft,
+      tgChatBulk
+    );
+    const payload: Partial<Cfg> = {
+      ...cfg,
+      telegramEnabledChats: chats,
+    };
     if (typeof payload.onebotAccessToken === "string" && payload.onebotAccessToken.includes("•")) {
       delete payload.onebotAccessToken;
     }
@@ -192,14 +224,24 @@ export default function ConfigPage() {
         body: JSON.stringify(payload),
       }).then((x) => x.json());
       if (r.ok) {
+        const data = r.data as Cfg;
+        const savedChats = Array.isArray(data.telegramEnabledChats)
+          ? data.telegramEnabledChats.map(String)
+          : chats;
         setCfg({
-          groupPolicies: {},
-          extraAtQQs: [],
-          telegramBotToken: "",
-          telegramEnabledChats: [],
-          ...r.data,
+          ...data,
+          groupPolicies: data.groupPolicies ?? {},
+          extraAtQQs: data.extraAtQQs ?? [],
+          telegramBotToken: data.telegramBotToken ?? "",
+          telegramEnabledChats: savedChats,
         });
-        toast.success("配置已保存并生效");
+        setTgChatDraft("");
+        setTgChatBulk("");
+        if (savedChats.length === 0) {
+          toast.success("配置已保存（TG 生效 Chat 仍为空，@bot 不会应答）");
+        } else {
+          toast.success(`配置已保存并生效（TG ${savedChats.length} 个 chat）`);
+        }
       } else {
         toast.error(`保存失败:${r.error}`);
       }
@@ -215,11 +257,8 @@ export default function ConfigPage() {
     const id = tgChatDraft.trim();
     if (!id) return;
     // 禁止 Number 化：超级群 id 常为负大整数，字符串原样保留
-    if (cfg.telegramEnabledChats.includes(id)) {
-      setTgChatDraft("");
-      return;
-    }
-    setCfg({ ...cfg, telegramEnabledChats: [...cfg.telegramEnabledChats, id] });
+    const next = mergeTgChats(cfg.telegramEnabledChats ?? [], id);
+    setCfg({ ...cfg, telegramEnabledChats: next });
     setTgChatDraft("");
   }
 
@@ -227,21 +266,18 @@ export default function ConfigPage() {
     if (!cfg) return;
     setCfg({
       ...cfg,
-      telegramEnabledChats: cfg.telegramEnabledChats.filter((c) => c !== id),
+      telegramEnabledChats: (cfg.telegramEnabledChats ?? []).filter((c) => c !== id),
     });
   }
 
-  /** 批量粘贴：按空白 / 逗号 / 分号拆分 */
-  function importTgChatsFromText(text: string) {
-    if (!cfg) return;
-    const parts = text
-      .split(/[\s,;]+/)
-      .map((s) => s.trim())
-      .filter(Boolean);
-    if (!parts.length) return;
-    const set = new Set(cfg.telegramEnabledChats);
-    for (const p of parts) set.add(p);
-    setCfg({ ...cfg, telegramEnabledChats: Array.from(set) });
+  /** 把批量框内容合并进列表并清空批量框 */
+  function commitTgBulk() {
+    if (!cfg || !tgChatBulk.trim()) return;
+    setCfg({
+      ...cfg,
+      telegramEnabledChats: mergeTgChats(cfg.telegramEnabledChats ?? [], tgChatBulk),
+    });
+    setTgChatBulk("");
   }
 
   const num = (k: keyof Cfg) => (cfg ? String(cfg[k] ?? "") : "");
@@ -499,7 +535,7 @@ export default function ConfigPage() {
                       添加
                     </Button>
                   </div>
-                  {(cfg.telegramEnabledChats?.length ?? 0) > 0 && (
+                  {(cfg.telegramEnabledChats?.length ?? 0) > 0 ? (
                     <div className="mt-2 flex flex-wrap gap-1">
                       {cfg.telegramEnabledChats.map((id) => (
                         <Badge
@@ -513,28 +549,30 @@ export default function ConfigPage() {
                         </Badge>
                       ))}
                     </div>
+                  ) : (
+                    <p className="text-muted-foreground mt-2 text-xs">
+                      尚未添加任何 chat。仅输入框有字、下方没有徽章时，刷新会丢——请点「添加」或直接「保存并生效」。
+                    </p>
                   )}
                   <FieldDescription>
-                    仅这些超级群/群里 bot 才会应答。id 按<strong>字符串</strong>保存（可负号），勿用 Number 转换。
-                    点击徽章可移除。
+                    仅这些超级群/群里 bot 才会应答。id 按<strong>字符串</strong>保存（可负号）。
+                    点徽章可移除。保存时会自动带上输入框/批量区未点添加的内容。
                   </FieldDescription>
                 </Field>
                 <Field>
                   <FieldLabel htmlFor="tgChatBulk">批量粘贴 Chat ID</FieldLabel>
                   <Textarea
                     id="tgChatBulk"
+                    value={tgChatBulk}
                     placeholder={"每行一个，或用逗号分隔\n-1001234567890\n-1009876543210"}
                     rows={3}
                     className="font-mono text-xs"
-                    onBlur={(e) => {
-                      const v = e.target.value.trim();
-                      if (v) {
-                        importTgChatsFromText(v);
-                        e.target.value = "";
-                      }
-                    }}
+                    onChange={(e) => setTgChatBulk(e.target.value)}
+                    onBlur={() => commitTgBulk()}
                   />
-                  <FieldDescription>失焦时合并进上方列表（去重）。</FieldDescription>
+                  <FieldDescription>
+                    失焦或点「保存并生效」时合并进上方列表（去重）。合并成功后上方应出现徽章。
+                  </FieldDescription>
                 </Field>
               </FieldGroup>
             </SectionCard>
