@@ -86,7 +86,7 @@ interface Metrics {
   usageBudgetUsd: number;
 }
 interface Overview {
-  enabledGroups: number;
+  enabledChats: number;
   reflectionCount: number;
   humanSessions: number;
   metrics?: Metrics;
@@ -285,7 +285,7 @@ export default function StatusPage() {
           tone={s && channelConnected(s, "tg") ? "primary" : undefined}
         />
         <MetricBadge icon={Users} label="活动会话" loading={!s} value={s?.sessionCount ?? "—"} />
-        <MetricBadge icon={ShieldCheck} label="生效群" loading={!ov} value={ov?.enabledGroups ?? "—"} />
+        <MetricBadge icon={ShieldCheck} label="生效会话" loading={!ov} value={ov?.enabledChats ?? "—"} />
         <MetricBadge icon={Brain} label="知识条目" loading={!ov} value={ov?.reflectionCount ?? "—"} />
         <MetricBadge
           icon={Target}

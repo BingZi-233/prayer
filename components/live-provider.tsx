@@ -20,7 +20,7 @@ interface Status {
   channels?: ChannelStatusView[];
 }
 interface Overview {
-  enabledGroups: number;
+  enabledChats: number;
   reflectionCount: number;
   humanSessions: number;
 }

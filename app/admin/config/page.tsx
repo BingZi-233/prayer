@@ -33,20 +33,25 @@ import { PageShell } from "@/components/admin/page-shell";
 import { PageHeader } from "@/components/admin/page-header";
 import { SectionCard } from "@/components/admin/section-card";
 
+interface ChatRef {
+  channel: "qq" | "tg" | "discord";
+  chatId: string;
+}
+
 interface Cfg {
   onebotWsUrl: string;
   onebotAccessToken: string;
   botQQ: number;
   extraAtQQs: number[];
-  adminGroupId: number;
+  /** 管理命令 + 通知面；null = 无 */
+  adminSurface: ChatRef | null;
   handoffTimeoutMin: number;
   dbPath: string;
   claudeConfigDir: string;
-  enabledGroups: number[];
+  /** 跨通道生效会话 */
+  enabledChats: ChatRef[];
   /** 空 = 不启 TG；掩码显示，留空不覆盖 */
   telegramBotToken: string;
-  /** 字符串 chat id（可负号），禁止 Number 比较 */
-  telegramEnabledChats: string[];
   reflectScanMs: number;
   reflectLookbackMs: number;
   reflectSettleMs: number;
@@ -69,6 +74,39 @@ interface Cfg {
   groupPolicies: Record<string, { proactiveEnabled?: boolean; proactiveSilenceMs?: number; notifyAdminOnHandoff?: boolean }>;
 }
 
+function qqChatIds(chats: ChatRef[]): number[] {
+  return chats
+    .filter((c) => c.channel === "qq")
+    .map((c) => Number(c.chatId))
+    .filter((n) => Number.isFinite(n) && n > 0);
+}
+
+function tgChatIds(chats: ChatRef[]): string[] {
+  return chats.filter((c) => c.channel === "tg").map((c) => c.chatId);
+}
+
+function withQqChats(chats: ChatRef[], ids: number[]): ChatRef[] {
+  return [
+    ...chats.filter((c) => c.channel !== "qq"),
+    ...ids.map((id) => ({ channel: "qq" as const, chatId: String(id) })),
+  ];
+}
+
+function withTgChats(chats: ChatRef[], ids: string[]): ChatRef[] {
+  return [
+    ...chats.filter((c) => c.channel !== "tg"),
+    ...ids.map((id) => ({ channel: "tg" as const, chatId: id })),
+  ];
+}
+
+function adminQqId(surface: ChatRef | null | undefined): number {
+  if (surface?.channel === "qq") {
+    const n = Number(surface.chatId);
+    return Number.isFinite(n) && n > 0 ? n : 0;
+  }
+  return 0;
+}
+
 interface AdminCandidate {
   userId: number;
   name: string;
@@ -78,7 +116,6 @@ interface AdminCandidate {
 
 const NUM_KEYS: (keyof Cfg)[] = [
   "botQQ",
-  "adminGroupId",
   "handoffTimeoutMin",
   "reflectScanMs",
   "reflectLookbackMs",
@@ -120,10 +157,6 @@ export default function ConfigPage() {
     fetch("/api/config").then((x) => x.json()).then((r) => {
       if (r.ok) {
         const data = r.data as Cfg;
-        const chats = Array.isArray(data.telegramEnabledChats)
-          ? data.telegramEnabledChats.map(String)
-          : [];
-        // defaults 在前，data 覆盖；chats 最后强制 string[]
         setCfg({
           ...data,
           groupPolicies: data.groupPolicies ?? {},
@@ -133,7 +166,8 @@ export default function ConfigPage() {
           usageBudgetUsd: data.usageBudgetUsd ?? 0,
           extraAtQQs: data.extraAtQQs ?? [],
           telegramBotToken: data.telegramBotToken ?? "",
-          telegramEnabledChats: chats,
+          enabledChats: Array.isArray(data.enabledChats) ? data.enabledChats : [],
+          adminSurface: data.adminSurface ?? null,
         });
       }
     });
@@ -147,11 +181,12 @@ export default function ConfigPage() {
       .finally(() => setGroupsLoading(false));
   }, []);
 
-  // 生效群变化后重拉跨群管理员名单(去重)。服务端 name-cache(含 role)命中时几乎瞬时。
-  const enabledKey = cfg?.enabledGroups?.slice().sort((a, b) => a - b).join(",") ?? "";
+  // QQ 生效群变化后重拉跨群管理员名单(去重)。服务端 name-cache(含 role)命中时几乎瞬时。
+  const enabledQq = cfg ? qqChatIds(cfg.enabledChats) : [];
+  const enabledKey = enabledQq.slice().sort((a, b) => a - b).join(",");
   useEffect(() => {
     if (!cfg) return;
-    if (!cfg.enabledGroups.length) {
+    if (!enabledQq.length) {
       setAdmins([]);
       setAdminsLoading(false);
       return;
@@ -173,7 +208,7 @@ export default function ConfigPage() {
     return () => {
       cancelled = true;
     };
-    // 仅随生效群集合变化刷新;cfg 本体其它字段不触发
+    // 仅随 QQ 生效群集合变化刷新;cfg 本体其它字段不触发
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabledKey]);
 
@@ -202,14 +237,11 @@ export default function ConfigPage() {
     if (!cfg) return;
     setBusy(true);
     // 保存前把输入框/批量区未点「添加」的内容一并写入，避免刷新后像「丢了」
-    const chats = mergeTgChats(
-      cfg.telegramEnabledChats ?? [],
-      tgChatDraft,
-      tgChatBulk
-    );
+    const tgIds = mergeTgChats(tgChatIds(cfg.enabledChats), tgChatDraft, tgChatBulk);
+    const enabledChats = withTgChats(cfg.enabledChats, tgIds);
     const payload: Partial<Cfg> = {
       ...cfg,
-      telegramEnabledChats: chats,
+      enabledChats,
     };
     if (typeof payload.onebotAccessToken === "string" && payload.onebotAccessToken.includes("•")) {
       delete payload.onebotAccessToken;
@@ -225,22 +257,24 @@ export default function ConfigPage() {
       }).then((x) => x.json());
       if (r.ok) {
         const data = r.data as Cfg;
-        const savedChats = Array.isArray(data.telegramEnabledChats)
-          ? data.telegramEnabledChats.map(String)
-          : chats;
+        const saved = Array.isArray(data.enabledChats) ? data.enabledChats : enabledChats;
+        const savedTg = tgChatIds(saved);
         setCfg({
           ...data,
           groupPolicies: data.groupPolicies ?? {},
           extraAtQQs: data.extraAtQQs ?? [],
           telegramBotToken: data.telegramBotToken ?? "",
-          telegramEnabledChats: savedChats,
+          enabledChats: saved,
+          adminSurface: data.adminSurface ?? null,
         });
         setTgChatDraft("");
         setTgChatBulk("");
-        if (savedChats.length === 0) {
+        if (savedTg.length === 0 && !cfg.telegramBotToken) {
+          toast.success("配置已保存并生效");
+        } else if (savedTg.length === 0) {
           toast.success("配置已保存（TG 生效 Chat 仍为空，@bot 不会应答）");
         } else {
-          toast.success(`配置已保存并生效（TG ${savedChats.length} 个 chat）`);
+          toast.success(`配置已保存并生效（TG ${savedTg.length} 个 chat）`);
         }
       } else {
         toast.error(`保存失败:${r.error}`);
@@ -257,26 +291,22 @@ export default function ConfigPage() {
     const id = tgChatDraft.trim();
     if (!id) return;
     // 禁止 Number 化：超级群 id 常为负大整数，字符串原样保留
-    const next = mergeTgChats(cfg.telegramEnabledChats ?? [], id);
-    setCfg({ ...cfg, telegramEnabledChats: next });
+    const next = mergeTgChats(tgChatIds(cfg.enabledChats), id);
+    setCfg({ ...cfg, enabledChats: withTgChats(cfg.enabledChats, next) });
     setTgChatDraft("");
   }
 
   function removeTgChat(id: string) {
     if (!cfg) return;
-    setCfg({
-      ...cfg,
-      telegramEnabledChats: (cfg.telegramEnabledChats ?? []).filter((c) => c !== id),
-    });
+    const next = tgChatIds(cfg.enabledChats).filter((c) => c !== id);
+    setCfg({ ...cfg, enabledChats: withTgChats(cfg.enabledChats, next) });
   }
 
   /** 把批量框内容合并进列表并清空批量框 */
   function commitTgBulk() {
     if (!cfg || !tgChatBulk.trim()) return;
-    setCfg({
-      ...cfg,
-      telegramEnabledChats: mergeTgChats(cfg.telegramEnabledChats ?? [], tgChatBulk),
-    });
+    const next = mergeTgChats(tgChatIds(cfg.enabledChats), tgChatBulk);
+    setCfg({ ...cfg, enabledChats: withTgChats(cfg.enabledChats, next) });
     setTgChatBulk("");
   }
 
@@ -284,10 +314,18 @@ export default function ConfigPage() {
 
   function toggleGroup(id: number) {
     if (!cfg) return;
-    const set = new Set(cfg.enabledGroups);
+    const set = new Set(qqChatIds(cfg.enabledChats));
     if (set.has(id)) set.delete(id);
     else set.add(id);
-    setCfg({ ...cfg, enabledGroups: Array.from(set) });
+    setCfg({ ...cfg, enabledChats: withQqChats(cfg.enabledChats, Array.from(set)) });
+  }
+
+  function setAdminQq(groupId: number) {
+    if (!cfg) return;
+    setCfg({
+      ...cfg,
+      adminSurface: groupId > 0 ? { channel: "qq", chatId: String(groupId) } : null,
+    });
   }
 
   function toggleExtraAt(qq: number) {
@@ -304,13 +342,16 @@ export default function ConfigPage() {
     if (a) return `${a.name} (${qq})`;
     return String(qq);
   };
+  const adminQq = adminQqId(cfg?.adminSurface);
   const adminGroupOptions = (): { groupId: number; groupName: string }[] => {
     if (!groups) return [];
-    if (cfg?.adminGroupId && !groups.some((g) => g.groupId === cfg.adminGroupId)) {
-      return [{ groupId: cfg.adminGroupId, groupName: String(cfg.adminGroupId) }, ...groups];
+    if (adminQq && !groups.some((g) => g.groupId === adminQq)) {
+      return [{ groupId: adminQq, groupName: String(adminQq) }, ...groups];
     }
     return groups;
   };
+  const enabledQqIds = cfg ? qqChatIds(cfg.enabledChats) : [];
+  const enabledTgIds = cfg ? tgChatIds(cfg.enabledChats) : [];
 
   return (
     <PageShell>
@@ -363,10 +404,13 @@ export default function ConfigPage() {
                   <FieldDescription>转人工后无人处理超过此时长自动恢复自动答。默认 30 分钟。</FieldDescription>
                 </Field>
                 <Field>
-                  <FieldLabel htmlFor="adminGroupId">管理群号</FieldLabel>
+                  <FieldLabel htmlFor="adminSurface">管理群号</FieldLabel>
                   {groups ? (
-                    <Select value={cfg.adminGroupId ? String(cfg.adminGroupId) : ""} onValueChange={(v) => upd("adminGroupId", v)}>
-                      <SelectTrigger id="adminGroupId">
+                    <Select
+                      value={adminQq ? String(adminQq) : ""}
+                      onValueChange={(v) => setAdminQq(Number(v) || 0)}
+                    >
+                      <SelectTrigger id="adminSurface">
                         <SelectValue placeholder="选择管理群" />
                       </SelectTrigger>
                       <SelectContent>
@@ -382,15 +426,16 @@ export default function ConfigPage() {
                       {groupsLoading ? "正在获取群列表…" : "bot 未连接,无法获取群列表。请先填写连接并启动 bot。"}
                     </FieldDescription>
                   )}
+                  <FieldDescription>管理命令与转人工/反思通知落在此 QQ 群（一期仅 QQ 管理面）。</FieldDescription>
                 </Field>
                 <Field>
-                  <FieldLabel htmlFor="enabledGroups">生效群</FieldLabel>
+                  <FieldLabel htmlFor="enabledChatsQq">生效群</FieldLabel>
                   {groups ? (
                     <>
                       <Popover>
                         <PopoverTrigger asChild>
-                          <Button id="enabledGroups" variant="outline" role="combobox" className="justify-between font-normal">
-                            {cfg.enabledGroups.length ? `已选 ${cfg.enabledGroups.length} 个群` : "选择生效群"}
+                          <Button id="enabledChatsQq" variant="outline" role="combobox" className="justify-between font-normal">
+                            {enabledQqIds.length ? `已选 ${enabledQqIds.length} 个群` : "选择生效群"}
                             <ChevronsUpDown className="opacity-50" />
                           </Button>
                         </PopoverTrigger>
@@ -402,7 +447,7 @@ export default function ConfigPage() {
                               <CommandGroup>
                                 {groups.map((g) => (
                                   <CommandItem key={g.groupId} value={`${g.groupName} ${g.groupId}`} onSelect={() => toggleGroup(g.groupId)}>
-                                    <Checkbox checked={cfg.enabledGroups.includes(g.groupId)} className="mr-2" />
+                                    <Checkbox checked={enabledQqIds.includes(g.groupId)} className="mr-2" />
                                     {g.groupName} ({g.groupId})
                                   </CommandItem>
                                 ))}
@@ -411,9 +456,9 @@ export default function ConfigPage() {
                           </Command>
                         </PopoverContent>
                       </Popover>
-                      {cfg.enabledGroups.length > 0 && (
+                      {enabledQqIds.length > 0 && (
                         <div className="mt-2 flex flex-wrap gap-1">
-                          {cfg.enabledGroups.map((id) => (
+                          {enabledQqIds.map((id) => (
                             <Badge key={id} variant="secondary" className="cursor-pointer gap-1" onClick={() => toggleGroup(id)}>
                               {groupName(id)}
                               <X className="size-3" />
@@ -433,7 +478,7 @@ export default function ConfigPage() {
                 </Field>
                 <Field>
                   <FieldLabel htmlFor="extraAtQQs">额外监听 AT</FieldLabel>
-                  {!cfg.enabledGroups.length ? (
+                  {!enabledQqIds.length ? (
                     <FieldDescription>请先选择生效群,再从群管理员中勾选。</FieldDescription>
                   ) : adminsLoading ? (
                     <FieldDescription>正在拉取生效群管理员…</FieldDescription>
@@ -535,9 +580,9 @@ export default function ConfigPage() {
                       添加
                     </Button>
                   </div>
-                  {(cfg.telegramEnabledChats?.length ?? 0) > 0 ? (
+                  {enabledTgIds.length > 0 ? (
                     <div className="mt-2 flex flex-wrap gap-1">
-                      {cfg.telegramEnabledChats.map((id) => (
+                      {enabledTgIds.map((id) => (
                         <Badge
                           key={id}
                           variant="secondary"
