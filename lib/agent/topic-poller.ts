@@ -6,6 +6,7 @@ import { embed as defaultEmbed } from "../tools/embed"
 import { noToolQueryOptions, drainQuery } from "./agent"
 import { pickArrayFieldDual, previewJsonPayload } from "./json-output"
 import { textNearlySame } from "./reflection-poller"
+import type { ChannelId } from "../channels/types"
 
 // LLM 每条问题的归类结果:归入已有 topicId / 新建 newTitle / 噪声 noise。
 export interface ClassifyItem {
@@ -61,6 +62,8 @@ export interface TopicPollerDeps {
   repo: Repo
   adminGroupId: number
   enabledGroups?: number[]
+  /** TG 白名单 chatId；缺省空 */
+  telegramEnabledChats?: string[]
   scanMs?: number
   settleMs?: number
   windowMax?: number
@@ -70,16 +73,35 @@ export interface TopicPollerDeps {
   now?: () => number
 }
 
+interface EnabledChat {
+  channel: ChannelId
+  chatId: string
+}
+
 interface Resolved {
   repo: Repo
   adminGroupId: number
-  enabledGroups: number[]
+  enabledChats: EnabledChat[]
   settleMs: number
   windowMax: number
   topicPromptMax: number
   embed: (text: string) => Promise<Float32Array>
   queryFn: typeof sdkQuery
   now: () => number
+}
+
+function resolveEnabledChats(
+  enabledGroups: number[] = [],
+  telegramEnabledChats: string[] = []
+): EnabledChat[] {
+  const out: EnabledChat[] = []
+  for (const g of enabledGroups) {
+    out.push({ channel: "qq", chatId: String(g) })
+  }
+  for (const id of telegramEnabledChats) {
+    out.push({ channel: "tg", chatId: id })
+  }
+  return out
 }
 
 const TOPIC_SYSTEM = `你是 API 中转站的客服问题归类助手。用户消息给出:
@@ -128,7 +150,10 @@ function resolve(deps: TopicPollerDeps): Resolved {
   return {
     repo: deps.repo,
     adminGroupId: deps.adminGroupId,
-    enabledGroups: deps.enabledGroups ?? [],
+    enabledChats: resolveEnabledChats(
+      deps.enabledGroups,
+      deps.telegramEnabledChats
+    ),
     settleMs: deps.settleMs ?? 60_000,
     windowMax: deps.windowMax ?? 50,
     topicPromptMax: deps.topicPromptMax ?? 40,
@@ -143,17 +168,17 @@ async function scanOnce(d: Resolved): Promise<void> {
   const until = now - d.settleMs
   if (until <= 0) return
 
-  for (const groupId of d.enabledGroups) {
-    const cursor = d.repo.topicCursor(groupId)
+  for (const { channel, chatId } of d.enabledChats) {
+    const cursor = d.repo.topicCursor(channel, chatId)
     if (until <= cursor) continue
     try {
       const msgs = d.repo
-        .groupMemberMessagesBetween(groupId, cursor, until)
+        .groupMemberMessagesBetween(channel, chatId, cursor, until)
         .filter((m) => m.text.trim())
         .slice(0, d.windowMax)
       if (!msgs.length) {
-        // 空窗口也推进游标 → 防止沉默群把 minTopicCursor/prune 卡在 0
-        d.repo.setTopicCursor(groupId, until)
+        // 空窗口也推进游标 → 防止沉默会话把 minTopicCursor/prune 卡在 0
+        d.repo.setTopicCursor(channel, chatId, until)
         continue
       }
       // 近义归并候选池:取更大集合(本地 textNearlySame 比对无 LLM 成本),
@@ -186,7 +211,7 @@ async function scanOnce(d: Resolved): Promise<void> {
         "topic"
       )
 
-      // structured 优先 + 文本 JSON 兜底;皆无则本群不推进,下轮重试
+      // structured 优先 + 文本 JSON 兜底;皆无则本会话不推进,下轮重试
       const classified = classifyItems(
         structuredOutput,
         msgs.length,
@@ -197,7 +222,7 @@ async function scanOnce(d: Resolved): Promise<void> {
         const preview = previewJsonPayload(structuredOutput, out)
         logger.warn(
           `LLM 归类输出解析失败 len=${out.length} structured=${structuredOutput != null} 预览: ${preview || "(空)"}`,
-          { scope: "topic", groupId }
+          { scope: "topic", raw: `${channel}:${chatId}` }
         )
         continue
       }
@@ -230,17 +255,23 @@ async function scanOnce(d: Resolved): Promise<void> {
           }
           d.repo.insertQuestionOccurrence(
             topicId,
-            groupId,
+            channel,
+            chatId,
             m.userId,
             m.text,
             m.createdAt
           )
           d.repo.touchQuestionTopic(topicId, now)
         }
-        d.repo.setTopicCursor(groupId, maxTs)
+        d.repo.setTopicCursor(channel, chatId, maxTs)
       })
     } catch (err) {
-      bus.emit("error.occurred", { scope: "topic", err, groupId })
+      bus.emit("error.occurred", {
+        scope: "topic",
+        err,
+        channel,
+        chatId,
+      })
     }
   }
 }

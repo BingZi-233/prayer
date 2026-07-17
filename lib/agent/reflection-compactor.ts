@@ -231,8 +231,8 @@ export async function runCompact(deps: ReflectionCompactorDeps): Promise<void> {
 
     if (d.notifyAdmin) {
       bus.emit("action.send", {
-        action: "send_group_msg",
-        groupId: d.adminGroupId,
+        channel: "qq",
+        chatId: String(d.adminGroupId),
         text: `反思整理:${entries.length} → ${faqs.length} 条`,
       })
     }

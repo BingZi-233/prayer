@@ -1,10 +1,11 @@
 import { query as sdkQuery } from "@anthropic-ai/claude-agent-sdk"
 import { bus } from "../bus"
 import { logger } from "../logger"
-import type { Repo, KbHit } from "../db/repo"
+import type { Repo, KbHit, ChatRef } from "../db/repo"
 import { embed as defaultEmbed } from "../tools/embed"
 import { noToolQueryOptions, drainQuery } from "./agent"
 import { pickArrayFieldDual, previewJsonPayload } from "./json-output"
+import type { ChannelId } from "../channels/types"
 
 export interface ReflectionPollerDeps {
   repo: Repo
@@ -14,6 +15,8 @@ export interface ReflectionPollerDeps {
   settleMs?: number
   windowMax?: number
   enabledGroups?: number[]
+  /** TG 白名单 chatId；缺省空 */
+  telegramEnabledChats?: string[]
   // 沉淀成功后是否向管理群发通知。缺省 true
   notifyAdmin?: boolean
   /** 入库前向量近邻条数。缺省 5 */
@@ -33,7 +36,7 @@ interface Resolved {
   lookbackMs: number
   settleMs: number
   windowMax: number
-  enabledGroups: number[]
+  enabledChats: ChatRef[]
   notifyAdmin: boolean
   dupTopK: number
   dupMaxDistance: number
@@ -41,6 +44,20 @@ interface Resolved {
   embed: (text: string) => Promise<Float32Array>
   queryFn: typeof sdkQuery
   now: () => number
+}
+
+function resolveEnabledChats(
+  enabledGroups: number[] = [],
+  telegramEnabledChats: string[] = []
+): ChatRef[] {
+  const out: ChatRef[] = []
+  for (const g of enabledGroups) {
+    out.push({ channel: "qq", chatId: String(g) })
+  }
+  for (const id of telegramEnabledChats) {
+    out.push({ channel: "tg", chatId: id })
+  }
+  return out
 }
 
 // SDK outputFormat.json_schema 强制根对象;items 为候选沉淀条目。
@@ -232,7 +249,10 @@ function resolve(deps: ReflectionPollerDeps): Resolved {
     lookbackMs: deps.lookbackMs ?? 7_200_000,
     settleMs: deps.settleMs ?? 600_000,
     windowMax: deps.windowMax ?? 60,
-    enabledGroups: deps.enabledGroups ?? [],
+    enabledChats: resolveEnabledChats(
+      deps.enabledGroups,
+      deps.telegramEnabledChats
+    ),
     notifyAdmin: deps.notifyAdmin ?? true,
     dupTopK: deps.dupTopK ?? DEFAULT_DUP_TOP_K,
     dupMaxDistance: deps.dupMaxDistance ?? DEFAULT_DUP_MAX_DISTANCE,
@@ -248,19 +268,23 @@ async function scanOnce(d: Resolved): Promise<void> {
   const until = now - d.settleMs // 已沉降上界
   if (until <= 0) return
 
-  const enabled = new Set(d.enabledGroups)
-  for (const groupId of d.repo.groupsWithAdminMessagesUpTo(until)) {
-    if (!enabled.has(groupId)) continue // 生效群门:非生效群不沉淀
-    const cursor = d.repo.groupReflectCursor(groupId)
-    if (until <= cursor) continue // 该群已处理到此
-    // 该群 band 内无新管理发言(旧发言早已处理) → 直接推进跳过,不喂 LLM
-    if (!d.repo.hasAdminMessageBetween(groupId, cursor, until)) {
-      d.repo.setGroupReflectCursor(groupId, until)
+  const adminChatId = String(d.adminGroupId)
+  const enabled = new Set(
+    d.enabledChats.map((c) => `${c.channel}:${c.chatId}`)
+  )
+  for (const { channel, chatId } of d.repo.groupsWithAdminMessagesUpTo(until)) {
+    if (!enabled.has(`${channel}:${chatId}`)) continue // 生效会话门
+    const cursor = d.repo.groupReflectCursor(channel, chatId)
+    if (until <= cursor) continue // 该会话已处理到此
+    // band 内无新管理发言(旧发言早已处理) → 直接推进跳过,不喂 LLM
+    if (!d.repo.hasAdminMessageBetween(channel, chatId, cursor, until)) {
+      d.repo.setGroupReflectCursor(channel, chatId, until)
       continue
     }
     try {
       const window = d.repo.groupReflectionWindow(
-        groupId,
+        channel,
+        chatId,
         cursor,
         now,
         PRE_CONTEXT,
@@ -317,13 +341,13 @@ async function scanOnce(d: Resolved): Promise<void> {
       )
       const items = itemsFromStructured(structuredOutput, out)
       if (items === null) {
-        // 双源皆无 → 本群不推进,下轮重试
+        // 双源皆无 → 本会话不推进,下轮重试
         const preview = previewJsonPayload(structuredOutput, out)
         logger.warn(
           `LLM 反思输出解析失败 len=${out.length} structured=${structuredOutput != null} 预览: ${preview || "(空)"}`,
           {
             scope: "reflection",
-            groupId,
+            raw: `${channel}:${chatId}`,
           }
         )
         continue
@@ -339,23 +363,34 @@ async function scanOnce(d: Resolved): Promise<void> {
         const chunkId = d.repo.insertKbEntry(
           "human-reflection",
           faq,
-          `human-reflection:${groupId}:${d.now()}`,
+          `human-reflection:${channel}:${chatId}:${d.now()}`,
           faqVec
         )
         // 落来源问答(供 web 追溯这条沉淀从哪次人工问答来)
-        d.repo.insertReflectionMeta(chunkId, groupId, it.question, it.answer)
+        d.repo.insertReflectionMeta(
+          chunkId,
+          channel,
+          chatId,
+          it.question,
+          it.answer
+        )
         if (d.notifyAdmin) {
           bus.emit("action.send", {
-            action: "send_group_msg",
-            groupId: d.adminGroupId,
-            text: `已从群 ${groupId} 的人工回复沉淀 1 条知识:${faq.slice(0, 40)}${faq.length > 40 ? "…" : ""}`,
+            channel: "qq",
+            chatId: adminChatId,
+            text: `已从 ${channel}:${chatId} 的人工回复沉淀 1 条知识:${faq.slice(0, 40)}${faq.length > 40 ? "…" : ""}`,
           })
         }
       }
-      d.repo.setGroupReflectCursor(groupId, until) // 成功才推进该群游标
+      d.repo.setGroupReflectCursor(channel, chatId, until) // 成功才推进游标
     } catch (err) {
-      // 该群不推进游标 → 下轮重试;剪枝上限保证最终自愈(超 lookback+settle 放弃)
-      bus.emit("error.occurred", { scope: "reflection", err, groupId })
+      // 该会话不推进游标 → 下轮重试;剪枝上限保证最终自愈(超 lookback+settle 放弃)
+      bus.emit("error.occurred", {
+        scope: "reflection",
+        err,
+        channel: channel as ChannelId,
+        chatId,
+      })
     }
   }
 
@@ -363,7 +398,7 @@ async function scanOnce(d: Resolved): Promise<void> {
   d.repo.pruneGroupMessages(
     Math.min(
       now - d.lookbackMs - d.settleMs,
-      d.repo.minTopicCursor(d.enabledGroups)
+      d.repo.minTopicCursor(d.enabledChats)
     )
   )
 }

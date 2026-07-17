@@ -77,9 +77,9 @@ function seed(
 ) {
   ;(repo as any).db
     .prepare(
-      "INSERT INTO group_messages (group_id,user_id,sender_role,text,created_at) VALUES (?,?,?,?,?)"
+      "INSERT INTO group_messages (channel,group_id,user_id,sender_role,text,created_at) VALUES (?,?,?,?,?,?)"
     )
-    .run(groupId, userId, role, text, at)
+    .run("qq", String(groupId), String(userId), role, text, at)
 }
 // 假 query:返回带 structured 的 result(仿 drainQuery 消费形状)
 function fakeQuery(items: unknown[]) {
@@ -134,7 +134,7 @@ describe("topic-poller runScan", () => {
     const rows = repo.rankingByWindow(0)
     expect(rows).toHaveLength(1)
     expect(rows[0]).toMatchObject({ title: "退款相关", count: 1 })
-    expect(repo.topicCursor(100)).toBe(NOW - 4000) // 本批最大 created_at
+    expect(repo.topicCursor("qq", "100")).toBe(NOW - 4000) // 本批最大 created_at
   })
 
   it("noise 全丢 → 无 occurrence,游标仍推进", async () => {
@@ -143,14 +143,14 @@ describe("topic-poller runScan", () => {
       opts(repo, { queryFn: fakeQuery([{ i: 0, noise: true }]) as never })
     )
     expect(repo.rankingByWindow(0)).toHaveLength(0)
-    expect(repo.topicCursor(100)).toBe(NOW - 5000)
+    expect(repo.topicCursor("qq", "100")).toBe(NOW - 5000)
   })
 
   it("空窗口 → 游标推进到 now-settle(防 prune 卡死),不调 LLM", async () => {
     const qf = vi.fn(fakeQuery([]))
     await runScan(opts(repo, { queryFn: qf as never }))
     expect(qf).not.toHaveBeenCalled()
-    expect(repo.topicCursor(100)).toBe(NOW - 1000)
+    expect(repo.topicCursor("qq", "100")).toBe(NOW - 1000)
   })
 
   it("newTitle 与现有主题近义 → 归并到现有,不新建", async () => {
@@ -209,7 +209,7 @@ describe("topic-poller runScan", () => {
       opts(repo, { queryFn: fakeQueryText("抱歉无法处理") as never })
     )
     expect(repo.rankingByWindow(0)).toHaveLength(0)
-    expect(repo.topicCursor(100)).toBe(0)
+    expect(repo.topicCursor("qq", "100")).toBe(0)
   })
 
   it("无 structured 但文本 JSON 合法 → 落库并推进游标", async () => {
@@ -224,7 +224,7 @@ describe("topic-poller runScan", () => {
     const rows = repo.rankingByWindow(0)
     expect(rows).toHaveLength(1)
     expect(rows[0].title).toBe("退款相关")
-    expect(repo.topicCursor(100)).toBe(NOW - 5000)
+    expect(repo.topicCursor("qq", "100")).toBe(NOW - 5000)
   })
 
   it("非生效群跳过,不调 LLM,游标不动", async () => {
@@ -232,7 +232,7 @@ describe("topic-poller runScan", () => {
     const qf = vi.fn(fakeQuery([{ i: 0, newTitle: "x" }]))
     await runScan(opts(repo, { enabledGroups: [], queryFn: qf as never }))
     expect(qf).not.toHaveBeenCalled()
-    expect(repo.topicCursor(100)).toBe(0)
+    expect(repo.topicCursor("qq", "100")).toBe(0)
   })
 
   it("落库中途抛错 → 事务回滚,无 occurrence、游标不动,报 error.occurred", async () => {
@@ -255,7 +255,7 @@ describe("topic-poller runScan", () => {
       })
     )
     expect(repo.rankingByWindow(0)).toHaveLength(0) // 事务回滚:第 1 条也没落
-    expect(repo.topicCursor(100)).toBe(0) // 游标未推进
+    expect(repo.topicCursor("qq", "100")).toBe(0) // 游标未推进
     expect(errs.some((e) => (e as any).scope === "topic")).toBe(true)
   })
 
@@ -291,7 +291,7 @@ describe("topic-poller runScan", () => {
     expect(repo.rankingByWindow(0)).toEqual([
       expect.objectContaining({ id: topicId, count: 50 }),
     ])
-    expect(repo.topicCursor(100)).toBe(NOW - 60000 + 49 * 100)
+    expect(repo.topicCursor("qq", "100")).toBe(NOW - 60000 + 49 * 100)
 
     // 第二轮:消化剩余 10 条,游标=第 60 条 created_at,总计 60
     await runScan(
@@ -300,6 +300,6 @@ describe("topic-poller runScan", () => {
     expect(repo.rankingByWindow(0)).toEqual([
       expect.objectContaining({ id: topicId, count: 60 }),
     ])
-    expect(repo.topicCursor(100)).toBe(NOW - 60000 + 59 * 100)
+    expect(repo.topicCursor("qq", "100")).toBe(NOW - 60000 + 59 * 100)
   })
 })

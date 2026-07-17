@@ -1,44 +1,68 @@
-import { bus } from "../bus";
-import { logger } from "../logger";
-import type { Repo } from "../db/repo";
-import type { Agent } from "./agent";
-import { AGENT_FALLBACK_TEXT } from "./agent";
-import type { SessionStore } from "./session";
-import type { AnswerabilityClassifier } from "./answerability";
-import type { GroupPolicy } from "../config-store";
+import { bus } from "../bus"
+import { logger } from "../logger"
+import type { Repo } from "../db/repo"
+import type { Agent } from "./agent"
+import { AGENT_FALLBACK_TEXT } from "./agent"
+import type { SessionStore } from "./session"
+import type { AnswerabilityClassifier } from "./answerability"
+import type { GroupPolicy } from "../config-store"
+import type { ChannelId } from "../channels/types"
+import { makeSessionKey } from "../channels/ids"
+import { policyKey } from "../channels/enabled-chats"
 
 // 主动模式哨兵:无把握时 agent 只输出此串 → poller 判为非答案,沉默不发。
 export const PROACTIVE_SUFFIX =
-  "【主动模式】你是在无人应答时主动补位。仅当知识库检索到确切依据且你有把握时才作答;否则只输出 __NO_ANSWER__(不解释、不道歉、不引导人工或外链、不寒暄)。";
+  "【主动模式】你是在无人应答时主动补位。仅当知识库检索到确切依据且你有把握时才作答;否则只输出 __NO_ANSWER__(不解释、不道歉、不引导人工或外链、不寒暄)。"
 
 export interface UnansweredPollerDeps {
-  repo: Repo;
-  agent: Agent;
-  store: SessionStore;
-  classify: AnswerabilityClassifier;
-  adminGroupId: number;
-  enabledGroups: number[];
-  scanMs?: number;
-  silenceMs?: number;
-  maxPerScan?: number;
-  now?: () => number;
+  repo: Repo
+  agent: Agent
+  store: SessionStore
+  classify: AnswerabilityClassifier
+  adminGroupId: number
+  enabledGroups: number[]
+  /** TG 白名单 chatId；缺省空 */
+  telegramEnabledChats?: string[]
+  scanMs?: number
+  silenceMs?: number
+  maxPerScan?: number
+  now?: () => number
   /** 全局主动开关 */
-  globalProactiveEnabled?: boolean;
-  groupPolicies?: Record<string, GroupPolicy>;
+  globalProactiveEnabled?: boolean
+  groupPolicies?: Record<string, GroupPolicy>
+}
+
+interface EnabledChat {
+  channel: ChannelId
+  chatId: string
 }
 
 interface Resolved {
-  repo: Repo;
-  agent: Agent;
-  store: SessionStore;
-  classify: AnswerabilityClassifier;
-  adminGroupId: number;
-  enabledGroups: number[];
-  silenceMs: number;
-  maxPerScan: number;
-  now: () => number;
-  globalProactiveEnabled: boolean;
-  groupPolicies: Record<string, GroupPolicy>;
+  repo: Repo
+  agent: Agent
+  store: SessionStore
+  classify: AnswerabilityClassifier
+  adminGroupId: number
+  enabledChats: EnabledChat[]
+  silenceMs: number
+  maxPerScan: number
+  now: () => number
+  globalProactiveEnabled: boolean
+  groupPolicies: Record<string, GroupPolicy>
+}
+
+function resolveEnabledChats(
+  enabledGroups: number[] = [],
+  telegramEnabledChats: string[] = []
+): EnabledChat[] {
+  const out: EnabledChat[] = []
+  for (const g of enabledGroups) {
+    out.push({ channel: "qq", chatId: String(g) })
+  }
+  for (const id of telegramEnabledChats) {
+    out.push({ channel: "tg", chatId: id })
+  }
+  return out
 }
 
 function resolve(d: UnansweredPollerDeps): Resolved {
@@ -48,90 +72,118 @@ function resolve(d: UnansweredPollerDeps): Resolved {
     store: d.store,
     classify: d.classify,
     adminGroupId: d.adminGroupId,
-    enabledGroups: d.enabledGroups ?? [],
+    enabledChats: resolveEnabledChats(
+      d.enabledGroups,
+      d.telegramEnabledChats
+    ),
     silenceMs: d.silenceMs ?? 180_000,
     maxPerScan: d.maxPerScan ?? 2,
     now: d.now ?? (() => Date.now()),
     globalProactiveEnabled: d.globalProactiveEnabled ?? true,
     groupPolicies: d.groupPolicies ?? {},
-  };
+  }
 }
 
-function groupEnabled(d: Resolved, groupId: number): boolean {
-  const p = d.groupPolicies[String(groupId)];
-  if (p?.proactiveEnabled !== undefined) return p.proactiveEnabled;
-  return d.globalProactiveEnabled;
+function chatPolicy(
+  d: Resolved,
+  channel: ChannelId,
+  chatId: string
+): GroupPolicy | undefined {
+  return (
+    d.groupPolicies[policyKey(channel, chatId)] ??
+    (channel === "qq" ? d.groupPolicies[chatId] : undefined)
+  )
 }
 
-function groupSilence(d: Resolved, groupId: number): number {
-  const p = d.groupPolicies[String(groupId)];
-  if (p?.proactiveSilenceMs !== undefined) return p.proactiveSilenceMs;
-  return d.silenceMs;
+function chatEnabled(d: Resolved, channel: ChannelId, chatId: string): boolean {
+  const p = chatPolicy(d, channel, chatId)
+  if (p?.proactiveEnabled !== undefined) return p.proactiveEnabled
+  return d.globalProactiveEnabled
+}
+
+function chatSilence(d: Resolved, channel: ChannelId, chatId: string): number {
+  const p = chatPolicy(d, channel, chatId)
+  if (p?.proactiveSilenceMs !== undefined) return p.proactiveSilenceMs
+  return d.silenceMs
 }
 
 // 真答案判定:非空、不含哨兵、且不是 agent 降级兜底文案。撞任一 → 沉默。
 function isAnswer(text: string): boolean {
-  const t = text.trim();
-  return t.length > 0 && !t.includes("__NO_ANSWER__") && t !== AGENT_FALLBACK_TEXT;
+  const t = text.trim()
+  return (
+    t.length > 0 && !t.includes("__NO_ANSWER__") && t !== AGENT_FALLBACK_TEXT
+  )
 }
 
 async function scanOnce(d: Resolved): Promise<void> {
-  const now = d.now();
+  const now = d.now()
+  const adminChatId = String(d.adminGroupId)
 
-  const enabled = new Set(d.enabledGroups);
-  for (const groupId of enabled) {
-    if (groupId === d.adminGroupId) continue;
-    if (!groupEnabled(d, groupId)) continue;
-    const silenceMs = groupSilence(d, groupId);
-    const until = now - silenceMs;
-    if (until <= 0) continue;
+  for (const { channel, chatId } of d.enabledChats) {
+    if (channel === "qq" && chatId === adminChatId) continue
+    if (!chatEnabled(d, channel, chatId)) continue
+    const silenceMs = chatSilence(d, channel, chatId)
+    const until = now - silenceMs
+    if (until <= 0) continue
 
     try {
-      const cursor = d.repo.groupProactiveCursor(groupId);
-      if (until <= cursor) continue; // 无新沉降
-      // 冷启动:首见该群 → 只推进游标,绝不回答上线前积压
+      const cursor = d.repo.groupProactiveCursor(channel, chatId)
+      if (until <= cursor) continue // 无新沉降
+      // 冷启动:首见该会话 → 只推进游标,绝不回答上线前积压
       if (cursor === 0) {
-        d.repo.setGroupProactiveCursor(groupId, until);
-        continue;
+        d.repo.setGroupProactiveCursor(channel, chatId, until)
+        continue
       }
 
-      const rows = d.repo.groupMemberMessagesBetween(groupId, cursor, until);
+      const rows = d.repo.groupMemberMessagesBetween(
+        channel,
+        chatId,
+        cursor,
+        until
+      )
       // 每用户取 band 内最新一条为代表(questionTs=最新),对两条压制都是最宽松取值:
       // 只要用户最后一句仍无人应答就兜底。前文多句升序拼进 text 作上下文。
-      // 按 userId 归组:每人取 band 内文本(升序拼接)作上下文,代表 ts = 最后一条
-      const byUser = new Map<number, { text: string; questionTs: number; messageId: number | null }>();
+      const byUser = new Map<
+        string,
+        { text: string; questionTs: number; messageId: string | null }
+      >()
       for (const r of rows) {
-        const prev = byUser.get(r.userId);
+        const prev = byUser.get(r.userId)
         byUser.set(r.userId, {
           text: prev ? `${prev.text}\n${r.text}` : r.text,
           questionTs: r.createdAt,
           messageId: r.messageId, // 代表 = band 内最后一条,引用它
-        });
+        })
       }
 
-      let hits = 0;
-      let capped = false;
+      let hits = 0
+      let capped = false
       for (const [userId, { text, questionTs, messageId }] of byUser) {
-        if (hits >= d.maxPerScan) { capped = true; break; }
-        // 压制①:问题后(至 now)群里有 owner/admin 发言 → 人工接管
-        if (d.repo.hasAdminMessageBetween(groupId, questionTs, now)) continue;
+        if (hits >= d.maxPerScan) {
+          capped = true
+          break
+        }
+        // 压制①:问题后(至 now)会话里有 owner/admin 发言 → 人工接管
+        if (d.repo.hasAdminMessageBetween(channel, chatId, questionTs, now))
+          continue
         // 压制②:该用户会话已被主链路 @处理/已兜底过(setSessionId 刷了 updated_at)。
         // 注:被意图门拦截的 @bot 消息不 remember → 不走此路,靠 fail-closed 判官兜住。
-        const key = `${groupId}:${userId}`;
+        const key = makeSessionKey(channel, chatId, userId)
         // human-mode 不抢答
-        if (d.repo.isHumanMode(key)) continue;
-        const upd = d.repo.sessionUpdatedAt(key);
-        if (upd !== undefined && upd > questionTs) continue;
+        if (d.repo.isHumanMode(key)) continue
+        const upd = d.repo.sessionUpdatedAt(key)
+        if (upd !== undefined && upd > questionTs) continue
         // 门1:可答性
         if (!(await d.classify(text))) {
           bus.emit("resolution.recorded", {
             kind: "proactive_silent",
             sessionKey: key,
-            groupId,
+            channel,
+            chatId,
             userId,
             detail: "not_answerable",
-          });
-          continue;
+          })
+          continue
         }
         // 门2:复用主链路 agent,带哨兵。
         // 主动模式指令并入 user prompt(而非 system 后缀):使主动/正常两路径 system 前缀恒等,
@@ -139,58 +191,81 @@ async function scanOnce(d: Resolved): Promise<void> {
         const result = await d.agent.run(
           `${PROACTIVE_SUFFIX}\n\n${text}`,
           d.store.resumeId(key),
-          { sessionKey: key, groupId, userId }
-        );
+          { sessionKey: key, channel, chatId, userId }
+        )
         if (!isAnswer(result.text)) {
           bus.emit("resolution.recorded", {
             kind: "proactive_silent",
             sessionKey: key,
-            groupId,
+            channel,
+            chatId,
             userId,
             detail: "no_answer",
-          });
-          continue; // 哨兵/空 → 沉默
+          })
+          continue // 哨兵/空 → 沉默
         }
-        if (result.sessionId) d.store.remember(key, result.sessionId);
-        d.repo.insertProactiveReply(groupId, userId, text, result.text); // 留痕供监控页
-        bus.emit("reply.ready", { groupId, text: result.text, replyToId: messageId ?? undefined });
+        if (result.sessionId) d.store.remember(key, result.sessionId)
+        d.repo.insertProactiveReply(
+          channel,
+          chatId,
+          userId,
+          text,
+          result.text
+        ) // 留痕供监控页
+        bus.emit("reply.ready", {
+          channel,
+          chatId,
+          text: result.text,
+          replyToId: messageId ?? undefined,
+        })
         bus.emit("resolution.recorded", {
           kind: "proactive",
           sessionKey: key,
-          groupId,
+          channel,
+          chatId,
           userId,
-        });
-        logger.log("info", `[proactive] 群 ${groupId} 主动回答用户 ${userId}`);
-        hits++;
+        })
+        logger.log(
+          "info",
+          `[proactive] ${channel}:${chatId} 主动回答用户 ${userId}`
+        )
+        hits++
       }
 
       // 命中上限时不推进游标:下轮已答用户被压制②挡下,自然轮到溢出用户;避免答案被永久丢弃
-      if (!capped) d.repo.setGroupProactiveCursor(groupId, until);
+      if (!capped) d.repo.setGroupProactiveCursor(channel, chatId, until)
     } catch (err) {
-      // 单群失败不牵连其他群;该群不推进游标 → 下轮重试
-      bus.emit("error.occurred", { scope: "proactive", err, groupId });
+      // 单会话失败不牵连其他;该会话不推进游标 → 下轮重试
+      bus.emit("error.occurred", {
+        scope: "proactive",
+        err,
+        channel,
+        chatId,
+      })
     }
   }
 }
 
 // 供测试直接驱动一次扫描
 export async function runScan(deps: UnansweredPollerDeps): Promise<void> {
-  await scanOnce(resolve(deps));
+  await scanOnce(resolve(deps))
 }
 
 // 监听式装配:定时扫描,返回 teardown。旁路观察者,失败不阻断主链路。
-export function registerUnansweredPoller(deps: UnansweredPollerDeps): () => void {
-  const d = resolve(deps);
-  const scanMs = deps.scanMs ?? 60_000;
-  let running = false; // 防重入:上一轮未结束则跳过本次触发,避免重复兜底
+export function registerUnansweredPoller(
+  deps: UnansweredPollerDeps
+): () => void {
+  const d = resolve(deps)
+  const scanMs = deps.scanMs ?? 60_000
+  let running = false // 防重入:上一轮未结束则跳过本次触发,避免重复兜底
   const timer = setInterval(() => {
-    if (running) return;
-    running = true;
+    if (running) return
+    running = true
     void scanOnce(d)
       .catch((err) => bus.emit("error.occurred", { scope: "proactive", err }))
       .finally(() => {
-        running = false;
-      });
-  }, scanMs);
-  return () => clearInterval(timer);
+        running = false
+      })
+  }, scanMs)
+  return () => clearInterval(timer)
 }

@@ -72,7 +72,8 @@ describe("runCompact", () => {
     // 5 条 → 4 条(≥ 70% 下限),模拟近义合并 1 对
     await runCompact(opts({ queryFn: fakeQuery(faqsItems(4)) as never }))
     const a = await notice
-    expect(a.groupId).toBe(999)
+    expect(a.channel).toBe("qq")
+    expect(a.chatId).toBe("999")
     expect(a.text).toContain("5 → 4")
     const refs = repo.reflectionEntries()
     expect(refs).toHaveLength(4)
@@ -82,7 +83,7 @@ describe("runCompact", () => {
       "合并2",
       "合并3",
     ])
-    expect(refs.every((r) => r.groupId === 0 && r.ts === 7_000_000)).toBe(true)
+    expect(refs.every((r) => r.chatId === "0" && r.channel === "qq" && r.ts === 7_000_000)).toBe(true)
   })
 
   it("query 带 outputFormat.json_schema + 用 structured_output", async () => {

@@ -232,8 +232,8 @@ export async function runPromote(
           const preview =
             r.content.slice(0, 40) + (r.content.length > 40 ? "…" : "")
           bus.emit("action.send", {
-            action: "send_group_msg",
-            groupId: d.adminGroupId,
+            channel: "qq",
+            chatId: String(d.adminGroupId),
             text: `反思自动升格: #${id} → ${r.file}\n${preview}`,
           })
         }
