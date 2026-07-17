@@ -3,6 +3,7 @@ import type { Update } from "grammy/types"
 import { bus } from "../../bus"
 import type { ActionSend } from "../../events"
 import { logger } from "../../logger"
+import { getNameCache } from "../../name-cache"
 import type { Channel, ChannelCapabilities, ChannelStatus } from "../types"
 import {
   AdminsCache,
@@ -10,10 +11,7 @@ import {
   type AdminEntry,
 } from "./admins-cache"
 import { clearAllTgBypassBlocked } from "./bypass-state"
-import {
-  enrichTelegramMessage,
-  makeTelegramImageDownloader,
-} from "./enrich"
+import { enrichTelegramMessage, makeTelegramImageDownloader } from "./enrich"
 import type { TelegramFileInfo } from "./media"
 import { parseTelegramUpdate } from "./parse"
 
@@ -44,10 +42,12 @@ export interface TelegramBotApi {
     chatId: string | number,
     signal?: AbortSignal
   ): Promise<AdminEntry[]>
-  getFile?(
-    fileId: string,
+  getFile?(fileId: string, signal?: AbortSignal): Promise<TelegramFileInfo>
+  /** 查 chat 标题;管理后台补群名用 */
+  getChat?(
+    chatId: string | number,
     signal?: AbortSignal
-  ): Promise<TelegramFileInfo>
+  ): Promise<{ id: number; title?: string; type: string }>
 }
 
 export interface TelegramChannelOpts {
@@ -277,18 +277,20 @@ export class TelegramChannel implements Channel {
 
   private async handleUpdate(update: Update): Promise<void> {
     try {
+      const raw = update.message
       const msg = parseTelegramUpdate(update, {
         botId: this.botId!,
         botUsername: this.botUsername ?? "",
       })
       if (!msg) {
-        // 明确丢弃（私聊/频道/forum/非 message），仍推进 offset
+        // 明确丢弃（私聊/频道/非 message），仍推进 offset
         return
       }
+      // 群标题随消息自带,写入名称缓存(后台展示用;负 chatId 可存 INTEGER)
+      cacheTelegramChatTitle(msg.chatId, raw?.chat)
       // enrich 失败仍 emit 降级消息；offset 由调用方在 await 后推进
       let enriched = msg
       try {
-        const raw = update.message
         if (raw) {
           enriched = await enrichTelegramMessage(msg, raw, {
             getRole: (chatId, userId) =>
@@ -329,6 +331,31 @@ export class TelegramChannel implements Channel {
       throw new Error("getFile not available")
     }
     return this.api.getFile(fileId)
+  }
+
+  /**
+   * 解析 TG 群/超级群标题:先名称缓存,miss 再 getChat 并回写。
+   * 供管理后台 /api/chats/names 使用。
+   */
+  async resolveChatTitle(chatId: string): Promise<string | undefined> {
+    const id = Number(chatId)
+    if (Number.isFinite(id)) {
+      const hit = getNameCache().getGroupName(id)
+      if (hit) return hit
+    }
+    if (!this.api.getChat) return undefined
+    try {
+      const chat = await this.api.getChat(chatId)
+      const title = chat.title?.trim()
+      if (title && Number.isFinite(id)) {
+        getNameCache().setGroupName(id, title)
+      }
+      return title || undefined
+    } catch (err) {
+      const m = err instanceof Error ? err.message : String(err)
+      logger.log("warn", `[tg] getChat ${chatId} failed: ${m}`)
+      return undefined
+    }
   }
 
   private async handlePollError(err: unknown): Promise<void> {
@@ -414,16 +441,37 @@ function createGrammyApi(token: string): TelegramBotApi {
     sendMessage: (chatId, text, other, signal) =>
       bot.api.sendMessage(chatId, text, other, sig(signal)),
     getChatAdministrators: async (chatId, signal) => {
-      const members = await bot.api.getChatAdministrators(
-        chatId,
-        sig(signal)
-      )
+      const members = await bot.api.getChatAdministrators(chatId, sig(signal))
       return mapChatMembersToAdmins(members)
     },
     getFile: async (fileId, signal) => {
       const f = await bot.api.getFile(fileId, sig(signal))
       return { file_path: f.file_path, file_size: f.file_size }
     },
+    getChat: async (chatId, signal) => {
+      const c = await bot.api.getChat(chatId, sig(signal))
+      return {
+        id: c.id,
+        title: "title" in c ? c.title : undefined,
+        type: c.type,
+      }
+    },
+  }
+}
+
+/** 从 Update.message.chat 提取 title 写入 NameCache(可单测) */
+export function cacheTelegramChatTitle(
+  chatId: string,
+  chat: { title?: string } | undefined | null
+): void {
+  const title = chat?.title?.trim()
+  if (!title) return
+  const id = Number(chatId)
+  if (!Number.isFinite(id)) return
+  try {
+    getNameCache().setGroupName(id, title)
+  } catch {
+    /* 缓存失败不阻断入站 */
   }
 }
 

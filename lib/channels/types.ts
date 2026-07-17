@@ -28,4 +28,6 @@ export interface Channel {
   status(): ChannelStatus
   listChats?(): Promise<{ id: string; name: string }[] | undefined>
   listMembers?(chatId: string): Promise<unknown[] | undefined>
+  /** 按 chatId 解析显示名(TG getChat / 缓存);缺省则无 */
+  resolveChatTitle?(chatId: string): Promise<string | undefined>
 }
