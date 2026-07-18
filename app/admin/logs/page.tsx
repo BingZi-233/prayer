@@ -47,11 +47,20 @@ interface Log {
   title?: string;
   hint?: string;
   retryable?: boolean;
+  channel?: string;
+  chatId?: string;
+  /** @deprecated 用 channel+chatId */
   groupId?: number;
   sessionKey?: string;
   raw?: string;
   count?: number;
   fingerprint?: string;
+}
+
+function chatLabel(l: Log): string {
+  if (l.channel && l.chatId) return `${l.channel}:${l.chatId}`;
+  if (l.groupId != null) return `qq:${l.groupId}`;
+  return "";
 }
 
 const CATEGORY_LABEL: Record<string, string> = {
@@ -101,7 +110,19 @@ function displayTitle(l: Log): string {
 }
 
 function searchBlob(l: Log): string {
-  return [l.msg, l.title, l.hint, l.raw, l.scope, l.code, l.sessionKey, l.groupId != null ? String(l.groupId) : ""]
+  return [
+    l.msg,
+    l.title,
+    l.hint,
+    l.raw,
+    l.scope,
+    l.code,
+    l.sessionKey,
+    chatLabel(l),
+    l.channel,
+    l.chatId,
+    l.groupId != null ? String(l.groupId) : "",
+  ]
     .filter(Boolean)
     .join(" ")
     .toLowerCase();
@@ -116,7 +137,7 @@ function formatExport(l: Log): string {
     displayTitle(l),
     l.count && l.count > 1 ? `×${l.count}` : "",
     l.scope ? `scope=${l.scope}` : "",
-    l.groupId != null ? `群=${l.groupId}` : "",
+    chatLabel(l) ? `会话=${chatLabel(l)}` : "",
     l.code ? `code=${l.code}` : "",
     l.retryable === false ? "不可重试" : l.retryable === true ? "可重试" : "",
     l.hint ? `处置: ${l.hint}` : "",
@@ -318,9 +339,11 @@ export default function LogsPage() {
                   const s = levelStyle(l.level);
                   const Icon = s.icon;
                   const isLast = i === shown.length - 1;
+                  const chat = chatLabel(l);
                   const hasDetail = Boolean(
                     l.hint ||
                       l.sessionKey ||
+                      chat ||
                       l.code ||
                       count > 1 ||
                       (l.raw && l.raw !== l.msg && l.raw !== l.title) ||
@@ -396,7 +419,7 @@ export default function LogsPage() {
                             {(() => {
                               const meta = [
                                 l.scope ? (["scope", l.scope] as const) : null,
-                                l.groupId != null ? (["群", String(l.groupId)] as const) : null,
+                                chat ? (["会话", chat] as const) : null,
                                 l.sessionKey ? (["session", l.sessionKey] as const) : null,
                                 l.code ? (["code", l.code] as const) : null,
                                 count > 1 ? (["首次", new Date(l.ts).toLocaleTimeString()] as const) : null,

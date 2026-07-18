@@ -16,7 +16,7 @@ function manager() {
 async function applyAndReconfigure(result: CliResult): Promise<NextResponse> {
   if (!result.ok) return NextResponse.json(fail(result.error ?? "操作失败"), { status: 500 });
   const c = cfg();
-  getRuntime().reconfigure(c, await defaultBuilders());
+  await getRuntime().reconfigure(c, await defaultBuilders());
   return NextResponse.json(ok(true));
 }
 

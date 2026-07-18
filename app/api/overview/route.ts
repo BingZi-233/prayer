@@ -27,7 +27,7 @@ export async function GET(): Promise<NextResponse> {
 
     return NextResponse.json(
       ok({
-        enabledGroups: cfg.enabledGroups.length,
+        enabledChats: cfg.enabledChats.length,
         reflectionCount: repo.reflectionEntries().length,
         humanSessions: repo.listSessions().filter((s) => s.humanMode).length,
         // 结果指标(今日 0 点起)

@@ -5,10 +5,11 @@ import type { Repo } from "../db/repo"
 import { embed as defaultEmbed } from "../tools/embed"
 import { noToolQueryOptions, drainQuery } from "./agent"
 import { pickArrayFieldDual, previewJsonPayload } from "./json-output"
+import type { ChatRef } from "../channels/enabled-chats"
 
 export interface ReflectionCompactorDeps {
   repo: Repo
-  adminGroupId: number
+  adminSurface: ChatRef | null
   compactMs?: number
   // 到期检查周期:每隔 scanMs 看一次 now-compactAt 是否 ≥ compactMs。缺省 min(compactMs, 1h)
   scanMs?: number
@@ -25,7 +26,7 @@ export interface ReflectionCompactorDeps {
 
 interface Resolved {
   repo: Repo
-  adminGroupId: number
+  adminSurface: ChatRef | null
   minEntries: number
   baseContextK: number
   notifyAdmin: boolean
@@ -83,7 +84,7 @@ export const COMPLETE_MIN_RATIO = 0.7
 function resolve(deps: ReflectionCompactorDeps): Resolved {
   return {
     repo: deps.repo,
-    adminGroupId: deps.adminGroupId,
+    adminSurface: deps.adminSurface,
     minEntries: deps.minEntries ?? 10,
     baseContextK: deps.baseContextK ?? 3,
     notifyAdmin: deps.notifyAdmin ?? true,
@@ -229,10 +230,10 @@ export async function runCompact(deps: ReflectionCompactorDeps): Promise<void> {
       faqs
     )
 
-    if (d.notifyAdmin) {
+    if (d.notifyAdmin && d.adminSurface) {
       bus.emit("action.send", {
-        action: "send_group_msg",
-        groupId: d.adminGroupId,
+        channel: d.adminSurface.channel,
+        chatId: d.adminSurface.chatId,
         text: `反思整理:${entries.length} → ${faqs.length} 条`,
       })
     }

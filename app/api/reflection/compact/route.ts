@@ -4,6 +4,7 @@ import { Repo } from "@/lib/db/repo";
 import { getConfig } from "@/lib/config-store";
 import { runCompact } from "@/lib/agent/reflection-compactor";
 import { ok, fail } from "@/lib/api";
+import { resolveAdminSurface } from "@/lib/channels/enabled-chats";
 
 // 手动触发一次反思整理:绕过到期判定,直接跑 runCompact(仍受 minEntries 阈值约束)。
 // 同进程(Next server)已由 instrumentation 装配 runtime,process.env 的 CLAUDE_CONFIG_DIR/DB_PATH 就绪,
@@ -15,7 +16,7 @@ export async function POST(): Promise<NextResponse> {
     const before = repo.reflectionEntries().length;
     await runCompact({
       repo,
-      adminGroupId: cfg.adminGroupId,
+      adminSurface: resolveAdminSurface(cfg),
       minEntries: cfg.reflectCompactMinEntries,
       notifyAdmin: cfg.reflectNotifyAdmin,
     });

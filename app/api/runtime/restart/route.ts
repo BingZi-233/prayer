@@ -8,6 +8,6 @@ import { ok } from "@/lib/api";
 export async function POST(): Promise<NextResponse> {
   const cfg = getConfig(new Repo(sharedDb(process.env.DB_PATH ?? "./data/agent.db")));
   const builders = await defaultBuilders();
-  getRuntime().reconfigure(cfg, builders);
+  await getRuntime().reconfigure(cfg, builders);
   return NextResponse.json(ok(getRuntime().getStatus()));
 }

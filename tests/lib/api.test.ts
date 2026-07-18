@@ -7,7 +7,7 @@ const cfg: AppConfig = {
   onebotAccessToken: "secret-token-9999",
   botQQ: 1,
   extraAtQQs: [],
-  adminGroupId: 2,
+  adminSurface: { channel: "qq", chatId: "2" },
   handoffTimeoutMin: 30,
   dbPath: "./data/agent.db",
   claudeConfigDir: "./data/claude-config",
@@ -22,7 +22,8 @@ const cfg: AppConfig = {
   reflectPromoteMaxPerRun: 5,
   reflectNotifyAdmin: true,
   resumeTtlMs: 300000,
-  enabledGroups: [],
+  enabledChats: [],
+  telegramBotToken: "tg-secret-1234",
   proactiveEnabled: false,
   proactiveScanMs: 60000,
   proactiveSilenceMs: 180000,
@@ -44,6 +45,7 @@ describe("api helpers", () => {
   it("maskConfig 掩码 token", () => {
     const m = maskConfig(cfg);
     expect(m.onebotAccessToken).toBe("••••9999");
+    expect(m.telegramBotToken).toBe("••••1234");
     expect(m.onebotWsUrl).toBe("ws://x:1"); // 非 secret 不动
   });
 });

@@ -19,6 +19,6 @@ export async function register(): Promise<void> {
   seedDb.close();
 
   const builders = await defaultBuilders();
-  getRuntime().start(cfg, builders);
+  await getRuntime().start(cfg, builders);
   console.log("[agent] OneBot 客服 Agent 已启动");
 }

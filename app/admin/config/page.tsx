@@ -7,6 +7,7 @@ import {
   ChevronsUpDown,
   X,
   Cable,
+  Send,
   MessageSquareText,
   Bot,
   MessagesSquare,
@@ -14,10 +15,12 @@ import {
   Zap,
   Bell,
   HardDrive,
+  Plus,
 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
@@ -30,16 +33,25 @@ import { PageShell } from "@/components/admin/page-shell";
 import { PageHeader } from "@/components/admin/page-header";
 import { SectionCard } from "@/components/admin/section-card";
 
+interface ChatRef {
+  channel: "qq" | "tg" | "discord";
+  chatId: string;
+}
+
 interface Cfg {
   onebotWsUrl: string;
   onebotAccessToken: string;
   botQQ: number;
   extraAtQQs: number[];
-  adminGroupId: number;
+  /** 管理命令 + 通知面；null = 无 */
+  adminSurface: ChatRef | null;
   handoffTimeoutMin: number;
   dbPath: string;
   claudeConfigDir: string;
-  enabledGroups: number[];
+  /** 跨通道生效会话 */
+  enabledChats: ChatRef[];
+  /** 空 = 不启 TG；掩码显示，留空不覆盖 */
+  telegramBotToken: string;
   reflectScanMs: number;
   reflectLookbackMs: number;
   reflectSettleMs: number;
@@ -62,6 +74,39 @@ interface Cfg {
   groupPolicies: Record<string, { proactiveEnabled?: boolean; proactiveSilenceMs?: number; notifyAdminOnHandoff?: boolean }>;
 }
 
+function qqChatIds(chats: ChatRef[]): number[] {
+  return chats
+    .filter((c) => c.channel === "qq")
+    .map((c) => Number(c.chatId))
+    .filter((n) => Number.isFinite(n) && n > 0);
+}
+
+function tgChatIds(chats: ChatRef[]): string[] {
+  return chats.filter((c) => c.channel === "tg").map((c) => c.chatId);
+}
+
+function withQqChats(chats: ChatRef[], ids: number[]): ChatRef[] {
+  return [
+    ...chats.filter((c) => c.channel !== "qq"),
+    ...ids.map((id) => ({ channel: "qq" as const, chatId: String(id) })),
+  ];
+}
+
+function withTgChats(chats: ChatRef[], ids: string[]): ChatRef[] {
+  return [
+    ...chats.filter((c) => c.channel !== "tg"),
+    ...ids.map((id) => ({ channel: "tg" as const, chatId: id })),
+  ];
+}
+
+function adminQqId(surface: ChatRef | null | undefined): number {
+  if (surface?.channel === "qq") {
+    const n = Number(surface.chatId);
+    return Number.isFinite(n) && n > 0 ? n : 0;
+  }
+  return 0;
+}
+
 interface AdminCandidate {
   userId: number;
   name: string;
@@ -71,7 +116,6 @@ interface AdminCandidate {
 
 const NUM_KEYS: (keyof Cfg)[] = [
   "botQQ",
-  "adminGroupId",
   "handoffTimeoutMin",
   "reflectScanMs",
   "reflectLookbackMs",
@@ -104,11 +148,27 @@ export default function ConfigPage() {
   const [groupsLoading, setGroupsLoading] = useState(true);
   const [admins, setAdmins] = useState<AdminCandidate[] | null>(null);
   const [adminsLoading, setAdminsLoading] = useState(false);
+  /** 待加入的 TG chat id 草稿（点添加 / 保存时合并） */
+  const [tgChatDraft, setTgChatDraft] = useState("");
+  /** 批量粘贴区（保存时合并，避免只贴未失焦就丢） */
+  const [tgChatBulk, setTgChatBulk] = useState("");
 
   useEffect(() => {
     fetch("/api/config").then((x) => x.json()).then((r) => {
       if (r.ok) {
-        setCfg({ groupPolicies: {}, supportUrl: "https://www.packyapi.com", ackEnabled: true, maxReplyChars: 900, usageBudgetUsd: 0, extraAtQQs: [], ...r.data });
+        const data = r.data as Cfg;
+        setCfg({
+          ...data,
+          groupPolicies: data.groupPolicies ?? {},
+          supportUrl: data.supportUrl ?? "https://www.packyapi.com",
+          ackEnabled: data.ackEnabled !== false,
+          maxReplyChars: data.maxReplyChars ?? 900,
+          usageBudgetUsd: data.usageBudgetUsd ?? 0,
+          extraAtQQs: data.extraAtQQs ?? [],
+          telegramBotToken: data.telegramBotToken ?? "",
+          enabledChats: Array.isArray(data.enabledChats) ? data.enabledChats : [],
+          adminSurface: data.adminSurface ?? null,
+        });
       }
     });
   }, []);
@@ -121,11 +181,12 @@ export default function ConfigPage() {
       .finally(() => setGroupsLoading(false));
   }, []);
 
-  // 生效群变化后重拉跨群管理员名单(去重)。服务端 name-cache(含 role)命中时几乎瞬时。
-  const enabledKey = cfg?.enabledGroups?.slice().sort((a, b) => a - b).join(",") ?? "";
+  // QQ 生效群变化后重拉跨群管理员名单(去重)。服务端 name-cache(含 role)命中时几乎瞬时。
+  const enabledQq = cfg ? qqChatIds(cfg.enabledChats) : [];
+  const enabledKey = enabledQq.slice().sort((a, b) => a - b).join(",");
   useEffect(() => {
     if (!cfg) return;
-    if (!cfg.enabledGroups.length) {
+    if (!enabledQq.length) {
       setAdmins([]);
       setAdminsLoading(false);
       return;
@@ -147,7 +208,7 @@ export default function ConfigPage() {
     return () => {
       cancelled = true;
     };
-    // 仅随生效群集合变化刷新;cfg 本体其它字段不触发
+    // 仅随 QQ 生效群集合变化刷新;cfg 本体其它字段不触发
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabledKey]);
 
@@ -156,12 +217,37 @@ export default function ConfigPage() {
     setCfg({ ...cfg, [k]: NUM_KEYS.includes(k) ? Number(v) : v });
   }
 
+  /** 从草稿/批量文本拆出 chat id（字符串原样，禁止 Number） */
+  function parseChatIdParts(text: string): string[] {
+    return text
+      .split(/[\s,;]+/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+  }
+
+  function mergeTgChats(base: string[], ...extraTexts: string[]): string[] {
+    const set = new Set((base ?? []).map(String));
+    for (const t of extraTexts) {
+      for (const id of parseChatIdParts(t)) set.add(id);
+    }
+    return Array.from(set);
+  }
+
   async function save() {
     if (!cfg) return;
     setBusy(true);
-    const payload: Partial<Cfg> = { ...cfg };
+    // 保存前把输入框/批量区未点「添加」的内容一并写入，避免刷新后像「丢了」
+    const tgIds = mergeTgChats(tgChatIds(cfg.enabledChats), tgChatDraft, tgChatBulk);
+    const enabledChats = withTgChats(cfg.enabledChats, tgIds);
+    const payload: Partial<Cfg> = {
+      ...cfg,
+      enabledChats,
+    };
     if (typeof payload.onebotAccessToken === "string" && payload.onebotAccessToken.includes("•")) {
       delete payload.onebotAccessToken;
+    }
+    if (typeof payload.telegramBotToken === "string" && payload.telegramBotToken.includes("•")) {
+      delete payload.telegramBotToken;
     }
     try {
       const r = await fetch("/api/config", {
@@ -170,8 +256,26 @@ export default function ConfigPage() {
         body: JSON.stringify(payload),
       }).then((x) => x.json());
       if (r.ok) {
-        setCfg({ groupPolicies: {}, extraAtQQs: [], ...r.data });
-        toast.success("配置已保存并生效");
+        const data = r.data as Cfg;
+        const saved = Array.isArray(data.enabledChats) ? data.enabledChats : enabledChats;
+        const savedTg = tgChatIds(saved);
+        setCfg({
+          ...data,
+          groupPolicies: data.groupPolicies ?? {},
+          extraAtQQs: data.extraAtQQs ?? [],
+          telegramBotToken: data.telegramBotToken ?? "",
+          enabledChats: saved,
+          adminSurface: data.adminSurface ?? null,
+        });
+        setTgChatDraft("");
+        setTgChatBulk("");
+        if (savedTg.length === 0 && !cfg.telegramBotToken) {
+          toast.success("配置已保存并生效");
+        } else if (savedTg.length === 0) {
+          toast.success("配置已保存（TG 生效 Chat 仍为空，@bot 不会应答）");
+        } else {
+          toast.success(`配置已保存并生效（TG ${savedTg.length} 个 chat）`);
+        }
       } else {
         toast.error(`保存失败:${r.error}`);
       }
@@ -182,14 +286,46 @@ export default function ConfigPage() {
     }
   }
 
+  function addTgChat() {
+    if (!cfg) return;
+    const id = tgChatDraft.trim();
+    if (!id) return;
+    // 禁止 Number 化：超级群 id 常为负大整数，字符串原样保留
+    const next = mergeTgChats(tgChatIds(cfg.enabledChats), id);
+    setCfg({ ...cfg, enabledChats: withTgChats(cfg.enabledChats, next) });
+    setTgChatDraft("");
+  }
+
+  function removeTgChat(id: string) {
+    if (!cfg) return;
+    const next = tgChatIds(cfg.enabledChats).filter((c) => c !== id);
+    setCfg({ ...cfg, enabledChats: withTgChats(cfg.enabledChats, next) });
+  }
+
+  /** 把批量框内容合并进列表并清空批量框 */
+  function commitTgBulk() {
+    if (!cfg || !tgChatBulk.trim()) return;
+    const next = mergeTgChats(tgChatIds(cfg.enabledChats), tgChatBulk);
+    setCfg({ ...cfg, enabledChats: withTgChats(cfg.enabledChats, next) });
+    setTgChatBulk("");
+  }
+
   const num = (k: keyof Cfg) => (cfg ? String(cfg[k] ?? "") : "");
 
   function toggleGroup(id: number) {
     if (!cfg) return;
-    const set = new Set(cfg.enabledGroups);
+    const set = new Set(qqChatIds(cfg.enabledChats));
     if (set.has(id)) set.delete(id);
     else set.add(id);
-    setCfg({ ...cfg, enabledGroups: Array.from(set) });
+    setCfg({ ...cfg, enabledChats: withQqChats(cfg.enabledChats, Array.from(set)) });
+  }
+
+  function setAdminQq(groupId: number) {
+    if (!cfg) return;
+    setCfg({
+      ...cfg,
+      adminSurface: groupId > 0 ? { channel: "qq", chatId: String(groupId) } : null,
+    });
   }
 
   function toggleExtraAt(qq: number) {
@@ -206,13 +342,16 @@ export default function ConfigPage() {
     if (a) return `${a.name} (${qq})`;
     return String(qq);
   };
+  const adminQq = adminQqId(cfg?.adminSurface);
   const adminGroupOptions = (): { groupId: number; groupName: string }[] => {
     if (!groups) return [];
-    if (cfg?.adminGroupId && !groups.some((g) => g.groupId === cfg.adminGroupId)) {
-      return [{ groupId: cfg.adminGroupId, groupName: String(cfg.adminGroupId) }, ...groups];
+    if (adminQq && !groups.some((g) => g.groupId === adminQq)) {
+      return [{ groupId: adminQq, groupName: String(adminQq) }, ...groups];
     }
     return groups;
   };
+  const enabledQqIds = cfg ? qqChatIds(cfg.enabledChats) : [];
+  const enabledTgIds = cfg ? tgChatIds(cfg.enabledChats) : [];
 
   return (
     <PageShell>
@@ -233,6 +372,7 @@ export default function ConfigPage() {
         <Tabs defaultValue="onebot">
           <TabsList className="h-auto w-full flex-wrap justify-start">
             <TabsTrigger value="onebot"><Cable data-icon="inline-start" /> OneBot</TabsTrigger>
+            <TabsTrigger value="telegram"><Send data-icon="inline-start" /> Telegram</TabsTrigger>
             <TabsTrigger value="reply"><MessageSquareText data-icon="inline-start" /> 回复体验</TabsTrigger>
             <TabsTrigger value="sdk"><Bot data-icon="inline-start" /> Claude SDK</TabsTrigger>
             <TabsTrigger value="session"><MessagesSquare data-icon="inline-start" /> 会话</TabsTrigger>
@@ -264,10 +404,13 @@ export default function ConfigPage() {
                   <FieldDescription>转人工后无人处理超过此时长自动恢复自动答。默认 30 分钟。</FieldDescription>
                 </Field>
                 <Field>
-                  <FieldLabel htmlFor="adminGroupId">管理群号</FieldLabel>
+                  <FieldLabel htmlFor="adminSurface">管理群号</FieldLabel>
                   {groups ? (
-                    <Select value={cfg.adminGroupId ? String(cfg.adminGroupId) : ""} onValueChange={(v) => upd("adminGroupId", v)}>
-                      <SelectTrigger id="adminGroupId">
+                    <Select
+                      value={adminQq ? String(adminQq) : ""}
+                      onValueChange={(v) => setAdminQq(Number(v) || 0)}
+                    >
+                      <SelectTrigger id="adminSurface">
                         <SelectValue placeholder="选择管理群" />
                       </SelectTrigger>
                       <SelectContent>
@@ -283,15 +426,16 @@ export default function ConfigPage() {
                       {groupsLoading ? "正在获取群列表…" : "bot 未连接,无法获取群列表。请先填写连接并启动 bot。"}
                     </FieldDescription>
                   )}
+                  <FieldDescription>管理命令与转人工/反思通知落在此 QQ 群（一期仅 QQ 管理面）。</FieldDescription>
                 </Field>
                 <Field>
-                  <FieldLabel htmlFor="enabledGroups">生效群</FieldLabel>
+                  <FieldLabel htmlFor="enabledChatsQq">生效群</FieldLabel>
                   {groups ? (
                     <>
                       <Popover>
                         <PopoverTrigger asChild>
-                          <Button id="enabledGroups" variant="outline" role="combobox" className="justify-between font-normal">
-                            {cfg.enabledGroups.length ? `已选 ${cfg.enabledGroups.length} 个群` : "选择生效群"}
+                          <Button id="enabledChatsQq" variant="outline" role="combobox" className="justify-between font-normal">
+                            {enabledQqIds.length ? `已选 ${enabledQqIds.length} 个群` : "选择生效群"}
                             <ChevronsUpDown className="opacity-50" />
                           </Button>
                         </PopoverTrigger>
@@ -303,7 +447,7 @@ export default function ConfigPage() {
                               <CommandGroup>
                                 {groups.map((g) => (
                                   <CommandItem key={g.groupId} value={`${g.groupName} ${g.groupId}`} onSelect={() => toggleGroup(g.groupId)}>
-                                    <Checkbox checked={cfg.enabledGroups.includes(g.groupId)} className="mr-2" />
+                                    <Checkbox checked={enabledQqIds.includes(g.groupId)} className="mr-2" />
                                     {g.groupName} ({g.groupId})
                                   </CommandItem>
                                 ))}
@@ -312,9 +456,9 @@ export default function ConfigPage() {
                           </Command>
                         </PopoverContent>
                       </Popover>
-                      {cfg.enabledGroups.length > 0 && (
+                      {enabledQqIds.length > 0 && (
                         <div className="mt-2 flex flex-wrap gap-1">
-                          {cfg.enabledGroups.map((id) => (
+                          {enabledQqIds.map((id) => (
                             <Badge key={id} variant="secondary" className="cursor-pointer gap-1" onClick={() => toggleGroup(id)}>
                               {groupName(id)}
                               <X className="size-3" />
@@ -334,7 +478,7 @@ export default function ConfigPage() {
                 </Field>
                 <Field>
                   <FieldLabel htmlFor="extraAtQQs">额外监听 AT</FieldLabel>
-                  {!cfg.enabledGroups.length ? (
+                  {!enabledQqIds.length ? (
                     <FieldDescription>请先选择生效群,再从群管理员中勾选。</FieldDescription>
                   ) : adminsLoading ? (
                     <FieldDescription>正在拉取生效群管理员…</FieldDescription>
@@ -394,6 +538,138 @@ export default function ConfigPage() {
                   )}
                 </Field>
               </FieldGroup>
+            </SectionCard>
+          </TabsContent>
+
+          <TabsContent value="telegram" className="space-y-4">
+            <SectionCard
+              title="Telegram Bot"
+              description="token 非空时注册 TG long poll；与 QQ 并行。同 token 仅允许单进程 poll（pm2 fork 单实例）。"
+            >
+              <FieldGroup>
+                <Field>
+                  <FieldLabel htmlFor="telegramBotToken">Bot Token</FieldLabel>
+                  <Input
+                    id="telegramBotToken"
+                    value={cfg.telegramBotToken ?? ""}
+                    placeholder="留空不修改；清空需先保存再在环境/库中清"
+                    onChange={(e) => setCfg({ ...cfg, telegramBotToken: e.target.value })}
+                    autoComplete="off"
+                  />
+                  <FieldDescription>
+                    来自 @BotFather。已保存密钥以掩码显示，留空或不改动则保留原值。token 为空则不启动 TG 通道。
+                  </FieldDescription>
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor="tgChatDraft">生效 Chat ID</FieldLabel>
+                  <div className="flex flex-col gap-2 sm:flex-row">
+                    <Input
+                      id="tgChatDraft"
+                      value={tgChatDraft}
+                      placeholder="如 -1001234567890"
+                      onChange={(e) => setTgChatDraft(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          addTgChat();
+                        }
+                      }}
+                    />
+                    <Button type="button" variant="outline" onClick={addTgChat} className="shrink-0">
+                      <Plus data-icon="inline-start" />
+                      添加
+                    </Button>
+                  </div>
+                  {enabledTgIds.length > 0 ? (
+                    <div className="mt-2 flex flex-wrap gap-1">
+                      {enabledTgIds.map((id) => (
+                        <Badge
+                          key={id}
+                          variant="secondary"
+                          className="cursor-pointer gap-1 font-mono text-xs"
+                          onClick={() => removeTgChat(id)}
+                        >
+                          {id}
+                          <X className="size-3" />
+                        </Badge>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-muted-foreground mt-2 text-xs">
+                      尚未添加任何 chat。仅输入框有字、下方没有徽章时，刷新会丢——请点「添加」或直接「保存并生效」。
+                    </p>
+                  )}
+                  <FieldDescription>
+                    仅这些超级群/群里 bot 才会应答。id 按<strong>字符串</strong>保存（可负号）。
+                    点徽章可移除。保存时会自动带上输入框/批量区未点添加的内容。
+                  </FieldDescription>
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor="tgChatBulk">批量粘贴 Chat ID</FieldLabel>
+                  <Textarea
+                    id="tgChatBulk"
+                    value={tgChatBulk}
+                    placeholder={"每行一个，或用逗号分隔\n-1001234567890\n-1009876543210"}
+                    rows={3}
+                    className="font-mono text-xs"
+                    onChange={(e) => setTgChatBulk(e.target.value)}
+                    onBlur={() => commitTgBulk()}
+                  />
+                  <FieldDescription>
+                    失焦或点「保存并生效」时合并进上方列表（去重）。合并成功后上方应出现徽章。
+                  </FieldDescription>
+                </Field>
+              </FieldGroup>
+            </SectionCard>
+
+            <SectionCard
+              title="部署清单与帮助"
+              description="旁路（反思 / 主动补位）依赖全量群消息与管理员角色；主链路 @ 问答在 Privacy 开启时仍可用。"
+            >
+              <div className="text-muted-foreground space-y-3 text-sm leading-relaxed">
+                <div>
+                  <p className="text-foreground mb-1 font-medium">1. 关闭 Group Privacy Mode（必做）</p>
+                  <ol className="list-decimal space-y-1 pl-5">
+                    <li>打开 @BotFather → 你的 bot → Bot Settings → Group Privacy → <strong>Turn off</strong>。</li>
+                    <li>
+                      开启时 bot 只能收到 @ 自己、回复 bot 与命令，<strong>收不到普通群聊</strong>；
+                      反思 / 补位原料不足，运行时会对该 chat 降级关闭旁路（状态 detail 见{" "}
+                      <code className="text-xs">bypass-off:…:privacy-mode?</code>）。
+                    </li>
+                    <li>关闭后建议将 bot 踢出再重新拉进目标群，确保权限生效。</li>
+                  </ol>
+                </div>
+                <div>
+                  <p className="text-foreground mb-1 font-medium">2. 如何取得 Chat ID</p>
+                  <ul className="list-disc space-y-1 pl-5">
+                    <li>
+                      把 bot 拉进超级群后，在群里发一条消息，再请求{" "}
+                      <code className="text-xs">getUpdates</code>（或临时看运行日志）里的{" "}
+                      <code className="text-xs">message.chat.id</code>。
+                    </li>
+                    <li>
+                      也可用第三方查询 bot（如 @userinfobot / @getidsbot）转发群消息查看 id。
+                    </li>
+                    <li>
+                      超级群 id 通常形如 <code className="text-xs">-100…</code>，整串复制，不要丢负号或前缀。
+                    </li>
+                  </ul>
+                </div>
+                <div>
+                  <p className="text-foreground mb-1 font-medium">3. 单实例 long poll</p>
+                  <p>
+                    同一 bot token 同一时刻只能有一个 <code className="text-xs">getUpdates</code> 消费者。
+                    多实例（pm2 cluster / 多进程）会 409 Conflict，状态灯显示 lastError，QQ 不受影响。
+                  </p>
+                </div>
+                <div>
+                  <p className="text-foreground mb-1 font-medium">4. 触发方式</p>
+                  <p>
+                    群内 <code className="text-xs">@你的bot</code> 提问即可（username 大小写不敏感）。
+                    人工关键词不会抄送 QQ 管理群，用户侧引导 supportUrl。
+                  </p>
+                </div>
+              </div>
             </SectionCard>
           </TabsContent>
 

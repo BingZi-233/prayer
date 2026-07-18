@@ -121,13 +121,18 @@ export default function GroupsPage() {
         toast.error(cur.error || "读取配置失败");
         return;
       }
-      const set = new Set<number>(cur.data.enabledGroups ?? []);
-      if (enable) set.add(groupId);
-      else set.delete(groupId);
+      type ChatRef = { channel: string; chatId: string };
+      const chats: ChatRef[] = Array.isArray(cur.data.enabledChats)
+        ? [...cur.data.enabledChats]
+        : [];
+      const others = chats.filter((c) => !(c.channel === "qq" && c.chatId === String(groupId)));
+      const next: ChatRef[] = enable
+        ? [...others, { channel: "qq", chatId: String(groupId) }]
+        : others;
       const r = await fetch("/api/config", {
         method: "PUT",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ enabledGroups: Array.from(set) }),
+        body: JSON.stringify({ enabledChats: next }),
       }).then((x) => x.json());
       if (r.ok) {
         toast.success(enable ? `已生效: ${name(groupId)}` : `已关闭: ${name(groupId)}`);

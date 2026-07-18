@@ -27,7 +27,7 @@ function seedApproved(n: number) {
       `human-reflection:100:${i}`,
       vec()
     )
-    repo.insertReflectionMeta(id, 100, `问${i}`, `答${i}`)
+    repo.insertReflectionMeta(id, "qq", "100", `问${i}`, `答${i}`)
     ids.push(id)
   }
   return ids
@@ -66,7 +66,7 @@ describe("reflect-promote helpers", () => {
       "human-reflection:1:1",
       vec()
     )
-    repo.insertReflectionMeta(id, 1, "多久退款", "7天")
+    repo.insertReflectionMeta(id, "qq", "1", "多久退款", "7天")
     const writes: { path: string; body: string }[] = []
     const r = await applyPromote({
       repo,
@@ -105,7 +105,7 @@ describe("reflect-promote helpers", () => {
       "human-reflection:1:1",
       vec()
     )
-    repo.insertReflectionMeta(id, 1, "q", "a")
+    repo.insertReflectionMeta(id, "qq", "1", "q", "a")
     await applyPromote({
       repo,
       chunkId: id,
@@ -132,7 +132,7 @@ describe("reflect-promote helpers", () => {
       "human-reflection:1:1",
       vec()
     )
-    repo.insertReflectionMeta(id, 1, "q", "a")
+    repo.insertReflectionMeta(id, "qq", "1", "q", "a")
     repo.setReflectionStatus(id, "rejected")
     const r = await applyPromote({
       repo,
@@ -172,7 +172,7 @@ describe("runPromote", () => {
     const qf = vi.fn(fakeQuery({ decisions: [] }))
     const r = await runPromote({
       repo,
-      adminGroupId: 999,
+      adminSurface: { channel: "qq" as const, chatId: "999" },
       embed,
       queryFn: qf as never,
       minEntries: 3,
@@ -203,7 +203,7 @@ describe("runPromote", () => {
     }
     const r = await runPromote({
       repo,
-      adminGroupId: 999,
+      adminSurface: { channel: "qq" as const, chatId: "999" },
       embed,
       queryFn: qf as never,
       minEntries: 1,
@@ -229,7 +229,7 @@ describe("runPromote", () => {
     }))
     await runPromote({
       repo,
-      adminGroupId: 999,
+      adminSurface: { channel: "qq" as const, chatId: "999" },
       embed,
       queryFn: fakeQuery({
         decisions: ids.map((id) => ({ id, promote: true, reason: "yes" })),
@@ -248,7 +248,7 @@ describe("runPromote", () => {
     const promoteFn = vi.fn()
     const r = await runPromote({
       repo,
-      adminGroupId: 999,
+      adminSurface: { channel: "qq" as const, chatId: "999" },
       embed,
       queryFn: fakeQuery({ nope: true }) as never,
       minEntries: 1,
@@ -267,7 +267,7 @@ describe("runPromote", () => {
       "human-reflection:1:9",
       vec()
     )
-    repo.insertReflectionMeta(bad, 1, "q", "a")
+    repo.insertReflectionMeta(bad, "qq", "1", "q", "a")
     repo.setReflectionStatus(bad, "rejected")
     const done = repo.insertKbEntry(
       "human-reflection",
@@ -275,12 +275,12 @@ describe("runPromote", () => {
       "human-reflection:1:8",
       vec()
     )
-    repo.insertReflectionMeta(done, 1, "q", "a")
+    repo.insertReflectionMeta(done, "qq", "1", "q", "a")
     repo.setReflectionStatus(done, "promoted")
     const called: number[] = []
     await runPromote({
       repo,
-      adminGroupId: 999,
+      adminSurface: { channel: "qq" as const, chatId: "999" },
       embed,
       queryFn: fakeQuery({
         decisions: [
@@ -313,7 +313,7 @@ describe("registerReflectionPromoter", () => {
       // 空 decisions → 0 promote,但会调 LLM
       const stop = registerReflectionPromoter({
         repo,
-        adminGroupId: 999,
+        adminSurface: { channel: "qq" as const, chatId: "999" },
         embed,
         now: () => 7_000_000,
         promoteMs: 1000,

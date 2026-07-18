@@ -4,6 +4,7 @@ import { Repo } from "@/lib/db/repo";
 import { getConfig } from "@/lib/config-store";
 import { ok, fail } from "@/lib/api";
 import { runPromote } from "@/lib/agent/reflection-promoter";
+import { resolveAdminSurface } from "@/lib/channels/enabled-chats";
 
 // 手动触发一轮自动升格评审(与定时任务同逻辑)
 export async function POST(): Promise<NextResponse> {
@@ -13,7 +14,7 @@ export async function POST(): Promise<NextResponse> {
     const before = repo.reflectionEntries().filter((e) => e.status === "approved").length;
     const result = await runPromote({
       repo,
-      adminGroupId: cfg.adminGroupId,
+      adminSurface: resolveAdminSurface(cfg),
       minEntries: cfg.reflectPromoteMinEntries,
       maxPerRun: cfg.reflectPromoteMaxPerRun,
       notifyAdmin: cfg.reflectNotifyAdmin,

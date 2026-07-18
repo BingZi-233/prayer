@@ -17,16 +17,23 @@ const groupPolicySchema = z.object({
   notifyAdminOnHandoff: z.boolean().optional(),
 });
 
+const chatRefSchema = z.object({
+  channel: z.enum(["qq", "tg", "discord"]),
+  chatId: z.string().min(1),
+});
+
 const patchSchema = z.object({
   onebotWsUrl: z.string().optional(),
   onebotAccessToken: z.string().optional(),
   botQQ: z.number().optional(),
   extraAtQQs: z.array(z.number()).optional(),
-  adminGroupId: z.number().optional(),
+  /** null = 清除管理面 */
+  adminSurface: chatRefSchema.nullable().optional(),
   handoffTimeoutMin: z.number().optional(),
   dbPath: z.string().optional(),
   claudeConfigDir: z.string().optional(),
-  enabledGroups: z.array(z.number()).optional(),
+  enabledChats: z.array(chatRefSchema).optional(),
+  telegramBotToken: z.string().optional(),
   reflectScanMs: z.number().optional(),
   reflectLookbackMs: z.number().optional(),
   reflectSettleMs: z.number().optional(),
@@ -70,6 +77,9 @@ export async function PUT(req: NextRequest): Promise<NextResponse> {
   if ("onebotAccessToken" in patch) {
     patch.onebotAccessToken = mergeSecret(current.onebotAccessToken, patch.onebotAccessToken ?? "");
   }
+  if ("telegramBotToken" in patch) {
+    patch.telegramBotToken = mergeSecret(current.telegramBotToken, patch.telegramBotToken ?? "");
+  }
   // 按群: null 删除覆盖; object 整份替换(便于 UI「跟随全局」清字段)
   if (patch.groupPolicies) {
     const merged: Record<string, GroupPolicy> = { ...current.groupPolicies };
@@ -91,6 +101,6 @@ export async function PUT(req: NextRequest): Promise<NextResponse> {
   const next = setConfig(r, patch as Partial<AppConfig>);
 
   const builders = await defaultBuilders();
-  getRuntime().reconfigure(next, builders);
+  await getRuntime().reconfigure(next, builders);
   return NextResponse.json(ok(maskConfig(next)));
 }

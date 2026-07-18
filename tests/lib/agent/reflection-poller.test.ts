@@ -12,7 +12,6 @@ import {
   itemsFromStructured,
   REFLECT_OUTPUT_SCHEMA,
 } from "@/lib/agent/reflection-poller"
-
 let repo: Repo
 const embed = async () => new Float32Array([1, 0, 0]) // 与 openDb(:memory:,3) 一致
 
@@ -53,22 +52,22 @@ function seed(
 ) {
   ;(repo as any).db
     .prepare(
-      "INSERT INTO group_messages (group_id,user_id,sender_role,text,created_at) VALUES (?,?,?,?,?)"
+      "INSERT INTO group_messages (channel,group_id,user_id,sender_role,text,created_at) VALUES (?,?,?,?,?,?)"
     )
-    .run(groupId, userId, role, text, at)
+    .run("qq", String(groupId), String(userId), role, text, at)
 }
 
 const NOW = 10_000_000
 const opts = (over: Record<string, unknown> = {}) => ({
   repo,
-  adminGroupId: 999,
+  adminSurface: { channel: "qq" as const, chatId: "999" },
   embed,
   now: () => NOW,
   scanMs: 1, // 不用于 runScan
   lookbackMs: 1_000_000,
   settleMs: 1000,
   windowMax: 60,
-  enabledGroups: [100],
+  enabledChats: [{ channel: "qq" as const, chatId: "100" }],
   ...over,
 })
 
@@ -177,13 +176,14 @@ describe("reflection-poller runScan", () => {
       })
     )
     const a = await notice
-    expect(a.groupId).toBe(999)
+    expect(a.channel).toBe("qq")
+    expect(a.chatId).toBe("999")
     const hits = repo.searchKb(new Float32Array([1, 0, 0]), 1)
     expect(hits[0].content).toContain("退款")
-    expect(hits[0].source).toContain("human-reflection:100:")
-    expect(repo.groupReflectCursor(100)).toBe(NOW - 1000) // until = now - settle
+    expect(hits[0].source).toContain("human-reflection:qq:100:")
+    expect(repo.groupReflectCursor("qq", "100")).toBe(NOW - 1000) // until = now - settle
     // 落来源问答:reflectionEntries 带出 question/answer
-    const entry = repo.reflectionEntries().find((r) => r.groupId === 100)!
+    const entry = repo.reflectionEntries().find((r) => r.chatId === "100")!
     expect(entry).toMatchObject({
       question: "退款多久到账",
       answer: "3个工作日",
@@ -225,7 +225,7 @@ describe("reflection-poller runScan", () => {
     )
     expect(spy).not.toHaveBeenCalled()
     expect(repo.searchKb(new Float32Array([1, 0, 0]), 1)).toHaveLength(1)
-    expect(repo.groupReflectCursor(100)).toBe(NOW - 1000)
+    expect(repo.groupReflectCursor("qq", "100")).toBe(NOW - 1000)
   })
 
   it("effective=false → 不入库不通知,仍推进游标", async () => {
@@ -241,7 +241,7 @@ describe("reflection-poller runScan", () => {
     )
     expect(spy).not.toHaveBeenCalled()
     expect(repo.searchKb(new Float32Array([1, 0, 0]), 1)).toHaveLength(0)
-    expect(repo.groupReflectCursor(100)).toBe(NOW - 1000)
+    expect(repo.groupReflectCursor("qq", "100")).toBe(NOW - 1000)
   })
 
   it("群内无管理发言 → 不成为候选,不调用 LLM,游标不动", async () => {
@@ -249,7 +249,7 @@ describe("reflection-poller runScan", () => {
     const qf = vi.fn(fakeQuery({ items: [] }))
     await runScan(opts({ queryFn: qf as never }))
     expect(qf).not.toHaveBeenCalled()
-    expect(repo.groupReflectCursor(100)).toBe(0)
+    expect(repo.groupReflectCursor("qq", "100")).toBe(0)
   })
 
   it("太新(settle 带内)的管理发言不被处理", async () => {
@@ -264,7 +264,7 @@ describe("reflection-poller runScan", () => {
     seed(100, 201, "admin", "答案", NOW - 4000)
     await runScan(opts({ queryFn: fakeQuery(undefined) as never }))
     expect(repo.searchKb(new Float32Array([1, 0, 0]), 1)).toHaveLength(0)
-    expect(repo.groupReflectCursor(100)).toBe(0)
+    expect(repo.groupReflectCursor("qq", "100")).toBe(0)
   })
 
   it("无 structured 但文本 JSON 合法 → 入库并推进游标", async () => {
@@ -290,23 +290,23 @@ describe("reflection-poller runScan", () => {
     )
     const hits = repo.searchKb(new Float32Array([1, 0, 0]), 5)
     expect(hits.some((h) => h.content.includes("退款一般三天"))).toBe(true)
-    expect(repo.groupReflectCursor(100)).toBe(NOW - 1000)
+    expect(repo.groupReflectCursor("qq", "100")).toBe(NOW - 1000)
   })
 
   it("空 items → 不入库,仍推进游标", async () => {
     seed(100, 201, "admin", "答案", NOW - 4000)
     await runScan(opts({ queryFn: fakeQuery({ items: [] }) as never }))
     expect(repo.searchKb(new Float32Array([1, 0, 0]), 1)).toHaveLength(0)
-    expect(repo.groupReflectCursor(100)).toBe(NOW - 1000)
+    expect(repo.groupReflectCursor("qq", "100")).toBe(NOW - 1000)
   })
 
   it("until <= 群游标 → 直接跳过(不重复处理)", async () => {
-    repo.setGroupReflectCursor(100, NOW) // 该群游标已在 now,until=now-settle < cursor
+    repo.setGroupReflectCursor("qq", "100", NOW) // 该群游标已在 now,until=now-settle < cursor
     seed(100, 201, "admin", "答案", NOW - 4000)
     const qf = vi.fn(fakeQuery({ items: [] }))
     await runScan(opts({ queryFn: qf as never }))
     expect(qf).not.toHaveBeenCalled()
-    expect(repo.groupReflectCursor(100)).toBe(NOW) // 不动
+    expect(repo.groupReflectCursor("qq", "100")).toBe(NOW) // 不动
   })
 
   it("忙群:band 管理发言在大量后续消息后仍入窗(不被 evict)", async () => {
@@ -371,7 +371,7 @@ describe("reflection-poller runScan", () => {
     const refs = repo.reflectionEntries()
     expect(refs).toHaveLength(0)
     expect(spy).not.toHaveBeenCalled()
-    expect(repo.groupReflectCursor(100)).toBe(NOW - 1000) // 仍推进
+    expect(repo.groupReflectCursor("qq", "100")).toBe(NOW - 1000) // 仍推进
   })
 
   it("多群同 FAQ → 去重只沉淀 1 条", async () => {
@@ -379,7 +379,10 @@ describe("reflection-poller runScan", () => {
     seed(200, 202, "admin", "群200答案", NOW - 4000)
     await runScan(
       opts({
-        enabledGroups: [100, 200],
+        enabledChats: [
+          { channel: "qq" as const, chatId: "100" },
+          { channel: "qq" as const, chatId: "200" },
+        ],
         queryFn: fakeQuery({
           items: [item({ question: "q", answer: "a", faq: "通用知识条" })],
         }) as never,
@@ -388,8 +391,8 @@ describe("reflection-poller runScan", () => {
     const hits = repo.searchKb(new Float32Array([1, 0, 0]), 10)
     // 相同 FAQ 第二次被硬去重
     expect(hits.filter((h) => h.content === "通用知识条")).toHaveLength(1)
-    expect(repo.groupReflectCursor(100)).toBe(NOW - 1000)
-    expect(repo.groupReflectCursor(200)).toBe(NOW - 1000)
+    expect(repo.groupReflectCursor("qq", "100")).toBe(NOW - 1000)
+    expect(repo.groupReflectCursor("qq", "200")).toBe(NOW - 1000)
   })
 
   it("多群不同 FAQ → 各沉淀一条", async () => {
@@ -417,7 +420,10 @@ describe("reflection-poller runScan", () => {
         ],
       })()
     }
-    await runScan(opts({ enabledGroups: [100, 200], queryFn: qf as never }))
+    await runScan(opts({ enabledChats: [
+          { channel: "qq" as const, chatId: "100" },
+          { channel: "qq" as const, chatId: "200" },
+        ], queryFn: qf as never }))
     const refs = repo.reflectionEntries()
     expect(refs).toHaveLength(2)
   })
@@ -433,12 +439,16 @@ describe("reflection-poller runScan", () => {
       })()
     }
     const err = new Promise<any>((res) => bus.once("error.occurred", res))
-    await runScan(opts({ enabledGroups: [100, 200], queryFn: qf as never }))
+    await runScan(opts({ enabledChats: [
+          { channel: "qq" as const, chatId: "100" },
+          { channel: "qq" as const, chatId: "200" },
+        ], queryFn: qf as never }))
     const e = await err
     expect(e.scope).toBe("reflection")
-    expect(e.groupId).toBe(100)
-    expect(repo.groupReflectCursor(100)).toBe(0) // 抛错群不推进
-    expect(repo.groupReflectCursor(200)).toBe(NOW - 1000) // 正常群推进
+    expect(e.chatId).toBe("100")
+    expect(e.channel).toBe("qq")
+    expect(repo.groupReflectCursor("qq", "100")).toBe(0) // 抛错群不推进
+    expect(repo.groupReflectCursor("qq", "200")).toBe(NOW - 1000) // 正常群推进
     expect(repo.searchKb(new Float32Array([1, 0, 0]), 10)).toHaveLength(1) // 只群200沉淀
   })
 
@@ -446,9 +456,32 @@ describe("reflection-poller runScan", () => {
     seed(100, 200, "member", "退款多久?", NOW - 5000)
     seed(100, 201, "admin", "3 个工作日", NOW - 4000)
     const qf = vi.fn(fakeQuery({ items: [] }))
-    await runScan(opts({ enabledGroups: [], queryFn: qf as never }))
+    await runScan(opts({ enabledChats: [], queryFn: qf as never }))
     expect(qf).not.toHaveBeenCalled()
-    expect(repo.groupReflectCursor(100)).toBe(0)
+    expect(repo.groupReflectCursor("qq", "100")).toBe(0)
+  })
+
+  it("isBypassEnabled=false 时跳过该 chat，不调 LLM", async () => {
+    ;(repo as any).db
+      .prepare(
+        "INSERT INTO group_messages (channel,group_id,user_id,sender_role,text,created_at) VALUES (?,?,?,?,?,?)"
+      )
+      .run("tg", "-1001", "200", "member", "退款多久?", NOW - 5000)
+    ;(repo as any).db
+      .prepare(
+        "INSERT INTO group_messages (channel,group_id,user_id,sender_role,text,created_at) VALUES (?,?,?,?,?,?)"
+      )
+      .run("tg", "-1001", "201", "admin", "3 天", NOW - 4000)
+    const qf = vi.fn(fakeQuery({ items: [] }))
+    await runScan(
+      opts({
+        enabledChats: [{ channel: "tg" as const, chatId: "-1001" }],
+        queryFn: qf as never,
+        isBypassEnabled: () => false,
+      })
+    )
+    expect(qf).not.toHaveBeenCalled()
+    expect(repo.groupReflectCursor("tg", "-1001")).toBe(0)
   })
 
   it("防重入:上一轮扫描未结束时,下一 tick 跳过,不重复判定", async () => {
@@ -488,11 +521,11 @@ describe("reflection-poller prune 下界协调(与 topicCursor)", () => {
   // NOW=10_000_000, lookbackMs=1_000_000, settleMs=1000(见 opts 默认)
   // → 未受 topic 侧约束时的反思 prune 阈值 = NOW - lookbackMs - settleMs = 8_999_000
   it("场景A:某群 topicCursor 小于反思阈值 → prune 下界被压低,阈值内消息不被删", async () => {
-    repo.setTopicCursor(100, 8_000_000) // 小于反思阈值 8_999_000
+    repo.setTopicCursor("qq", "100", 8_000_000) // 小于反思阈值 8_999_000
     seed(100, 200, "member", "落在(topicCursor, 反思阈值)之间", 8_500_000)
     await runScan(opts({ queryFn: fakeQuery({ items: [] }) as never }))
     const rows = (repo as any).db
-      .prepare("SELECT created_at FROM group_messages WHERE group_id = 100")
+      .prepare("SELECT created_at FROM group_messages WHERE group_id = '100'")
       .all() as { created_at: number }[]
     expect(rows).toHaveLength(1) // 未被删:prune 下界压到 topicCursor=8_000_000
   })
@@ -502,7 +535,7 @@ describe("reflection-poller prune 下界协调(与 topicCursor)", () => {
     seed(100, 200, "member", "较新的消息", 9_500_000) // > 8_999_000 反思阈值
     await runScan(opts({ queryFn: fakeQuery({ items: [] }) as never }))
     const rows = (repo as any).db
-      .prepare("SELECT created_at FROM group_messages WHERE group_id = 100")
+      .prepare("SELECT created_at FROM group_messages WHERE group_id = '100'")
       .all() as { created_at: number }[]
     expect(rows.map((r) => r.created_at)).toEqual([9_500_000]) // 老消息已删,新消息保留
   })

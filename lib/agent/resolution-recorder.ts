@@ -1,6 +1,6 @@
-import { bus } from "../bus";
-import type { Repo } from "../db/repo";
-import type { ResolutionRecorded } from "../events";
+import { bus } from "../bus"
+import type { Repo } from "../db/repo"
+import type { ResolutionRecorded } from "../events"
 
 /** 把 resolution.recorded 事件落库,供看板统计 */
 export function registerResolutionRecorder(repo: Repo): () => void {
@@ -8,14 +8,15 @@ export function registerResolutionRecorder(repo: Repo): () => void {
     try {
       repo.insertResolution(e.kind, {
         sessionKey: e.sessionKey,
-        groupId: e.groupId,
+        channel: e.channel,
+        chatId: e.chatId,
         userId: e.userId,
         detail: e.detail,
-      });
+      })
     } catch (err) {
-      console.error("[resolution]", err);
+      console.error("[resolution]", err)
     }
-  };
-  bus.on("resolution.recorded", onRec);
-  return () => bus.off("resolution.recorded", onRec);
+  }
+  bus.on("resolution.recorded", onRec)
+  return () => bus.off("resolution.recorded", onRec)
 }

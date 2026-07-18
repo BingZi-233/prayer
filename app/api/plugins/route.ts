@@ -43,7 +43,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     if (!installed.ok) return NextResponse.json(fail(installed.error ?? "安装失败"), { status: 500 });
 
     const c = cfg();
-    getRuntime().reconfigure(c, await defaultBuilders());
+    await getRuntime().reconfigure(c, await defaultBuilders());
     return NextResponse.json(ok(await m.list()));
   } catch (err) {
     return NextResponse.json(fail(err instanceof Error ? err.message : String(err)), { status: 500 });

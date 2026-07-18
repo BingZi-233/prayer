@@ -1,5 +1,7 @@
 /** 运行日志错误分类:把上游含糊/误导文案映射为稳定 code + 中文标题 + 处置建议 */
 
+import type { ChannelId } from "./channels/types"
+
 export type LogCategory =
   | "content_safety"
   | "rate_limit"
@@ -170,9 +172,41 @@ export function errorMessage(err: unknown): string {
   }
 }
 
-/** 从 sessionKey `groupId:userId` 解析群号 */
+export type ChatRefLog = { channel: ChannelId; chatId: string }
+
+/**
+ * 从 sessionKey 解析 chat-ref。
+ * 支持规范键 `channel:chatId:userId` 与历史两段键 `groupId:userId`（视为 qq）。
+ */
+export function chatRefFromSession(
+  sessionKey?: string
+): ChatRefLog | undefined {
+  if (!sessionKey) return undefined
+  const parts = sessionKey.split(":")
+  // 规范键 channel:chatId:userId（chatId 可含冒号）
+  if (parts.length >= 3) {
+    const channel = parts[0]
+    if (channel === "qq" || channel === "tg" || channel === "discord") {
+      const chatId = parts.slice(1, -1).join(":")
+      if (chatId) return { channel, chatId }
+    }
+  }
+  // 历史两段键 groupId:userId → qq
+  if (parts.length === 2) {
+    const n = Number(parts[0])
+    if (Number.isFinite(n)) {
+      return { channel: "qq", chatId: parts[0] }
+    }
+  }
+  return undefined
+}
+
+/**
+ * @deprecated 用 chatRefFromSession；仅 QQ 数字群号场景
+ */
 export function groupIdFromSession(sessionKey?: string): number | undefined {
-  if (!sessionKey) return undefined;
-  const n = Number(sessionKey.split(":")[0]);
-  return Number.isFinite(n) ? n : undefined;
+  const ref = chatRefFromSession(sessionKey)
+  if (!ref || ref.channel !== "qq") return undefined
+  const n = Number(ref.chatId)
+  return Number.isFinite(n) ? n : undefined
 }

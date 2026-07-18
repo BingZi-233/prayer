@@ -2,6 +2,14 @@
 
 import { createContext, useContext, useEffect, useState } from "react";
 
+/** 与 RuntimeStatus.channels / ChannelStatus 对齐 */
+export interface ChannelStatusView {
+  id: string;
+  connected: boolean;
+  lastError?: string;
+  detail?: string;
+}
+
 interface Status {
   state: string;
   wsConnected: boolean;
@@ -9,9 +17,10 @@ interface Status {
   handoffQueue: number;
   lastError?: string;
   bootedAt?: number;
+  channels?: ChannelStatusView[];
 }
 interface Overview {
-  enabledGroups: number;
+  enabledChats: number;
   reflectionCount: number;
   humanSessions: number;
 }

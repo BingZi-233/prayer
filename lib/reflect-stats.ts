@@ -1,11 +1,25 @@
-import type { Repo } from "./db/repo";
+import type { Repo } from "./db/repo"
 
-// 反思/群活动页共用:每群 反思游标 / 消息统计 / 沉淀计数 三个 Map,外加沉淀条目全量
+function chatKey(channel: string, chatId: string): string {
+  return `${channel}:${chatId}`
+}
+
+// 反思/群活动页共用:每 chat 反思游标 / 消息统计 / 沉淀计数 三个 Map,外加沉淀条目全量
+// Map key = `${channel}:${chatId}`
 export function buildGroupStatMaps(repo: Repo) {
-  const cursors = new Map(repo.reflectCursors().map((c) => [c.groupId, c.cursor]));
-  const msg = new Map(repo.groupMessageStats().map((m) => [m.groupId, m]));
-  const entries = repo.reflectionEntries();
-  const sed = new Map<number, number>();
-  for (const e of entries) if (e.groupId != null) sed.set(e.groupId, (sed.get(e.groupId) ?? 0) + 1);
-  return { cursors, msg, sed, entries };
+  const cursors = new Map(
+    repo.reflectCursors().map((c) => [chatKey(c.channel, c.chatId), c.cursor])
+  )
+  const msg = new Map(
+    repo.groupMessageStats().map((m) => [chatKey(m.channel, m.chatId), m])
+  )
+  const entries = repo.reflectionEntries()
+  const sed = new Map<string, number>()
+  for (const e of entries) {
+    if (e.channel != null && e.chatId != null) {
+      const k = chatKey(e.channel, e.chatId)
+      sed.set(k, (sed.get(k) ?? 0) + 1)
+    }
+  }
+  return { cursors, msg, sed, entries }
 }
