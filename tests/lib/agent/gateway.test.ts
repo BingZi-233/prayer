@@ -333,4 +333,55 @@ describe("gateway", () => {
     const q = await p
     expect(q.text).toBe("你好")
   })
+
+  it("TG 管理面 !reset <key> → 清 resumeId 并回 TG", async () => {
+    bus.removeAllListeners()
+    registerGateway({
+      repo,
+      botQQ: 555,
+      adminSurface: { channel: "tg" as const, chatId: "-100999" },
+      enabledChats: [{ channel: "qq" as const, chatId: "1" }],
+      supportUrl: "https://example.com",
+    })
+    const sk = "qq:1:2"
+    repo.setSessionId(sk, "sid-tg-admin")
+    const p = new Promise<any>((res) => bus.once("action.send", res))
+    bus.emit("message.received", {
+      channel: "tg" as const,
+      chatId: "-100999",
+      userId: "7",
+      messageId: "tg-reset-1",
+      rawText: `!reset ${sk}`,
+      atList: [],
+    })
+    const a = await p
+    expect(a.channel).toBe("tg")
+    expect(a.chatId).toBe("-100999")
+    expect(a.text).toContain(sk)
+    expect(repo.getResumeId(sk)).toBeUndefined()
+  })
+
+  it("TG 管理面 !resume <key> → handoff.resumed", async () => {
+    bus.removeAllListeners()
+    registerGateway({
+      repo,
+      botQQ: 555,
+      adminSurface: { channel: "tg" as const, chatId: "-100999" },
+      enabledChats: [{ channel: "qq" as const, chatId: "1" }],
+      supportUrl: "https://example.com",
+    })
+    const sk = "qq:1:2"
+    const p = new Promise<any>((res) => bus.once("handoff.resumed", res))
+    bus.emit("message.received", {
+      channel: "tg" as const,
+      chatId: "-100999",
+      userId: "7",
+      messageId: "tg-resume-1",
+      rawText: `!resume ${sk}`,
+      atList: [],
+    })
+    const h = await p
+    expect(h.sessionKey).toBe(sk)
+    expect(h.by).toBe("admin")
+  })
 })
