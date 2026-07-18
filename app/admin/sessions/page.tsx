@@ -57,7 +57,41 @@ import { SectionCard } from "@/components/admin/section-card"
 import { MasterDetail } from "@/components/admin/master-detail"
 import { DataState, EmptyState } from "@/components/admin/data-state"
 import { RelativeTime } from "@/components/relative-time"
-import { useGroupNames, useMemberNames } from "@/lib/group-name"
+import {
+  sessionKeyParts,
+  useGroupNames,
+  useMemberNames,
+} from "@/lib/group-name"
+
+const CHANNEL_LABEL: Record<string, string> = {
+  qq: "QQ",
+  tg: "TG",
+  discord: "Discord",
+}
+
+/** 从来源 session key 解析渠道，展示为小徽章 */
+function ChannelBadge({
+  sessionKey,
+  className,
+}: {
+  sessionKey: string
+  className?: string
+}) {
+  const channel = sessionKeyParts(sessionKey)?.channel ?? "qq"
+  const label = CHANNEL_LABEL[channel] ?? channel.toUpperCase()
+  return (
+    <Badge
+      variant="secondary"
+      className={cn(
+        "h-4 shrink-0 border-transparent bg-foreground px-1 text-[10px] text-background",
+        className
+      )}
+      title={`来源渠道: ${label}`}
+    >
+      {label}
+    </Badge>
+  )
+}
 
 interface Sess {
   key: string
@@ -655,6 +689,7 @@ function SessionsInner() {
                                 : "fill-muted-foreground/40 text-muted-foreground/40"
                             )}
                           />
+                          <ChannelBadge sessionKey={sess.key} />
                           <span
                             className="truncate font-medium"
                             title={sess.key}
@@ -707,6 +742,7 @@ function SessionsInner() {
             title={
               activeSess ? (
                 <span className="flex min-w-0 items-center gap-2">
+                  <ChannelBadge sessionKey={activeSess.key} className="h-5 px-1.5 text-[11px]" />
                   <span className="truncate" title={activeSess.key}>
                     {keyLabel(activeSess.key)}
                   </span>

@@ -45,7 +45,6 @@ import { PageShell } from "@/components/admin/page-shell";
 import { PageHeader } from "@/components/admin/page-header";
 import { SectionCard } from "@/components/admin/section-card";
 import { MetricBadge, MetricBadgeRow } from "@/components/admin/stat";
-import { ChannelStatusLights } from "@/components/channel-status-lights";
 import type { ChannelStatusView } from "@/components/live-provider";
 
 interface Status {
@@ -180,7 +179,7 @@ export default function StatusPage() {
       <PageHeader
         className="shrink-0"
         title="运行状态"
-        description="查看运行状态、各通道连接与今日业务结果。"
+        description="查看运行状态与今日业务结果。"
         actions={
           <Dialog>
             <DialogTrigger asChild>
@@ -294,38 +293,6 @@ export default function StatusPage() {
           value={m?.autoResolutionRate != null ? pct(m.autoResolutionRate) : "—"}
         />
       </MetricBadgeRow>
-
-      {s && (s.channels?.length || s.lastError) ? (
-        <SectionCard
-          className="shrink-0"
-          title="通道详情"
-          icon={Plug}
-          description="QQ 为 OneBot 正向 WS；TG 为 grammY long poll。detail 含 username / offset / 旁路降级原因。"
-          contentClassName="space-y-2 text-sm"
-        >
-          <ChannelStatusLights channels={s.channels} wsConnected={s.wsConnected} />
-          {s.channels?.map((c) => (
-            <div
-              key={c.id}
-              className="text-muted-foreground flex flex-wrap items-baseline gap-x-2 gap-y-0.5 border-t pt-2 first:border-t-0 first:pt-0"
-            >
-              <span className="text-foreground font-medium uppercase">{c.id}</span>
-              <span>{c.connected ? "connected" : "disconnected"}</span>
-              {c.detail && (
-                <code className="bg-muted rounded px-1.5 py-0.5 font-mono text-xs break-all">
-                  {c.detail}
-                </code>
-              )}
-              {c.lastError && (
-                <span className="text-destructive text-xs break-all">{c.lastError}</span>
-              )}
-            </div>
-          ))}
-          {s.lastError && (
-            <p className="text-destructive text-xs">runtime: {s.lastError}</p>
-          )}
-        </SectionCard>
-      ) : null}
 
       <SectionCard
         className="shrink-0"
