@@ -256,6 +256,13 @@ export default function ConfigPage() {
     const payload: Partial<Cfg> = {
       ...cfg,
       enabledChats,
+      // chatId 去空白，避免 isAdminSurface 精确匹配失败
+      adminSurface: cfg.adminSurface
+        ? {
+            channel: cfg.adminSurface.channel,
+            chatId: cfg.adminSurface.chatId.trim(),
+          }
+        : null,
     };
     if (typeof payload.onebotAccessToken === "string" && payload.onebotAccessToken.includes("•")) {
       delete payload.onebotAccessToken;

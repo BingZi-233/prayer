@@ -106,6 +106,20 @@ function channelLabel(c: ChannelId): string {
   return c;
 }
 
+/**
+ * 策略写 payload：新键 policyKey；QQ 同时清掉历史裸群号键，避免 getGroupPolicy 回退读到旧覆盖。
+ */
+function policyWritePayload(
+  row: Pick<Row, "channel" | "chatId" | "policyKey">,
+  policy: GroupPolicy | null
+): Record<string, GroupPolicy | null> {
+  const out: Record<string, GroupPolicy | null> = { [row.policyKey]: policy };
+  if (row.channel === "qq" && row.chatId) {
+    out[row.chatId] = null;
+  }
+  return out;
+}
+
 export default function GroupsPage() {
   const { data, error, loading, refresh } = usePolling<ActivityData>("/api/groups/activity");
   const { name } = useGroupNames();
@@ -197,16 +211,15 @@ export default function GroupsPage() {
       const nh = triToBool(handoffTri);
       if (nh !== undefined) policy.notifyAdminOnHandoff = nh;
 
-      const key = editing.policyKey;
-      const payload =
+      const groupPolicies =
         Object.keys(policy).length === 0
-          ? { groupPolicies: { [key]: null } }
-          : { groupPolicies: { [key]: policy } };
+          ? policyWritePayload(editing, null)
+          : policyWritePayload(editing, policy);
 
       const r = await fetch("/api/config", {
         method: "PUT",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({ groupPolicies }),
       }).then((x) => x.json());
       if (r.ok) {
         toast.success(
@@ -230,7 +243,9 @@ export default function GroupsPage() {
       const r = await fetch("/api/config", {
         method: "PUT",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ groupPolicies: { [row.policyKey]: null } }),
+        body: JSON.stringify({
+          groupPolicies: policyWritePayload(row, null),
+        }),
       }).then((x) => x.json());
       if (r.ok) {
         toast.success(
@@ -452,7 +467,7 @@ export default function GroupsPage() {
               </Field>
 
               <Field>
-                <FieldLabel>转人工时通知管理群</FieldLabel>
+                <FieldLabel>转人工时通知管理面</FieldLabel>
                 <Select value={handoffTri} onValueChange={(v) => setHandoffTri(v as Tri)}>
                   <SelectTrigger>
                     <SelectValue />
@@ -464,7 +479,7 @@ export default function GroupsPage() {
                   </SelectContent>
                 </Select>
                 <FieldDescription>
-                  仅控制转人工时是否向管理群发消息;会话仍会进入人工接待。
+                  仅控制转人工时是否向管理面发消息;会话仍会进入人工接待。
                 </FieldDescription>
               </Field>
             </FieldGroup>
