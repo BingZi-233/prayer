@@ -59,7 +59,7 @@ const navGroups = [
     label: "系统",
     items: [
       { href: "/admin/config", label: "配置", icon: Settings },
-      { href: "/admin/groups", label: "生效群", icon: Users },
+      { href: "/admin/groups", label: "生效会话", icon: Users },
       { href: "/admin/capabilities", label: "能力", icon: Boxes },
       { href: "/admin/plugins", label: "插件", icon: Puzzle },
     ],
