@@ -18,12 +18,10 @@ import {
   Plus,
   Shield,
   TriangleAlert,
-  ChevronDown,
 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
@@ -156,8 +154,6 @@ export default function ConfigPage() {
   const [adminsLoading, setAdminsLoading] = useState(false);
   /** 待加入的 TG chat id 草稿（点添加 / 保存时合并） */
   const [tgChatDraft, setTgChatDraft] = useState("");
-  /** 批量粘贴区（保存时合并，避免只贴未失焦就丢） */
-  const [tgChatBulk, setTgChatBulk] = useState("");
   /** chatId 字符串 → 显示名（/api/chats/names，含 TG 负 id） */
   const [chatNames, setChatNames] = useState<Record<string, string>>({});
 
@@ -274,8 +270,8 @@ export default function ConfigPage() {
       toast.message("管理面为 TG 但未配置 Bot Token，通知可能发送失败");
     }
     setBusy(true);
-    // 保存前把输入框/批量区未点「添加」的内容一并写入，避免刷新后像「丢了」
-    const tgIds = mergeTgChats(tgChatIds(cfg.enabledChats), tgChatDraft, tgChatBulk);
+    // 保存前把输入框未点「添加」的内容一并写入
+    const tgIds = mergeTgChats(tgChatIds(cfg.enabledChats), tgChatDraft);
     const enabledChats = withTgChats(cfg.enabledChats, tgIds);
     const payload: Partial<Cfg> = {
       ...cfg,
@@ -313,7 +309,6 @@ export default function ConfigPage() {
           adminSurface: data.adminSurface ?? null,
         });
         setTgChatDraft("");
-        setTgChatBulk("");
         if (savedTg.length === 0 && !cfg.telegramBotToken) {
           toast.success("配置已保存并生效");
         } else if (savedTg.length === 0) {
@@ -345,14 +340,6 @@ export default function ConfigPage() {
     if (!cfg) return;
     const next = tgChatIds(cfg.enabledChats).filter((c) => c !== id);
     setCfg({ ...cfg, enabledChats: withTgChats(cfg.enabledChats, next) });
-  }
-
-  /** 把批量框内容合并进列表并清空批量框 */
-  function commitTgBulk() {
-    if (!cfg || !tgChatBulk.trim()) return;
-    const next = mergeTgChats(tgChatIds(cfg.enabledChats), tgChatBulk);
-    setCfg({ ...cfg, enabledChats: withTgChats(cfg.enabledChats, next) });
-    setTgChatBulk("");
   }
 
   const num = (k: keyof Cfg) => (cfg ? String(cfg[k] ?? "") : "");
@@ -731,110 +718,7 @@ export default function ConfigPage() {
                     尚未添加会话。添加后 bot 才会在对应群内 @ 应答。
                   </p>
                 )}
-
-                <details className="group rounded-md border">
-                  <summary className="text-muted-foreground hover:text-foreground flex cursor-pointer list-none items-center gap-1.5 px-3 py-2 text-sm select-none [&::-webkit-details-marker]:hidden">
-                    <ChevronDown className="size-3.5 shrink-0 transition-transform group-open:rotate-180" />
-                    高级：批量粘贴 Chat ID
-                  </summary>
-                  <div className="border-t px-3 py-3">
-                    <Textarea
-                      id="tgChatBulk"
-                      value={tgChatBulk}
-                      placeholder={"每行一个，或用逗号分隔\n-1001234567890\n-1009876543210"}
-                      rows={3}
-                      className="font-mono text-xs"
-                      onChange={(e) => setTgChatBulk(e.target.value)}
-                      onBlur={() => commitTgBulk()}
-                    />
-                    <p className="text-muted-foreground mt-2 text-xs">
-                      失焦或「保存并生效」时合并进上方列表（去重）。
-                    </p>
-                  </div>
-                </details>
               </FieldGroup>
-            </SectionCard>
-
-            {/* 3. 部署与说明 */}
-            <SectionCard
-              title="部署与说明"
-              description="旁路（反思 / 主动补位）依赖全量群消息与管理员角色；@ 问答在 Privacy 开启时仍可用。"
-            >
-              <div className="space-y-2">
-                <details className="group rounded-md border" open>
-                  <summary className="hover:bg-muted/40 flex cursor-pointer list-none items-center gap-1.5 px-3 py-2 text-sm font-medium select-none [&::-webkit-details-marker]:hidden">
-                    <ChevronDown className="size-3.5 shrink-0 transition-transform group-open:rotate-180" />
-                    关闭 Group Privacy Mode（必做）
-                  </summary>
-                  <div className="text-muted-foreground border-t px-3 py-3 text-sm leading-relaxed">
-                    <ol className="list-decimal space-y-1 pl-5">
-                      <li>
-                        打开 @BotFather → 你的 bot → Bot Settings → Group Privacy →{" "}
-                        <strong className="text-foreground">Turn off</strong>。
-                      </li>
-                      <li>
-                        开启时 bot 只能收到 @ 自己、回复 bot 与命令，
-                        <strong className="text-foreground">收不到普通群聊</strong>
-                        ；反思 / 补位原料不足，运行时会对该 chat 降级关闭旁路（detail 见{" "}
-                        <code className="text-xs">bypass-off:…:privacy-mode?</code>）。
-                      </li>
-                      <li>关闭后建议将 bot 踢出再重新拉进目标群，确保权限生效。</li>
-                    </ol>
-                  </div>
-                </details>
-
-                <details className="group rounded-md border">
-                  <summary className="hover:bg-muted/40 flex cursor-pointer list-none items-center gap-1.5 px-3 py-2 text-sm font-medium select-none [&::-webkit-details-marker]:hidden">
-                    <ChevronDown className="size-3.5 shrink-0 transition-transform group-open:rotate-180" />
-                    如何取得 Chat ID
-                  </summary>
-                  <div className="text-muted-foreground border-t px-3 py-3 text-sm leading-relaxed">
-                    <ul className="list-disc space-y-1 pl-5">
-                      <li>
-                        把 bot 拉进超级群后，在群里发一条消息，再请求{" "}
-                        <code className="text-xs">getUpdates</code>（或看运行日志）里的{" "}
-                        <code className="text-xs">message.chat.id</code>。
-                      </li>
-                      <li>
-                        也可用第三方查询 bot（如 @userinfobot / @getidsbot）转发群消息查看 id。
-                      </li>
-                      <li>
-                        超级群 id 通常形如 <code className="text-xs">-100…</code>
-                        ，整串复制，不要丢负号或前缀。
-                      </li>
-                    </ul>
-                  </div>
-                </details>
-
-                <details className="group rounded-md border">
-                  <summary className="hover:bg-muted/40 flex cursor-pointer list-none items-center gap-1.5 px-3 py-2 text-sm font-medium select-none [&::-webkit-details-marker]:hidden">
-                    <ChevronDown className="size-3.5 shrink-0 transition-transform group-open:rotate-180" />
-                    单实例 long poll
-                  </summary>
-                  <div className="text-muted-foreground border-t px-3 py-3 text-sm leading-relaxed">
-                    <p>
-                      同一 bot token 同一时刻只能有一个{" "}
-                      <code className="text-xs">getUpdates</code> 消费者。多实例（pm2 cluster /
-                      多进程）会 409 Conflict，状态灯显示 lastError，QQ 不受影响。
-                    </p>
-                  </div>
-                </details>
-
-                <details className="group rounded-md border">
-                  <summary className="hover:bg-muted/40 flex cursor-pointer list-none items-center gap-1.5 px-3 py-2 text-sm font-medium select-none [&::-webkit-details-marker]:hidden">
-                    <ChevronDown className="size-3.5 shrink-0 transition-transform group-open:rotate-180" />
-                    触发与转人工
-                  </summary>
-                  <div className="text-muted-foreground border-t px-3 py-3 text-sm leading-relaxed">
-                    <p>
-                      群内 <code className="text-xs">@你的bot</code> 提问即可（username
-                      大小写不敏感）。用户发「人工」时：通知抄送到配置页的
-                      <strong className="text-foreground">管理面</strong>
-                      （可 QQ 或 TG）；用户侧仍可附带 supportUrl。
-                    </p>
-                  </div>
-                </details>
-              </div>
             </SectionCard>
           </TabsContent>
 
