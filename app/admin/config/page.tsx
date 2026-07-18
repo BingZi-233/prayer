@@ -17,7 +17,6 @@ import {
   HardDrive,
   Plus,
   Shield,
-  TriangleAlert,
 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
@@ -587,12 +586,10 @@ export default function ConfigPage() {
             </SectionCard>
           </TabsContent>
 
-          <TabsContent value="tg" className="space-y-4">
-            {/* 1. 连接 */}
+          <TabsContent value="tg">
             <SectionCard
-              title="连接"
-              description="token 非空时注册 long poll，与 QQ 并行。同 token 仅允许单进程 poll（pm2 fork 单实例）。"
-              icon={Send}
+              title="TG 通道"
+              description="Telegram Bot Token 与群相关参数。"
               action={
                 tgChannel ? (
                   <ChannelDot ch={tgChannel} />
@@ -609,62 +606,37 @@ export default function ConfigPage() {
                   <Input
                     id="telegramBotToken"
                     value={cfg.telegramBotToken ?? ""}
-                    placeholder="留空不修改；清空需先保存再在环境/库中清"
+                    placeholder="留空不修改"
                     onChange={(e) => setCfg({ ...cfg, telegramBotToken: e.target.value })}
                     autoComplete="off"
                   />
                   <FieldDescription>
-                    来自 @BotFather。已保存密钥以掩码显示，留空或不改动则保留原值。token 为空则不启动 TG 通道。
+                    来自 @BotFather。已保存的密钥以掩码显示,留空或不改动则保留原值。token 为空则不启动 TG 通道。
                   </FieldDescription>
+                  {tgChannel?.lastError ? (
+                    <p className="text-destructive mt-1 text-sm">
+                      通道异常: {tgChannel.lastError}
+                    </p>
+                  ) : null}
+                  {tgBypassWarn ? (
+                    <p className="text-amber-800 dark:text-amber-200 mt-1 text-sm">
+                      旁路已降级(Privacy / bypass 关闭):反思与主动补位可能不可用。请在 @BotFather
+                      关闭 Group Privacy Mode 并重新拉 bot 进群。
+                      {tgChannel?.detail ? (
+                        <span className="text-muted-foreground ml-1 font-mono text-xs">
+                          {tgChannel.detail}
+                        </span>
+                      ) : null}
+                    </p>
+                  ) : null}
                 </Field>
-                {!tgTokenConfigured && (
-                  <p className="text-muted-foreground text-sm">
-                    未配置：填写 Token 并保存后启动 TG 通道。
-                  </p>
-                )}
-                {tgChannel?.lastError && (
-                  <div className="border-destructive/40 bg-destructive/5 text-destructive flex gap-2 rounded-md border px-3 py-2 text-sm">
-                    <TriangleAlert className="mt-0.5 size-4 shrink-0" />
-                    <div className="min-w-0">
-                      <p className="font-medium">通道异常</p>
-                      <p className="text-destructive/90 break-all text-xs">{tgChannel.lastError}</p>
-                    </div>
-                  </div>
-                )}
-                {tgBypassWarn && (
-                  <div className="border-amber-500/40 bg-amber-500/5 text-amber-900 dark:text-amber-200 flex gap-2 rounded-md border px-3 py-2 text-sm">
-                    <TriangleAlert className="mt-0.5 size-4 shrink-0" />
-                    <div className="min-w-0">
-                      <p className="font-medium">旁路已降级</p>
-                      <p className="text-xs opacity-90">
-                        运行状态 detail 提示 Privacy / bypass 关闭：反思与主动补位可能不可用。
-                        请在 @BotFather 关闭 Group Privacy Mode，并将 bot 重新拉进群。
-                        {tgChannel?.detail ? (
-                          <>
-                            {" "}
-                            <code className="text-[10px]">{tgChannel.detail}</code>
-                          </>
-                        ) : null}
-                      </p>
-                    </div>
-                  </div>
-                )}
-              </FieldGroup>
-            </SectionCard>
-
-            {/* 2. 生效会话 */}
-            <SectionCard
-              title="生效会话"
-              description="仅白名单内超级群/群会应答。也可在「生效会话」页开关与策略覆盖。"
-            >
-              <FieldGroup>
                 <Field>
-                  <FieldLabel htmlFor="tgChatDraft">添加 Chat ID</FieldLabel>
+                  <FieldLabel htmlFor="enabledChatsTg">生效群</FieldLabel>
                   <div className="flex flex-col gap-2 sm:flex-row">
                     <Input
-                      id="tgChatDraft"
+                      id="enabledChatsTg"
                       value={tgChatDraft}
-                      placeholder="如 -1001234567890"
+                      placeholder="Chat ID,如 -1001234567890"
                       className="font-mono text-sm"
                       onChange={(e) => setTgChatDraft(e.target.value)}
                       onKeyDown={(e) => {
@@ -679,45 +651,28 @@ export default function ConfigPage() {
                       添加
                     </Button>
                   </div>
+                  {enabledTgIds.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-1">
+                      {enabledTgIds.map((id) => {
+                        const title = tgChatTitle(id);
+                        return (
+                          <Badge
+                            key={id}
+                            variant="secondary"
+                            className="cursor-pointer gap-1"
+                            onClick={() => removeTgChat(id)}
+                          >
+                            {title ? `${title} (${id})` : id}
+                            <X className="size-3" />
+                          </Badge>
+                        );
+                      })}
+                    </div>
+                  )}
                   <FieldDescription>
-                    id 按字符串保存（可负号）。Enter 或点添加写入列表；保存时也会合并未点添加的输入。
+                    仅这些群里 bot 才会回复。id 按字符串保存(可负号);Enter 或点添加写入,保存时也会合并未点添加的输入。也可在「生效会话」页一键开关。
                   </FieldDescription>
                 </Field>
-
-                {enabledTgIds.length > 0 ? (
-                  <ul className="divide-border divide-y rounded-md border">
-                    {enabledTgIds.map((id) => {
-                      const title = tgChatTitle(id);
-                      return (
-                        <li
-                          key={id}
-                          className="flex items-center justify-between gap-2 px-3 py-2 text-sm"
-                        >
-                          <div className="min-w-0 flex flex-col">
-                            {title ? (
-                              <span className="truncate font-medium">{title}</span>
-                            ) : null}
-                            <span className="text-muted-foreground font-mono text-xs">{id}</span>
-                          </div>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            className="shrink-0"
-                            onClick={() => removeTgChat(id)}
-                            aria-label={`移除 ${id}`}
-                          >
-                            <X className="size-4" />
-                          </Button>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                ) : (
-                  <p className="text-muted-foreground text-sm">
-                    尚未添加会话。添加后 bot 才会在对应群内 @ 应答。
-                  </p>
-                )}
               </FieldGroup>
             </SectionCard>
           </TabsContent>
