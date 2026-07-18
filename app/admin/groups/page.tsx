@@ -37,6 +37,8 @@ import { useGroupNames } from "@/lib/group-name";
 
 type Tri = "inherit" | "on" | "off";
 
+type ChannelId = "qq" | "tg" | "discord";
+
 interface GroupPolicy {
   proactiveEnabled?: boolean;
   proactiveSilenceMs?: number;
@@ -44,6 +46,9 @@ interface GroupPolicy {
 }
 
 interface Row {
+  channel: ChannelId;
+  chatId: string;
+  /** 兼容旧字段；勿作主键 */
   groupId: number;
   enabled: boolean;
   messageCount: number;
@@ -52,6 +57,7 @@ interface Row {
   sedimentedCount: number;
   policy: GroupPolicy;
   hasOverride: boolean;
+  policyKey: string;
   effective: {
     proactiveEnabled: boolean;
     proactiveSilenceMs: number;
@@ -82,10 +88,42 @@ function triToBool(t: Tri): boolean | undefined {
   return t === "on";
 }
 
+function rowLabel(
+  r: Pick<Row, "channel" | "chatId" | "groupId">,
+  nameFn: (id: number) => string
+): string {
+  if (r.channel === "qq" && r.groupId > 0) return nameFn(r.groupId);
+  if (r.channel === "tg" && r.groupId !== 0) {
+    const n = nameFn(r.groupId);
+    if (n && n !== String(r.groupId)) return n;
+  }
+  return r.chatId;
+}
+
+function channelLabel(c: ChannelId): string {
+  if (c === "qq") return "QQ";
+  if (c === "tg") return "TG";
+  return c;
+}
+
+/**
+ * 策略写 payload：新键 policyKey；QQ 同时清掉历史裸群号键，避免 getGroupPolicy 回退读到旧覆盖。
+ */
+function policyWritePayload(
+  row: Pick<Row, "channel" | "chatId" | "policyKey">,
+  policy: GroupPolicy | null
+): Record<string, GroupPolicy | null> {
+  const out: Record<string, GroupPolicy | null> = { [row.policyKey]: policy };
+  if (row.channel === "qq" && row.chatId) {
+    out[row.chatId] = null;
+  }
+  return out;
+}
+
 export default function GroupsPage() {
   const { data, error, loading, refresh } = usePolling<ActivityData>("/api/groups/activity");
   const { name } = useGroupNames();
-  const [busyId, setBusyId] = useState<number | null>(null);
+  const [busyKey, setBusyKey] = useState<string | null>(null);
   const [editing, setEditing] = useState<Row | null>(null);
   const [savingPolicy, setSavingPolicy] = useState(false);
 
@@ -113,8 +151,8 @@ export default function GroupsPage() {
     setHandoffTri(triFrom(r.policy.notifyAdminOnHandoff));
   }
 
-  async function toggle(groupId: number, enable: boolean) {
-    setBusyId(groupId);
+  async function toggle(row: Row, enable: boolean) {
+    setBusyKey(row.policyKey);
     try {
       const cur = await fetch("/api/config").then((x) => x.json());
       if (!cur.ok) {
@@ -125,9 +163,11 @@ export default function GroupsPage() {
       const chats: ChatRef[] = Array.isArray(cur.data.enabledChats)
         ? [...cur.data.enabledChats]
         : [];
-      const others = chats.filter((c) => !(c.channel === "qq" && c.chatId === String(groupId)));
+      const others = chats.filter(
+        (c) => !(c.channel === row.channel && c.chatId === row.chatId)
+      );
       const next: ChatRef[] = enable
-        ? [...others, { channel: "qq", chatId: String(groupId) }]
+        ? [...others, { channel: row.channel, chatId: row.chatId }]
         : others;
       const r = await fetch("/api/config", {
         method: "PUT",
@@ -135,7 +175,8 @@ export default function GroupsPage() {
         body: JSON.stringify({ enabledChats: next }),
       }).then((x) => x.json());
       if (r.ok) {
-        toast.success(enable ? `已生效: ${name(groupId)}` : `已关闭: ${name(groupId)}`);
+        const label = `${channelLabel(row.channel)} · ${rowLabel(row, name)}`;
+        toast.success(enable ? `已生效: ${label}` : `已关闭: ${label}`);
         if (enable) {
           toast.message("用法提示", {
             description: "群内问 bot 请 @机器人;重置发「重置」;转人工发「人工」。",
@@ -148,7 +189,7 @@ export default function GroupsPage() {
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e));
     } finally {
-      setBusyId(null);
+      setBusyKey(null);
     }
   }
 
@@ -170,19 +211,20 @@ export default function GroupsPage() {
       const nh = triToBool(handoffTri);
       if (nh !== undefined) policy.notifyAdminOnHandoff = nh;
 
-      // 无任何覆盖 → 传 null 清除
-      const payload =
+      const groupPolicies =
         Object.keys(policy).length === 0
-          ? { groupPolicies: { [String(editing.groupId)]: null } }
-          : { groupPolicies: { [String(editing.groupId)]: policy } };
+          ? policyWritePayload(editing, null)
+          : policyWritePayload(editing, policy);
 
       const r = await fetch("/api/config", {
         method: "PUT",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({ groupPolicies }),
       }).then((x) => x.json());
       if (r.ok) {
-        toast.success(`已保存 ${name(editing.groupId)} 的策略`);
+        toast.success(
+          `已保存 ${channelLabel(editing.channel)} · ${rowLabel(editing, name)} 的策略`
+        );
         setEditing(null);
         await refresh();
       } else {
@@ -195,31 +237,35 @@ export default function GroupsPage() {
     }
   }
 
-  async function clearPolicy(groupId: number) {
-    setBusyId(groupId);
+  async function clearPolicy(row: Row) {
+    setBusyKey(row.policyKey);
     try {
       const r = await fetch("/api/config", {
         method: "PUT",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ groupPolicies: { [String(groupId)]: null } }),
+        body: JSON.stringify({
+          groupPolicies: policyWritePayload(row, null),
+        }),
       }).then((x) => x.json());
       if (r.ok) {
-        toast.success(`已恢复跟随全局: ${name(groupId)}`);
-        if (editing?.groupId === groupId) setEditing(null);
+        toast.success(
+          `已恢复跟随全局: ${channelLabel(row.channel)} · ${rowLabel(row, name)}`
+        );
+        if (editing?.policyKey === row.policyKey) setEditing(null);
         await refresh();
       } else toast.error(r.error || "清除失败");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e));
     } finally {
-      setBusyId(null);
+      setBusyKey(null);
     }
   }
 
   return (
     <PageShell>
       <PageHeader
-        title="生效群"
-        description={`按群开关机器人应答，并覆盖主动补位 / 转人工通知策略。${overrideCount ? `当前 ${overrideCount} 个群有独立策略。` : "未设置覆盖时全部跟随全局配置。"}`}
+        title="生效会话"
+        description={`按会话开关机器人应答，并覆盖主动补位 / 转人工通知策略。${overrideCount ? `当前 ${overrideCount} 个会话有独立策略。` : "未设置覆盖时全部跟随全局配置。"}`}
       />
 
       {globals && (
@@ -233,26 +279,30 @@ export default function GroupsPage() {
           <MetricBadge icon={Timer} label="静默阈值" value={min(globals.proactiveSilenceMs)} />
           <MetricBadge icon={Bell} label="转人工通知" value="开" tone="primary" />
           {overrideCount > 0 && (
-            <MetricBadge icon={Settings2} label="独立策略" value={`${overrideCount} 群`} />
+            <MetricBadge icon={Settings2} label="独立策略" value={`${overrideCount} 会话`} />
           )}
         </MetricBadgeRow>
       )}
 
-      <SectionCard title="群活动与策略" icon={Users} description="可在配置页修改全局默认；表格内可按群覆盖。">
+      <SectionCard
+        title="会话活动与策略"
+        icon={Users}
+        description="可在配置页修改全局默认；表格内可按会话覆盖。"
+      >
         <DataState
           loading={loading}
           error={error}
           empty={rows.length === 0}
           onRetry={refresh}
           emptyIcon={Users}
-          emptyTitle="暂无群活动"
-          emptyDescription="生效群有消息后会出现在这里。也可先在配置页勾选生效群。"
+          emptyTitle="暂无会话活动"
+          emptyDescription="生效会话有消息后会出现在这里。也可先在配置页勾选生效会话。"
           skeleton={<Skeleton className="h-40 w-full" />}
         >
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>群</TableHead>
+                <TableHead>会话</TableHead>
                 <TableHead>生效</TableHead>
                 <TableHead>主动补位</TableHead>
                 <TableHead>静默</TableHead>
@@ -264,21 +314,28 @@ export default function GroupsPage() {
             </TableHeader>
             <TableBody>
               {rows.map((r) => (
-                <TableRow key={r.groupId}>
+                <TableRow key={r.policyKey}>
                   <TableCell className="font-medium">
                     <div className="flex flex-col gap-0.5">
-                      <span>{name(r.groupId)}</span>
-                      <span className="text-muted-foreground text-xs tabular-nums">{r.groupId}</span>
+                      <div className="flex items-center gap-1.5">
+                        <Badge variant="outline" className="text-[10px] px-1.5">
+                          {channelLabel(r.channel)}
+                        </Badge>
+                        <span>{rowLabel(r, name)}</span>
+                      </div>
+                      <span className="text-muted-foreground font-mono text-xs">{r.chatId}</span>
                     </div>
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center gap-2">
                       <Switch
                         checked={r.enabled}
-                        disabled={busyId === r.groupId}
-                        onCheckedChange={(v) => toggle(r.groupId, v)}
+                        disabled={busyKey === r.policyKey}
+                        onCheckedChange={(v) => toggle(r, v)}
                       />
-                      <Badge variant={r.enabled ? "default" : "secondary"}>{r.enabled ? "生效" : "未生效"}</Badge>
+                      <Badge variant={r.enabled ? "default" : "secondary"}>
+                        {r.enabled ? "生效" : "未生效"}
+                      </Badge>
                     </div>
                   </TableCell>
                   <TableCell>
@@ -323,9 +380,9 @@ export default function GroupsPage() {
                         <Button
                           size="sm"
                           variant="ghost"
-                          disabled={busyId === r.groupId}
+                          disabled={busyKey === r.policyKey}
                           title="清除覆盖，跟随全局"
-                          onClick={() => clearPolicy(r.groupId)}
+                          onClick={() => clearPolicy(r)}
                         >
                           <RotateCcw data-icon="inline-start" />
                           清除
@@ -343,13 +400,22 @@ export default function GroupsPage() {
       <Sheet open={editing !== null} onOpenChange={(o) => !o && setEditing(null)}>
         <SheetContent className="flex w-full flex-col sm:max-w-md">
           <SheetHeader>
-            <SheetTitle>群策略 · {editing ? name(editing.groupId) : ""}</SheetTitle>
+            <SheetTitle>
+              会话策略 · {editing ? `${channelLabel(editing.channel)} · ${rowLabel(editing, name)}` : ""}
+            </SheetTitle>
             <SheetDescription>
               未覆盖的项跟随全局配置。
+              {editing && (
+                <>
+                  {" "}
+                  <span className="font-mono text-xs">{editing.policyKey}</span>
+                </>
+              )}
               {globals && (
                 <>
-                  {" "}当前全局:主动 {globals.proactiveEnabled ? "开" : "关"} · 静默 {min(globals.proactiveSilenceMs)} ·
-                  转人工通知开。
+                  {" "}
+                  当前全局:主动 {globals.proactiveEnabled ? "开" : "关"} · 静默{" "}
+                  {min(globals.proactiveSilenceMs)} · 转人工通知开。
                 </>
               )}
             </SheetDescription>
@@ -401,7 +467,7 @@ export default function GroupsPage() {
               </Field>
 
               <Field>
-                <FieldLabel>转人工时通知管理群</FieldLabel>
+                <FieldLabel>转人工时通知管理面</FieldLabel>
                 <Select value={handoffTri} onValueChange={(v) => setHandoffTri(v as Tri)}>
                   <SelectTrigger>
                     <SelectValue />
@@ -412,7 +478,9 @@ export default function GroupsPage() {
                     <SelectItem value="off">不通知</SelectItem>
                   </SelectContent>
                 </Select>
-                <FieldDescription>仅控制转人工时是否向管理群发消息;会话仍会进入人工接待。</FieldDescription>
+                <FieldDescription>
+                  仅控制转人工时是否向管理面发消息;会话仍会进入人工接待。
+                </FieldDescription>
               </Field>
             </FieldGroup>
           </div>
@@ -422,7 +490,7 @@ export default function GroupsPage() {
               <Button
                 variant="outline"
                 disabled={savingPolicy}
-                onClick={() => editing && clearPolicy(editing.groupId)}
+                onClick={() => editing && clearPolicy(editing)}
               >
                 <RotateCcw data-icon="inline-start" />
                 全部跟随全局

@@ -125,4 +125,84 @@ describe("handoff handler", () => {
       sends.filter((s) => s.channel === "tg" && s.text.includes("转人工")).length
     ).toBe(0)
   })
+
+  it("adminSurface 为 TG 时 QQ 用户 handoff → 通知发 TG", async () => {
+    bus.removeAllListeners()
+    repo = new Repo(openDb(":memory:"))
+    registerHandoffHandler({
+      repo,
+      adminSurface: { channel: "tg" as const, chatId: "-100999" },
+      handoffTimeoutMin: 30,
+      scanMs: 60_000,
+    })
+    const sends: any[] = []
+    bus.on("action.send", (a) => sends.push(a))
+    bus.emit("handoff.requested", {
+      channel: "qq" as const,
+      sessionKey: SK,
+      chatId: "1",
+      userId: "2",
+      lastQuestion: "退款",
+      reason: "user",
+    })
+    await new Promise((r) => setTimeout(r, 20))
+    expect(repo.isHumanMode(SK)).toBe(true)
+    expect(
+      sends.some(
+        (s) =>
+          s.channel === "qq" && s.chatId === "1" && s.text.includes("转接")
+      )
+    ).toBe(true)
+    expect(
+      sends.some(
+        (s) =>
+          s.channel === "tg" &&
+          s.chatId === "-100999" &&
+          s.text.includes("转人工") &&
+          s.text.includes(SK)
+      )
+    ).toBe(true)
+    // 不应再抄送到旧 QQ 管理面
+    expect(
+      sends.filter((s) => s.channel === "qq" && s.chatId === "999").length
+    ).toBe(0)
+  })
+
+  it("adminSurface 为 TG 时 TG 用户 handoff → 用户回 TG，通知也发 TG 管理面", async () => {
+    bus.removeAllListeners()
+    repo = new Repo(openDb(":memory:"))
+    registerHandoffHandler({
+      repo,
+      adminSurface: { channel: "tg" as const, chatId: "-100999" },
+      handoffTimeoutMin: 30,
+      scanMs: 60_000,
+    })
+    const sends: any[] = []
+    bus.on("action.send", (a) => sends.push(a))
+    bus.emit("handoff.requested", {
+      channel: "tg" as const,
+      sessionKey: "tg:-1001:42",
+      chatId: "-1001",
+      userId: "42",
+      lastQuestion: "怎么退款",
+      reason: "user",
+    })
+    await new Promise((r) => setTimeout(r, 20))
+    expect(
+      sends.some(
+        (s) =>
+          s.channel === "tg" &&
+          s.chatId === "-1001" &&
+          s.text.includes("转接")
+      )
+    ).toBe(true)
+    expect(
+      sends.some(
+        (s) =>
+          s.channel === "tg" &&
+          s.chatId === "-100999" &&
+          s.text.includes("转人工")
+      )
+    ).toBe(true)
+  })
 })
