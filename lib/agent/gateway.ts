@@ -13,6 +13,13 @@ import {
   HANDOFF_KEYWORDS,
   HELP_KEYWORDS,
 } from "./command-keywords"
+import {
+  PRIOR_USER_CONTEXT_LIMIT,
+  PRIOR_CONTEXT_MAX_CHARS,
+  PRIOR_LINE_MAX_CHARS,
+  formatPriorContext,
+  clipPriorTexts,
+} from "./prior-context"
 
 export interface GatewayDeps {
   repo: Repo
@@ -94,24 +101,15 @@ export function registerGateway(deps: GatewayDeps): () => void {
     if (!triggered) return
     if (repo.seenMessage(makeDedupeKey(channel, chatId, messageId))) return
     const sessionKey = makeSessionKey(channel, chatId, userId)
-    // 纯 @bot 无正文：回用法说明（常见「@ 了但无回复」）
-    if (!msg.rawText?.trim() && !msg.images?.length) {
-      sendText(channel, chatId, helpText(supportUrl), messageId)
-      bus.emit("resolution.recorded", {
-        kind: "ack",
-        sessionKey,
-        channel,
-        chatId,
-        userId,
-        detail: "empty-after-mention",
-      })
-      return
-    }
+
+    const body = (msg.rawText ?? "").trim()
+    const hasBody = body.length > 0
+    const hasImages = !!msg.images?.length
 
     // human-mode:已转人工 → 丢弃(不抢答)
     if (repo.isHumanMode(sessionKey)) {
       // 允许用户在人工模式发「重置」清上下文,但不自动答
-      if (RESET_KEYWORDS.test(msg.rawText)) {
+      if (RESET_KEYWORDS.test(body)) {
         repo.clearResumeId(sessionKey)
         sendText(
           channel,
@@ -124,7 +122,7 @@ export function registerGateway(deps: GatewayDeps): () => void {
     }
 
     // 用户自助重置:清 resumeId,不转 Agent
-    if (RESET_KEYWORDS.test(msg.rawText)) {
+    if (RESET_KEYWORDS.test(body)) {
       repo.clearResumeId(sessionKey)
       sendText(channel, chatId, "已重置对话,我们重新开始吧~", messageId)
       bus.emit("resolution.recorded", {
@@ -138,13 +136,13 @@ export function registerGateway(deps: GatewayDeps): () => void {
     }
 
     // 用法说明
-    if (HELP_KEYWORDS.test(msg.rawText)) {
+    if (HELP_KEYWORDS.test(body)) {
       sendText(channel, chatId, helpText(supportUrl), messageId)
       return
     }
 
     // 转人工：有管理面 → handoff 事件（通知走 adminSurface）；无管理面 → 引导官网
-    if (HANDOFF_KEYWORDS.test(msg.rawText)) {
+    if (HANDOFF_KEYWORDS.test(body)) {
       if (!adminSurface) {
         const link = supportUrl
           ? ` 也可访问 ${supportUrl} 联系支持。`
@@ -159,7 +157,7 @@ export function registerGateway(deps: GatewayDeps): () => void {
       }
       const lastQ =
         repo.listSessions().find((s) => s.key === sessionKey)?.lastQuestion ??
-        msg.rawText
+        body
       bus.emit("handoff.requested", {
         channel,
         sessionKey,
@@ -171,10 +169,54 @@ export function registerGateway(deps: GatewayDeps): () => void {
       return
     }
 
-    // 记录最近问题,供列表预览 / 转人工摘要
-    if (msg.rawText.trim()) {
-      repo.setLastQuestion(sessionKey, msg.rawText.trim())
+    // 加载 @ 前用户近期发言,拼入 qualified text
+    let priorTexts: string[] = []
+    try {
+      const since = repo.priorSince(sessionKey)
+      const rows = repo.recentUserGroupMessages(
+        channel,
+        chatId,
+        userId,
+        PRIOR_USER_CONTEXT_LIMIT,
+        {
+          excludeMessageId: messageId,
+          sinceTs: since,
+        }
+      )
+      priorTexts = clipPriorTexts(
+        rows.map((r) => r.text),
+        PRIOR_CONTEXT_MAX_CHARS,
+        PRIOR_LINE_MAX_CHARS
+      )
+    } catch (err) {
+      bus.emit("error.occurred", {
+        scope: "gateway.prior-context",
+        err,
+        sessionKey,
+        channel,
+        chatId,
+      })
+      priorTexts = []
     }
+
+    // 纯 @ 无正文/图/prior：回用法说明（常见「@ 了但无回复」）
+    if (!hasBody && !hasImages && priorTexts.length === 0) {
+      sendText(channel, chatId, helpText(supportUrl), messageId)
+      bus.emit("resolution.recorded", {
+        kind: "ack",
+        sessionKey,
+        channel,
+        chatId,
+        userId,
+        detail: "empty-after-mention",
+      })
+      return
+    }
+
+    const text = formatPriorContext(priorTexts, body)
+    // 记录最近问题,供列表预览 / 转人工摘要
+    const lastQ = body || priorTexts[priorTexts.length - 1] || ""
+    if (lastQ) repo.setLastQuestion(sessionKey, lastQ)
 
     bus.emit("message.qualified", {
       channel,
@@ -182,7 +224,7 @@ export function registerGateway(deps: GatewayDeps): () => void {
       chatId,
       userId,
       messageId,
-      text: msg.rawText,
+      text,
       images: msg.images,
       quoted: msg.quoted,
       forwarded: msg.forwarded,
