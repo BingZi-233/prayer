@@ -61,6 +61,33 @@ function migrate(db: Database.Database, dim: number): void {
     // 已是 v2:幂等确保表结构(防空库误标 version 等极端情况)
     createV2Tables(db, dim)
   }
+
+  // v3: sessions.prior_since + 用户消息 lookback 索引(幂等)
+  if (userVersion(db) < 3) {
+    ensureSessionsPriorSince(db)
+    ensureGmUserTimeIndex(db)
+    setUserVersion(db, 3)
+  } else {
+    ensureSessionsPriorSince(db)
+    ensureGmUserTimeIndex(db)
+  }
+}
+
+/** v3: sessions 补 prior_since 列(已存在则跳过) */
+function ensureSessionsPriorSince(db: Database.Database): void {
+  if (!tableExists(db, "sessions")) return
+  if (!tableColumns(db, "sessions").has("prior_since")) {
+    db.exec("ALTER TABLE sessions ADD COLUMN prior_since INTEGER")
+  }
+}
+
+/** v3: group_messages 用户 lookback 复合索引 */
+function ensureGmUserTimeIndex(db: Database.Database): void {
+  if (!tableExists(db, "group_messages")) return
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_gm_channel_group_user_time
+      ON group_messages(channel, group_id, user_id, created_at, id)
+  `)
 }
 
 /** v1 基线表(升级前源形态)。全新库也会先建这套再 migrateToV2。 */
@@ -73,6 +100,7 @@ function createV1Tables(db: Database.Database, dim: number): void {
       human_mode INTEGER NOT NULL DEFAULT 0,
       human_since INTEGER,
       last_question TEXT,
+      prior_since INTEGER,
       updated_at INTEGER NOT NULL DEFAULT (unixepoch('subsec') * 1000)
     );
     CREATE TABLE IF NOT EXISTS seen_messages (
@@ -773,6 +801,7 @@ function createV2Tables(db: Database.Database, dim: number): void {
       human_mode INTEGER NOT NULL DEFAULT 0,
       human_since INTEGER,
       last_question TEXT,
+      prior_since INTEGER,
       updated_at INTEGER NOT NULL DEFAULT (unixepoch('subsec') * 1000)
     );
     CREATE TABLE IF NOT EXISTS seen_messages (

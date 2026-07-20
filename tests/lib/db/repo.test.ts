@@ -619,6 +619,83 @@ describe("ranking repo 聚合", () => {
   })
 })
 
+describe("prior_since schema migration", () => {
+  it("全新 openDb 有 prior_since 且 user_version >= 3", () => {
+    const d = openDb(":memory:", 3)
+    const cols = (
+      d.prepare("PRAGMA table_info(sessions)").all() as { name: string }[]
+    ).map((c) => c.name)
+    expect(cols).toContain("prior_since")
+    expect(d.pragma("user_version", { simple: true }) as number).toBeGreaterThanOrEqual(
+      3
+    )
+    d.close()
+  })
+
+  it("磁盘 v2 库无 prior_since 时 openDb 升级补列并升到 user_version >= 3", () => {
+    const dir = mkdtempSync(join(tmpdir(), "prayer-v3-"))
+    const p = join(dir, "v2.db")
+    // 手工造最小 v2 形态:sessions 无 prior_since,user_version=2
+    const raw = new BetterSqlite3(p)
+    raw.exec(`
+      CREATE TABLE sessions (
+        key TEXT PRIMARY KEY,
+        session_id TEXT,
+        resume_id TEXT,
+        human_mode INTEGER NOT NULL DEFAULT 0,
+        human_since INTEGER,
+        last_question TEXT,
+        updated_at INTEGER NOT NULL DEFAULT 0
+      );
+      CREATE TABLE group_messages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        channel TEXT NOT NULL DEFAULT 'qq',
+        group_id TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        sender_role TEXT,
+        text TEXT NOT NULL,
+        message_id TEXT,
+        created_at INTEGER NOT NULL DEFAULT 0
+      );
+    `)
+    raw.pragma("user_version = 2")
+    raw.prepare(
+      "INSERT INTO sessions (key, session_id, updated_at) VALUES (?, ?, ?)"
+    ).run("qq:1:2", "sid", 100)
+    raw.close()
+
+    // 升级路径必须走 openDb(加载 sqlite-vec + migrate)
+    const upgraded = openDb(p, 3)
+    const cols = (
+      upgraded.prepare("PRAGMA table_info(sessions)").all() as {
+        name: string
+      }[]
+    ).map((c) => c.name)
+    expect(cols).toContain("prior_since")
+    expect(
+      upgraded.pragma("user_version", { simple: true }) as number
+    ).toBeGreaterThanOrEqual(3)
+    // 原数据保留
+    const row = upgraded
+      .prepare("SELECT key, session_id, prior_since FROM sessions")
+      .get() as { key: string; session_id: string; prior_since: number | null }
+    expect(row).toEqual({
+      key: "qq:1:2",
+      session_id: "sid",
+      prior_since: null,
+    })
+    // 用户 lookback 复合索引已建
+    const idx = upgraded
+      .prepare(
+        "SELECT 1 AS ok FROM sqlite_master WHERE type='index' AND name='idx_gm_channel_group_user_time'"
+      )
+      .get() as { ok: number } | undefined
+    expect(idx?.ok).toBe(1)
+    upgraded.close()
+    rmSync(dir, { recursive: true, force: true })
+  })
+})
+
 describe("channel schema migration", () => {
   it("group_messages 支持 channel 与复合唯一", () => {
     const r = new Repo(openDb(":memory:", 3))
@@ -748,9 +825,10 @@ describe("channel schema migration", () => {
     raw.close()
 
     const migrated = openDb(p, 3)
+    // v1→v2→v3 一路升完
     expect(
       (migrated.pragma("user_version", { simple: true }) as number)
-    ).toBe(2)
+    ).toBe(3)
     const sk = migrated
       .prepare("SELECT key FROM sessions")
       .get() as { key: string }
@@ -790,7 +868,7 @@ describe("channel schema migration", () => {
     // 幂等:再 open 不炸
     migrated.close()
     const again = openDb(p, 3)
-    expect(again.pragma("user_version", { simple: true })).toBe(2)
+    expect(again.pragma("user_version", { simple: true })).toBe(3)
     again.close()
     rmSync(dir, { recursive: true, force: true })
   })
