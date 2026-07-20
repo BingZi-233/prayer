@@ -145,10 +145,9 @@ describe("Repo tickets", () => {
   it("listTickets 含 open 与 closed,按创建时间降序", () => {
     const a = repo.createTicket("g:1", "问题A")
     const b = repo.createTicket("g:2", "问题B")
-    db.prepare("UPDATE tickets SET status='closed', created_at=? WHERE id=?").run(
-      1000,
-      a
-    )
+    db.prepare(
+      "UPDATE tickets SET status='closed', created_at=? WHERE id=?"
+    ).run(1000, a)
     db.prepare("UPDATE tickets SET created_at=? WHERE id=?").run(2000, b)
     const list = repo.listTickets()
     expect(list.length).toBe(2)
@@ -255,9 +254,7 @@ describe("group_messages 迁移去重", () => {
 
     const migrated = openDb(p, 3)
     const kept = migrated
-      .prepare(
-        "SELECT created_at FROM group_messages WHERE message_id = '42'"
-      )
+      .prepare("SELECT created_at FROM group_messages WHERE message_id = '42'")
       .all() as { created_at: number }[]
     expect(kept).toEqual([{ created_at: 1000 }]) // 只留最早一份
     const nulls = migrated
@@ -483,12 +480,7 @@ describe("repo 主动兜底支持", () => {
 
   it("groupMemberMessagesBetween:只取(after,until]内非管理发言,升序", () => {
     const r = mk()
-    const seed = (
-      uid: string,
-      role: string | null,
-      text: string,
-      at: number
-    ) =>
+    const seed = (uid: string, role: string | null, text: string, at: number) =>
       (r as any).db
         .prepare(
           "INSERT INTO group_messages (channel,group_id,user_id,sender_role,text,created_at) VALUES (?,?,?,?,?,?)"
@@ -510,7 +502,9 @@ describe("repo 主动兜底支持", () => {
     r.bufferGroupMessage("qq", "100", "200", "member", "带 id", "8001")
     r.bufferGroupMessage("qq", "100", "201", "member", "无 id") // 缺省
     const rows = r.groupMemberMessagesBetween("qq", "100", 0, Date.now() + 1000)
-    const byUser = Object.fromEntries(rows.map((row) => [row.userId, row.messageId]))
+    const byUser = Object.fromEntries(
+      rows.map((row) => [row.userId, row.messageId])
+    )
     expect(byUser["200"]).toBe("8001")
     expect(byUser["201"]).toBeNull()
   })
@@ -601,10 +595,7 @@ describe("ranking repo 聚合", () => {
     r.insertQuestionOccurrence(a, "qq", "100", "3", "超时会重复扣费吗", 3000)
     expect(r.rankingByWindow(0)[0].count).toBe(3) // 计数含重复
     // 样例去重 → 只两条,最近的重复句取 max ts 排前
-    expect(r.topicSamples(a, 5)).toEqual([
-      "超时会重复扣费吗",
-      "任务超时怎么办",
-    ])
+    expect(r.topicSamples(a, 5)).toEqual(["超时会重复扣费吗", "任务超时怎么办"])
   })
 
   it("rankingByWindow count 相同按 lastTs DESC", () => {
@@ -626,9 +617,9 @@ describe("prior_since schema migration", () => {
       d.prepare("PRAGMA table_info(sessions)").all() as { name: string }[]
     ).map((c) => c.name)
     expect(cols).toContain("prior_since")
-    expect(d.pragma("user_version", { simple: true }) as number).toBeGreaterThanOrEqual(
-      3
-    )
+    expect(
+      d.pragma("user_version", { simple: true }) as number
+    ).toBeGreaterThanOrEqual(3)
     d.close()
   })
 
@@ -659,9 +650,11 @@ describe("prior_since schema migration", () => {
       );
     `)
     raw.pragma("user_version = 2")
-    raw.prepare(
-      "INSERT INTO sessions (key, session_id, updated_at) VALUES (?, ?, ?)"
-    ).run("qq:1:2", "sid", 100)
+    raw
+      .prepare(
+        "INSERT INTO sessions (key, session_id, updated_at) VALUES (?, ?, ?)"
+      )
+      .run("qq:1:2", "sid", 100)
     raw.close()
 
     // 升级路径必须走 openDb(加载 sqlite-vec + migrate)
@@ -734,9 +727,10 @@ describe("channel schema migration", () => {
     d.prepare(
       "INSERT INTO sessions (key, session_id, updated_at) VALUES (?, ?, ?)"
     ).run("qq:123:456", "sid-new", 2000) // 冲突:保留较新
-    d.prepare(
-      "INSERT INTO tickets (session_key, summary) VALUES (?, ?)"
-    ).run("789:101", "旧工单")
+    d.prepare("INSERT INTO tickets (session_key, summary) VALUES (?, ?)").run(
+      "789:101",
+      "旧工单"
+    )
     d.prepare(
       "INSERT INTO config (key, value, updated_at) VALUES (?, ?, ?)"
     ).run("reflect_cursor:42", "999", 1000)
@@ -810,28 +804,30 @@ describe("channel schema migration", () => {
         created_at INTEGER NOT NULL DEFAULT 0
       );
     `)
-    raw.prepare(
-      "INSERT INTO sessions (key, session_id, updated_at) VALUES (?, ?, ?)"
-    ).run("100:200", "s1", 50)
-    raw.prepare(
-      "INSERT INTO config (key, value, updated_at) VALUES (?, ?, ?)"
-    ).run("reflect_cursor:100", "12345", 1)
-    raw.prepare(
-      "INSERT INTO group_messages (group_id,user_id,sender_role,text,message_id,created_at) VALUES (?,?,?,?,?,?)"
-    ).run(100, 200, "member", "hi", 9, 10)
-    raw.prepare(
-      "INSERT INTO tickets (session_key, summary) VALUES (?, ?)"
-    ).run("100:200", "t1")
+    raw
+      .prepare(
+        "INSERT INTO sessions (key, session_id, updated_at) VALUES (?, ?, ?)"
+      )
+      .run("100:200", "s1", 50)
+    raw
+      .prepare("INSERT INTO config (key, value, updated_at) VALUES (?, ?, ?)")
+      .run("reflect_cursor:100", "12345", 1)
+    raw
+      .prepare(
+        "INSERT INTO group_messages (group_id,user_id,sender_role,text,message_id,created_at) VALUES (?,?,?,?,?,?)"
+      )
+      .run(100, 200, "member", "hi", 9, 10)
+    raw
+      .prepare("INSERT INTO tickets (session_key, summary) VALUES (?, ?)")
+      .run("100:200", "t1")
     raw.close()
 
     const migrated = openDb(p, 3)
     // v1→v2→v3 一路升完
-    expect(
-      (migrated.pragma("user_version", { simple: true }) as number)
-    ).toBe(3)
-    const sk = migrated
-      .prepare("SELECT key FROM sessions")
-      .get() as { key: string }
+    expect(migrated.pragma("user_version", { simple: true }) as number).toBe(3)
+    const sk = migrated.prepare("SELECT key FROM sessions").get() as {
+      key: string
+    }
     expect(sk.key).toBe("qq:100:200")
     const cur = migrated
       .prepare("SELECT key, value FROM config WHERE key LIKE 'reflect_cursor%'")
@@ -861,9 +857,9 @@ describe("channel schema migration", () => {
     ).map((c) => c.name)
     expect(seenCols).toContain("dedupe_key")
     expect(seenCols).not.toContain("message_id")
-    const tk = migrated
-      .prepare("SELECT session_key FROM tickets")
-      .get() as { session_key: string }
+    const tk = migrated.prepare("SELECT session_key FROM tickets").get() as {
+      session_key: string
+    }
     expect(tk.session_key).toBe("qq:100:200")
     // 幂等:再 open 不炸
     migrated.close()
@@ -871,5 +867,55 @@ describe("channel schema migration", () => {
     expect(again.pragma("user_version", { simple: true })).toBe(3)
     again.close()
     rmSync(dir, { recursive: true, force: true })
+  })
+})
+
+describe("Repo prior context", () => {
+  it("clearResumeId 推进 prior_since；边界前消息不可见", () => {
+    repo.bufferGroupMessage("qq", "1", "2", "member", "旧问题", "m1")
+    const before = Date.now()
+    repo.setSessionId("qq:1:2", "sid")
+    repo.clearResumeId("qq:1:2")
+    const since = repo.priorSince("qq:1:2")
+    expect(since).toBeGreaterThanOrEqual(before)
+    const rows = repo.recentUserGroupMessages("qq", "1", "2", 10, {
+      sinceTs: since,
+    })
+    expect(rows).toHaveLength(0)
+  })
+
+  it("recentUserGroupMessages 只返回该用户非空、升序、exclude、limit", () => {
+    repo.bufferGroupMessage("qq", "1", "2", null, "a", "1")
+    repo.bufferGroupMessage("qq", "1", "2", null, "b", "2")
+    repo.bufferGroupMessage("qq", "1", "9", null, "他人", "3")
+    // empty text via SQL if buffer rejects
+    db.prepare(
+      `INSERT INTO group_messages (channel, group_id, user_id, text, message_id)
+       VALUES ('qq','1','2','   ','4')`
+    ).run()
+    const rows = repo.recentUserGroupMessages("qq", "1", "2", 10, {
+      excludeMessageId: "2",
+    })
+    expect(rows.map((r) => r.text)).toEqual(["a"])
+  })
+
+  it("同 created_at 按 id 升序稳定", () => {
+    const t = Date.now()
+    db.prepare(
+      `INSERT INTO group_messages (channel, group_id, user_id, text, message_id, created_at)
+       VALUES ('qq','1','2','x','10',?), ('qq','1','2','y','11',?)`
+    ).run(t, t)
+    const rows = repo.recentUserGroupMessages("qq", "1", "2", 10)
+    expect(rows.map((r) => r.text)).toEqual(["x", "y"])
+  })
+
+  it("clearAllResumeIds 推进全部行 prior_since，返回值仍只计有 resume 的", () => {
+    repo.setSessionId("qq:1:a", "s1")
+    repo.setSessionId("qq:1:b", "s2")
+    repo.clearResumeId("qq:1:b")
+    const n = repo.clearAllResumeIds()
+    expect(n).toBe(1)
+    expect(repo.priorSince("qq:1:a")).toBeGreaterThan(0)
+    expect(repo.priorSince("qq:1:b")).toBeGreaterThan(0)
   })
 })
