@@ -59,24 +59,38 @@ export class Repo {
       .run(key, sessionId, sessionId)
   }
 
-  // 仅清 resume_id → 下条消息开全新 SDK session;保留 session_id 供网页仍能查看历史
+  // 仅清 resume_id → 下条消息开全新 SDK session;保留 session_id 供网页仍能查看历史。
+  // 同时推进 prior_since 纪元:此后 recentUserGroupMessages 不再回看边界前消息。
   clearResumeId(key: string): void {
     this.db
       .prepare(
-        "UPDATE sessions SET resume_id = NULL, updated_at = unixepoch('subsec')*1000 WHERE key = ?"
+        `INSERT INTO sessions (key, resume_id, prior_since, updated_at)
+         VALUES (?, NULL, unixepoch('subsec')*1000, unixepoch('subsec')*1000)
+         ON CONFLICT(key) DO UPDATE SET
+           resume_id = NULL,
+           prior_since = unixepoch('subsec')*1000,
+           updated_at = unixepoch('subsec')*1000`
       )
       .run(key)
   }
 
   // 一键清所有会话的 resume_id → 每个会话下条消息各自开全新对话;session_id 保留,网页历史仍可查。
   // 返回受影响(此前仍有 resume_id)的会话数,供后台提示。
+  // 同时推进全部行的 prior_since 纪元(含本已无 resume 的行)。
   clearAllResumeIds(): number {
-    const info = this.db
-      .prepare(
-        "UPDATE sessions SET resume_id = NULL, updated_at = unixepoch('subsec')*1000 WHERE resume_id IS NOT NULL"
-      )
-      .run()
-    return info.changes
+    return this.transaction(() => {
+      const info = this.db
+        .prepare(
+          "UPDATE sessions SET resume_id = NULL, updated_at = unixepoch('subsec')*1000 WHERE resume_id IS NOT NULL"
+        )
+        .run()
+      this.db
+        .prepare(
+          "UPDATE sessions SET prior_since = unixepoch('subsec')*1000, updated_at = unixepoch('subsec')*1000"
+        )
+        .run()
+      return info.changes
+    })
   }
 
   getSessionId(key: string): string | undefined {
@@ -84,6 +98,14 @@ export class Repo {
       .prepare("SELECT session_id FROM sessions WHERE key = ?")
       .get(key) as { session_id: string | null } | undefined
     return row?.session_id ?? undefined
+  }
+
+  // 该会话 prior 上下文上界:clearResumeId 后推进;未设则为 0(无过滤)
+  priorSince(key: string): number {
+    const row = this.db
+      .prepare("SELECT prior_since FROM sessions WHERE key = ?")
+      .get(key) as { prior_since: number | null } | undefined
+    return row?.prior_since ?? 0
   }
 
   // 续接指针:reset 后为空 → Agent 不 resume,开新会话。
@@ -95,7 +117,8 @@ export class Repo {
         `SELECT resume_id FROM sessions
          WHERE key = ? AND (? <= 0 OR updated_at >= unixepoch('subsec') * 1000 - ?)`
       )
-      .get(key, maxIdleMs, maxIdleMs) as { resume_id: string | null } | undefined
+      .get(key, maxIdleMs, maxIdleMs) as
+      { resume_id: string | null } | undefined
     return row?.resume_id ?? undefined
   }
 
@@ -154,6 +177,58 @@ export class Repo {
         "INSERT OR IGNORE INTO group_messages (channel, group_id, user_id, sender_role, text, message_id) VALUES (?, ?, ?, ?, ?, ?)"
       )
       .run(channel, chatId, userId, senderRole, text, messageId ?? null)
+  }
+
+  // 某用户在某群的最近非空消息(@ 前 prior 上下文用)。
+  // 先 DESC 取 limit,再 reverse 为升序;同 created_at 按 id 稳定排序。
+  // opts.sinceTs: 仅 created_at > sinceTs(通常取 priorSince);opts.excludeMessageId: 排除当前触发消息。
+  recentUserGroupMessages(
+    channel: string,
+    chatId: string,
+    userId: string,
+    limit: number,
+    opts?: { excludeMessageId?: string; sinceTs?: number }
+  ): {
+    text: string
+    createdAt: number
+    messageId: string | null
+    id: number
+  }[] {
+    if (limit <= 0) return []
+    const sinceTs = opts?.sinceTs ?? 0
+    const exclude = opts?.excludeMessageId
+    const rows = this.db
+      .prepare(
+        `SELECT id, text, created_at, message_id FROM group_messages
+         WHERE channel = ? AND group_id = ? AND user_id = ?
+           AND length(trim(text)) > 0
+           AND created_at > ?
+           AND (? IS NULL OR message_id IS NULL OR message_id != ?)
+         ORDER BY created_at DESC, id DESC
+         LIMIT ?`
+      )
+      .all(
+        channel,
+        chatId,
+        userId,
+        sinceTs,
+        exclude ?? null,
+        exclude ?? null,
+        limit
+      ) as {
+      id: number
+      text: string
+      created_at: number
+      message_id: string | null
+    }[]
+    return rows
+      .map((r) => ({
+        text: r.text,
+        createdAt: r.created_at,
+        messageId: r.message_id,
+        id: r.id,
+      }))
+      .reverse()
   }
 
   // 上界 untilTs 前存在 owner/admin 发言的候选 chat,去重(每群游标另判 band)
@@ -517,9 +592,7 @@ export class Repo {
 
   // 每 chat 问题排行游标(config key = topic_cursor:{channel}:{chatId})
   topicCursor(channel: string, chatId: string): number {
-    return Number(
-      this.getConfigRow(`topic_cursor:${channel}:${chatId}`) ?? "0"
-    )
+    return Number(this.getConfigRow(`topic_cursor:${channel}:${chatId}`) ?? "0")
   }
 
   setTopicCursor(channel: string, chatId: string, ts: number): void {
@@ -563,9 +636,7 @@ export class Repo {
   // 生效 chat 中 topic 游标的最小值(忽略从未处理过的 0,避免恒卡 prune)。
   // 无任何 >0 游标 → MAX_SAFE_INTEGER(prune 不受 topic 侧约束)。
   // 接受 {channel, chatId}[] 或历史 number[](视为 qq 群号,Phase 0 兼容)。
-  minTopicCursor(
-    enabled: ChatRef[] | number[] | string[]
-  ): number {
+  minTopicCursor(enabled: ChatRef[] | number[] | string[]): number {
     let min = Number.MAX_SAFE_INTEGER
     for (const g of enabled) {
       let channel: string
@@ -614,7 +685,9 @@ export class Repo {
   // 每 chat 反思游标(config key = reflect_cursor:{channel}:{chatId})
   reflectCursors(): { channel: string; chatId: string; cursor: number }[] {
     const rows = this.db
-      .prepare("SELECT key, value FROM config WHERE key LIKE 'reflect_cursor:%'")
+      .prepare(
+        "SELECT key, value FROM config WHERE key LIKE 'reflect_cursor:%'"
+      )
       .all() as { key: string; value: string }[]
     const out: { channel: string; chatId: string; cursor: number }[] = []
     for (const r of rows) {
@@ -732,9 +805,11 @@ export class Repo {
   }
 
   // 升格为正式文档:标 promoted;写文件+向量入库由 applyPromote / API 处理
-  promoteReflection(
-    chunkId: number
-  ): { ok: boolean; content?: string; status?: ReflectionStatus } {
+  promoteReflection(chunkId: number): {
+    ok: boolean
+    content?: string
+    status?: ReflectionStatus
+  } {
     const row = this.db
       .prepare(
         "SELECT content FROM kb_chunks WHERE id = ? AND doc = 'human-reflection'"
@@ -827,9 +902,7 @@ export class Repo {
     return info.changes
   }
 
-  getTicket(
-    id: number
-  ):
+  getTicket(id: number):
     | {
         id: number
         sessionKey: string
@@ -1022,13 +1095,15 @@ export class Repo {
   deleteKbDoc(doc: string): number {
     return this.db.transaction(() => {
       const ids = (
-        this.db
-          .prepare("SELECT id FROM kb_chunks WHERE doc = ?")
-          .all(doc) as { id: number }[]
+        this.db.prepare("SELECT id FROM kb_chunks WHERE doc = ?").all(doc) as {
+          id: number
+        }[]
       ).map((r) => r.id)
       if (!ids.length) return 0
       const ph = ids.map(() => "?").join(",")
-      this.db.prepare(`DELETE FROM kb_vec WHERE chunk_id IN (${ph})`).run(...ids)
+      this.db
+        .prepare(`DELETE FROM kb_vec WHERE chunk_id IN (${ph})`)
+        .run(...ids)
       const info = this.db
         .prepare(`DELETE FROM kb_chunks WHERE id IN (${ph})`)
         .run(...ids)
@@ -1150,9 +1225,9 @@ export class Repo {
   }
 
   countSessions(): number {
-    const row = this.db
-      .prepare("SELECT COUNT(*) AS n FROM sessions")
-      .get() as { n: number }
+    const row = this.db.prepare("SELECT COUNT(*) AS n FROM sessions").get() as {
+      n: number
+    }
     return row.n
   }
 

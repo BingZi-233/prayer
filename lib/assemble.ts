@@ -99,6 +99,8 @@ export function assemble(deps: AssembleDeps): () => void {
       handoffTimeoutMin: deps.handoffTimeoutMin ?? 30,
       shouldNotify: shouldNotifyHandoff,
     }),
+    // gateway 必须先于 message-buffer 注册:同 tick 内 prior 回看时当前消息尚未入库;
+    // excludeMessageId 是双保险,防止当前触发消息被误纳入 prior。
     registerGateway({
       repo,
       botQQ,

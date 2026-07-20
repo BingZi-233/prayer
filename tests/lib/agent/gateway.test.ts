@@ -384,4 +384,103 @@ describe("gateway", () => {
     expect(h.sessionKey).toBe(sk)
     expect(h.by).toBe("admin")
   })
+
+  function seedPrior(texts: string[]) {
+    for (let i = 0; i < texts.length; i++) {
+      repo.bufferGroupMessage("qq", "1", "2", "member", texts[i], `p${i}`)
+    }
+  }
+
+  it("纯 @ 有 prior → qualified 含历史,不发用法说明", async () => {
+    seedPrior(["刚才的订单号是 ABC"])
+    const qualified = collectQualified()
+    const send = vi.fn()
+    bus.on("action.send", send)
+    bus.emit(
+      "message.received",
+      qqMsg({ messageId: "p-empty", rawText: "", atList: [BOT] })
+    )
+    const q = await qualified
+    expect(q.text).toContain("刚才的订单号是 ABC")
+    expect(q.text).toContain("【用户近期发言")
+    expect(send).not.toHaveBeenCalled()
+  })
+
+  it("空白 @ 无 prior → 用法说明", async () => {
+    const qualified = vi.fn()
+    bus.on("message.qualified", qualified)
+    const p = new Promise<any>((res) => bus.once("action.send", res))
+    bus.emit(
+      "message.received",
+      qqMsg({ messageId: "p-blank", rawText: "  \n\t", atList: [BOT] })
+    )
+    const a = await p
+    expect(a.text).toContain("@我")
+    expect(qualified).not.toHaveBeenCalled()
+  })
+
+  it("有 prior + 短正文 → text 含历史与正文", async () => {
+    seedPrior(["背景信息"])
+    const p = collectQualified()
+    bus.emit(
+      "message.received",
+      qqMsg({ messageId: "p-body", rawText: "帮我看看", atList: [BOT] })
+    )
+    const q = await p
+    expect(q.text).toContain("背景信息")
+    expect(q.text).toContain("帮我看看")
+    expect(q.text).toContain("【当前消息】")
+  })
+
+  it("重置后 prior 隔离:纯 @ 回用法说明,不 qualified", async () => {
+    seedPrior(["旧问题"])
+    // 先重置推进 prior_since
+    const resetP = new Promise<any>((res) => bus.once("action.send", res))
+    bus.emit(
+      "message.received",
+      qqMsg({ messageId: "p-reset", rawText: "重置", atList: [BOT] })
+    )
+    await resetP
+
+    const qualified = vi.fn()
+    bus.on("message.qualified", qualified)
+    const helpP = new Promise<any>((res) => bus.once("action.send", res))
+    bus.emit(
+      "message.received",
+      qqMsg({ messageId: "p-after-reset", rawText: "", atList: [BOT] })
+    )
+    const a = await helpP
+    expect(a.text).toContain("@我")
+    expect(qualified).not.toHaveBeenCalled()
+  })
+
+  it("recentUserGroupMessages 抛错 → 有正文仍 qualified,并 error.occurred", async () => {
+    vi.spyOn(repo, "recentUserGroupMessages").mockImplementation(() => {
+      throw new Error("db down")
+    })
+    const errP = new Promise<any>((res) => bus.once("error.occurred", res))
+    const qP = collectQualified()
+    bus.emit(
+      "message.received",
+      qqMsg({ messageId: "p-err", rawText: "还在吗", atList: [BOT] })
+    )
+    const [err, q] = await Promise.all([errP, qP])
+    expect(q.text).toBe("还在吗")
+    expect(err.scope).toBe("gateway.prior-context")
+    expect(err.sessionKey).toBe(SK)
+    expect(err.channel).toBe("qq")
+    expect(err.chatId).toBe("1")
+  })
+
+  it("纯 @ 有 prior → lastQuestion 用 prior 末条", async () => {
+    seedPrior(["第一条", "末条问题"])
+    const p = collectQualified()
+    bus.emit(
+      "message.received",
+      qqMsg({ messageId: "p-lq", rawText: "", atList: [BOT] })
+    )
+    await p
+    const s = repo.listSessions().find((x) => x.key === SK)
+    expect(s?.lastQuestion).toBe("末条问题")
+  })
 })

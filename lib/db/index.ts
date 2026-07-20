@@ -61,6 +61,33 @@ function migrate(db: Database.Database, dim: number): void {
     // 已是 v2:幂等确保表结构(防空库误标 version 等极端情况)
     createV2Tables(db, dim)
   }
+
+  // v3: sessions.prior_since + 用户消息 lookback 索引(幂等)
+  if (userVersion(db) < 3) {
+    ensureSessionsPriorSince(db)
+    ensureGmUserTimeIndex(db)
+    setUserVersion(db, 3)
+  } else {
+    ensureSessionsPriorSince(db)
+    ensureGmUserTimeIndex(db)
+  }
+}
+
+/** v3: sessions 补 prior_since 列(已存在则跳过) */
+function ensureSessionsPriorSince(db: Database.Database): void {
+  if (!tableExists(db, "sessions")) return
+  if (!tableColumns(db, "sessions").has("prior_since")) {
+    db.exec("ALTER TABLE sessions ADD COLUMN prior_since INTEGER")
+  }
+}
+
+/** v3: group_messages 用户 lookback 复合索引 */
+function ensureGmUserTimeIndex(db: Database.Database): void {
+  if (!tableExists(db, "group_messages")) return
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_gm_channel_group_user_time
+      ON group_messages(channel, group_id, user_id, created_at, id)
+  `)
 }
 
 /** v1 基线表(升级前源形态)。全新库也会先建这套再 migrateToV2。 */
@@ -73,6 +100,7 @@ function createV1Tables(db: Database.Database, dim: number): void {
       human_mode INTEGER NOT NULL DEFAULT 0,
       human_since INTEGER,
       last_question TEXT,
+      prior_since INTEGER,
       updated_at INTEGER NOT NULL DEFAULT (unixepoch('subsec') * 1000)
     );
     CREATE TABLE IF NOT EXISTS seen_messages (
@@ -308,7 +336,10 @@ function migrateGroupMessages(db: Database.Database): void {
     return
   }
   const cols = tableColumns(db, "group_messages")
-  if (cols.has("channel") && columnType(db, "group_messages", "group_id") === "TEXT") {
+  if (
+    cols.has("channel") &&
+    columnType(db, "group_messages", "group_id") === "TEXT"
+  ) {
     // 已是 v2;确保索引
     db.exec(`
       CREATE UNIQUE INDEX IF NOT EXISTS idx_gm_channel_msg
@@ -604,7 +635,10 @@ function migrateReflectionMeta(db: Database.Database): void {
     return
   }
   // group_id 可能是 INTEGER;有 channel 但 group_id 仍 INTEGER 也重建
-  if (cols.has("channel") && columnType(db, "reflection_meta", "group_id") === "TEXT") {
+  if (
+    cols.has("channel") &&
+    columnType(db, "reflection_meta", "group_id") === "TEXT"
+  ) {
     return
   }
   const hasStatus = cols.has("status")
@@ -663,22 +697,28 @@ function createReflectionMetaV2(db: Database.Database): void {
  */
 export function migrateLegacySessionKeys(db: Database.Database): void {
   if (tableExists(db, "sessions")) {
-    const rows = db
-      .prepare(
-        "SELECT key, session_id, resume_id, human_mode, human_since, last_question, updated_at FROM sessions"
-      )
-      .all() as {
+    // prior_since 为 v3 列:存在则一并迁移,避免 rewrite 时丢纪元
+    const hasPriorSince = tableColumns(db, "sessions").has("prior_since")
+    type SessRow = {
       key: string
       session_id: string | null
       resume_id: string | null
       human_mode: number
       human_since: number | null
       last_question: string | null
+      prior_since?: number | null
       updated_at: number
-    }[]
+    }
+    const rows = db
+      .prepare(
+        hasPriorSince
+          ? "SELECT key, session_id, resume_id, human_mode, human_since, last_question, prior_since, updated_at FROM sessions"
+          : "SELECT key, session_id, resume_id, human_mode, human_since, last_question, updated_at FROM sessions"
+      )
+      .all() as SessRow[]
 
     // 按 canonical key 分组,冲突留 updated_at 最大
-    const best = new Map<string, (typeof rows)[0]>()
+    const best = new Map<string, SessRow>()
     for (const r of rows) {
       const canon = legacySessionKeyToCanonical(r.key)
       const prev = best.get(canon)
@@ -694,28 +734,46 @@ export function migrateLegacySessionKeys(db: Database.Database): void {
     if (needsRewrite) {
       db.exec("DELETE FROM sessions")
       const ins = db.prepare(
-        `INSERT INTO sessions
-          (key, session_id, resume_id, human_mode, human_since, last_question, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`
+        hasPriorSince
+          ? `INSERT INTO sessions
+              (key, session_id, resume_id, human_mode, human_since, last_question, prior_since, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+          : `INSERT INTO sessions
+              (key, session_id, resume_id, human_mode, human_since, last_question, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?)`
       )
       for (const r of best.values()) {
-        ins.run(
-          r.key,
-          r.session_id,
-          r.resume_id,
-          r.human_mode,
-          r.human_since,
-          r.last_question,
-          r.updated_at
-        )
+        if (hasPriorSince) {
+          ins.run(
+            r.key,
+            r.session_id,
+            r.resume_id,
+            r.human_mode,
+            r.human_since,
+            r.last_question,
+            r.prior_since ?? null,
+            r.updated_at
+          )
+        } else {
+          ins.run(
+            r.key,
+            r.session_id,
+            r.resume_id,
+            r.human_mode,
+            r.human_since,
+            r.last_question,
+            r.updated_at
+          )
+        }
       }
     }
   }
 
   if (tableExists(db, "tickets")) {
-    const tickets = db
-      .prepare("SELECT id, session_key FROM tickets")
-      .all() as { id: number; session_key: string }[]
+    const tickets = db.prepare("SELECT id, session_key FROM tickets").all() as {
+      id: number
+      session_key: string
+    }[]
     const upd = db.prepare("UPDATE tickets SET session_key = ? WHERE id = ?")
     for (const t of tickets) {
       const next = legacySessionKeyToCanonical(t.session_key)
@@ -773,6 +831,7 @@ function createV2Tables(db: Database.Database, dim: number): void {
       human_mode INTEGER NOT NULL DEFAULT 0,
       human_since INTEGER,
       last_question TEXT,
+      prior_since INTEGER,
       updated_at INTEGER NOT NULL DEFAULT (unixepoch('subsec') * 1000)
     );
     CREATE TABLE IF NOT EXISTS seen_messages (
