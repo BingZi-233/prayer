@@ -78,15 +78,19 @@ export class Repo {
   // 返回受影响(此前仍有 resume_id)的会话数,供后台提示。
   // 同时推进全部行的 prior_since 纪元(含本已无 resume 的行)。
   clearAllResumeIds(): number {
-    const info = this.db
-      .prepare(
-        "UPDATE sessions SET resume_id = NULL, updated_at = unixepoch('subsec')*1000 WHERE resume_id IS NOT NULL"
-      )
-      .run()
-    this.db
-      .prepare("UPDATE sessions SET prior_since = unixepoch('subsec')*1000")
-      .run()
-    return info.changes
+    return this.transaction(() => {
+      const info = this.db
+        .prepare(
+          "UPDATE sessions SET resume_id = NULL, updated_at = unixepoch('subsec')*1000 WHERE resume_id IS NOT NULL"
+        )
+        .run()
+      this.db
+        .prepare(
+          "UPDATE sessions SET prior_since = unixepoch('subsec')*1000, updated_at = unixepoch('subsec')*1000"
+        )
+        .run()
+      return info.changes
+    })
   }
 
   getSessionId(key: string): string | undefined {
@@ -190,6 +194,7 @@ export class Repo {
     messageId: string | null
     id: number
   }[] {
+    if (limit <= 0) return []
     const sinceTs = opts?.sinceTs ?? 0
     const exclude = opts?.excludeMessageId
     const rows = this.db

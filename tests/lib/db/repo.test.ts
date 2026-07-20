@@ -918,4 +918,14 @@ describe("Repo prior context", () => {
     expect(repo.priorSince("qq:1:a")).toBeGreaterThan(0)
     expect(repo.priorSince("qq:1:b")).toBeGreaterThan(0)
   })
+
+  it("priorSince 缺失 key 返回 0", () => {
+    expect(repo.priorSince("qq:no:such")).toBe(0)
+  })
+
+  it("recentUserGroupMessages limit<=0 返回空数组", () => {
+    repo.bufferGroupMessage("qq", "1", "2", null, "a", "1")
+    expect(repo.recentUserGroupMessages("qq", "1", "2", 0)).toEqual([])
+    expect(repo.recentUserGroupMessages("qq", "1", "2", -1)).toEqual([])
+  })
 })
