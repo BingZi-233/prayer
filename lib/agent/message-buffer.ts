@@ -6,6 +6,7 @@ import {
   isChatEnabled,
   type ChatRef,
 } from "../channels/enabled-chats"
+import { isCommandMessage } from "./command-keywords"
 
 export interface MessageBufferDeps {
   repo: Repo
@@ -17,7 +18,7 @@ export interface MessageBufferDeps {
 }
 
 // 旁路缓冲:每条用户群消息落 group_messages,供反思轮询回看。
-// 排除管理面、bot 自己、空文本、非生效会话;不做 @bot 过滤(反思要看全量对话上下文)。
+// 排除管理面、bot 自己、空文本、整句命令、非生效会话;不做 @bot 过滤(反思要看全量对话上下文)。
 export function registerMessageBuffer(deps: MessageBufferDeps): () => void {
   const { repo, botQQ, enabledChats, adminSurface } = deps
   const botId = String(botQQ)
@@ -30,6 +31,8 @@ export function registerMessageBuffer(deps: MessageBufferDeps): () => void {
     // bot 自己:字符串比较(userId 已是 string)
     if (userId === botId) return
     if (!msg.rawText?.trim()) return
+    // 整句命令(重置/帮助/转人工)不入缓冲,避免污染 prior 上下文
+    if (isCommandMessage(msg.rawText)) return
     if (!isChatEnabled(enabledCfg, channel, chatId)) return
     try {
       repo.bufferGroupMessage(

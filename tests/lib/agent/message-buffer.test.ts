@@ -133,4 +133,19 @@ describe("message-buffer", () => {
     expect(win[0].text).toBe("tg 消息")
     stop()
   })
+
+  it("重置/帮助/转人工整句不缓冲", () => {
+    const stop = registerMessageBuffer({
+      repo,
+      botQQ: 1,
+      adminSurface: { channel: "qq" as const, chatId: "999" },
+      enabledChats: [{ channel: "qq" as const, chatId: "100" }],
+    })
+    for (const rawText of ["重置", "帮助", "人工", "怎么充值"]) {
+      bus.emit("message.received", msg({ rawText, messageId: rawText }))
+    }
+    const win = repo.groupMessageWindow("qq", "100", 0, 10)
+    expect(win.map((w) => w.text)).toEqual(["怎么充值"])
+    stop()
+  })
 })

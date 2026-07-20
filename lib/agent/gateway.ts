@@ -8,6 +8,11 @@ import {
   isChatEnabled,
   type ChatRef,
 } from "../channels/enabled-chats"
+import {
+  RESET_KEYWORDS,
+  HANDOFF_KEYWORDS,
+  HELP_KEYWORDS,
+} from "./command-keywords"
 
 export interface GatewayDeps {
   repo: Repo
@@ -24,16 +29,6 @@ export interface GatewayDeps {
   /** 固定支持链接,办不了/人工时附带 */
   supportUrl?: string
 }
-
-// 用户自助重置对话的关键词(整条消息精确匹配,避免误触)
-const RESET_KEYWORDS =
-  /^\s*(重新开始|重置对话|重置会话|重置|\/new|\/reset|\/clear)\s*$/i
-
-// 转人工关键词(整条消息)
-const HANDOFF_KEYWORDS = /^\s*(人工|转人工|人工客服|转接人工|客服)\s*$/i
-
-// 用法说明
-const HELP_KEYWORDS = /^\s*(帮助|怎么用|使用说明|\/help|help)\s*$/i
 
 function helpText(supportUrl?: string): string {
   const link = supportUrl ? `\n官网:${supportUrl}` : ""
