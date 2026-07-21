@@ -333,6 +333,14 @@ export const TOOL_ALLOWLIST = new Set<string>(["Skill"])
 export const AGENT_FALLBACK_TEXT =
   "(处理超出步数上限或出错,请换个说法或稍后再试)"
 
+// 主动模式哨兵:无把握时 agent 只输出此串。任何出站路径命中都必须吞掉,绝不可发给用户。
+export const NO_ANSWER_SENTINEL = "__NO_ANSWER__"
+
+/** 文本是否含主动模式「不回答」哨兵(含子串,防前后缀/混排泄漏)。 */
+export function isNoAnswerText(text: string): boolean {
+  return text.includes(NO_ANSWER_SENTINEL)
+}
+
 // 权限判定:所有 MCP 工具(mcp__ 前缀)无条件放行 —— 插件 MCP 均为受控只读查询,
 // 新增 server/工具免改白名单;再叠加非 MCP 的显式放行项(Skill)。Bash/Read/Web* 等宿主工具一律拒绝。
 export function isToolAllowed(

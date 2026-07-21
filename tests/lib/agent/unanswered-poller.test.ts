@@ -130,6 +130,23 @@ describe("unanswered-poller runScan", () => {
     expect(repo.sessionUpdatedAt("qq:100:200")).toBeUndefined();
   });
 
+  it("主动路径不 resume 已有主会话(防哨兵污染 transcript)", async () => {
+    repo.setGroupProactiveCursor("qq", "100", 1);
+    seed(100, 200, "member", "价格?", NOW - 5000);
+    repo.setSessionId("qq:100:200", "sid-main");
+    // 压制②靠 session.updated_at > questionTs;把 updated_at 拨回问题之前以便放行
+    ;(repo as any).db
+      .prepare("UPDATE sessions SET updated_at = ? WHERE key = ?")
+      .run(NOW - 6000, "qq:100:200");
+    const agent = fakeAgent("答案", "sess-proactive");
+    await runScan(base({ agent: agent as never }));
+    expect(agent.run).toHaveBeenCalledWith(
+      expect.stringContaining("【主动模式】"),
+      undefined, // 不传 resumeId
+      expect.objectContaining({ sessionKey: "qq:100:200" })
+    );
+  });
+
   it("agent 空输出 → 沉默", async () => {
     repo.setGroupProactiveCursor("qq", "100", 1);
     seed(100, 200, "member", "问题?", NOW - 5000);

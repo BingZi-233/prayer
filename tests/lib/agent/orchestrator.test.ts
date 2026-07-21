@@ -150,6 +150,36 @@ describe("orchestrator", () => {
     expect(fakeAgent.run).toHaveBeenCalledOnce()
   })
 
+  it("主链路输出 __NO_ANSWER__ → 不外发、丢弃 resume", async () => {
+    const fakeAgent = {
+      run: vi.fn(async () => ({
+        text: "__NO_ANSWER__",
+        sessionId: "sid-polluted",
+      })),
+    }
+    const store = new SessionStore(repo)
+    store.remember(SK, "sid-old")
+    registerOrchestrator({
+      agent: fakeAgent as any,
+      store,
+      ackEnabled: false,
+    })
+    const replies: string[] = []
+    const resolutions: any[] = []
+    bus.on("reply.ready", (r) => replies.push(r.text))
+    bus.on("resolution.recorded", (r) => resolutions.push(r))
+    bus.emit("message.qualified", qmsg({ messageId: "6", text: "冷门?" }))
+    await new Promise((r) => setTimeout(r, 30))
+    expect(replies).toEqual([])
+    expect(store.resumeId(SK)).toBeUndefined()
+    expect(resolutions).toContainEqual(
+      expect.objectContaining({
+        kind: "auto",
+        detail: "no_answer_suppressed",
+      })
+    )
+  })
+
   it("意图门:引用/转发正文一并送分类", async () => {
     const fakeAgent = {
       run: vi.fn(async () => ({ text: "x", sessionId: "s" })),
@@ -192,6 +222,24 @@ describe("orchestrator", () => {
     expect(a.chatId).toBe("5")
     expect(a.text).toBe("hi")
     expect(a).not.toHaveProperty("action")
+  })
+
+  it("reply mapper: 含 __NO_ANSWER__ 不 action.send", async () => {
+    registerReplyMapper({ maxChars: 0 })
+    const spy = vi.fn()
+    bus.on("action.send", spy)
+    bus.emit("reply.ready", {
+      channel: "qq" as const,
+      chatId: "5",
+      text: "__NO_ANSWER__",
+    })
+    bus.emit("reply.ready", {
+      channel: "qq" as const,
+      chatId: "5",
+      text: "前言 __NO_ANSWER__ 后缀",
+    })
+    await new Promise((r) => setTimeout(r, 20))
+    expect(spy).not.toHaveBeenCalled()
   })
 
   it("reply mapper: 透传 replyToId", async () => {

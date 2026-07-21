@@ -2,7 +2,11 @@ import { bus } from "../bus"
 import { logger } from "../logger"
 import type { Repo } from "../db/repo"
 import type { Agent } from "./agent"
-import { AGENT_FALLBACK_TEXT } from "./agent"
+import {
+  AGENT_FALLBACK_TEXT,
+  isNoAnswerText,
+  NO_ANSWER_SENTINEL,
+} from "./agent"
 import type { SessionStore } from "./session"
 import type { AnswerabilityClassifier } from "./answerability"
 import type { GroupPolicy } from "../config-store"
@@ -15,8 +19,9 @@ import {
 } from "../channels/enabled-chats"
 
 // 主动模式哨兵:无把握时 agent 只输出此串 → poller 判为非答案,沉默不发。
+// 指令并入 user prompt(非 system)以保持 system 前缀跨路径可缓存;见 agent.run 注释。
 export const PROACTIVE_SUFFIX =
-  "【主动模式】你是在无人应答时主动补位。仅当知识库检索到确切依据且你有把握时才作答;否则只输出 __NO_ANSWER__(不解释、不道歉、不引导人工或外链、不寒暄)。"
+  `【主动模式】你是在无人应答时主动补位。仅当知识库检索到确切依据且你有把握时才作答;否则只输出 ${NO_ANSWER_SENTINEL}(不解释、不道歉、不引导人工或外链、不寒暄)。`
 
 export interface UnansweredPollerDeps {
   repo: Repo
@@ -95,9 +100,7 @@ function chatSilence(d: Resolved, channel: ChannelId, chatId: string): number {
 // 真答案判定:非空、不含哨兵、且不是 agent 降级兜底文案。撞任一 → 沉默。
 function isAnswer(text: string): boolean {
   const t = text.trim()
-  return (
-    t.length > 0 && !t.includes("__NO_ANSWER__") && t !== AGENT_FALLBACK_TEXT
-  )
+  return t.length > 0 && !isNoAnswerText(t) && t !== AGENT_FALLBACK_TEXT
 }
 
 async function scanOnce(d: Resolved): Promise<void> {
@@ -174,9 +177,11 @@ async function scanOnce(d: Resolved): Promise<void> {
         // 门2:复用主链路 agent,带哨兵。
         // 主动模式指令并入 user prompt(而非 system 后缀):使主动/正常两路径 system 前缀恒等,
         // TTL 内可跨路径命中缓存(~1.5k token 的 system 只需写一次)。行为等价(单轮指令)。
+        // 故意不 resume 主会话:若续接,哨兵指令与 __NO_ANSWER__ 会写进 transcript,
+        // 后续 @ 主链路可能复读哨兵并外发(主链路原先无过滤)。真答案才 remember 新 session。
         const result = await d.agent.run(
           `${PROACTIVE_SUFFIX}\n\n${text}`,
-          d.store.resumeId(key),
+          undefined,
           { sessionKey: key, channel, chatId, userId }
         )
         if (!isAnswer(result.text)) {

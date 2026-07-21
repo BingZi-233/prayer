@@ -1,6 +1,7 @@
 import { bus } from "../bus"
 import { logger } from "../logger"
 import type { Agent } from "./agent"
+import { isNoAnswerText } from "./agent"
 import type { SessionStore } from "./session"
 import type { QualifiedMessage } from "../events"
 import {
@@ -100,6 +101,35 @@ export function registerOrchestrator(deps: OrchestratorDeps): () => void {
       },
       { images: q.images, quoted: q.quoted, forwarded: q.forwarded }
     )
+    // 哨兵泄漏防护:主动模式指令/历史可能诱使主链路也吐出 __NO_ANSWER__。
+    // 绝不外发;并丢弃续接,避免连环复读同一污染 transcript。
+    if (isNoAnswerText(result.text)) {
+      store.forgetResume(q.sessionKey)
+      logger.info(
+        `suppressed no-answer sentinel session=${q.sessionKey}`,
+        {
+          scope: "orchestrator",
+          channel: q.channel,
+          chatId: q.chatId,
+          sessionKey: q.sessionKey,
+          code: "business.no_answer_suppressed",
+          category: "business",
+          title: "吞掉哨兵输出",
+          hint: "模型输出了内部 __NO_ANSWER__ 标记,已拦截未发给用户。",
+          retryable: false,
+          skipClassify: true,
+        }
+      )
+      bus.emit("resolution.recorded", {
+        kind: "auto",
+        sessionKey: q.sessionKey,
+        channel: q.channel,
+        chatId: q.chatId,
+        userId: q.userId,
+        detail: "no_answer_suppressed",
+      })
+      return
+    }
     if (result.sessionId) store.remember(q.sessionKey, result.sessionId)
     if (result.text) {
       bus.emit("reply.ready", {

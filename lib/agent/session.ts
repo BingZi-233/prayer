@@ -11,4 +11,9 @@ export class SessionStore {
   remember(sessionKey: string, sessionId: string): void {
     this.repo.setSessionId(sessionKey, sessionId);
   }
+
+  /** 丢弃续接指针(下条开新会话);保留 session_id 供网页查历史。 */
+  forgetResume(sessionKey: string): void {
+    this.repo.clearResumeId(sessionKey);
+  }
 }

@@ -1,5 +1,6 @@
 import { bus } from "../bus"
 import type { ReplyReady } from "../events"
+import { isNoAnswerText } from "./agent"
 
 export interface ReplyMapperDeps {
   /** 单条字数上限;超出按句号/换行拆条。0 = 不拆。默认 900 */
@@ -35,7 +36,9 @@ export function registerReplyMapper(deps: ReplyMapperDeps = {}): () => void {
   const maxChars = deps.maxChars ?? 900
 
   const onReply = (r: ReplyReady) => {
-    const chunks = splitReply(r.text, maxChars)
+    // 最终出站闸门:任何路径若仍把哨兵放进 reply.ready,在此吞掉,绝不 action.send。
+    if (isNoAnswerText(r.text)) return
+    const chunks = splitReply(r.text, maxChars).filter((t) => !isNoAnswerText(t))
     chunks.forEach((text, i) => {
       bus.emit("action.send", {
         channel: r.channel,
