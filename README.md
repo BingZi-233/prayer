@@ -68,7 +68,7 @@
 pnpm pm:start     # build + 启动(后台守护)
 pnpm pm:status    # 查看状态
 pnpm pm:logs      # 实时日志
-pnpm pm:restart   # 重新 build + 重启(--update-env 刷新 .env)
+pnpm pm:restart   # 先停再 build 再启(避免 live build 覆盖 .next 导致静态资源 500)
 pnpm pm:stop      # 停止(保留在 pm2 列表)
 pnpm pm:delete    # 从 pm2 移除
 ```

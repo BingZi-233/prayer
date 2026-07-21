@@ -15,7 +15,7 @@
     "ingest": "node scripts/ingest.ts",
     "pm:start": "next build && pm2 start ecosystem.config.cjs",
     "pm:stop": "pm2 stop prayer",
-    "pm:restart": "next build && pm2 restart prayer --update-env",
+    "pm:restart": "pm2 stop prayer && next build && pm2 start prayer --update-env",
     "pm:status": "pm2 status prayer",
     "pm:logs": "pm2 logs prayer",
     "pm:delete": "pm2 delete prayer",
