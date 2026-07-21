@@ -143,7 +143,7 @@ export function assemble(deps: AssembleDeps): () => void {
       isBypassEnabled: deps.isBypassEnabled,
     }),
   ]
-  if ((deps.reflectCompactMs ?? 86_400_000) > 0) {
+  if ((deps.reflectCompactMs ?? 3_600_000) > 0) {
     cleanups.push(
       registerReflectionCompactor({
         repo,

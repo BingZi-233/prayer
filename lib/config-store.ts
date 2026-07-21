@@ -201,7 +201,8 @@ function seedFromEnv(env: Record<string, string | undefined>): AppConfig {
     reflectLookbackMs: Number(env.REFLECT_LOOKBACK_MS ?? "7200000"),
     reflectSettleMs: Number(env.REFLECT_SETTLE_MS ?? "600000"),
     reflectWindowMax: Number(env.REFLECT_WINDOW_MAX ?? "60"),
-    reflectCompactMs: Number(env.REFLECT_COMPACT_MS ?? "86400000"),
+    // 默认 1 小时一轮整理(历史默认 24h 太慢,百余条难以及时去重)
+    reflectCompactMs: Number(env.REFLECT_COMPACT_MS ?? "3600000"),
     reflectCompactMinEntries: Number(env.REFLECT_COMPACT_MIN_ENTRIES ?? "10"),
     reflectPromoteMs: Number(env.REFLECT_PROMOTE_MS ?? "86400000"),
     reflectPromoteMinEntries: Number(env.REFLECT_PROMOTE_MIN_ENTRIES ?? "1"),

@@ -16,6 +16,8 @@ export interface ReflectionCompactorDeps {
   // 装配后首次到期检查的延迟,给 boot 让路。缺省 30s
   firstDelayMs?: number
   minEntries?: number
+  /** 单批喂给 LLM 的最大条数。缺省 30;超过则分多批整理再汇总替换 */
+  batchSize?: number
   baseContextK?: number
   // 整理成功后是否向管理群发通知。缺省 true
   notifyAdmin?: boolean
@@ -28,11 +30,18 @@ interface Resolved {
   repo: Repo
   adminSurface: ChatRef | null
   minEntries: number
+  batchSize: number
   baseContextK: number
   notifyAdmin: boolean
   embed: (text: string) => Promise<Float32Array>
   queryFn: typeof sdkQuery
   now: () => number
+}
+
+type ReflectionEntry = {
+  id: number
+  content: string
+  status: string
 }
 
 // SDK outputFormat.json_schema 强制根对象(非裸数组);items 为整理后 FAQ 列表。
@@ -60,14 +69,14 @@ export const COMPACT_OUTPUT_SCHEMA = {
   additionalProperties: false,
 } as const
 
-// 自学习定位:整理=去重提质,不是删知识。基础文档仅作矛盾校验,不因「已覆盖」删反思。
-const COMPACT_SYSTEM = `你是客服知识库整理助手。反思条目是从人工有效答复中沉淀的自学习知识,整理目的是去重提质,不是遗忘。
+// 自学习定位:整理=去重提质。允许同主题激进合并,基础文档仅作矛盾校验。
+const COMPACT_SYSTEM = `你是客服知识库整理助手。反思条目是从人工有效答复中沉淀的自学习知识,整理目的是去重提质、压缩冗余。
 用户消息会给出两部分:
 一、【权威基础文档片段】——正式产品文档节选,仅用于判断反思是否与之明确矛盾。
-二、【现有反思条目】——历史沉淀的客服 FAQ,每条带序号;这些条目已在检索知识库中生效。
+二、【现有反思条目】——本批历史沉淀的客服 FAQ,每条带序号;这些条目已在检索知识库中生效。
 任务:输出整理后的反思条目集,规则:
-- 近义合并:表达同一问题要点的多条合并为一条更完整的 FAQ;合并时必须保留各方的关键细节(步骤、条件、例外、数字、口吻要点),禁止只留摘要。
-- 独立保留:主题不同的条目原样保留,不得丢弃。
+- 激进近义/同主题合并:同一问题、同一流程、同一产品点的多条(含换说法、补细节、部分重叠)必须合并为一条更完整的 FAQ;合并时保留各方关键细节(步骤、条件、例外、数字、口吻要点),禁止只留摘要。
+- 独立保留:真正不同主题的条目才原样保留;不要因为「略有差别」就各留一条。
 - 禁止因「基础文档已覆盖/已写过」而删除——反思可作口语化补充、边界 case 或实操细节,覆盖不等于冗余。
 - 仅当与基础文档明确矛盾、或与更完整反思直接冲突且明显过时/错误时,才删除该条。
 - 禁止无故缩短:未合并的条目应基本保留原信息量,不得把长 FAQ 压成一句话。
@@ -78,20 +87,40 @@ const COMPACT_SYSTEM = `你是客服知识库整理助手。反思条目是从�
 
 // 截断 salvage 时的最低保留比例:防止只解析出前 1~2 条就把整库替换掉。
 const TRUNCATED_MIN_RATIO = 0.2
-// 业务安全:自学习不允许一轮整理把大半知识抹掉(近义合并通常仍 ≥ 此比例)。
-export const COMPLETE_MIN_RATIO = 0.7
+// 业务安全:允许更激进近义合并(同主题多条压成一条),但仍挡「整库清空式」过度删除。
+export const COMPLETE_MIN_RATIO = 0.4
+/** 单批默认上限;超过则分批调 LLM,避免一次塞百余条导致合并不充分/输出截断 */
+export const DEFAULT_COMPACT_BATCH_SIZE = 30
+/** 默认整理周期 1 小时 */
+export const DEFAULT_COMPACT_MS = 3_600_000
 
 function resolve(deps: ReflectionCompactorDeps): Resolved {
   return {
     repo: deps.repo,
     adminSurface: deps.adminSurface,
     minEntries: deps.minEntries ?? 10,
+    batchSize: deps.batchSize ?? DEFAULT_COMPACT_BATCH_SIZE,
     baseContextK: deps.baseContextK ?? 3,
     notifyAdmin: deps.notifyAdmin ?? true,
     embed: deps.embed ?? defaultEmbed,
     queryFn: deps.queryFn ?? sdkQuery,
     now: deps.now ?? (() => Date.now()),
   }
+}
+
+/** 按 batchSize 切分(顺序分片,稳定可测)。 */
+export function partitionBatches<T>(items: T[], batchSize: number): T[][] {
+  if (items.length === 0) return []
+  const size =
+    !Number.isFinite(batchSize) || batchSize <= 0
+      ? items.length
+      : Math.floor(batchSize)
+  if (size >= items.length) return [items]
+  const out: T[][] = []
+  for (let i = 0; i < items.length; i += size) {
+    out.push(items.slice(i, i + size))
+  }
+  return out
 }
 
 // 业务安全底线:空集/暴涨/过度删除;structured 优先、文本兜底(+截断 salvage)。
@@ -153,73 +182,119 @@ export function validateCompacted(
   return r.ok ? r.faqs : null
 }
 
+/** 单批:检索基础上下文 + 调 LLM + 校验。失败返回 null(调用方保留该批原文)。 */
+async function compactOneBatch(
+  d: Resolved,
+  batch: ReflectionEntry[],
+  batchIndex: number,
+  batchTotal: number
+): Promise<string[] | null> {
+  // 1 条无法合并,原样返回,省一次 LLM
+  if (batch.length < 2) return batch.map((e) => e.content)
+
+  const ctx = new Map<number, string>()
+  for (const e of batch) {
+    for (const h of d.repo.searchBaseKb(
+      await d.embed(e.content),
+      d.baseContextK
+    )) {
+      ctx.set(h.id, h.content)
+    }
+  }
+  const baseBlock = [...ctx.values()]
+    .map((c, i) => `(${i + 1}) ${c}`)
+    .join("\n")
+  const refBlock = batch.map((e, i) => `[${i + 1}] ${e.content}`).join("\n")
+  const prompt = `【权威基础文档片段】\n${baseBlock || "(无)"}\n\n【现有反思条目】(第 ${batchIndex + 1}/${batchTotal} 批,共 ${batch.length} 条)\n${refBlock}`
+
+  const { text: out, structuredOutput } = await drainQuery(
+    d.queryFn({
+      prompt,
+      options: noToolQueryOptions({
+        systemPrompt: COMPACT_SYSTEM,
+        // 仍挂 schema;失败时文本 JSON(+截断 salvage)兜底
+        outputFormat: { type: "json_schema", schema: COMPACT_OUTPUT_SCHEMA },
+        // JSON 整理任务,关思考省成本/延迟;单次覆盖全局 alwaysThinkingEnabled
+        thinking: { type: "disabled" },
+        canUseTool: async () => ({
+          behavior: "deny" as const,
+          message: "压缩阶段不使用工具",
+        }),
+        // maxTurns:2:StructuredOutput 强制路径可能占一轮;schema 重试再占一轮
+        maxTurns: 2,
+      }) as never,
+    }) as AsyncIterable<any>,
+    "compact"
+  )
+
+  const check = validateCompactedDetailed(
+    structuredOutput,
+    batch.length,
+    out
+  )
+  if (!check.ok) {
+    const preview = previewJsonPayload(structuredOutput, out)
+    logger.log(
+      "warn",
+      `[reflection-compact] 第 ${batchIndex + 1}/${batchTotal} 批校验失败(${check.reason}),该批保留原文。预览: ${preview || "(空)"}`
+    )
+    bus.emit("error.occurred", {
+      scope: "reflection-compact",
+      err: new Error(
+        `第 ${batchIndex + 1}/${batchTotal} 批 LLM 产出未过安全校验,该批保留原文:${check.reason}`
+      ),
+    })
+    return null
+  }
+  return check.faqs
+}
+
 // 执行一轮压缩整理,供测试直驱。旁路:异常保留旧库并 emit error,不抛。
+// 超过 batchSize 时分批调 LLM,各批结果汇总后一次性替换;单批失败则该批保留原文,其它批仍生效。
 export async function runCompact(deps: ReflectionCompactorDeps): Promise<void> {
   const d = resolve(deps)
   // 只整理已入库未升格/未驳回的条目;已升格条目保留作审计,不参与整库替换
   const entries = d.repo
     .reflectionEntries()
-    .filter((e) => e.status === "approved")
+    .filter((e) => e.status === "approved") as ReflectionEntry[]
   if (entries.length < d.minEntries) return
 
   try {
-    // 权威上下文:逐条反思检索基础文档 top-k,按 chunk id 去重(仅供矛盾判断,不因覆盖而删)
-    const ctx = new Map<number, string>()
-    for (const e of entries) {
-      for (const h of d.repo.searchBaseKb(
-        await d.embed(e.content),
-        d.baseContextK
-      )) {
-        ctx.set(h.id, h.content)
+    const batches = partitionBatches(entries, d.batchSize)
+    const allFaqs: string[] = []
+    let anyLlmOk = false
+    let anyBatchFailed = false
+
+    for (let i = 0; i < batches.length; i++) {
+      const batch = batches[i]
+      const faqs = await compactOneBatch(d, batch, i, batches.length)
+      if (faqs == null) {
+        // 该批校验失败:保留原文,继续其它批
+        allFaqs.push(...batch.map((e) => e.content))
+        anyBatchFailed = true
+      } else {
+        allFaqs.push(...faqs)
+        // 单条直通也算「处理完成」;真正 LLM 成功才标记(≥2 条批)
+        if (batch.length >= 2) anyLlmOk = true
       }
     }
-    const baseBlock = [...ctx.values()]
-      .map((c, i) => `(${i + 1}) ${c}`)
-      .join("\n")
-    const refBlock = entries.map((e, i) => `[${i + 1}] ${e.content}`).join("\n")
-    const prompt = `【权威基础文档片段】\n${baseBlock || "(无)"}\n\n【现有反思条目】\n${refBlock}`
 
-    const { text: out, structuredOutput } = await drainQuery(
-      d.queryFn({
-        prompt,
-        options: noToolQueryOptions({
-          systemPrompt: COMPACT_SYSTEM,
-          // 仍挂 schema;失败时文本 JSON(+截断 salvage)兜底
-          outputFormat: { type: "json_schema", schema: COMPACT_OUTPUT_SCHEMA },
-          // JSON 整理任务,关思考省成本/延迟;单次覆盖全局 alwaysThinkingEnabled
-          thinking: { type: "disabled" },
-          canUseTool: async () => ({
-            behavior: "deny" as const,
-            message: "压缩阶段不使用工具",
-          }),
-          // maxTurns:2:StructuredOutput 强制路径可能占一轮;schema 重试再占一轮
-          maxTurns: 2,
-        }) as never,
-      }) as AsyncIterable<any>,
-      "compact"
-    )
-
-    const check = validateCompactedDetailed(
-      structuredOutput,
-      entries.length,
-      out
-    )
-    if (!check.ok) {
-      const preview = previewJsonPayload(structuredOutput, out)
+    // 全部需要 LLM 的批次都失败 → 不替换,避免无意义写库
+    if (!anyLlmOk && anyBatchFailed) {
       logger.log(
         "warn",
-        `[reflection-compact] 校验失败(${check.reason}),保留旧库。预览: ${preview || "(空)"}`
+        `[reflection-compact] 全部 ${batches.length} 批均失败,保留旧库`
       )
-      bus.emit("error.occurred", {
-        scope: "reflection-compact",
-        err: new Error(`LLM 产出未过安全校验,保留旧库:${check.reason}`),
-      })
       return
     }
-    const faqs = check.faqs
+    // 全是单条批(极端)或全部 LLM 成功/部分成功:继续替换
+    if (!anyLlmOk && !anyBatchFailed) {
+      // 全是 <2 条的批,无变化
+      return
+    }
 
     const withVec: { content: string; embedding: Float32Array }[] = []
-    for (const faq of faqs)
+    for (const faq of allFaqs)
       withVec.push({ content: faq, embedding: await d.embed(faq) })
     // 传 before/after 文本快照 → 事务内记入 reflect_compactions,供 web「整理记录」追溯差异
     d.repo.replaceReflectionEntries(
@@ -227,14 +302,21 @@ export async function runCompact(deps: ReflectionCompactorDeps): Promise<void> {
       withVec,
       d.now(),
       entries.map((e) => e.content),
-      faqs
+      allFaqs
+    )
+
+    const batchNote =
+      batches.length > 1 ? `(分 ${batches.length} 批)` : ""
+    logger.log(
+      "info",
+      `[reflection-compact] ${entries.length} → ${allFaqs.length} 条${batchNote}`
     )
 
     if (d.notifyAdmin && d.adminSurface) {
       bus.emit("action.send", {
         channel: d.adminSurface.channel,
         chatId: d.adminSurface.chatId,
-        text: `反思整理:${entries.length} → ${faqs.length} 条`,
+        text: `反思整理:${entries.length} → ${allFaqs.length} 条${batchNote}`,
       })
     }
   } catch (err) {
@@ -248,7 +330,7 @@ export async function runCompact(deps: ReflectionCompactorDeps): Promise<void> {
 export function registerReflectionCompactor(
   deps: ReflectionCompactorDeps
 ): () => void {
-  const compactMs = deps.compactMs ?? 86_400_000
+  const compactMs = deps.compactMs ?? DEFAULT_COMPACT_MS
   const scanMs = deps.scanMs ?? Math.min(compactMs, 3_600_000)
   const now = deps.now ?? (() => Date.now())
   const repo = deps.repo

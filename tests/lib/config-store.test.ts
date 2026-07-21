@@ -152,17 +152,17 @@ describe("config-store", () => {
       BOT_QQ: "1",
       ADMIN_GROUP_ID: "2",
     })
-    expect(cfg.reflectCompactMs).toBe(86_400_000)
+    expect(cfg.reflectCompactMs).toBe(3_600_000)
     expect(cfg.reflectCompactMinEntries).toBe(10)
     const repo2 = mkRepo()
     const cfg2 = getConfig(repo2, {
       ONEBOT_WS_URL: "ws://x:1",
       BOT_QQ: "1",
       ADMIN_GROUP_ID: "2",
-      REFLECT_COMPACT_MS: "3600000",
+      REFLECT_COMPACT_MS: "1800000",
       REFLECT_COMPACT_MIN_ENTRIES: "5",
     })
-    expect(cfg2.reflectCompactMs).toBe(3_600_000)
+    expect(cfg2.reflectCompactMs).toBe(1_800_000)
     expect(cfg2.reflectCompactMinEntries).toBe(5)
   })
 

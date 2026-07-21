@@ -186,7 +186,7 @@ export default function ReflectionPage() {
         <MetricBadge icon={Timer} label="整理周期" value={d ? hr(d.config.compactMs) : "—"} loading={loading} />
         <MetricBadge
           icon={Gauge}
-          label="整理阈值"
+          label="可整理/门槛"
           loading={loading}
           value={d ? `${approvedCount}/${d.config.compactMinEntries}` : "—"}
           tone={willCompact ? "primary" : undefined}
@@ -258,7 +258,7 @@ export default function ReflectionPage() {
           onRetry={refresh}
           emptyIcon={GitCompareArrows}
           emptyTitle="暂无整理记录"
-          emptyDescription={`知识条目达到阈值（${d?.config.compactMinEntries ?? "—"} 条）后会定期整理。`}
+          emptyDescription={`已入库条目达到门槛（${d?.config.compactMinEntries ?? "—"} 条）后按整理周期自动分批去重；阈值不是目标条数。`}
           skeleton={<Skeleton className="h-32 w-full" />}
         >
           <div className="flex max-h-48 flex-col gap-2 overflow-y-auto pr-1">

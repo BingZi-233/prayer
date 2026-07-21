@@ -870,7 +870,7 @@ export default function ConfigPage() {
                 <Field>
                   <FieldLabel>整理周期(小时)</FieldLabel>
                   <Input inputMode="numeric" value={msToHr(cfg.reflectCompactMs)} onChange={(e) => setCfg({ ...cfg, reflectCompactMs: hrToMs(e.target.value) })} />
-                  <FieldDescription>默认 24 小时。设 0 关闭自动整理。</FieldDescription>
+                  <FieldDescription>默认 1 小时。设 0 关闭自动整理。超 30 条时自动分批整理。</FieldDescription>
                 </Field>
                 <Field>
                   <FieldLabel htmlFor="reflectCompactMinEntries">整理最少条目</FieldLabel>
