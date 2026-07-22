@@ -1231,7 +1231,10 @@ export class Repo {
     return row.n
   }
 
-  listSessions(): {
+  listSessions(
+    maxIdleMs = 5 * 60_000,
+    now = Date.now()
+  ): {
     key: string
     sessionId: string | null
     active: boolean
@@ -1256,7 +1259,10 @@ export class Repo {
     return rows.map((r) => ({
       key: r.key,
       sessionId: r.session_id,
-      active: r.resume_id !== null, // 有续接指针 → 下条消息接续当前对话;否则将开新会话
+      // 活跃表示仍可在空闲窗口内续接，不能只按历史 resume_id 判断。
+      active:
+        r.resume_id !== null &&
+        (maxIdleMs <= 0 || r.updated_at >= now - maxIdleMs),
       humanMode: !!r.human_mode,
       humanSince: r.human_since,
       lastQuestion: r.last_question,

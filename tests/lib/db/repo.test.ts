@@ -52,15 +52,26 @@ describe("Repo sessions", () => {
     expect(s.lastQuestion).toBe("退款吗")
   })
 
-  it("listSessions.active 反映 resume_id 是否存在", () => {
+  it("listSessions.active 仅在续接指针仍处于空闲窗口内时为 true", () => {
     repo.setSessionId("g:a", "sid-a")
     repo.setSessionId("g:b", "sid-b")
-    repo.clearResumeId("g:b")
+    repo.setSessionId("g:c", "sid-c")
+    const now = 1_000_000
+    db.prepare("UPDATE sessions SET updated_at = ? WHERE key = ?").run(
+      now - 5 * 60_000,
+      "g:a"
+    )
+    db.prepare("UPDATE sessions SET updated_at = ? WHERE key = ?").run(
+      now - 5 * 60_000 - 1,
+      "g:b"
+    )
+    repo.clearResumeId("g:c")
     const byKey = Object.fromEntries(
-      repo.listSessions().map((s) => [s.key, s.active])
+      repo.listSessions(5 * 60_000, now).map((s) => [s.key, s.active])
     )
     expect(byKey["g:a"]).toBe(true)
     expect(byKey["g:b"]).toBe(false)
+    expect(byKey["g:c"]).toBe(false)
   })
 })
 

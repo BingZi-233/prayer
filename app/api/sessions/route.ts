@@ -5,13 +5,14 @@ import { getConfig } from "@/lib/config-store";
 import { ok, fail } from "@/lib/api";
 import { bus } from "@/lib/bus";
 
-function repo(): Repo {
+function sessionContext(): { repo: Repo; resumeTtlMs: number } {
   const cfg = getConfig(new Repo(sharedDb(process.env.DB_PATH ?? "./data/agent.db")));
-  return new Repo(sharedDb(cfg.dbPath));
+  return { repo: new Repo(sharedDb(cfg.dbPath)), resumeTtlMs: cfg.resumeTtlMs };
 }
 
 export async function GET(): Promise<NextResponse> {
-  return NextResponse.json(ok(repo().listSessions()));
+  const { repo: sessionRepo, resumeTtlMs } = sessionContext();
+  return NextResponse.json(ok(sessionRepo.listSessions(resumeTtlMs)));
 }
 
 // 会话操作:
@@ -21,12 +22,13 @@ export async function GET(): Promise<NextResponse> {
 export async function POST(req: NextRequest): Promise<NextResponse> {
   const body = await req.json().catch(() => null);
   if (body?.action === "reset_all") {
-    const reset = repo().clearAllResumeIds();
+    const { repo } = sessionContext();
+    const reset = repo.clearAllResumeIds();
     return NextResponse.json(ok({ reset }));
   }
   if (body?.action === "reset") {
     if (typeof body.key !== "string" || !body.key) return NextResponse.json(fail("缺少 key"), { status: 400 });
-    repo().clearResumeId(body.key);
+    sessionContext().repo.clearResumeId(body.key);
     return NextResponse.json(ok({ reset: 1 }));
   }
   if (body?.action === "resume_handoff") {
