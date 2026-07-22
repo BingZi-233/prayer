@@ -180,6 +180,27 @@ describe("orchestrator", () => {
     )
   })
 
+  it("classify 挂起超过 classifyTimeoutMs → fail-open 归 normal,仍跑 agent 出回复", async () => {
+    const fakeAgent = {
+      run: vi.fn(async () => ({ text: "回复", sessionId: "s" })),
+    }
+    // classify 永不 resolve,模拟意图分类 LLM 调用卡死
+    const classify = vi.fn(() => new Promise<never>(() => {}))
+    registerOrchestrator({
+      agent: fakeAgent as any,
+      store: new SessionStore(repo),
+      classify: classify as any,
+      classifyTimeoutMs: 30,
+      ackEnabled: false,
+    })
+
+    const p = new Promise<any>((res) => bus.once("reply.ready", res))
+    bus.emit("message.qualified", qmsg({ messageId: "9", text: "多少钱" }))
+    const r = await p
+    expect(r.text).toBe("回复")
+    expect(fakeAgent.run).toHaveBeenCalledOnce()
+  })
+
   it("意图门:引用/转发正文一并送分类", async () => {
     const fakeAgent = {
       run: vi.fn(async () => ({ text: "x", sessionId: "s" })),

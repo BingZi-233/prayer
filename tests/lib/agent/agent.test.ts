@@ -5,6 +5,7 @@ import {
   sdkEnv,
   noToolQueryOptions,
   agentQueryOptions,
+  AGENT_FALLBACK_TEXT,
 } from "@/lib/agent/agent"
 import { usageStats } from "@/lib/usage-stats"
 
@@ -157,6 +158,56 @@ describe("Agent.run", () => {
     expect(seen.options.tools).toEqual([])
     expect(seen.options.skills).toBe("all")
     expect(seen.options.settingSources).toEqual(["user"])
+  })
+})
+
+describe("Agent.run 超时", () => {
+  const ctx = { sessionKey: "1:2", groupId: 1, userId: 2 }
+
+  it("迭代挂起超过 timeoutMs → 降级返回,不无限卡死", async () => {
+    // 模拟 relay 流卡住:init 后永不产出后续消息
+    const hang = async function* () {
+      yield { type: "system", subtype: "init", session_id: "sid-hang" }
+      await new Promise<void>(() => {})
+    }
+    const agent = new Agent({
+      systemPrompt: "s",
+      queryFn: hang as any,
+      timeoutMs: 30,
+    })
+    const out = await agent.run("在吗", undefined, ctx)
+    expect(out.text).toBe(AGENT_FALLBACK_TEXT)
+    // 已抓到的 session_id 仍保留,便于网页查历史
+    expect(out.sessionId).toBe("sid-hang")
+  })
+
+  it("超时但已累积部分文本 → 保留已累积,不覆盖为降级文案", async () => {
+    const hang = async function* () {
+      yield { type: "system", subtype: "init", session_id: "sid" }
+      yield {
+        type: "assistant",
+        message: { content: [{ type: "text", text: "部分答案" }] },
+      }
+      await new Promise<void>(() => {})
+    }
+    const agent = new Agent({
+      systemPrompt: "s",
+      queryFn: hang as any,
+      timeoutMs: 30,
+    })
+    const out = await agent.run("在吗", undefined, ctx)
+    expect(out.text).toBe("部分答案")
+  })
+
+  it("传入 abortController 给 SDK query(超时时可 abort 子进程)", async () => {
+    let seen: any
+    const spyQuery = async function* (args: any) {
+      seen = args
+      yield { type: "result", subtype: "success" }
+    }
+    const agent = new Agent({ systemPrompt: "s", queryFn: spyQuery as any })
+    await agent.run("hi", undefined, ctx)
+    expect(seen.options.abortController).toBeInstanceOf(AbortController)
   })
 })
 

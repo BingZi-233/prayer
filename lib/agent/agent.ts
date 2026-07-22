@@ -135,7 +135,16 @@ export interface AgentDeps {
   // 若显式传,则本地加载并开启 MCP 发现(与 enabledPlugins 二选一,避免双加载)。
   pluginPaths?: string[]
   queryFn?: typeof sdkQuery
+  /**
+   * 单次 run 的 wall-clock 超时(ms):SDK query 迭代(真实 = MiniMax relay 流)无自带超时,
+   * relay 卡住则 for-await 永不结束 → handle promise 永挂 → 编排串行链永久卡死该会话所有后续 @。
+   * 超时则 abort 子进程 + 降级(保留已累积文本,否则兜底文案)。默认 180s;<=0 关闭。
+   */
+  timeoutMs?: number
 }
+
+// run 默认超时:留足 maxTurns=20 + 工具往返;超过基本是 relay 挂死而非慢
+export const DEFAULT_RUN_TIMEOUT_MS = 180_000
 
 export interface AgentResult {
   text: string
@@ -358,8 +367,10 @@ export function denyMessage(toolName: string): string {
 
 export class Agent {
   private queryFn: typeof sdkQuery
+  private timeoutMs: number
   constructor(private deps: AgentDeps) {
     this.queryFn = deps.queryFn ?? sdkQuery
+    this.timeoutMs = deps.timeoutMs ?? DEFAULT_RUN_TIMEOUT_MS
   }
 
   private resolvedSystem(): string {
@@ -374,9 +385,13 @@ export class Agent {
     _ctx: ToolContext,
     media?: AgentMedia
   ): Promise<AgentResult> {
+    // 超时到点 abort:让 SDK reject 迭代器并杀掉 CLI 子进程(best-effort);
+    // 即便子进程忽略 abort,下方 Promise.race 也会靠计时器兜底返回,run 不会卡死。
+    const abortController = new AbortController()
     const iter = this.queryFn({
       prompt: buildPrompt(text, media) as any,
       options: agentQueryOptions({
+        abortController,
         // 模型由 CLAUDE_CONFIG_DIR 内配置决定,不在此覆盖
         // 用完整自定义 system prompt(不套 claude_code preset):preset 的编码助手人格会
         // 干扰视觉输入(实测带图时模型回"无图"),且本就需靠 prompt 抹掉编码设定 —— 直接替换更干净。
@@ -418,7 +433,9 @@ export class Agent {
 
     let sessionId: string | undefined = resumeId
     let out = ""
-    try {
+    // 迭代累积独立成 promise,供 Promise.race 与超时计时器竞速。
+    // out / sessionId 由闭包写入,超时胜出时仍能返回已累积内容。
+    const drain = (async () => {
       for await (const msg of iter as AsyncIterable<any>) {
         if (msg.type === "system" && msg.subtype === "init" && msg.session_id) {
           sessionId = msg.session_id
@@ -432,11 +449,31 @@ export class Agent {
         const usage = usageFromResult(msg)
         if (usage) usageStats.record("agent", usage)
       }
+    })()
+    // 超时胜出后 drain 常因 abort 迟到 reject:挂一个吞噬 handler 防 unhandledRejection
+    // (race 仍会各自收到该 reject,不影响下方降级)
+    drain.catch(() => {})
+
+    let timer: ReturnType<typeof setTimeout> | undefined
+    try {
+      if (this.timeoutMs > 0) {
+        const timeout = new Promise<never>((_, reject) => {
+          timer = setTimeout(() => {
+            abortController.abort()
+            reject(new Error(`agent run 超时(${this.timeoutMs}ms)`))
+          }, this.timeoutMs)
+        })
+        await Promise.race([drain, timeout])
+      } else {
+        await drain
+      }
     } catch (e) {
-      // maxTurns / CLI 异常:SDK 会把错误结果转成抛出的 Error(reject 迭代器),
-      // 这里降级 —— 保留已累积文本与 sessionId,避免整个请求 500、丢掉会话
-      console.error("[agent] query 迭代中断,降级返回已累积内容:", e)
+      // maxTurns / CLI 异常(SDK reject 迭代器)或超时:降级 —— 保留已累积文本与
+      // sessionId,避免整个请求 500、丢掉会话,更避免 handle 永挂拖死编排串行链
+      console.error("[agent] query 迭代中断/超时,降级返回已累积内容:", e)
       if (!out.trim()) out = AGENT_FALLBACK_TEXT
+    } finally {
+      if (timer) clearTimeout(timer)
     }
     return { text: out.trim(), sessionId }
   }
