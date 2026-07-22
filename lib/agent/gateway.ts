@@ -39,7 +39,7 @@ export interface GatewayDeps {
 
 function helpText(supportUrl?: string): string {
   const link = supportUrl ? `\n官网:${supportUrl}` : ""
-  return `用法说明:问我请 @我;重置对话发「重置」;需要人工发「人工」。${link}`
+  return `用法说明:问我请 @我;重置对话请 @我 后发「重置」;需要人工请 @我 后发「人工」(单独发「人工」无效)。${link}`
 }
 
 /** atList 是否命中 bot 或任一额外监听 QQ(字符串 id) */

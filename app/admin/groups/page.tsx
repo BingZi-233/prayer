@@ -179,7 +179,8 @@ export default function GroupsPage() {
         toast.success(enable ? `已生效: ${label}` : `已关闭: ${label}`);
         if (enable) {
           toast.message("用法提示", {
-            description: "群内问 bot 请 @机器人;重置发「重置」;转人工发「人工」。",
+            description:
+              "群内问 bot 请 @机器人;重置请 @机器人 后发「重置」;转人工请 @机器人 后发「人工」(单独发无效)。",
           });
         }
         await refresh();
