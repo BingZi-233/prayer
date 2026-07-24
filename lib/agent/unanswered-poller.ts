@@ -240,7 +240,8 @@ export function registerUnansweredPoller(
   deps: UnansweredPollerDeps
 ): () => void {
   const d = resolve(deps)
-  const scanMs = deps.scanMs ?? 60_000
+  // 秒级扫描可配;下限 1s 防 setInterval(0) 空转打爆 CPU
+  const scanMs = Math.max(1_000, deps.scanMs ?? 60_000)
   let running = false // 防重入:上一轮未结束则跳过本次触发,避免重复兜底
   const timer = setInterval(() => {
     if (running) return

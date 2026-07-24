@@ -167,6 +167,8 @@ const NUM_KEYS: (keyof Cfg)[] = [
 
 const msToMin = (ms: number) => String(Math.round(ms / 60_000))
 const minToMs = (min: string) => Math.round(Number(min) * 60_000) || 0
+const msToSec = (ms: number) => String(Math.round(ms / 1_000))
+const secToMs = (sec: string) => Math.round(Number(sec) * 1_000) || 0
 const msToHr = (ms: number) => String(Math.round(ms / 3_600_000))
 const hrToMs = (hr: string) => Math.round(Number(hr) * 3_600_000) || 0
 
@@ -1212,34 +1214,34 @@ export default function ConfigPage() {
                   </FieldLabel>
                 </Field>
                 <Field>
-                  <FieldLabel>静默阈值(分钟)</FieldLabel>
+                  <FieldLabel>静默阈值(秒)</FieldLabel>
                   <Input
                     inputMode="numeric"
-                    value={msToMin(cfg.proactiveSilenceMs)}
+                    value={msToSec(cfg.proactiveSilenceMs)}
                     onChange={(e) =>
                       setCfg({
                         ...cfg,
-                        proactiveSilenceMs: minToMs(e.target.value),
+                        proactiveSilenceMs: secToMs(e.target.value),
                       })
                     }
                   />
                   <FieldDescription>
-                    默认 3 分钟无人应答才主动补位。
+                    默认 180 秒无人应答才主动补位。需即时补位可填几秒。
                   </FieldDescription>
                 </Field>
                 <Field>
-                  <FieldLabel>扫描间隔(分钟)</FieldLabel>
+                  <FieldLabel>扫描间隔(秒)</FieldLabel>
                   <Input
                     inputMode="numeric"
-                    value={msToMin(cfg.proactiveScanMs)}
+                    value={msToSec(cfg.proactiveScanMs)}
                     onChange={(e) =>
                       setCfg({
                         ...cfg,
-                        proactiveScanMs: minToMs(e.target.value),
+                        proactiveScanMs: secToMs(e.target.value),
                       })
                     }
                   />
-                  <FieldDescription>默认 1 分钟。</FieldDescription>
+                  <FieldDescription>默认 60 秒,最小 1 秒。</FieldDescription>
                 </Field>
                 <Field>
                   <FieldLabel htmlFor="proactiveMaxPerScan">

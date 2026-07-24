@@ -65,7 +65,9 @@ interface Data {
   replies: Reply[]
 }
 
-const min = (ms: number) => `${Math.round(ms / 60000)} 分`
+// 秒级配置也要可读:< 60s 显示秒,否则分
+const min = (ms: number) =>
+  ms < 60_000 ? `${Math.round(ms / 1000)} 秒` : `${Math.round(ms / 60000)} 分`
 
 export default function ProactivePage() {
   const {
