@@ -54,6 +54,7 @@ import {
 import { PageShell } from "@/components/admin/page-shell"
 import { PageHeader } from "@/components/admin/page-header"
 import { SectionCard } from "@/components/admin/section-card"
+import { VirtualList } from "@/components/admin/virtual-list"
 import { MasterDetail } from "@/components/admin/master-detail"
 import { DataState, EmptyState } from "@/components/admin/data-state"
 import { RelativeTime } from "@/components/relative-time"
@@ -660,14 +661,18 @@ function SessionsInner() {
               }
               skeleton={<Skeleton className="h-32 w-full" />}
             >
-              <div className="-mr-1 flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto pr-1">
-                {shown.map((sess) => {
+              <VirtualList
+                items={shown}
+                getKey={(sess) => sess.key}
+                estimateSize={64}
+                gap={2}
+                className="-mr-1 min-h-0 flex-1 pr-1"
+                renderItem={(sess) => {
                   const hang = sess.humanMode
                     ? hangLabel(sess.humanSince)
                     : null
                   return (
                     <div
-                      key={sess.key}
                       className={cn(
                         "group relative flex flex-col gap-0.5 rounded-md border border-transparent px-2 py-1.5 text-xs transition hover:bg-muted",
                         active === sess.key && "border-border bg-muted",
@@ -732,8 +737,8 @@ function SessionsInner() {
                       </button>
                     </div>
                   )
-                })}
-              </div>
+                }}
+              />
             </DataState>
           </SectionCard>
         }
@@ -742,7 +747,10 @@ function SessionsInner() {
             title={
               activeSess ? (
                 <span className="flex min-w-0 items-center gap-2">
-                  <ChannelBadge sessionKey={activeSess.key} className="h-5 px-1.5 text-[11px]" />
+                  <ChannelBadge
+                    sessionKey={activeSess.key}
+                    className="h-5 px-1.5 text-[11px]"
+                  />
                   <span className="truncate" title={activeSess.key}>
                     {keyLabel(activeSess.key)}
                   </span>

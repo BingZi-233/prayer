@@ -62,11 +62,7 @@ beforeEach(() => {
 
 describe("partitionBatches", () => {
   it("按 batchSize 顺序切分", () => {
-    expect(partitionBatches([1, 2, 3, 4, 5], 2)).toEqual([
-      [1, 2],
-      [3, 4],
-      [5],
-    ])
+    expect(partitionBatches([1, 2, 3, 4, 5], 2)).toEqual([[1, 2], [3, 4], [5]])
   })
   it("batchSize ≥ 长度 → 单批", () => {
     expect(partitionBatches([1, 2, 3], 30)).toEqual([[1, 2, 3]])
@@ -102,7 +98,9 @@ describe("runCompact", () => {
       "合并2",
     ])
     expect(
-      refs.every((r) => r.chatId === "0" && r.channel === "qq" && r.ts === 7_000_000)
+      refs.every(
+        (r) => r.chatId === "0" && r.channel === "qq" && r.ts === 7_000_000
+      )
     ).toBe(true)
   })
 
@@ -216,7 +214,9 @@ describe("runCompact", () => {
 
   it("允许更激进合并:10 → 4(=40% 下限)通过", async () => {
     seedReflections(10)
-    await runCompact(opts({ queryFn: fakeQuery(faqsItems(4, "激进")) as never }))
+    await runCompact(
+      opts({ queryFn: fakeQuery(faqsItems(4, "激进")) as never })
+    )
     expect(repo.reflectionEntries()).toHaveLength(4)
   })
 
@@ -374,11 +374,7 @@ describe("validateCompacted(structured 优先 + 文本兜底)", () => {
     // 10 → 3 < floor(4)
     const r = validateCompactedDetailed(
       {
-        items: [
-          { faq: "合并后1" },
-          { faq: "合并后2" },
-          { faq: "合并后3" },
-        ],
+        items: [{ faq: "合并后1" }, { faq: "合并后2" }, { faq: "合并后3" }],
       },
       10
     )
@@ -387,11 +383,7 @@ describe("validateCompacted(structured 优先 + 文本兜底)", () => {
     expect(
       validateCompacted(
         {
-          items: [
-            { faq: "合并后1" },
-            { faq: "合并后2" },
-            { faq: "合并后3" },
-          ],
+          items: [{ faq: "合并后1" }, { faq: "合并后2" }, { faq: "合并后3" }],
         },
         10
       )

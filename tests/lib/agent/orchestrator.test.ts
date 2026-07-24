@@ -41,10 +41,7 @@ describe("orchestrator", () => {
     })
 
     const p = new Promise<any>((res) => bus.once("reply.ready", res))
-    bus.emit(
-      "message.qualified",
-      qmsg({ messageId: "77", text: "在吗" })
-    )
+    bus.emit("message.qualified", qmsg({ messageId: "77", text: "在吗" }))
     const r = await p
     expect(r.text).toBe("回复内容")
     expect(r.channel).toBe("qq")
@@ -225,9 +222,7 @@ describe("orchestrator", () => {
         })
       )
     })
-    expect(classify).toHaveBeenCalledWith(
-      expect.stringContaining("注入提示词")
-    )
+    expect(classify).toHaveBeenCalledWith(expect.stringContaining("注入提示词"))
   })
 
   it("reply mapper: reply.ready → action.send", async () => {

@@ -1,9 +1,5 @@
 import type { ActionSend } from "../../events"
-import type {
-  Channel,
-  ChannelCapabilities,
-  ChannelStatus,
-} from "../types"
+import type { Channel, ChannelCapabilities, ChannelStatus } from "../types"
 import { OneBotClient } from "./client"
 
 const QQ_CAPABILITIES: ChannelCapabilities = {

@@ -272,7 +272,7 @@ describe("reflection-poller runScan", () => {
     seed(100, 201, "admin", "一般三天", NOW - 4000)
     await runScan(
       opts({
-        queryFn: (async function* () {
+        queryFn: async function* () {
           yield {
             type: "assistant",
             message: {
@@ -285,7 +285,7 @@ describe("reflection-poller runScan", () => {
             },
           }
           yield { type: "result", subtype: "success" }
-        }) as never,
+        } as never,
       })
     )
     const hits = repo.searchKb(new Float32Array([1, 0, 0]), 5)
@@ -420,10 +420,15 @@ describe("reflection-poller runScan", () => {
         ],
       })()
     }
-    await runScan(opts({ enabledChats: [
+    await runScan(
+      opts({
+        enabledChats: [
           { channel: "qq" as const, chatId: "100" },
           { channel: "qq" as const, chatId: "200" },
-        ], queryFn: qf as never }))
+        ],
+        queryFn: qf as never,
+      })
+    )
     const refs = repo.reflectionEntries()
     expect(refs).toHaveLength(2)
   })
@@ -439,10 +444,15 @@ describe("reflection-poller runScan", () => {
       })()
     }
     const err = new Promise<any>((res) => bus.once("error.occurred", res))
-    await runScan(opts({ enabledChats: [
+    await runScan(
+      opts({
+        enabledChats: [
           { channel: "qq" as const, chatId: "100" },
           { channel: "qq" as const, chatId: "200" },
-        ], queryFn: qf as never }))
+        ],
+        queryFn: qf as never,
+      })
+    )
     const e = await err
     expect(e.scope).toBe("reflection")
     expect(e.chatId).toBe("100")

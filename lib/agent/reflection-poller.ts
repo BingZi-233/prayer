@@ -258,9 +258,7 @@ async function scanOnce(d: Resolved): Promise<void> {
   const until = now - d.settleMs // 已沉降上界
   if (until <= 0) return
 
-  const enabled = new Set(
-    d.enabledChats.map((c) => `${c.channel}:${c.chatId}`)
-  )
+  const enabled = new Set(d.enabledChats.map((c) => `${c.channel}:${c.chatId}`))
   for (const { channel, chatId } of d.repo.groupsWithAdminMessagesUpTo(until)) {
     if (!enabled.has(`${channel}:${chatId}`)) continue // 生效会话门
     // 旁路降级（TG admins 失败 / Privacy 等）：由 channel.isBypassEnabled 决定

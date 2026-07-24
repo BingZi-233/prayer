@@ -70,9 +70,9 @@ describe("handoff handler", () => {
           s.text.includes("恢复自动客服")
       )
     ).toBe(true)
-    expect(
-      sends.some((s) => s.channel === "qq" && s.chatId === "999")
-    ).toBe(true)
+    expect(sends.some((s) => s.channel === "qq" && s.chatId === "999")).toBe(
+      true
+    )
   })
 
   it("历史两段 sessionKey 恢复时也能解析 chat", async () => {
@@ -106,9 +106,7 @@ describe("handoff handler", () => {
     expect(
       sends.some(
         (s) =>
-          s.channel === "tg" &&
-          s.chatId === "-1001" &&
-          s.text.includes("转接")
+          s.channel === "tg" && s.chatId === "-1001" && s.text.includes("转接")
       )
     ).toBe(true)
     expect(
@@ -122,7 +120,8 @@ describe("handoff handler", () => {
     ).toBe(true)
     // 不发明 TG 管理桌
     expect(
-      sends.filter((s) => s.channel === "tg" && s.text.includes("转人工")).length
+      sends.filter((s) => s.channel === "tg" && s.text.includes("转人工"))
+        .length
     ).toBe(0)
   })
 
@@ -149,8 +148,7 @@ describe("handoff handler", () => {
     expect(repo.isHumanMode(SK)).toBe(true)
     expect(
       sends.some(
-        (s) =>
-          s.channel === "qq" && s.chatId === "1" && s.text.includes("转接")
+        (s) => s.channel === "qq" && s.chatId === "1" && s.text.includes("转接")
       )
     ).toBe(true)
     expect(
@@ -191,9 +189,7 @@ describe("handoff handler", () => {
     expect(
       sends.some(
         (s) =>
-          s.channel === "tg" &&
-          s.chatId === "-1001" &&
-          s.text.includes("转接")
+          s.channel === "tg" && s.chatId === "-1001" && s.text.includes("转接")
       )
     ).toBe(true)
     expect(

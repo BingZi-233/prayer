@@ -10,7 +10,9 @@ import { applyPromote } from "@/lib/reflect-promote"
 import { embed } from "@/lib/tools/embed"
 
 function getRepo(): Repo {
-  const cfg = getConfig(new Repo(sharedDb(process.env.DB_PATH ?? "./data/agent.db")))
+  const cfg = getConfig(
+    new Repo(sharedDb(process.env.DB_PATH ?? "./data/agent.db"))
+  )
   return new Repo(sharedDb(cfg.dbPath))
 }
 
@@ -21,7 +23,9 @@ function chatKey(channel: string, chatId: string): string {
 // 反思专页:节奏配置 + 每群进度(游标/滞后/缓冲/沉淀数) + 沉淀条目列表
 export async function GET(): Promise<NextResponse> {
   try {
-    const cfg = getConfig(new Repo(sharedDb(process.env.DB_PATH ?? "./data/agent.db")))
+    const cfg = getConfig(
+      new Repo(sharedDb(process.env.DB_PATH ?? "./data/agent.db"))
+    )
     const repo = new Repo(sharedDb(cfg.dbPath))
     const now = Date.now()
 

@@ -1,8 +1,8 @@
-"use client";
+"use client"
 
-import { useEffect, useState } from "react";
-import Link from "next/link";
-import { toast } from "sonner";
+import { useEffect, useState } from "react"
+import Link from "next/link"
+import { toast } from "sonner"
 import {
   Activity,
   Plug,
@@ -17,11 +17,11 @@ import {
   Gauge,
   Target,
   Zap,
-} from "lucide-react";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Spinner } from "@/components/ui/spinner";
-import { Skeleton } from "@/components/ui/skeleton";
+} from "lucide-react"
+import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import { Spinner } from "@/components/ui/spinner"
+import { Skeleton } from "@/components/ui/skeleton"
 import {
   Table,
   TableBody,
@@ -29,8 +29,8 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-} from "@/components/ui/table";
-import { RelativeTime } from "@/components/relative-time";
+} from "@/components/ui/table"
+import { RelativeTime } from "@/components/relative-time"
 import {
   Dialog,
   DialogClose,
@@ -40,89 +40,90 @@ import {
   DialogHeader,
   DialogTitle,
   DialogTrigger,
-} from "@/components/ui/dialog";
-import { PageShell } from "@/components/admin/page-shell";
-import { PageHeader } from "@/components/admin/page-header";
-import { SectionCard } from "@/components/admin/section-card";
-import { MetricBadge, MetricBadgeRow } from "@/components/admin/stat";
-import type { ChannelStatusView } from "@/components/live-provider";
+} from "@/components/ui/dialog"
+import { PageShell } from "@/components/admin/page-shell"
+import { PageHeader } from "@/components/admin/page-header"
+import { SectionCard } from "@/components/admin/section-card"
+import { MetricBadge, MetricBadgeRow } from "@/components/admin/stat"
+import type { ChannelStatusView } from "@/components/live-provider"
 
 interface Status {
-  state: string;
-  wsConnected: boolean;
-  sessionCount: number;
-  lastError?: string;
-  bootedAt?: number;
-  handoffQueue: number;
-  channels?: ChannelStatusView[];
+  state: string
+  wsConnected: boolean
+  sessionCount: number
+  lastError?: string
+  bootedAt?: number
+  handoffQueue: number
+  channels?: ChannelStatusView[]
 }
 interface UsageRow {
-  site: string;
-  label: string;
-  count: number;
-  cacheRead: number;
-  cacheCreation: number;
-  input: number;
-  output: number;
-  costUsd: number;
-  hitRatio: number;
+  site: string
+  label: string
+  count: number
+  cacheRead: number
+  cacheCreation: number
+  input: number
+  output: number
+  costUsd: number
+  hitRatio: number
 }
 interface Usage {
-  rows: UsageRow[];
-  total: UsageRow;
-  daily?: { day: string; costUsd: number; budgetUsd: number } | null;
+  rows: UsageRow[]
+  total: UsageRow
+  daily?: { day: string; costUsd: number; budgetUsd: number } | null
 }
 interface Metrics {
-  auto: number;
-  proactive: number;
-  handoff: number;
-  error: number;
-  blocked: number;
-  proactiveSilent: number;
-  autoResolutionRate: number | null;
-  proactiveBad: number;
-  usageCostUsd: number;
-  usageBudgetUsd: number;
+  auto: number
+  proactive: number
+  handoff: number
+  error: number
+  blocked: number
+  proactiveSilent: number
+  autoResolutionRate: number | null
+  proactiveBad: number
+  usageCostUsd: number
+  usageBudgetUsd: number
 }
 interface Overview {
-  enabledChats: number;
-  reflectionCount: number;
-  humanSessions: number;
-  metrics?: Metrics;
+  enabledChats: number
+  reflectionCount: number
+  humanSessions: number
+  metrics?: Metrics
 }
 
-const pct = (r: number) => `${Math.round(r * 100)}%`;
-const kfmt = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n));
+const pct = (r: number) => `${Math.round(r * 100)}%`
+const kfmt = (n: number) =>
+  n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n)
 
 const STATE_LABEL: Record<string, string> = {
   running: "运行中",
   stopped: "已停止",
   starting: "启动中",
   error: "错误",
-};
+}
 
 function channelOf(s: Status, id: string): ChannelStatusView | undefined {
-  return s.channels?.find((c) => c.id === id);
+  return s.channels?.find((c) => c.id === id)
 }
 function channelPresent(s: Status, id: string): boolean {
-  return !!channelOf(s, id);
+  return !!channelOf(s, id)
 }
 function channelConnected(s: Status, id: string): boolean {
-  const ch = channelOf(s, id);
-  if (ch) return ch.connected && !ch.lastError;
+  const ch = channelOf(s, id)
+  if (ch) return ch.connected && !ch.lastError
   // 无 channels 时 QQ 回退 wsConnected
-  if (id === "qq") return s.wsConnected;
-  return false;
+  if (id === "qq") return s.wsConnected
+  return false
 }
 function channelError(s: Status, id: string): boolean {
-  return !!channelOf(s, id)?.lastError;
+  return !!channelOf(s, id)?.lastError
 }
 
 export default function StatusPage() {
-  const [s, setS] = useState<Status | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [ov, setOv] = useState<Overview | null>(null);
-  const [usage, setUsage] = useState<Usage | null>(null);
+  const [s, setS] = useState<Status | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [ov, setOv] = useState<Overview | null>(null)
+  const [usage, setUsage] = useState<Usage | null>(null)
 
   async function load() {
     try {
@@ -130,49 +131,51 @@ export default function StatusPage() {
         fetch("/api/status").then((x) => x.json()),
         fetch("/api/overview").then((x) => x.json()),
         fetch("/api/usage").then((x) => x.json()),
-      ]);
-      if (st.ok) setS(st.data);
-      if (o.ok) setOv(o.data);
-      if (ug.ok) setUsage(ug.data);
+      ])
+      if (st.ok) setS(st.data)
+      if (o.ok) setOv(o.data)
+      if (ug.ok) setUsage(ug.data)
     } catch {
       /* 轮询失败静默 */
     }
   }
 
   useEffect(() => {
-    const boot = window.setTimeout(() => void load(), 0);
-    const t = window.setInterval(() => void load(), 3000);
+    const boot = window.setTimeout(() => void load(), 0)
+    const t = window.setInterval(() => void load(), 3000)
     return () => {
-      window.clearTimeout(boot);
-      window.clearInterval(t);
-    };
-  }, []);
+      window.clearTimeout(boot)
+      window.clearInterval(t)
+    }
+  }, [])
 
   async function restart() {
-    setBusy(true);
+    setBusy(true)
     try {
-      const r = await fetch("/api/runtime/restart", { method: "POST" }).then((x) => x.json());
+      const r = await fetch("/api/runtime/restart", { method: "POST" }).then(
+        (x) => x.json()
+      )
       if (r.ok) {
-        setS(r.data);
-        toast.success("Agent 已重启");
+        setS(r.data)
+        toast.success("Agent 已重启")
       } else {
-        toast.error(`重启失败:${r.error}`);
+        toast.error(`重启失败:${r.error}`)
       }
     } catch (e) {
-      toast.error(`重启失败:${e instanceof Error ? e.message : String(e)}`);
+      toast.error(`重启失败:${e instanceof Error ? e.message : String(e)}`)
     } finally {
-      await load();
-      setBusy(false);
+      await load()
+      setBusy(false)
     }
   }
 
-  const m = ov?.metrics;
+  const m = ov?.metrics
   const channelDown =
     s != null &&
     (s.channels?.length
       ? s.channels.some((c) => !c.connected || !!c.lastError)
-      : !s.wsConnected);
-  const hasAlerts = (ov?.humanSessions ?? 0) > 0 || channelDown;
+      : !s.wsConnected)
+  const hasAlerts = (ov?.humanSessions ?? 0) > 0 || channelDown
 
   return (
     <PageShell fill className="lg:gap-6">
@@ -184,7 +187,11 @@ export default function StatusPage() {
           <Dialog>
             <DialogTrigger asChild>
               <Button disabled={busy} className="w-full sm:w-auto">
-                {busy ? <Spinner data-icon="inline-start" /> : <RotateCw data-icon="inline-start" />}
+                {busy ? (
+                  <Spinner data-icon="inline-start" />
+                ) : (
+                  <RotateCw data-icon="inline-start" />
+                )}
                 {busy ? "重启中…" : "重启 Agent"}
               </Button>
             </DialogTrigger>
@@ -212,9 +219,9 @@ export default function StatusPage() {
 
       {hasAlerts ? (
         <SectionCard
-          className="border-destructive/50 shrink-0"
+          className="shrink-0 border-destructive/50"
           title={
-            <span className="text-destructive flex items-center gap-2">
+            <span className="flex items-center gap-2 text-destructive">
               <LifeBuoy className="size-4" />
               有待处理事项
             </span>
@@ -255,13 +262,7 @@ export default function StatusPage() {
           icon={Plug}
           label="QQ"
           loading={!s}
-          value={
-            s
-              ? channelConnected(s, "qq")
-                ? "已连接"
-                : "断开"
-              : "—"
-          }
+          value={s ? (channelConnected(s, "qq") ? "已连接" : "断开") : "—"}
           warn={!!s && !channelConnected(s, "qq")}
           tone={s && channelConnected(s, "qq") ? "primary" : undefined}
         />
@@ -283,14 +284,31 @@ export default function StatusPage() {
           warn={!!s && channelPresent(s, "tg") && !channelConnected(s, "tg")}
           tone={s && channelConnected(s, "tg") ? "primary" : undefined}
         />
-        <MetricBadge icon={Users} label="活动会话" loading={!s} value={s?.sessionCount ?? "—"} />
-        <MetricBadge icon={ShieldCheck} label="生效会话" loading={!ov} value={ov?.enabledChats ?? "—"} />
-        <MetricBadge icon={Brain} label="知识条目" loading={!ov} value={ov?.reflectionCount ?? "—"} />
+        <MetricBadge
+          icon={Users}
+          label="活动会话"
+          loading={!s}
+          value={s?.sessionCount ?? "—"}
+        />
+        <MetricBadge
+          icon={ShieldCheck}
+          label="生效会话"
+          loading={!ov}
+          value={ov?.enabledChats ?? "—"}
+        />
+        <MetricBadge
+          icon={Brain}
+          label="知识条目"
+          loading={!ov}
+          value={ov?.reflectionCount ?? "—"}
+        />
         <MetricBadge
           icon={Target}
           label="自动解决率"
           loading={!ov}
-          value={m?.autoResolutionRate != null ? pct(m.autoResolutionRate) : "—"}
+          value={
+            m?.autoResolutionRate != null ? pct(m.autoResolutionRate) : "—"
+          }
         />
       </MetricBadgeRow>
 
@@ -311,10 +329,28 @@ export default function StatusPage() {
           <>
             <MetricBadge icon={MessagesSquare} label="自动答" value={m.auto} />
             <MetricBadge icon={Zap} label="主动补位" value={m.proactive} />
-            <MetricBadge icon={LifeBuoy} label="转人工" value={m.handoff} warn={m.handoff > 0} />
-            <MetricBadge icon={TriangleAlert} label="错误" value={m.error} warn={m.error > 0} />
-            <MetricBadge icon={ShieldCheck} label="意图拦截" value={m.blocked} />
-            <MetricBadge icon={Zap} label="主动跳过" value={m.proactiveSilent} />
+            <MetricBadge
+              icon={LifeBuoy}
+              label="转人工"
+              value={m.handoff}
+              warn={m.handoff > 0}
+            />
+            <MetricBadge
+              icon={TriangleAlert}
+              label="错误"
+              value={m.error}
+              warn={m.error > 0}
+            />
+            <MetricBadge
+              icon={ShieldCheck}
+              label="意图拦截"
+              value={m.blocked}
+            />
+            <MetricBadge
+              icon={Zap}
+              label="主动跳过"
+              value={m.proactiveSilent}
+            />
             <MetricBadge
               icon={TriangleAlert}
               label="标为不当"
@@ -328,7 +364,10 @@ export default function StatusPage() {
                 <>
                   ${m.usageCostUsd.toFixed(4)}
                   {m.usageBudgetUsd > 0 && (
-                    <span className="text-muted-foreground font-normal"> / ${m.usageBudgetUsd}</span>
+                    <span className="font-normal text-muted-foreground">
+                      {" "}
+                      / ${m.usageBudgetUsd}
+                    </span>
                   )}
                 </>
               }
@@ -377,19 +416,31 @@ export default function StatusPage() {
                   <TableHead>调用点</TableHead>
                   <TableHead className="text-right">次数</TableHead>
                   <TableHead className="text-right">命中率</TableHead>
-                  <TableHead className="hidden text-right sm:table-cell">缓存命中/写入</TableHead>
-                  <TableHead className="hidden text-right md:table-cell">未缓存输入</TableHead>
-                  <TableHead className="hidden text-right md:table-cell">输出</TableHead>
+                  <TableHead className="hidden text-right sm:table-cell">
+                    缓存命中/写入
+                  </TableHead>
+                  <TableHead className="hidden text-right md:table-cell">
+                    未缓存输入
+                  </TableHead>
+                  <TableHead className="hidden text-right md:table-cell">
+                    输出
+                  </TableHead>
                   <TableHead className="text-right">成本($)</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {usage.rows.map((r) => (
                   <TableRow key={r.site}>
-                    <TableCell className="font-medium whitespace-nowrap">{r.label}</TableCell>
-                    <TableCell className="text-right tabular-nums">{r.count}</TableCell>
+                    <TableCell className="font-medium whitespace-nowrap">
+                      {r.label}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {r.count}
+                    </TableCell>
                     <TableCell className="text-right">
-                      <Badge variant={r.hitRatio >= 0.8 ? "default" : "secondary"}>
+                      <Badge
+                        variant={r.hitRatio >= 0.8 ? "default" : "secondary"}
+                      >
                         {pct(r.hitRatio)}
                       </Badge>
                     </TableCell>
@@ -409,12 +460,17 @@ export default function StatusPage() {
                 ))}
                 <TableRow className="font-medium">
                   <TableCell>合计</TableCell>
-                  <TableCell className="text-right tabular-nums">{usage.total.count}</TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {usage.total.count}
+                  </TableCell>
                   <TableCell className="text-right">
-                    <Badge variant="secondary">{pct(usage.total.hitRatio)}</Badge>
+                    <Badge variant="secondary">
+                      {pct(usage.total.hitRatio)}
+                    </Badge>
                   </TableCell>
                   <TableCell className="hidden text-right tabular-nums sm:table-cell">
-                    {kfmt(usage.total.cacheRead)} / {kfmt(usage.total.cacheCreation)}
+                    {kfmt(usage.total.cacheRead)} /{" "}
+                    {kfmt(usage.total.cacheCreation)}
                   </TableCell>
                   <TableCell className="hidden text-right tabular-nums md:table-cell">
                     {kfmt(usage.total.input)}
@@ -434,27 +490,27 @@ export default function StatusPage() {
 
       {s?.lastError && (
         <SectionCard
-          className="border-destructive/50 shrink-0"
+          className="shrink-0 border-destructive/50"
           title={
-            <span className="text-destructive flex items-center gap-2">
+            <span className="flex items-center gap-2 text-destructive">
               <TriangleAlert className="size-4" />
               最近错误
             </span>
           }
           description="服务启动或连接出错，修改配置后会自动重试。"
         >
-          <pre className="bg-muted text-muted-foreground max-h-24 overflow-auto rounded-md p-3 text-xs whitespace-pre-wrap">
+          <pre className="max-h-24 overflow-auto rounded-md bg-muted p-3 text-xs whitespace-pre-wrap text-muted-foreground">
             {s.lastError}
           </pre>
         </SectionCard>
       )}
 
       {s?.bootedAt && (
-        <footer className="text-muted-foreground flex shrink-0 items-center gap-1.5 border-t pt-3 text-xs">
+        <footer className="flex shrink-0 items-center gap-1.5 border-t pt-3 text-xs text-muted-foreground">
           <Clock className="size-3.5 shrink-0" />
           启动于 <RelativeTime ts={s.bootedAt} />
         </footer>
       )}
     </PageShell>
-  );
+  )
 }

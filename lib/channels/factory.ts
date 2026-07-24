@@ -53,8 +53,7 @@ export const DEFAULT_CHANNEL_FACTORIES: ChannelFactoryEntry[] = [
       if (!token) return null
       const { repo } = ctx
       return new TelegramChannel(token, {
-        getOffset: () =>
-          Number(repo.getConfigRow("tg:update_offset") ?? "0"),
+        getOffset: () => Number(repo.getConfigRow("tg:update_offset") ?? "0"),
         setOffset: (n) => repo.setConfigRow("tg:update_offset", String(n)),
         onStatus: ctx.onStatus?.tg,
       })

@@ -25,10 +25,7 @@ describe("findBalancedEnd / extractJsonValues", () => {
 
   it("多轮拼接抽出多个顶层值", () => {
     const s = `{"items":[1]}{"items":[2,3]}`
-    expect(extractJsonValues(s)).toEqual([
-      { items: [1] },
-      { items: [2, 3] },
-    ])
+    expect(extractJsonValues(s)).toEqual([{ items: [1] }, { items: [2, 3] }])
   })
 })
 

@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server"
 
 /**
  * 后台最低鉴权:
@@ -7,32 +7,32 @@ import { NextRequest, NextResponse } from "next/server";
  * - 登录页 /login 与 POST /api/auth/login 放行
  */
 export function proxy(req: NextRequest) {
-  const token = process.env.ADMIN_TOKEN;
-  if (!token) return NextResponse.next();
+  const token = process.env.ADMIN_TOKEN
+  if (!token) return NextResponse.next()
 
-  const { pathname } = req.nextUrl;
+  const { pathname } = req.nextUrl
   if (pathname === "/login" || pathname === "/api/auth/login") {
-    return NextResponse.next();
+    return NextResponse.next()
   }
   if (!pathname.startsWith("/admin") && !pathname.startsWith("/api")) {
-    return NextResponse.next();
+    return NextResponse.next()
   }
 
-  const cookie = req.cookies.get("admin_token")?.value;
-  const header = req.headers.get("x-admin-token");
+  const cookie = req.cookies.get("admin_token")?.value
+  const header = req.headers.get("x-admin-token")
   if (cookie === token || header === token) {
-    return NextResponse.next();
+    return NextResponse.next()
   }
 
   if (pathname.startsWith("/api")) {
-    return NextResponse.json({ ok: false, error: "未授权" }, { status: 401 });
+    return NextResponse.json({ ok: false, error: "未授权" }, { status: 401 })
   }
-  const url = req.nextUrl.clone();
-  url.pathname = "/login";
-  url.searchParams.set("from", pathname);
-  return NextResponse.redirect(url);
+  const url = req.nextUrl.clone()
+  url.pathname = "/login"
+  url.searchParams.set("from", pathname)
+  return NextResponse.redirect(url)
 }
 
 export const config = {
   matcher: ["/admin/:path*", "/api/:path*", "/login"],
-};
+}

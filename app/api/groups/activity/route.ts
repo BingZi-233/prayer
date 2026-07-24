@@ -18,7 +18,9 @@ function chatKey(channel: string, chatId: string): string {
 // 生效群活动页:生效群 ∪ 有活动群,各群消息量/最近活动/反思游标/沉淀数 + 策略覆盖
 export async function GET(): Promise<NextResponse> {
   try {
-    const cfg = getConfig(new Repo(sharedDb(process.env.DB_PATH ?? "./data/agent.db")))
+    const cfg = getConfig(
+      new Repo(sharedDb(process.env.DB_PATH ?? "./data/agent.db"))
+    )
     const repo = new Repo(sharedDb(cfg.dbPath))
 
     const enabled = listEnabledChats(cfg)
@@ -47,8 +49,7 @@ export async function GET(): Promise<NextResponse> {
         const i = key.indexOf(":")
         const channel = (i > 0 ? key.slice(0, i) : "qq") as ChannelId
         const chatId = i > 0 ? key.slice(i + 1) : key
-        const policy: GroupPolicy =
-          getGroupPolicy(cfg, channel, chatId) ?? {}
+        const policy: GroupPolicy = getGroupPolicy(cfg, channel, chatId) ?? {}
         const hasOverride = Object.keys(policy).length > 0
         const gid = Number(chatId)
         return {

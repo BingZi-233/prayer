@@ -11,7 +11,7 @@ import {
   Search,
   ChevronRight,
 } from "lucide-react"
-import { ScrollArea } from "@/components/ui/scroll-area"
+import { useVirtualizer } from "@tanstack/react-virtual"
 import {
   InputGroup,
   InputGroupAddon,
@@ -178,7 +178,7 @@ export default function LogsPage() {
   const [query, setQuery] = useState("")
   const [paused, setPaused] = useState(false)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
-  const bottomRef = useRef<HTMLDivElement>(null)
+  const parentRef = useRef<HTMLDivElement>(null)
 
   // 先做 level + 搜索过滤(不含类别),供类别计数与最终列表复用
   const base = useMemo(
@@ -216,9 +216,23 @@ export default function LogsPage() {
   })
 
   const countSig = shown.map((l) => l.count).join(",")
+
+  // 虚拟滚动:仅渲染可视区行,变高(展开详情)由 measureElement 自动重测。
+  // 500 条日志全量渲染会卡,虚拟化后 DOM 只保留可视区 + overscan。
+  const virtualizer = useVirtualizer({
+    count: shown.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => 40,
+    overscan: 12,
+    getItemKey: (i) => rowKey(shown[i], i),
+  })
+
+  // 追新:未暂停时滚到最新一条(替代原 bottomRef.scrollIntoView)
   useEffect(() => {
-    if (!paused) bottomRef.current?.scrollIntoView({ block: "end" })
-  }, [shown.length, paused, countSig])
+    if (!paused && shown.length > 0) {
+      virtualizer.scrollToIndex(shown.length - 1, { align: "end" })
+    }
+  }, [shown.length, paused, countSig, virtualizer])
 
   function toggleLevel(lv: string) {
     setLevels((prev) => {
@@ -371,13 +385,23 @@ export default function LogsPage() {
               description="调整级别/类别过滤或搜索关键词。"
             />
           ) : (
-            <ScrollArea className="bg-muted/30 h-[560px] rounded-lg border">
-              <div className="divide-border divide-y font-mono text-[0.8125rem] leading-relaxed">
-                {shown.map((l, i) => {
+            <div
+              ref={parentRef}
+              className="bg-muted/30 h-[560px] overflow-y-auto rounded-lg border font-mono text-[0.8125rem] leading-relaxed"
+            >
+              <div
+                style={{
+                  height: virtualizer.getTotalSize(),
+                  position: "relative",
+                  width: "100%",
+                }}
+              >
+                {virtualizer.getVirtualItems().map((vi) => {
+                  const l = shown[vi.index]
                   const last = l.lastTs ?? l.ts
                   const count = l.count ?? 1
                   const cat = l.category
-                  const key = rowKey(l, i)
+                  const key = rowKey(l, vi.index)
                   const open = expanded.has(key)
                   const s = levelStyle(l.level)
                   const chat = chatLabel(l)
@@ -385,9 +409,18 @@ export default function LogsPage() {
 
                   return (
                     <div
-                      key={key}
+                      key={vi.key}
+                      data-index={vi.index}
+                      ref={virtualizer.measureElement}
+                      style={{
+                        position: "absolute",
+                        top: 0,
+                        left: 0,
+                        width: "100%",
+                        transform: `translateY(${vi.start}px)`,
+                      }}
                       className={cn(
-                        "group/row relative",
+                        "group/row border-border/50 relative border-b",
                         open ? "bg-muted/40" : "hover:bg-muted/50"
                       )}
                     >
@@ -531,8 +564,7 @@ export default function LogsPage() {
                   )
                 })}
               </div>
-              <div ref={bottomRef} />
-            </ScrollArea>
+            </div>
           )}
         </DataState>
       </SectionCard>

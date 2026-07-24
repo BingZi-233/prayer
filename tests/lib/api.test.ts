@@ -1,6 +1,6 @@
-import { describe, it, expect } from "vitest";
-import { ok, fail, maskConfig } from "@/lib/api";
-import type { AppConfig } from "@/lib/config-store";
+import { describe, it, expect } from "vitest"
+import { ok, fail, maskConfig } from "@/lib/api"
+import type { AppConfig } from "@/lib/config-store"
 
 const cfg: AppConfig = {
   onebotWsUrl: "ws://x:1",
@@ -37,15 +37,17 @@ const cfg: AppConfig = {
   topicPromptMax: 40,
   usageBudgetUsd: 0,
   groupPolicies: {},
-};
+}
 
 describe("api helpers", () => {
-  it("ok 包 data", () => expect(ok({ a: 1 })).toEqual({ ok: true, data: { a: 1 } }));
-  it("fail 包 error", () => expect(fail("boom")).toEqual({ ok: false, error: "boom" }));
+  it("ok 包 data", () =>
+    expect(ok({ a: 1 })).toEqual({ ok: true, data: { a: 1 } }))
+  it("fail 包 error", () =>
+    expect(fail("boom")).toEqual({ ok: false, error: "boom" }))
   it("maskConfig 掩码 token", () => {
-    const m = maskConfig(cfg);
-    expect(m.onebotAccessToken).toBe("••••9999");
-    expect(m.telegramBotToken).toBe("••••1234");
-    expect(m.onebotWsUrl).toBe("ws://x:1"); // 非 secret 不动
-  });
-});
+    const m = maskConfig(cfg)
+    expect(m.onebotAccessToken).toBe("••••9999")
+    expect(m.telegramBotToken).toBe("••••1234")
+    expect(m.onebotWsUrl).toBe("ws://x:1") // 非 secret 不动
+  })
+})

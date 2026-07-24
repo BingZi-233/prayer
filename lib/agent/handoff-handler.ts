@@ -2,10 +2,7 @@ import { bus } from "../bus"
 import type { Repo } from "../db/repo"
 import type { HandoffRequested, HandoffResumed } from "../events"
 import type { ChannelId } from "../channels/types"
-import {
-  legacySessionKeyToCanonical,
-  parseSessionKey,
-} from "../channels/ids"
+import { legacySessionKeyToCanonical, parseSessionKey } from "../channels/ids"
 import type { ChatRef } from "../channels/enabled-chats"
 
 export interface HandoffHandlerDeps {
@@ -82,9 +79,7 @@ export function registerHandoffHandler(deps: HandoffHandlerDeps): () => void {
     repo.setHumanMode(e.sessionKey, false)
 
     // 用 parseSessionKey(兼容历史两段键),禁止 Number(sessionKey.split(":")[0])
-    const parsed = parseSessionKey(
-      legacySessionKeyToCanonical(e.sessionKey)
-    )
+    const parsed = parseSessionKey(legacySessionKeyToCanonical(e.sessionKey))
     if (parsed) {
       bus.emit("action.send", {
         channel: parsed.channel,

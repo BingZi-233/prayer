@@ -1,7 +1,7 @@
-"use client";
+"use client"
 
-import Link from "next/link";
-import { usePathname } from "next/navigation";
+import Link from "next/link"
+import { usePathname } from "next/navigation"
 import {
   Activity,
   Settings,
@@ -16,7 +16,7 @@ import {
   Puzzle,
   LifeBuoy,
   TrendingUp,
-} from "lucide-react";
+} from "lucide-react"
 import {
   Sidebar,
   SidebarContent,
@@ -28,8 +28,8 @@ import {
   SidebarMenuBadge,
   SidebarMenuButton,
   SidebarMenuItem,
-} from "@/components/ui/sidebar";
-import { useLive } from "@/components/live-provider";
+} from "@/components/ui/sidebar"
+import { useLive } from "@/components/live-provider"
 
 const navGroups = [
   {
@@ -43,7 +43,12 @@ const navGroups = [
     label: "客服运营",
     items: [
       { href: "/admin/sessions", label: "会话", icon: MessagesSquare },
-      { href: "/admin/handoff", label: "人工队列", icon: LifeBuoy, badge: "human" as const },
+      {
+        href: "/admin/handoff",
+        label: "人工队列",
+        icon: LifeBuoy,
+        badge: "human" as const,
+      },
       { href: "/admin/proactive", label: "主动回复", icon: Zap },
     ],
   },
@@ -64,21 +69,21 @@ const navGroups = [
       { href: "/admin/plugins", label: "插件", icon: Puzzle },
     ],
   },
-];
+]
 
 export function AppSidebar() {
-  const pathname = usePathname();
-  const { overview } = useLive();
+  const pathname = usePathname()
+  const { overview } = useLive()
   return (
     <Sidebar>
       <SidebarHeader>
         <div className="flex items-center gap-2 px-2 py-1.5">
-          <div className="bg-primary text-primary-foreground flex size-8 items-center justify-center rounded-md">
+          <div className="flex size-8 items-center justify-center rounded-md bg-primary text-primary-foreground">
             <Bot className="size-5" />
           </div>
           <div className="flex flex-col leading-tight">
             <span className="text-sm font-semibold">客服 Agent</span>
-            <span className="text-muted-foreground text-xs">管理后台</span>
+            <span className="text-xs text-muted-foreground">管理后台</span>
           </div>
         </div>
       </SidebarHeader>
@@ -89,21 +94,31 @@ export function AppSidebar() {
             <SidebarGroupContent>
               <SidebarMenu>
                 {group.items.map((n) => {
-                  const active = n.href === "/admin" ? pathname === n.href : pathname.startsWith(n.href);
-                  const badge = "badge" in n ? n.badge : undefined;
+                  const active =
+                    n.href === "/admin"
+                      ? pathname === n.href
+                      : pathname.startsWith(n.href)
+                  const badge = "badge" in n ? n.badge : undefined
                   return (
                     <SidebarMenuItem key={n.href}>
-                      <SidebarMenuButton asChild isActive={active} tooltip={n.label}>
+                      <SidebarMenuButton
+                        asChild
+                        isActive={active}
+                        tooltip={n.label}
+                      >
                         <Link href={n.href}>
                           <n.icon />
                           <span>{n.label}</span>
                         </Link>
                       </SidebarMenuButton>
-                      {badge === "human" && (overview?.humanSessions ?? 0) > 0 && (
-                        <SidebarMenuBadge className="text-destructive">{overview!.humanSessions}</SidebarMenuBadge>
-                      )}
+                      {badge === "human" &&
+                        (overview?.humanSessions ?? 0) > 0 && (
+                          <SidebarMenuBadge className="text-destructive">
+                            {overview!.humanSessions}
+                          </SidebarMenuBadge>
+                        )}
                     </SidebarMenuItem>
-                  );
+                  )
                 })}
               </SidebarMenu>
             </SidebarGroupContent>
@@ -111,5 +126,5 @@ export function AppSidebar() {
         ))}
       </SidebarContent>
     </Sidebar>
-  );
+  )
 }
