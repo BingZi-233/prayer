@@ -32,10 +32,7 @@ describe("message-buffer", () => {
       adminSurface: { channel: "qq" as const, chatId: "999" },
       enabledChats: [{ channel: "qq" as const, chatId: "100" }],
     })
-    bus.emit(
-      "message.received",
-      msg({ senderRole: "admin", rawText: "答案" })
-    )
+    bus.emit("message.received", msg({ senderRole: "admin", rawText: "答案" }))
     const win = repo.groupMessageWindow("qq", "100", 0, 10)
     expect(win).toHaveLength(1)
     expect(win[0].senderRole).toBe("admin")
@@ -49,14 +46,8 @@ describe("message-buffer", () => {
       adminSurface: { channel: "qq" as const, chatId: "999" },
       enabledChats: [{ channel: "qq" as const, chatId: "100" }],
     })
-    bus.emit(
-      "message.received",
-      msg({ chatId: "999", rawText: "管理群" })
-    )
-    bus.emit(
-      "message.received",
-      msg({ userId: "1", rawText: "bot 自己" })
-    )
+    bus.emit("message.received", msg({ chatId: "999", rawText: "管理群" }))
+    bus.emit("message.received", msg({ userId: "1", rawText: "bot 自己" }))
     bus.emit("message.received", msg({ rawText: "   " }))
     expect(repo.groupMessageWindow("qq", "100", 0, 10)).toHaveLength(0)
     expect(repo.groupMessageWindow("qq", "999", 0, 10)).toHaveLength(0)
@@ -71,14 +62,8 @@ describe("message-buffer", () => {
       adminSurface: { channel: "qq" as const, chatId: "999" },
       enabledChats: [{ channel: "qq" as const, chatId: "100" }],
     })
-    bus.emit(
-      "message.received",
-      msg({ userId: "555", rawText: "bot" })
-    )
-    bus.emit(
-      "message.received",
-      msg({ userId: "556", rawText: "用户" })
-    )
+    bus.emit("message.received", msg({ userId: "555", rawText: "bot" }))
+    bus.emit("message.received", msg({ userId: "556", rawText: "用户" }))
     const win = repo.groupMessageWindow("qq", "100", 0, 10)
     expect(win).toHaveLength(1)
     expect(win[0].userId).toBe("556")
@@ -104,10 +89,7 @@ describe("message-buffer", () => {
       adminSurface: { channel: "qq" as const, chatId: "999" },
       enabledChats: [{ channel: "qq" as const, chatId: "100" }],
     })
-    bus.emit(
-      "message.received",
-      msg({ chatId: "888", rawText: "非生效群" })
-    )
+    bus.emit("message.received", msg({ chatId: "888", rawText: "非生效群" }))
     expect(repo.groupMessageWindow("qq", "888", 0, 10)).toHaveLength(0)
     stop()
   })

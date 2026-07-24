@@ -49,9 +49,7 @@ export function isAdminSurface(
   channel: ChannelId,
   chatId: string
 ): boolean {
-  return (
-    !!surface && surface.channel === channel && surface.chatId === chatId
-  )
+  return !!surface && surface.channel === channel && surface.chatId === chatId
 }
 
 /**

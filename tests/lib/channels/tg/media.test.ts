@@ -40,8 +40,7 @@ describe("downloadTelegramImage", () => {
       ok: true,
       arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer,
       headers: {
-        get: (k: string) =>
-          k === "content-type" ? "image/png" : null,
+        get: (k: string) => (k === "content-type" ? "image/png" : null),
       },
     }))
     const r = await downloadTelegramImage("fid", {

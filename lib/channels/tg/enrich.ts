@@ -53,11 +53,7 @@ export async function enrichTelegramMessage(
   }
 
   try {
-    const botRelated = isBotRelatedMessage(
-      raw,
-      deps.botId,
-      !!msg.botMentioned
-    )
+    const botRelated = isBotRelatedMessage(raw, deps.botId, !!msg.botMentioned)
     deps.observeMessage?.(msg.chatId, botRelated)
   } catch {
     /* 观察失败忽略 */

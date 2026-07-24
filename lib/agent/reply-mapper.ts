@@ -38,7 +38,9 @@ export function registerReplyMapper(deps: ReplyMapperDeps = {}): () => void {
   const onReply = (r: ReplyReady) => {
     // 最终出站闸门:任何路径若仍把哨兵放进 reply.ready,在此吞掉,绝不 action.send。
     if (isNoAnswerText(r.text)) return
-    const chunks = splitReply(r.text, maxChars).filter((t) => !isNoAnswerText(t))
+    const chunks = splitReply(r.text, maxChars).filter(
+      (t) => !isNoAnswerText(t)
+    )
     chunks.forEach((text, i) => {
       bus.emit("action.send", {
         channel: r.channel,

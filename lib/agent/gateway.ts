@@ -144,9 +144,7 @@ export function registerGateway(deps: GatewayDeps): () => void {
     // 转人工：有管理面 → handoff 事件（通知走 adminSurface）；无管理面 → 引导官网
     if (HANDOFF_KEYWORDS.test(body)) {
       if (!adminSurface) {
-        const link = supportUrl
-          ? ` 也可访问 ${supportUrl} 联系支持。`
-          : ""
+        const link = supportUrl ? ` 也可访问 ${supportUrl} 联系支持。` : ""
         sendText(
           channel,
           chatId,

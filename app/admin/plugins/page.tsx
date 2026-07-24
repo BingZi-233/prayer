@@ -1,56 +1,69 @@
-"use client";
+"use client"
 
-import { useEffect, useState } from "react";
-import { Puzzle, Plus, RotateCw, Trash2 } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Switch } from "@/components/ui/switch";
-import { Badge } from "@/components/ui/badge";
-import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { PageShell } from "@/components/admin/page-shell";
-import { PageHeader } from "@/components/admin/page-header";
-import { SectionCard } from "@/components/admin/section-card";
-import { EmptyState, ErrorState } from "@/components/admin/data-state";
+import { useEffect, useState } from "react"
+import { Puzzle, Plus, RotateCw, Trash2 } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Switch } from "@/components/ui/switch"
+import { Badge } from "@/components/ui/badge"
+import { Field, FieldGroup, FieldLabel } from "@/components/ui/field"
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import { PageShell } from "@/components/admin/page-shell"
+import { PageHeader } from "@/components/admin/page-header"
+import { SectionCard } from "@/components/admin/section-card"
+import { EmptyState, ErrorState } from "@/components/admin/data-state"
 
 interface Plugin {
-  id: string;
-  version: string;
-  scope: string;
-  enabled: boolean;
-  installPath: string;
+  id: string
+  version: string
+  scope: string
+  enabled: boolean
+  installPath: string
 }
 
 export default function PluginsPage() {
-  const [plugins, setPlugins] = useState<Plugin[]>([]);
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
+  const [plugins, setPlugins] = useState<Plugin[]>([])
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
   const [form, setForm] = useState({
     source: "github",
     repoOrPath: "",
     marketplaceName: "",
     pluginName: "",
-  });
+  })
 
   async function load() {
-    const r = await fetch("/api/plugins").then((x) => x.json());
-    if (r.ok) setPlugins(r.data);
-    else setErr(r.error);
+    const r = await fetch("/api/plugins").then((x) => x.json())
+    if (r.ok) setPlugins(r.data)
+    else setErr(r.error)
   }
   useEffect(() => {
-    void load();
-  }, []);
+    void load()
+  }, [])
 
   async function act(fn: () => Promise<Response>) {
-    setBusy(true);
-    setErr(null);
+    setBusy(true)
+    setErr(null)
     try {
-      const r = await fn().then((x) => x.json());
-      if (!r.ok) setErr(r.error);
-      await load();
+      const r = await fn().then((x) => x.json())
+      if (!r.ok) setErr(r.error)
+      await load()
     } finally {
-      setBusy(false);
+      setBusy(false)
     }
   }
 
@@ -60,30 +73,35 @@ export default function PluginsPage() {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(form),
-      }),
-    );
+      })
+    )
   const toggle = (p: Plugin) =>
     act(() =>
       fetch(`/api/plugins/${encodeURIComponent(p.id)}`, {
         method: "PATCH",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ action: p.enabled ? "disable" : "enable" }),
-      }),
-    );
+      })
+    )
   const update = (p: Plugin) =>
     act(() =>
       fetch(`/api/plugins/${encodeURIComponent(p.id)}`, {
         method: "PATCH",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ action: "update" }),
-      }),
-    );
+      })
+    )
   const remove = (p: Plugin) =>
-    act(() => fetch(`/api/plugins/${encodeURIComponent(p.id)}`, { method: "DELETE" }));
+    act(() =>
+      fetch(`/api/plugins/${encodeURIComponent(p.id)}`, { method: "DELETE" })
+    )
 
   return (
     <PageShell>
-      <PageHeader title="插件" description="安装、更新与启停插件，操作后自动生效。" />
+      <PageHeader
+        title="插件"
+        description="安装、更新与启停插件，操作后自动生效。"
+      />
 
       {err && <ErrorState description={err} onRetry={load} />}
 
@@ -95,7 +113,10 @@ export default function PluginsPage() {
         <FieldGroup className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <Field>
             <FieldLabel>来源</FieldLabel>
-            <Select value={form.source} onValueChange={(v) => setForm({ ...form, source: v })}>
+            <Select
+              value={form.source}
+              onValueChange={(v) => setForm({ ...form, source: v })}
+            >
               <SelectTrigger className="w-full">
                 <SelectValue />
               </SelectTrigger>
@@ -106,7 +127,9 @@ export default function PluginsPage() {
             </Select>
           </Field>
           <Field>
-            <FieldLabel>{form.source === "github" ? "owner/repo" : "绝对路径"}</FieldLabel>
+            <FieldLabel>
+              {form.source === "github" ? "owner/repo" : "绝对路径"}
+            </FieldLabel>
             <Input
               value={form.repoOrPath}
               onChange={(e) => setForm({ ...form, repoOrPath: e.target.value })}
@@ -116,7 +139,9 @@ export default function PluginsPage() {
             <FieldLabel>marketplace 名</FieldLabel>
             <Input
               value={form.marketplaceName}
-              onChange={(e) => setForm({ ...form, marketplaceName: e.target.value })}
+              onChange={(e) =>
+                setForm({ ...form, marketplaceName: e.target.value })
+              }
             />
           </Field>
           <Field>
@@ -129,7 +154,12 @@ export default function PluginsPage() {
           <div className="sm:col-span-2 lg:col-span-4">
             <Button
               onClick={install}
-              disabled={busy || !form.repoOrPath || !form.marketplaceName || !form.pluginName}
+              disabled={
+                busy ||
+                !form.repoOrPath ||
+                !form.marketplaceName ||
+                !form.pluginName
+              }
             >
               <Plus data-icon="inline-start" />
               安装
@@ -138,9 +168,16 @@ export default function PluginsPage() {
         </FieldGroup>
       </SectionCard>
 
-      <SectionCard title="已装插件" description="已安装的插件，可启停、更新或卸载。">
+      <SectionCard
+        title="已装插件"
+        description="已安装的插件，可启停、更新或卸载。"
+      >
         {plugins.length === 0 ? (
-          <EmptyState icon={Puzzle} title="暂无插件" description="使用上方表单安装插件。" />
+          <EmptyState
+            icon={Puzzle}
+            title="暂无插件"
+            description="使用上方表单安装插件。"
+          />
         ) : (
           <Table>
             <TableHeader>
@@ -200,5 +237,5 @@ export default function PluginsPage() {
         )}
       </SectionCard>
     </PageShell>
-  );
+  )
 }

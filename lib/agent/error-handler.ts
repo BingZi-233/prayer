@@ -1,10 +1,7 @@
 import { bus } from "../bus"
 import type { ErrorOccurred } from "../events"
 import type { ChannelId } from "../channels/types"
-import {
-  legacySessionKeyToCanonical,
-  parseSessionKey,
-} from "../channels/ids"
+import { legacySessionKeyToCanonical, parseSessionKey } from "../channels/ids"
 import { logger } from "../logger"
 import {
   classifyError,
@@ -72,9 +69,7 @@ export function formatErrorLine(e: {
   const ctx: string[] = []
   if (channel && chatId) ctx.push(`${channel}:${chatId}`)
   if (e.sessionKey) ctx.push(`session=${e.sessionKey}`)
-  const head = ctx.length
-    ? `[${e.scope}] (${ctx.join(" ")})`
-    : `[${e.scope}]`
+  const head = ctx.length ? `[${e.scope}] (${ctx.join(" ")})` : `[${e.scope}]`
   if (c.code === "unknown") return `${head} ${raw}`
   return `${head} 【${c.title}】${c.hint} | 原始: ${raw}`
 }
@@ -84,8 +79,7 @@ function defaultLogError(scope: string, err: unknown, e: ErrorOccurred): void {
   const c = classifyError(raw)
   const { channel, chatId } = resolveTarget(e)
   // unknown:msg 用 raw 首行,避免 ring/stdout 只剩「未分类错误」;已分类用 title
-  const msg =
-    c.code === "unknown" ? raw.split("\n")[0].slice(0, 300) : c.title
+  const msg = c.code === "unknown" ? raw.split("\n")[0].slice(0, 300) : c.title
   logger.error(msg, {
     scope,
     channel,

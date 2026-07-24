@@ -182,7 +182,13 @@ describe("ChannelRegistry", () => {
   it("stopAll 后 action.send 不再分发到已清通道", async () => {
     const reg = new ChannelRegistry()
     let n = 0
-    reg.register(makeChannel("qq", { onSend: () => { n++ } }))
+    reg.register(
+      makeChannel("qq", {
+        onSend: () => {
+          n++
+        },
+      })
+    )
     await reg.startAll()
     await reg.stopAll()
     bus.emit("action.send", { channel: "qq", chatId: "1", text: "x" })

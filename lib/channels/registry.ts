@@ -81,10 +81,7 @@ export class ChannelRegistry {
         const ch = entries[i]!
         const msg =
           r.reason instanceof Error ? r.reason.message : String(r.reason)
-        logger.log(
-          "error",
-          `[registry] channel ${ch.id} start failed: ${msg}`
-        )
+        logger.log("error", `[registry] channel ${ch.id} start failed: ${msg}`)
         ch.setLastError?.(msg)
       }
     }

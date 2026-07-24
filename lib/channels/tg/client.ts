@@ -10,10 +10,7 @@ import {
   mapChatMembersToAdmins,
   type AdminEntry,
 } from "./admins-cache"
-import {
-  clearAllTgBypassBlocked,
-  isTgChatBypassEnabled,
-} from "./bypass-state"
+import { clearAllTgBypassBlocked, isTgChatBypassEnabled } from "./bypass-state"
 import { enrichTelegramMessage, makeTelegramImageDownloader } from "./enrich"
 import type { TelegramFileInfo } from "./media"
 import { parseTelegramUpdate } from "./parse"

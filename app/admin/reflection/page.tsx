@@ -1,6 +1,6 @@
 "use client"
 
-import { useRef, useState } from "react"
+import { useState } from "react"
 import { toast } from "sonner"
 import {
   Brain,
@@ -18,7 +18,7 @@ import {
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Spinner } from "@/components/ui/spinner"
-import { useVirtualizer } from "@tanstack/react-virtual"
+import { VirtualList } from "@/components/admin/virtual-list"
 import { Skeleton } from "@/components/ui/skeleton"
 import {
   Table,
@@ -116,129 +116,101 @@ function EntryList({
   onAct: (id: number, action: "approve" | "reject" | "promote") => void
   groupName: (id: number) => string
 }) {
-  const parentRef = useRef<HTMLDivElement>(null)
-  const virtualizer = useVirtualizer({
-    count: entries.length,
-    getScrollElement: () => parentRef.current,
-    estimateSize: () => 96,
-    overscan: 8,
-    getItemKey: (i) => entries[i].id,
-  })
-
   return (
-    <div ref={parentRef} className="h-[400px] overflow-y-auto pr-3">
-      <div
-        style={{
-          height: virtualizer.getTotalSize(),
-          position: "relative",
-          width: "100%",
-        }}
-      >
-        {virtualizer.getVirtualItems().map((vi) => {
-          const e = entries[vi.index]
-          const hasSource = Boolean(e.question || e.answer)
-          const st = e.status ?? "approved"
-          return (
-            <div
-              key={vi.key}
-              data-index={vi.index}
-              ref={virtualizer.measureElement}
-              style={{
-                position: "absolute",
-                top: 0,
-                left: 0,
-                width: "100%",
-                transform: `translateY(${vi.start}px)`,
-                paddingBottom: 8,
-              }}
-            >
-              <ItemCard
-                meta={
-                  <>
-                    {e.groupId === 0 ? (
-                      <Badge variant="outline">已整理</Badge>
-                    ) : e.groupId != null ? (
-                      <Badge variant="secondary">{groupName(e.groupId)}</Badge>
-                    ) : null}
-                    {st === "rejected" ? (
-                      <Badge variant="destructive">已驳回</Badge>
-                    ) : st === "promoted" ? (
-                      <Badge variant="outline">已升格</Badge>
-                    ) : st === "pending" ? (
-                      <Badge variant="secondary">待审</Badge>
-                    ) : (
-                      <Badge variant="default">已入库</Badge>
-                    )}
-                    <RelativeTime ts={e.ts} />
-                    <span className="ml-auto flex gap-1">
-                      {st !== "approved" && st !== "promoted" && (
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          disabled={acting === e.id}
-                          onClick={() => onAct(e.id, "approve")}
-                          title="恢复入库"
-                          aria-label="恢复入库"
-                        >
-                          <Check data-icon="inline-start" />
-                        </Button>
-                      )}
-                      {st !== "rejected" && st !== "promoted" && (
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          disabled={acting === e.id}
-                          onClick={() => onAct(e.id, "reject")}
-                          title="驳回"
-                          aria-label="驳回"
-                        >
-                          <X data-icon="inline-start" />
-                        </Button>
-                      )}
-                      {st === "approved" && (
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          disabled={acting === e.id}
-                          onClick={() => onAct(e.id, "promote")}
-                          title="升格为正式文档"
-                          aria-label="升格为正式文档"
-                        >
-                          <FileUp data-icon="inline-start" />
-                        </Button>
-                      )}
-                    </span>
-                  </>
-                }
-              >
-                <p className="text-sm whitespace-pre-wrap">{e.content}</p>
-                {hasSource && (
-                  <details className="mt-2">
-                    <summary className="cursor-pointer text-xs text-muted-foreground">
-                      来源问答
-                    </summary>
-                    <div className="mt-1.5 flex flex-col gap-1 border-l-2 pl-2 text-xs">
-                      {e.question && (
-                        <p className="whitespace-pre-wrap">
-                          <span className="text-muted-foreground">问:</span>
-                          {e.question}
-                        </p>
-                      )}
-                      {e.answer && (
-                        <p className="whitespace-pre-wrap">
-                          <span className="text-muted-foreground">答:</span>
-                          {e.answer}
-                        </p>
-                      )}
-                    </div>
-                  </details>
+    <VirtualList
+      items={entries}
+      getKey={(e) => e.id}
+      gap={8}
+      className="h-[400px] pr-3"
+      renderItem={(e) => {
+        const hasSource = Boolean(e.question || e.answer)
+        const st = e.status ?? "approved"
+        return (
+          <ItemCard
+            meta={
+              <>
+                {e.groupId === 0 ? (
+                  <Badge variant="outline">已整理</Badge>
+                ) : e.groupId != null ? (
+                  <Badge variant="secondary">{groupName(e.groupId)}</Badge>
+                ) : null}
+                {st === "rejected" ? (
+                  <Badge variant="destructive">已驳回</Badge>
+                ) : st === "promoted" ? (
+                  <Badge variant="outline">已升格</Badge>
+                ) : st === "pending" ? (
+                  <Badge variant="secondary">待审</Badge>
+                ) : (
+                  <Badge variant="default">已入库</Badge>
                 )}
-              </ItemCard>
-            </div>
-          )
-        })}
-      </div>
-    </div>
+                <RelativeTime ts={e.ts} />
+                <span className="ml-auto flex gap-1">
+                  {st !== "approved" && st !== "promoted" && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      disabled={acting === e.id}
+                      onClick={() => onAct(e.id, "approve")}
+                      title="恢复入库"
+                      aria-label="恢复入库"
+                    >
+                      <Check data-icon="inline-start" />
+                    </Button>
+                  )}
+                  {st !== "rejected" && st !== "promoted" && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      disabled={acting === e.id}
+                      onClick={() => onAct(e.id, "reject")}
+                      title="驳回"
+                      aria-label="驳回"
+                    >
+                      <X data-icon="inline-start" />
+                    </Button>
+                  )}
+                  {st === "approved" && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      disabled={acting === e.id}
+                      onClick={() => onAct(e.id, "promote")}
+                      title="升格为正式文档"
+                      aria-label="升格为正式文档"
+                    >
+                      <FileUp data-icon="inline-start" />
+                    </Button>
+                  )}
+                </span>
+              </>
+            }
+          >
+            <p className="text-sm whitespace-pre-wrap">{e.content}</p>
+            {hasSource && (
+              <details className="mt-2">
+                <summary className="cursor-pointer text-xs text-muted-foreground">
+                  来源问答
+                </summary>
+                <div className="mt-1.5 flex flex-col gap-1 border-l-2 pl-2 text-xs">
+                  {e.question && (
+                    <p className="whitespace-pre-wrap">
+                      <span className="text-muted-foreground">问:</span>
+                      {e.question}
+                    </p>
+                  )}
+                  {e.answer && (
+                    <p className="whitespace-pre-wrap">
+                      <span className="text-muted-foreground">答:</span>
+                      {e.answer}
+                    </p>
+                  )}
+                </div>
+              </details>
+            )}
+          </ItemCard>
+        )
+      }}
+    />
   )
 }
 

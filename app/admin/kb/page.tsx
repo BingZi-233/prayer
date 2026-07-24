@@ -1,9 +1,15 @@
-"use client";
+"use client"
 
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
-import { toast } from "sonner";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react"
+import ReactMarkdown from "react-markdown"
+import remarkGfm from "remark-gfm"
+import { toast } from "sonner"
 import {
   FileText,
   RefreshCw,
@@ -24,15 +30,15 @@ import {
   X,
   Eye,
   Code2,
-} from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Textarea } from "@/components/ui/textarea";
-import { Input } from "@/components/ui/input";
-import { Spinner } from "@/components/ui/spinner";
-import { Badge } from "@/components/ui/badge";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ScrollArea } from "@/components/ui/scroll-area";
+} from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { Textarea } from "@/components/ui/textarea"
+import { Input } from "@/components/ui/input"
+import { Spinner } from "@/components/ui/spinner"
+import { Badge } from "@/components/ui/badge"
+import { Skeleton } from "@/components/ui/skeleton"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { ScrollArea } from "@/components/ui/scroll-area"
 import {
   Dialog,
   DialogContent,
@@ -40,7 +46,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
+} from "@/components/ui/dialog"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -50,86 +56,88 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
-import { PageShell } from "@/components/admin/page-shell";
-import { PageHeader } from "@/components/admin/page-header";
-import { MetricBadge, MetricBadgeRow } from "@/components/admin/stat";
-import { SectionCard } from "@/components/admin/section-card";
-import { ItemCard } from "@/components/admin/item-card";
-import { MasterDetail } from "@/components/admin/master-detail";
-import { DataState, EmptyState } from "@/components/admin/data-state";
-import { cn } from "@/lib/utils";
+} from "@/components/ui/alert-dialog"
+import { PageShell } from "@/components/admin/page-shell"
+import { PageHeader } from "@/components/admin/page-header"
+import { MetricBadge, MetricBadgeRow } from "@/components/admin/stat"
+import { SectionCard } from "@/components/admin/section-card"
+import { ItemCard } from "@/components/admin/item-card"
+import { MasterDetail } from "@/components/admin/master-detail"
+import { DataState, EmptyState } from "@/components/admin/data-state"
+import { cn } from "@/lib/utils"
 
 interface KbStats {
-  chunks: number;
-  vecs: number;
-  dim: number;
-  docs: { doc: string; chunks: number }[];
+  chunks: number
+  vecs: number
+  dim: number
+  docs: { doc: string; chunks: number }[]
 }
 interface KbChunk {
-  id: number;
-  content: string;
+  id: number
+  content: string
 }
 interface IngestResult {
-  file: string;
-  chunks: number;
+  file: string
+  chunks: number
 }
 
 type TreeNode =
   | { kind: "dir"; name: string; path: string; children: TreeNode[] }
-  | { kind: "file"; name: string; path: string };
+  | { kind: "file"; name: string; path: string }
 
 function buildTree(files: string[]): TreeNode[] {
   type MutableDir = {
-    kind: "dir";
-    name: string;
-    path: string;
-    kids: Map<string, MutableDir | { kind: "file"; name: string; path: string }>;
-  };
-  const root: MutableDir = { kind: "dir", name: "", path: "", kids: new Map() };
+    kind: "dir"
+    name: string
+    path: string
+    kids: Map<string, MutableDir | { kind: "file"; name: string; path: string }>
+  }
+  const root: MutableDir = { kind: "dir", name: "", path: "", kids: new Map() }
 
   for (const f of files) {
-    const parts = f.split("/");
-    let cur = root;
+    const parts = f.split("/")
+    let cur = root
     for (let i = 0; i < parts.length; i++) {
-      const part = parts[i]!;
-      const isFile = i === parts.length - 1;
+      const part = parts[i]!
+      const isFile = i === parts.length - 1
       if (isFile) {
-        cur.kids.set(part, { kind: "file", name: part, path: f });
+        cur.kids.set(part, { kind: "file", name: part, path: f })
       } else {
-        const dirPath = parts.slice(0, i + 1).join("/");
-        let next = cur.kids.get(part);
+        const dirPath = parts.slice(0, i + 1).join("/")
+        let next = cur.kids.get(part)
         if (!next || next.kind !== "dir") {
-          next = { kind: "dir", name: part, path: dirPath, kids: new Map() };
-          cur.kids.set(part, next);
+          next = { kind: "dir", name: part, path: dirPath, kids: new Map() }
+          cur.kids.set(part, next)
         }
-        cur = next as MutableDir;
+        cur = next as MutableDir
       }
     }
   }
 
   function freeze(d: MutableDir): TreeNode[] {
-    const dirs: TreeNode[] = [];
-    const filesOut: TreeNode[] = [];
-    for (const [, node] of [...d.kids.entries()].sort(([a], [b]) => a.localeCompare(b, "zh"))) {
+    const dirs: TreeNode[] = []
+    const filesOut: TreeNode[] = []
+    for (const [, node] of [...d.kids.entries()].sort(([a], [b]) =>
+      a.localeCompare(b, "zh")
+    )) {
       if (node.kind === "dir") {
         dirs.push({
           kind: "dir",
           name: node.name,
           path: node.path,
           children: freeze(node),
-        });
+        })
       } else {
-        filesOut.push(node);
+        filesOut.push(node)
       }
     }
-    return [...dirs, ...filesOut];
+    return [...dirs, ...filesOut]
   }
-  return freeze(root);
+  return freeze(root)
 }
 
 function encPath(f: string) {
-  return f.split("/").map(encodeURIComponent).join("/");
+  return f.split("/").map(encodeURIComponent).join("/")
 }
 
 function MarkdownBody({ source }: { source: string }) {
@@ -146,411 +154,453 @@ function MarkdownBody({ source }: { source: string }) {
         "[&_ol]:my-2 [&_ol]:list-decimal [&_ol]:pl-5",
         "[&_li]:my-0.5",
         "[&_a]:text-primary [&_a]:underline [&_a]:underline-offset-2",
-        "[&_blockquote]:text-muted-foreground [&_blockquote]:border-l-2 [&_blockquote]:pl-3",
+        "[&_blockquote]:border-l-2 [&_blockquote]:pl-3 [&_blockquote]:text-muted-foreground",
         "[&_hr]:my-4 [&_hr]:border-border",
-        "[&_code]:bg-muted [&_code]:rounded [&_code]:px-1 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-[0.85em]",
-        "[&_pre]:bg-muted [&_pre]:my-3 [&_pre]:overflow-x-auto [&_pre]:rounded-md [&_pre]:border [&_pre]:p-3",
+        "[&_code]:rounded [&_code]:bg-muted [&_code]:px-1 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-[0.85em]",
+        "[&_pre]:my-3 [&_pre]:overflow-x-auto [&_pre]:rounded-md [&_pre]:border [&_pre]:bg-muted [&_pre]:p-3",
         "[&_pre_code]:bg-transparent [&_pre_code]:p-0",
         "[&_table]:my-3 [&_table]:w-full [&_table]:border-collapse [&_table]:text-xs",
         "[&_th]:border [&_th]:bg-muted/50 [&_th]:px-2 [&_th]:py-1.5 [&_th]:text-left [&_th]:font-medium",
         "[&_td]:border [&_td]:px-2 [&_td]:py-1.5",
-        "[&_img]:my-2 [&_img]:max-w-full [&_img]:rounded-md",
+        "[&_img]:my-2 [&_img]:max-w-full [&_img]:rounded-md"
       )}
     >
-      <ReactMarkdown remarkPlugins={[remarkGfm]}>{source || "*（空文档）*"}</ReactMarkdown>
+      <ReactMarkdown remarkPlugins={[remarkGfm]}>
+        {source || "*（空文档）*"}
+      </ReactMarkdown>
     </div>
-  );
+  )
 }
 
 export default function KbPage() {
-  const [files, setFiles] = useState<string[] | null>(null);
-  const [active, setActive] = useState<string | null>(null);
-  const [content, setContent] = useState("");
-  const [savedContent, setSavedContent] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [ingesting, setIngesting] = useState(false);
-  const [stats, setStats] = useState<KbStats | null>(null);
-  const [chunks, setChunks] = useState<KbChunk[]>([]);
-  const [loadingChunks, setLoadingChunks] = useState(false);
-  const [loadingFile, setLoadingFile] = useState(false);
+  const [files, setFiles] = useState<string[] | null>(null)
+  const [active, setActive] = useState<string | null>(null)
+  const [content, setContent] = useState("")
+  const [savedContent, setSavedContent] = useState("")
+  const [saving, setSaving] = useState(false)
+  const [ingesting, setIngesting] = useState(false)
+  const [stats, setStats] = useState<KbStats | null>(null)
+  const [chunks, setChunks] = useState<KbChunk[]>([])
+  const [loadingChunks, setLoadingChunks] = useState(false)
+  const [loadingFile, setLoadingFile] = useState(false)
   /** 保存后尚未重建的文档 */
-  const [dirtyDocs, setDirtyDocs] = useState<Set<string>>(new Set());
-  const [query, setQuery] = useState("");
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  const [tab, setTab] = useState<"edit" | "preview" | "chunks">("edit");
+  const [dirtyDocs, setDirtyDocs] = useState<Set<string>>(new Set())
+  const [query, setQuery] = useState("")
+  const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  const [tab, setTab] = useState<"edit" | "preview" | "chunks">("edit")
 
   // dialogs
-  const [createOpen, setCreateOpen] = useState(false);
-  const [createPath, setCreatePath] = useState("");
-  const [renameOpen, setRenameOpen] = useState(false);
-  const [renamePath, setRenamePath] = useState("");
-  const [deleteOpen, setDeleteOpen] = useState(false);
-  const [busyFs, setBusyFs] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false)
+  const [createPath, setCreatePath] = useState("")
+  const [renameOpen, setRenameOpen] = useState(false)
+  const [renamePath, setRenamePath] = useState("")
+  const [deleteOpen, setDeleteOpen] = useState(false)
+  const [busyFs, setBusyFs] = useState(false)
 
   // unsaved switch guard
-  type PendingNav = { type: "open"; path: string } | { type: "clear" };
-  const [pendingNav, setPendingNav] = useState<PendingNav | null>(null);
+  type PendingNav = { type: "open"; path: string } | { type: "clear" }
+  const [pendingNav, setPendingNav] = useState<PendingNav | null>(null)
 
-  const unsaved = active != null && content !== savedContent;
-  const dirty = active ? dirtyDocs.has(active) || unsaved : false;
+  const unsaved = active != null && content !== savedContent
+  const dirty = active ? dirtyDocs.has(active) || unsaved : false
 
   const loadFiles = useCallback(async () => {
-    const r = await fetch("/api/kb").then((x) => x.json());
-    if (r.ok) setFiles(r.data as string[]);
-  }, []);
+    const r = await fetch("/api/kb").then((x) => x.json())
+    if (r.ok) setFiles(r.data as string[])
+  }, [])
 
   const loadStats = useCallback(async () => {
-    const r = await fetch("/api/kb/vec").then((x) => x.json());
-    if (r.ok) setStats(r.data as KbStats);
-  }, []);
+    const r = await fetch("/api/kb/vec").then((x) => x.json())
+    if (r.ok) setStats(r.data as KbStats)
+  }, [])
 
   const resetActiveFile = useCallback(() => {
-    setActive(null);
-    setContent("");
-    setSavedContent("");
-    setChunks([]);
-  }, []);
+    setActive(null)
+    setContent("")
+    setSavedContent("")
+    setChunks([])
+  }, [])
 
   useEffect(() => {
-    void loadFiles();
-    void loadStats();
-  }, [loadFiles, loadStats]);
+    void loadFiles()
+    void loadStats()
+  }, [loadFiles, loadStats])
 
   // 有文件时默认展开一级目录
   useEffect(() => {
-    if (!files?.length) return;
+    if (!files?.length) return
     setExpanded((prev) => {
-      if (prev.size > 0) return prev;
-      const next = new Set<string>();
+      if (prev.size > 0) return prev
+      const next = new Set<string>()
       for (const f of files) {
-        const i = f.indexOf("/");
-        if (i > 0) next.add(f.slice(0, i));
+        const i = f.indexOf("/")
+        if (i > 0) next.add(f.slice(0, i))
       }
-      return next;
-    });
-  }, [files]);
+      return next
+    })
+  }, [files])
 
   // 离开页面前拦截未保存
   useEffect(() => {
-    if (!unsaved) return;
+    if (!unsaved) return
     const onBeforeUnload = (e: BeforeUnloadEvent) => {
-      e.preventDefault();
-      e.returnValue = "";
-    };
-    window.addEventListener("beforeunload", onBeforeUnload);
-    return () => window.removeEventListener("beforeunload", onBeforeUnload);
-  }, [unsaved]);
+      e.preventDefault()
+      e.returnValue = ""
+    }
+    window.addEventListener("beforeunload", onBeforeUnload)
+    return () => window.removeEventListener("beforeunload", onBeforeUnload)
+  }, [unsaved])
 
   // ⌘/Ctrl+S 保存
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === "s") {
-        e.preventDefault();
-        if (active && unsaved && !saving && !ingesting) void saveOnly();
+        e.preventDefault()
+        if (active && unsaved && !saving && !ingesting) void saveOnly()
       }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active, unsaved, saving, ingesting, content]);
+  }, [active, unsaved, saving, ingesting, content])
 
-  const chunksOf = (f: string) => stats?.docs.find((d) => d.doc === f)?.chunks ?? 0;
+  const chunksOf = (f: string) =>
+    stats?.docs.find((d) => d.doc === f)?.chunks ?? 0
 
   const filteredFiles = useMemo(() => {
-    if (!files) return [];
-    const q = query.trim().toLowerCase();
-    if (!q) return files;
-    return files.filter((f) => f.toLowerCase().includes(q));
-  }, [files, query]);
+    if (!files) return []
+    const q = query.trim().toLowerCase()
+    if (!q) return files
+    return files.filter((f) => f.toLowerCase().includes(q))
+  }, [files, query])
 
-  const tree = useMemo(() => buildTree(filteredFiles), [filteredFiles]);
+  const tree = useMemo(() => buildTree(filteredFiles), [filteredFiles])
 
   // 搜索时自动展开匹配路径上的目录
   useEffect(() => {
-    if (!query.trim()) return;
+    if (!query.trim()) return
     setExpanded((prev) => {
-      const next = new Set(prev);
+      const next = new Set(prev)
       for (const f of filteredFiles) {
-        const parts = f.split("/");
-        for (let i = 1; i < parts.length; i++) next.add(parts.slice(0, i).join("/"));
+        const parts = f.split("/")
+        for (let i = 1; i < parts.length; i++)
+          next.add(parts.slice(0, i).join("/"))
       }
-      return next;
-    });
-  }, [query, filteredFiles]);
+      return next
+    })
+  }, [query, filteredFiles])
 
   async function loadChunks(f: string) {
-    setLoadingChunks(true);
+    setLoadingChunks(true)
     try {
-      const r = await fetch(`/api/kb/vec?doc=${encodeURIComponent(f)}`).then((x) => x.json());
-      setChunks(r.ok ? (r.data as KbChunk[]) : []);
+      const r = await fetch(`/api/kb/vec?doc=${encodeURIComponent(f)}`).then(
+        (x) => x.json()
+      )
+      setChunks(r.ok ? (r.data as KbChunk[]) : [])
     } finally {
-      setLoadingChunks(false);
+      setLoadingChunks(false)
     }
   }
 
   async function openFile(f: string) {
-    setLoadingFile(true);
-    setActive(f);
-    setChunks([]);
-    setTab("edit");
+    setLoadingFile(true)
+    setActive(f)
+    setChunks([])
+    setTab("edit")
     try {
-      const r = await fetch(`/api/kb/${encPath(f)}`).then((x) => x.json());
+      const r = await fetch(`/api/kb/${encPath(f)}`).then((x) => x.json())
       if (r.ok) {
-        setContent(r.data as string);
-        setSavedContent(r.data as string);
+        setContent(r.data as string)
+        setSavedContent(r.data as string)
       } else {
-        toast.error(r.error || "打开失败");
+        toast.error(r.error || "打开失败")
       }
-      void loadChunks(f);
+      void loadChunks(f)
     } finally {
-      setLoadingFile(false);
+      setLoadingFile(false)
     }
   }
 
   function requestOpen(f: string) {
-    if (f === active) return;
+    if (f === active) return
     if (unsaved) {
-      setPendingNav({ type: "open", path: f });
-      return;
+      setPendingNav({ type: "open", path: f })
+      return
     }
-    void openFile(f);
+    void openFile(f)
   }
 
   function closeFile() {
     if (unsaved) {
-      setPendingNav({ type: "clear" });
-      return;
+      setPendingNav({ type: "clear" })
+      return
     }
-    resetActiveFile();
+    resetActiveFile()
   }
 
   function confirmDiscard() {
-    const p = pendingNav;
-    setPendingNav(null);
-    if (!p) return;
-    if (p.type === "open") void openFile(p.path);
+    const p = pendingNav
+    setPendingNav(null)
+    if (!p) return
+    if (p.type === "open") void openFile(p.path)
     else {
-      resetActiveFile();
+      resetActiveFile()
     }
   }
 
   async function saveOnly(): Promise<boolean> {
-    if (!active) return false;
-    setSaving(true);
+    if (!active) return false
+    setSaving(true)
     try {
       const r = await fetch(`/api/kb/${encPath(active)}`, {
         method: "PUT",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ content }),
-      }).then((x) => x.json());
+      }).then((x) => x.json())
       if (r.ok) {
-        setSavedContent(content);
-        setDirtyDocs((prev) => new Set(prev).add(active));
-        toast.success(`已保存 ${active}（尚未重建索引）`);
-        return true;
+        setSavedContent(content)
+        setDirtyDocs((prev) => new Set(prev).add(active))
+        toast.success(`已保存 ${active}（尚未重建索引）`)
+        return true
       }
-      toast.error(`保存失败:${r.error}`);
-      return false;
+      toast.error(`保存失败:${r.error}`)
+      return false
     } finally {
-      setSaving(false);
+      setSaving(false)
     }
   }
 
   async function ingest(): Promise<boolean> {
-    setIngesting(true);
+    setIngesting(true)
     try {
-      const r = await fetch("/api/kb/ingest", { method: "POST" }).then((x) => x.json());
+      const r = await fetch("/api/kb/ingest", { method: "POST" }).then((x) =>
+        x.json()
+      )
       if (r.ok) {
-        const results = (r.data ?? []) as IngestResult[];
-        if (results.length === 0) toast.success("索引重建完成：无文件");
+        const results = (r.data ?? []) as IngestResult[]
+        if (results.length === 0) toast.success("索引重建完成：无文件")
         else {
-          const totalChunks = results.reduce((sum, x) => sum + x.chunks, 0);
-          toast.success(`索引重建完成：${results.length} 个文档，共 ${totalChunks} 个分块`);
+          const totalChunks = results.reduce((sum, x) => sum + x.chunks, 0)
+          toast.success(
+            `索引重建完成：${results.length} 个文档，共 ${totalChunks} 个分块`
+          )
         }
-        setDirtyDocs(new Set());
-        void loadStats();
-        if (active) void loadChunks(active);
-        return true;
+        setDirtyDocs(new Set())
+        void loadStats()
+        if (active) void loadChunks(active)
+        return true
       }
-      toast.error(`重建失败：${r.error}`);
-      return false;
+      toast.error(`重建失败：${r.error}`)
+      return false
     } catch (e) {
-      toast.error(`重建失败：${e instanceof Error ? e.message : String(e)}`);
-      return false;
+      toast.error(`重建失败：${e instanceof Error ? e.message : String(e)}`)
+      return false
     } finally {
-      setIngesting(false);
+      setIngesting(false)
     }
   }
 
   async function saveAndIngest() {
-    const okSave = await saveOnly();
-    if (okSave) await ingest();
+    const okSave = await saveOnly()
+    if (okSave) await ingest()
   }
 
   async function createFile() {
-    const path = createPath.trim().replace(/^\/+/, "");
+    const path = createPath.trim().replace(/^\/+/, "")
     if (!path) {
-      toast.error("请输入路径");
-      return;
+      toast.error("请输入路径")
+      return
     }
-    setBusyFs(true);
+    setBusyFs(true)
     try {
       const r = await fetch("/api/kb", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ path, content: `# ${path.split("/").pop()?.replace(/\.(md|txt)$/, "") ?? "新文档"}\n\n` }),
-      }).then((x) => x.json());
+        body: JSON.stringify({
+          path,
+          content: `# ${
+            path
+              .split("/")
+              .pop()
+              ?.replace(/\.(md|txt)$/, "") ?? "新文档"
+          }\n\n`,
+        }),
+      }).then((x) => x.json())
       if (r.ok) {
-        toast.success(`已创建 ${r.data.path}`);
-        setCreateOpen(false);
-        setCreatePath("");
-        await loadFiles();
+        toast.success(`已创建 ${r.data.path}`)
+        setCreateOpen(false)
+        setCreatePath("")
+        await loadFiles()
         // 展开父目录
-        const parts = (r.data.path as string).split("/");
+        const parts = (r.data.path as string).split("/")
         setExpanded((prev) => {
-          const next = new Set(prev);
-          for (let i = 1; i < parts.length; i++) next.add(parts.slice(0, i).join("/"));
-          return next;
-        });
-        if (unsaved) setPendingNav({ type: "open", path: r.data.path });
-        else void openFile(r.data.path as string);
-      } else toast.error(r.error || "创建失败");
+          const next = new Set(prev)
+          for (let i = 1; i < parts.length; i++)
+            next.add(parts.slice(0, i).join("/"))
+          return next
+        })
+        if (unsaved) setPendingNav({ type: "open", path: r.data.path })
+        else void openFile(r.data.path as string)
+      } else toast.error(r.error || "创建失败")
     } finally {
-      setBusyFs(false);
+      setBusyFs(false)
     }
   }
 
   async function renameFile() {
-    if (!active) return;
-    const newPath = renamePath.trim().replace(/^\/+/, "");
+    if (!active) return
+    const newPath = renamePath.trim().replace(/^\/+/, "")
     if (!newPath) {
-      toast.error("请输入新路径");
-      return;
+      toast.error("请输入新路径")
+      return
     }
     if (unsaved) {
-      toast.message("请先保存或丢弃未保存改动");
-      return;
+      toast.message("请先保存或丢弃未保存改动")
+      return
     }
-    setBusyFs(true);
+    setBusyFs(true)
     try {
       const r = await fetch(`/api/kb/${encPath(active)}`, {
         method: "PATCH",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ newPath }),
-      }).then((x) => x.json());
+      }).then((x) => x.json())
       if (r.ok) {
-        const next = r.data.path as string;
-        toast.success(`已重命名为 ${next}`);
-        setRenameOpen(false);
+        const next = r.data.path as string
+        toast.success(`已重命名为 ${next}`)
+        setRenameOpen(false)
         setDirtyDocs((prev) => {
-          const n = new Set(prev);
-          if (n.delete(active)) n.add(next);
-          return n;
-        });
-        await loadFiles();
-        void loadStats();
-        void openFile(next);
-      } else toast.error(r.error || "重命名失败");
+          const n = new Set(prev)
+          if (n.delete(active)) n.add(next)
+          return n
+        })
+        await loadFiles()
+        void loadStats()
+        void openFile(next)
+      } else toast.error(r.error || "重命名失败")
     } finally {
-      setBusyFs(false);
+      setBusyFs(false)
     }
   }
 
   async function deleteFile() {
-    if (!active) return;
-    setBusyFs(true);
+    if (!active) return
+    setBusyFs(true)
     try {
-      const r = await fetch(`/api/kb/${encPath(active)}`, { method: "DELETE" }).then((x) => x.json());
+      const r = await fetch(`/api/kb/${encPath(active)}`, {
+        method: "DELETE",
+      }).then((x) => x.json())
       if (r.ok) {
-        toast.success(`已删除 ${active}${r.data.purged ? `（清 ${r.data.purged} 分块）` : ""}`);
-        setDeleteOpen(false);
+        toast.success(
+          `已删除 ${active}${r.data.purged ? `（清 ${r.data.purged} 分块）` : ""}`
+        )
+        setDeleteOpen(false)
         setDirtyDocs((prev) => {
-          const n = new Set(prev);
-          n.delete(active);
-          return n;
-        });
-        resetActiveFile();
-        await loadFiles();
-        void loadStats();
-      } else toast.error(r.error || "删除失败");
+          const n = new Set(prev)
+          n.delete(active)
+          return n
+        })
+        resetActiveFile()
+        await loadFiles()
+        void loadStats()
+      } else toast.error(r.error || "删除失败")
     } finally {
-      setBusyFs(false);
+      setBusyFs(false)
     }
   }
 
   function toggleDir(path: string) {
     setExpanded((prev) => {
-      const next = new Set(prev);
-      if (next.has(path)) next.delete(path);
-      else next.add(path);
-      return next;
-    });
+      const next = new Set(prev)
+      if (next.has(path)) next.delete(path)
+      else next.add(path)
+      return next
+    })
   }
 
   function renderTree(nodes: TreeNode[], depth = 0): ReactNode {
     return nodes.map((n) => {
       if (n.kind === "dir") {
-        const open = expanded.has(n.path) || !!query.trim();
+        const open = expanded.has(n.path) || !!query.trim()
         return (
           <div key={`d:${n.path}`} className="min-w-0">
             <button
               type="button"
               onClick={() => toggleDir(n.path)}
-              className="hover:bg-muted text-muted-foreground flex w-full min-w-0 items-center gap-1 rounded-md py-1 pr-1.5 text-left text-xs"
+              className="flex w-full min-w-0 items-center gap-1 rounded-md py-1 pr-1.5 text-left text-xs text-muted-foreground hover:bg-muted"
               style={{ paddingLeft: 6 + depth * 12 }}
             >
-              {open ? <ChevronDown className="size-3.5 shrink-0" /> : <ChevronRight className="size-3.5 shrink-0" />}
-              {open ? <FolderOpen className="size-3.5 shrink-0" /> : <Folder className="size-3.5 shrink-0" />}
-              <span className="min-w-0 flex-1 truncate font-medium">{n.name}</span>
-              <span className="text-muted-foreground/70 shrink-0 tabular-nums">
+              {open ? (
+                <ChevronDown className="size-3.5 shrink-0" />
+              ) : (
+                <ChevronRight className="size-3.5 shrink-0" />
+              )}
+              {open ? (
+                <FolderOpen className="size-3.5 shrink-0" />
+              ) : (
+                <Folder className="size-3.5 shrink-0" />
+              )}
+              <span className="min-w-0 flex-1 truncate font-medium">
+                {n.name}
+              </span>
+              <span className="shrink-0 text-muted-foreground/70 tabular-nums">
                 {countFiles(n)}
               </span>
             </button>
             {open && renderTree(n.children, depth + 1)}
           </div>
-        );
+        )
       }
-      const isActive = active === n.path;
-      const isDirtyDoc = dirtyDocs.has(n.path);
-      const isUnsavedActive = isActive && unsaved;
+      const isActive = active === n.path
+      const isDirtyDoc = dirtyDocs.has(n.path)
+      const isUnsavedActive = isActive && unsaved
       return (
         <button
           key={`f:${n.path}`}
           type="button"
           onClick={() => requestOpen(n.path)}
           className={cn(
-            "hover:bg-muted flex w-full min-w-0 items-center gap-1.5 rounded-md py-1 pr-1.5 text-left text-xs",
-            isActive && "bg-muted font-medium",
+            "flex w-full min-w-0 items-center gap-1.5 rounded-md py-1 pr-1.5 text-left text-xs hover:bg-muted",
+            isActive && "bg-muted font-medium"
           )}
           style={{ paddingLeft: 6 + depth * 12 + 14 }}
           title={n.path}
         >
-          <FileText className="text-muted-foreground size-3.5 shrink-0" />
+          <FileText className="size-3.5 shrink-0 text-muted-foreground" />
           <span className="min-w-0 flex-1 truncate">{n.name}</span>
           {isUnsavedActive ? (
-            <Badge variant="destructive" className="h-4 shrink-0 px-1 text-[10px]">
+            <Badge
+              variant="destructive"
+              className="h-4 shrink-0 px-1 text-[10px]"
+            >
               未保存
             </Badge>
           ) : isDirtyDoc ? (
-            <Badge variant="destructive" className="h-4 shrink-0 px-1 text-[10px]">
+            <Badge
+              variant="destructive"
+              className="h-4 shrink-0 px-1 text-[10px]"
+            >
               未重建
             </Badge>
           ) : chunksOf(n.path) > 0 ? (
-            <Badge variant="secondary" className="h-4 shrink-0 px-1 tabular-nums text-[10px]">
+            <Badge
+              variant="secondary"
+              className="h-4 shrink-0 px-1 text-[10px] tabular-nums"
+            >
               {chunksOf(n.path)}
             </Badge>
           ) : null}
         </button>
-      );
-    });
+      )
+    })
   }
 
   function countFiles(n: TreeNode): number {
-    if (n.kind === "file") return 1;
-    return n.children.reduce((s, c) => s + countFiles(c), 0);
+    if (n.kind === "file") return 1
+    return n.children.reduce((s, c) => s + countFiles(c), 0)
   }
 
-  const orphan = stats ? stats.chunks - stats.vecs : 0;
+  const orphan = stats ? stats.chunks - stats.vecs : 0
 
   return (
     <PageShell fill>
@@ -564,15 +614,28 @@ export default function KbPage() {
               variant="outline"
               size="sm"
               onClick={() => {
-                setCreatePath(active?.includes("/") ? active.slice(0, active.lastIndexOf("/") + 1) : "");
-                setCreateOpen(true);
+                setCreatePath(
+                  active?.includes("/")
+                    ? active.slice(0, active.lastIndexOf("/") + 1)
+                    : ""
+                )
+                setCreateOpen(true)
               }}
             >
               <Plus data-icon="inline-start" />
               新建
             </Button>
-            <Button variant="secondary" size="sm" onClick={() => void ingest()} disabled={ingesting}>
-              {ingesting ? <Spinner data-icon="inline-start" /> : <RefreshCw data-icon="inline-start" />}
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => void ingest()}
+              disabled={ingesting}
+            >
+              {ingesting ? (
+                <Spinner data-icon="inline-start" />
+              ) : (
+                <RefreshCw data-icon="inline-start" />
+              )}
               {ingesting ? "重建中…" : "重建索引"}
             </Button>
           </div>
@@ -580,14 +643,34 @@ export default function KbPage() {
       />
 
       <MetricBadgeRow className="shrink-0">
-        <MetricBadge icon={Boxes} label="分块数" value={stats ? stats.chunks : "—"} loading={!stats} />
-        <MetricBadge icon={Database} label="已索引" value={stats ? stats.vecs : "—"} loading={!stats} />
-        <MetricBadge icon={FileText} label="文档数" value={stats ? stats.docs.length : "—"} loading={!stats} />
-        <MetricBadge icon={Ruler} label="索引维度" value={stats ? stats.dim : "—"} loading={!stats} />
+        <MetricBadge
+          icon={Boxes}
+          label="分块数"
+          value={stats ? stats.chunks : "—"}
+          loading={!stats}
+        />
+        <MetricBadge
+          icon={Database}
+          label="已索引"
+          value={stats ? stats.vecs : "—"}
+          loading={!stats}
+        />
+        <MetricBadge
+          icon={FileText}
+          label="文档数"
+          value={stats ? stats.docs.length : "—"}
+          loading={!stats}
+        />
+        <MetricBadge
+          icon={Ruler}
+          label="索引维度"
+          value={stats ? stats.dim : "—"}
+          loading={!stats}
+        />
       </MetricBadgeRow>
 
       {(orphan !== 0 || dirtyDocs.size > 0 || unsaved) && (
-        <div className="border-destructive/40 text-destructive flex shrink-0 flex-col gap-1 rounded-md border px-3 py-2 text-sm font-medium">
+        <div className="flex shrink-0 flex-col gap-1 rounded-md border border-destructive/40 px-3 py-2 text-sm font-medium text-destructive">
           {unsaved && (
             <div className="flex items-center gap-2">
               <AlertTriangle className="size-4 shrink-0" />
@@ -603,7 +686,8 @@ export default function KbPage() {
           {dirtyDocs.size > 0 && (
             <div className="flex items-center gap-2">
               <AlertTriangle className="size-4 shrink-0" />
-              {dirtyDocs.size} 个文档已改未重建：{Array.from(dirtyDocs).join(", ")}
+              {dirtyDocs.size} 个文档已改未重建：
+              {Array.from(dirtyDocs).join(", ")}
             </div>
           )}
         </div>
@@ -619,12 +703,16 @@ export default function KbPage() {
         list={
           <SectionCard
             title="文件"
-            description={files ? `${filteredFiles.length}${query ? ` / ${files.length}` : ""} 个` : undefined}
+            description={
+              files
+                ? `${filteredFiles.length}${query ? ` / ${files.length}` : ""} 个`
+                : undefined
+            }
             className="flex min-h-0 min-w-0 flex-col overflow-hidden"
             contentClassName="flex min-h-0 min-w-0 flex-1 flex-col gap-2"
           >
             <div className="relative shrink-0">
-              <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2" />
+              <Search className="pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-muted-foreground" />
               <Input
                 placeholder="搜索路径…"
                 value={query}
@@ -634,7 +722,7 @@ export default function KbPage() {
               {query && (
                 <button
                   type="button"
-                  className="text-muted-foreground hover:text-foreground absolute top-1/2 right-2 -translate-y-1/2"
+                  className="absolute top-1/2 right-2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                   onClick={() => setQuery("")}
                   aria-label="清除"
                 >
@@ -649,13 +737,17 @@ export default function KbPage() {
               emptyIcon={FileText}
               emptyTitle={files?.length === 0 ? "暂无文档" : "无匹配"}
               emptyDescription={
-                files?.length === 0 ? "点「新建」创建文档，或放入 .md / .txt 文件。" : "换个关键词试试。"
+                files?.length === 0
+                  ? "点「新建」创建文档，或放入 .md / .txt 文件。"
+                  : "换个关键词试试。"
               }
               skeleton={<Skeleton className="h-32 w-full" />}
             >
               {/* 原生滚动：滚动条占位，不叠在 badge/文件名上（ScrollArea 为 overlay 会遮挡） */}
               <div className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto pr-1">
-                <div className="flex min-w-0 flex-col gap-0.5 pb-2">{renderTree(tree)}</div>
+                <div className="flex min-w-0 flex-col gap-0.5 pb-2">
+                  {renderTree(tree)}
+                </div>
               </div>
             </DataState>
           </SectionCard>
@@ -674,7 +766,10 @@ export default function KbPage() {
                     </Badge>
                   )}
                   {!unsaved && dirtyDocs.has(active) && (
-                    <Badge variant="outline" className="text-destructive shrink-0">
+                    <Badge
+                      variant="outline"
+                      className="shrink-0 text-destructive"
+                    >
                       未重建
                     </Badge>
                   )}
@@ -691,8 +786,8 @@ export default function KbPage() {
                     className="h-7 text-xs"
                     disabled={busyFs}
                     onClick={() => {
-                      setRenamePath(active);
-                      setRenameOpen(true);
+                      setRenamePath(active)
+                      setRenameOpen(true)
                     }}
                   >
                     <Pencil data-icon="inline-start" />
@@ -701,7 +796,7 @@ export default function KbPage() {
                   <Button
                     size="sm"
                     variant="ghost"
-                    className="text-destructive h-7 text-xs"
+                    className="h-7 text-xs text-destructive"
                     disabled={busyFs}
                     onClick={() => setDeleteOpen(true)}
                   >
@@ -734,7 +829,10 @@ export default function KbPage() {
                     </TabsTrigger>
                   </TabsList>
 
-                  <TabsContent value="edit" className="mt-2 flex min-h-0 flex-1 flex-col gap-2 data-[state=inactive]:hidden">
+                  <TabsContent
+                    value="edit"
+                    className="mt-2 flex min-h-0 flex-1 flex-col gap-2 data-[state=inactive]:hidden"
+                  >
                     <Textarea
                       value={content}
                       onChange={(e) => setContent(e.target.value)}
@@ -742,32 +840,55 @@ export default function KbPage() {
                       spellCheck={false}
                     />
                     <div className="flex shrink-0 flex-wrap items-center gap-2">
-                      <Button onClick={() => void saveOnly()} disabled={saving || ingesting || !unsaved} variant="outline" size="sm">
-                        {saving ? <Spinner data-icon="inline-start" /> : <Save data-icon="inline-start" />}
+                      <Button
+                        onClick={() => void saveOnly()}
+                        disabled={saving || ingesting || !unsaved}
+                        variant="outline"
+                        size="sm"
+                      >
+                        {saving ? (
+                          <Spinner data-icon="inline-start" />
+                        ) : (
+                          <Save data-icon="inline-start" />
+                        )}
                         仅保存
                       </Button>
-                      <Button onClick={() => void saveAndIngest()} disabled={saving || ingesting} size="sm">
-                        {saving || ingesting ? <Spinner data-icon="inline-start" /> : <Save data-icon="inline-start" />}
+                      <Button
+                        onClick={() => void saveAndIngest()}
+                        disabled={saving || ingesting}
+                        size="sm"
+                      >
+                        {saving || ingesting ? (
+                          <Spinner data-icon="inline-start" />
+                        ) : (
+                          <Save data-icon="inline-start" />
+                        )}
                         保存并生效
                       </Button>
                       {dirty && (
-                        <span className="text-muted-foreground text-xs">
+                        <span className="text-xs text-muted-foreground">
                           {unsaved ? "有未保存改动" : "已保存，待重建索引"}
                         </span>
                       )}
-                      <span className="text-muted-foreground ml-auto tabular-nums text-xs">
+                      <span className="ml-auto text-xs text-muted-foreground tabular-nums">
                         {content.length.toLocaleString()} 字
                       </span>
                     </div>
                   </TabsContent>
 
-                  <TabsContent value="preview" className="mt-2 min-h-0 flex-1 overflow-hidden data-[state=inactive]:hidden">
+                  <TabsContent
+                    value="preview"
+                    className="mt-2 min-h-0 flex-1 overflow-hidden data-[state=inactive]:hidden"
+                  >
                     <ScrollArea className="h-full rounded-md border p-4">
                       <MarkdownBody source={content} />
                     </ScrollArea>
                   </TabsContent>
 
-                  <TabsContent value="chunks" className="mt-2 min-h-0 flex-1 overflow-hidden data-[state=inactive]:hidden">
+                  <TabsContent
+                    value="chunks"
+                    className="mt-2 min-h-0 flex-1 overflow-hidden data-[state=inactive]:hidden"
+                  >
                     <DataState
                       loading={loadingChunks}
                       empty={chunks.length === 0}
@@ -784,11 +905,15 @@ export default function KbPage() {
                               meta={
                                 <>
                                   <span>#{i + 1}</span>
-                                  <span className="ml-auto tabular-nums">{c.content.length} 字</span>
+                                  <span className="ml-auto tabular-nums">
+                                    {c.content.length} 字
+                                  </span>
                                 </>
                               }
                             >
-                              <p className="text-sm whitespace-pre-wrap">{c.content}</p>
+                              <p className="text-sm whitespace-pre-wrap">
+                                {c.content}
+                              </p>
                             </ItemCard>
                           ))}
                         </div>
@@ -799,8 +924,11 @@ export default function KbPage() {
               )}
             </SectionCard>
           ) : (
-            <SectionCard title="预览" className="flex min-h-0 min-w-0 flex-col" contentClassName="flex flex-1 items-center justify-center">
-
+            <SectionCard
+              title="预览"
+              className="flex min-h-0 min-w-0 flex-col"
+              contentClassName="flex flex-1 items-center justify-center"
+            >
               <EmptyState
                 icon={BookOpen}
                 title="未选择文件"
@@ -816,7 +944,10 @@ export default function KbPage() {
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>新建文档</DialogTitle>
-            <DialogDescription>相对知识库根目录的路径，仅支持 .md / .txt。可含子目录，如 faq/new.md。</DialogDescription>
+            <DialogDescription>
+              相对知识库根目录的路径，仅支持 .md / .txt。可含子目录，如
+              faq/new.md。
+            </DialogDescription>
           </DialogHeader>
           <Input
             placeholder="faq/example.md"
@@ -830,7 +961,11 @@ export default function KbPage() {
               取消
             </Button>
             <Button onClick={() => void createFile()} disabled={busyFs}>
-              {busyFs ? <Spinner data-icon="inline-start" /> : <Plus data-icon="inline-start" />}
+              {busyFs ? (
+                <Spinner data-icon="inline-start" />
+              ) : (
+                <Plus data-icon="inline-start" />
+              )}
               创建
             </Button>
           </DialogFooter>
@@ -842,7 +977,9 @@ export default function KbPage() {
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>重命名 / 移动</DialogTitle>
-            <DialogDescription>若目标路径已存在将失败。会同步更新检索索引中的文档标识。</DialogDescription>
+            <DialogDescription>
+              若目标路径已存在将失败。会同步更新检索索引中的文档标识。
+            </DialogDescription>
           </DialogHeader>
           <Input
             value={renamePath}
@@ -855,7 +992,11 @@ export default function KbPage() {
               取消
             </Button>
             <Button onClick={() => void renameFile()} disabled={busyFs}>
-              {busyFs ? <Spinner data-icon="inline-start" /> : <Pencil data-icon="inline-start" />}
+              {busyFs ? (
+                <Spinner data-icon="inline-start" />
+              ) : (
+                <Pencil data-icon="inline-start" />
+              )}
               确认
             </Button>
           </DialogFooter>
@@ -867,11 +1008,12 @@ export default function KbPage() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle className="flex items-center gap-2">
-              <AlertTriangle className="text-destructive size-5" />
+              <AlertTriangle className="size-5 text-destructive" />
               删除文档？
             </AlertDialogTitle>
             <AlertDialogDescription>
-              将删除文件 <span className="font-mono">{active}</span>，并清除对应检索分块。此操作不可撤销。
+              将删除文件 <span className="font-mono">{active}</span>
+              ，并清除对应检索分块。此操作不可撤销。
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -887,7 +1029,10 @@ export default function KbPage() {
       </AlertDialog>
 
       {/* 未保存切换确认 */}
-      <AlertDialog open={pendingNav != null} onOpenChange={(o) => !o && setPendingNav(null)}>
+      <AlertDialog
+        open={pendingNav != null}
+        onOpenChange={(o) => !o && setPendingNav(null)}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>丢弃未保存改动？</AlertDialogTitle>
@@ -907,5 +1052,5 @@ export default function KbPage() {
         </AlertDialogContent>
       </AlertDialog>
     </PageShell>
-  );
+  )
 }

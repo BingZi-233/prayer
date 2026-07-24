@@ -167,7 +167,12 @@ export class NameCache {
    */
   setGroupName(groupId: number, name: string, ttlMs = NAME_CACHE_TTL_MS): void {
     if (!Number.isFinite(groupId) || !name) return
-    this.setChatName(channelOfNumericGroupId(groupId), String(groupId), name, ttlMs)
+    this.setChatName(
+      channelOfNumericGroupId(groupId),
+      String(groupId),
+      name,
+      ttlMs
+    )
   }
 
   /** @deprecated 用 listCachedChatNames;兼容旧 UI 数字 groupId */

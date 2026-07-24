@@ -1,41 +1,41 @@
-import { resolve } from "path";
-import { query as sdkQuery } from "@anthropic-ai/claude-agent-sdk";
-import type { AppConfig } from "../config-store";
-import { TOOL_ALLOWLIST, isToolAllowed, sdkEnv } from "./agent";
+import { resolve } from "path"
+import { query as sdkQuery } from "@anthropic-ai/claude-agent-sdk"
+import type { AppConfig } from "../config-store"
+import { TOOL_ALLOWLIST, isToolAllowed, sdkEnv } from "./agent"
 
 export interface CapabilityTool {
-  name: string;
-  description?: string;
-  readOnly?: boolean;
+  name: string
+  description?: string
+  readOnly?: boolean
 }
 export interface CapabilityMcpServer {
-  name: string;
-  status: "connected" | "failed" | "needs-auth" | "pending" | "disabled";
-  version?: string;
-  error?: string;
-  scope?: string;
-  tools: CapabilityTool[];
+  name: string
+  status: "connected" | "failed" | "needs-auth" | "pending" | "disabled"
+  version?: string
+  error?: string
+  scope?: string
+  tools: CapabilityTool[]
 }
 export interface CapabilitySkill {
-  name: string;
-  description: string;
-  argumentHint?: string;
+  name: string
+  description: string
+  argumentHint?: string
 }
 export interface CapabilityPlugin {
-  name: string;
-  path: string;
-  source?: string;
+  name: string
+  path: string
+  source?: string
 }
 export interface CapabilityToolPolicy {
-  allowlist: string[];
-  gated: { tool: string; constraint: string }[];
+  allowlist: string[]
+  gated: { tool: string; constraint: string }[]
 }
 export interface Capabilities {
-  plugins: CapabilityPlugin[];
-  skills: CapabilitySkill[];
-  mcpServers: CapabilityMcpServer[];
-  toolPolicy: CapabilityToolPolicy;
-  probedAt: number;
+  plugins: CapabilityPlugin[]
+  skills: CapabilitySkill[]
+  mcpServers: CapabilityMcpServer[]
+  toolPolicy: CapabilityToolPolicy
+  probedAt: number
 }
 
 // 工具门控:唯一真源是 agent.ts 的 isToolAllowed(允许制:mcp__ 前缀或命中 TOOL_ALLOWLIST 才放行)。
@@ -43,39 +43,56 @@ export interface Capabilities {
 //   放行的进 allowlist;被拒的进 gated,逐条列真实工具名。
 // 内建宿主工具(Bash/Read/Web* 等)需模型 turn 才被 getContextUsage 上报,零 token probe 看不到,
 // 故补一条规则兜底(不点名任何工具),说明「规则外一律 deny」,避免手写清单造成漂移/误读。
-export function buildToolPolicy(liveTools: string[] = []): CapabilityToolPolicy {
-  const uniq = [...new Set(liveTools)];
-  const allowRule = ["mcp__* 前缀工具", ...TOOL_ALLOWLIST].join("、");
+export function buildToolPolicy(
+  liveTools: string[] = []
+): CapabilityToolPolicy {
+  const uniq = [...new Set(liveTools)]
+  const allowRule = ["mcp__* 前缀工具", ...TOOL_ALLOWLIST].join("、")
   return {
-    allowlist: [`规则:放行 ${allowRule}`, ...uniq.filter((t) => isToolAllowed(t, {}))],
-    gated: [
-      ...uniq.filter((t) => !isToolAllowed(t, {})).map((tool) => ({ tool, constraint: "未命中放行规则 → canUseTool 拒绝(deny)" })),
-      { tool: "其余一切工具(非 mcp__ 前缀且不在放行白名单)", constraint: "允许制:一律 canUseTool 拒绝(deny)" },
+    allowlist: [
+      `规则:放行 ${allowRule}`,
+      ...uniq.filter((t) => isToolAllowed(t, {})),
     ],
-  };
+    gated: [
+      ...uniq
+        .filter((t) => !isToolAllowed(t, {}))
+        .map((tool) => ({
+          tool,
+          constraint: "未命中放行规则 → canUseTool 拒绝(deny)",
+        })),
+      {
+        tool: "其余一切工具(非 mcp__ 前缀且不在放行白名单)",
+        constraint: "允许制:一律 canUseTool 拒绝(deny)",
+      },
+    ],
+  }
 }
 
 export interface ProbeOptions {
-  queryFn?: typeof sdkQuery;
-  refresh?: boolean;
-  now?: () => number;
+  queryFn?: typeof sdkQuery
+  refresh?: boolean
+  now?: () => number
 }
 
 // getContextUsage 返回的子集(仅取工具清单三块;其余字段忽略)
 type ContextUsageLite = {
-  mcpTools?: { name: string }[];
-  systemTools?: { name: string }[];
-  deferredBuiltinTools?: { name: string }[];
-};
+  mcpTools?: { name: string }[]
+  systemTools?: { name: string }[]
+  deferredBuiltinTools?: { name: string }[]
+}
 
 type McpStatusRaw = {
-  name: string;
-  status: CapabilityMcpServer["status"];
-  serverInfo?: { name: string; version: string };
-  error?: string;
-  scope?: string;
-  tools?: { name: string; description?: string; annotations?: { readOnly?: boolean } }[];
-};
+  name: string
+  status: CapabilityMcpServer["status"]
+  serverInfo?: { name: string; version: string }
+  error?: string
+  scope?: string
+  tools?: {
+    name: string
+    description?: string
+    annotations?: { readOnly?: boolean }
+  }[]
+}
 
 function normalizeMcp(list: McpStatusRaw[]): CapabilityMcpServer[] {
   return list.map((s) => ({
@@ -89,14 +106,14 @@ function normalizeMcp(list: McpStatusRaw[]): CapabilityMcpServer[] {
       description: t.description,
       readOnly: t.annotations?.readOnly,
     })),
-  }));
+  }))
 }
 
 async function settled<T>(p: Promise<T>, fallback: T): Promise<T> {
   try {
-    return await p;
+    return await p
   } catch {
-    return fallback;
+    return fallback
   }
 }
 
@@ -108,48 +125,63 @@ async function pollMcpStatus(
   timeoutMs = 20_000,
   stepMs = 500
 ): Promise<McpStatusRaw[]> {
-  const deadline = Date.now() + timeoutMs;
-  let last: McpStatusRaw[] = [];
+  const deadline = Date.now() + timeoutMs
+  let last: McpStatusRaw[] = []
   for (;;) {
-    last = await settled(q.mcpServerStatus(), [] as McpStatusRaw[]);
-    if (last.length === 0 || last.every((s) => s.status !== "pending")) return last;
-    if (Date.now() >= deadline) return last;
-    await new Promise((r) => setTimeout(r, stepMs));
+    last = await settled(q.mcpServerStatus(), [] as McpStatusRaw[])
+    if (last.length === 0 || last.every((s) => s.status !== "pending"))
+      return last
+    if (Date.now() >= deadline) return last
+    await new Promise((r) => setTimeout(r, stepMs))
   }
 }
 
-const CACHE_TTL_MS = 60_000;
-const capCacheHolder = globalThis as unknown as { __capCache?: { at: number; data: Capabilities } };
-
-export async function probeCapabilities(cfg: AppConfig, opts: ProbeOptions = {}): Promise<Capabilities> {
-  const now = opts.now ?? Date.now;
-  if (!opts.refresh && capCacheHolder.__capCache && now() - capCacheHolder.__capCache.at < CACHE_TTL_MS) {
-    return capCacheHolder.__capCache.data;
-  }
-  const data = await probeUncached(cfg, opts);
-  capCacheHolder.__capCache = { at: now(), data };
-  return data;
+const CACHE_TTL_MS = 60_000
+const capCacheHolder = globalThis as unknown as {
+  __capCache?: { at: number; data: Capabilities }
 }
 
-async function probeUncached(cfg: AppConfig, opts: ProbeOptions = {}): Promise<Capabilities> {
-  const now = opts.now ?? Date.now;
-  const queryFn = opts.queryFn ?? sdkQuery;
+export async function probeCapabilities(
+  cfg: AppConfig,
+  opts: ProbeOptions = {}
+): Promise<Capabilities> {
+  const now = opts.now ?? Date.now
+  if (
+    !opts.refresh &&
+    capCacheHolder.__capCache &&
+    now() - capCacheHolder.__capCache.at < CACHE_TTL_MS
+  ) {
+    return capCacheHolder.__capCache.data
+  }
+  const data = await probeUncached(cfg, opts)
+  capCacheHolder.__capCache = { at: now(), data }
+  return data
+}
+
+async function probeUncached(
+  cfg: AppConfig,
+  opts: ProbeOptions = {}
+): Promise<Capabilities> {
+  const now = opts.now ?? Date.now
+  const queryFn = opts.queryFn ?? sdkQuery
 
   // 绝对化配置目录与 DB 路径,防 cwd 漂移(与 runtime.start 一致)。
   // DB_PATH 供 cs 插件 MCP 子进程(plugins/cs/scripts/cs-mcp.ts)继承打开知识库。
-  process.env.CLAUDE_CONFIG_DIR = resolve(cfg.claudeConfigDir);
-  process.env.DB_PATH = resolve(cfg.dbPath);
+  process.env.CLAUDE_CONFIG_DIR = resolve(cfg.claudeConfigDir)
+  process.env.DB_PATH = resolve(cfg.dbPath)
 
-  const abortController = new AbortController();
+  const abortController = new AbortController()
 
   const q = queryFn({
     // 流式空输入:永不产出 user 消息 —— CLI 仍完成 init(控制方法可用),但无 user turn →
     // 不派发模型调用 → 零 token(不依赖 abort 抢在模型请求之前的竞态)。待 abort 时结束输入流。
     prompt: (async function* () {
       await new Promise<void>((r) => {
-        if (abortController.signal.aborted) return r();
-        abortController.signal.addEventListener("abort", () => r(), { once: true });
-      });
+        if (abortController.signal.aborted) return r()
+        abortController.signal.addEventListener("abort", () => r(), {
+          once: true,
+        })
+      })
     })() as any,
     options: {
       // cs / packyapi 及其 MCP server 全部经 enabledPlugins(settingSources:["user"])动态加载并被
@@ -160,40 +192,47 @@ async function probeUncached(cfg: AppConfig, opts: ProbeOptions = {}): Promise<C
       abortController,
       env: sdkEnv(),
     } as any,
-  }) as any;
+  }) as any
 
   // 防御性 drain:确保 transport 被读取,控制响应能落地
   const drain = (async () => {
     try {
-      for await (const _ of q as AsyncIterable<unknown>) void _;
+      for await (const _ of q as AsyncIterable<unknown>) void _
     } catch {
       /* abort 会中断迭代,忽略 */
     }
-  })();
+  })()
 
   try {
     const [plugins, skills, mcp] = await Promise.all([
       settled(q.reloadPlugins(), { plugins: [] as CapabilityPlugin[] }),
       settled(q.reloadSkills(), { skills: [] as CapabilitySkill[] }),
       pollMcpStatus(q),
-    ]);
+    ])
     // getContextUsage 在 MCP 连上后再取 —— mcpTools 要等 server 握手才上报;与 poll 并发会拿到空表。
     // systemTools/deferredBuiltinTools(内建宿主工具)需模型 turn 才上报,零 token probe 下仍多为空,
     // 由 buildToolPolicy 的规则兜底条覆盖。async thunk:老 SDK 无此方法时同步 throw 也转 reject 被 settled 兜住。
     const ctxUsage = await settled(
-      (async () => (typeof q.getContextUsage === "function" ? await q.getContextUsage() : {}))() as Promise<ContextUsageLite>,
+      (async () =>
+        typeof q.getContextUsage === "function"
+          ? await q.getContextUsage()
+          : {})() as Promise<ContextUsageLite>,
       {} as ContextUsageLite
-    );
-    const mcpServers = normalizeMcp(mcp);
+    )
+    const mcpServers = normalizeMcp(mcp)
     // liveTools 只取 getContextUsage(工具名是完全限定的 mcp__… / 内建裸名),逐个跑 isToolAllowed 分区。
     // 不用 mcpServerStatus().tools —— 那里是 server 内的裸工具名(如 kb_search),缺 mcp__ 前缀会被误判 gated。
     const liveTools = [
       ...(ctxUsage.mcpTools ?? []).map((t) => t.name),
       ...(ctxUsage.systemTools ?? []).map((t) => t.name),
       ...(ctxUsage.deferredBuiltinTools ?? []).map((t) => t.name),
-    ];
+    ]
     return {
-      plugins: (plugins.plugins ?? []).map((p: CapabilityPlugin) => ({ name: p.name, path: p.path, source: p.source })),
+      plugins: (plugins.plugins ?? []).map((p: CapabilityPlugin) => ({
+        name: p.name,
+        path: p.path,
+        source: p.source,
+      })),
       skills: (skills.skills ?? []).map((s: any) => ({
         name: s.name,
         description: s.description,
@@ -202,9 +241,9 @@ async function probeUncached(cfg: AppConfig, opts: ProbeOptions = {}): Promise<C
       mcpServers,
       toolPolicy: buildToolPolicy(liveTools),
       probedAt: now(),
-    };
+    }
   } finally {
-    abortController.abort();
-    await drain.catch(() => {});
+    abortController.abort()
+    await drain.catch(() => {})
   }
 }

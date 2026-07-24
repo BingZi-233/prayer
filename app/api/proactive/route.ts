@@ -3,12 +3,18 @@ import { z } from "zod"
 import { sharedDb } from "@/lib/db/shared"
 import { Repo } from "@/lib/db/repo"
 import { getConfig } from "@/lib/config-store"
-import { getGroupPolicy, listEnabledChats, policyKey } from "@/lib/channels/enabled-chats"
+import {
+  getGroupPolicy,
+  listEnabledChats,
+  policyKey,
+} from "@/lib/channels/enabled-chats"
 import type { ChannelId } from "@/lib/channels/types"
 import { ok, fail } from "@/lib/api"
 
 function getRepo(): Repo {
-  const cfg = getConfig(new Repo(sharedDb(process.env.DB_PATH ?? "./data/agent.db")))
+  const cfg = getConfig(
+    new Repo(sharedDb(process.env.DB_PATH ?? "./data/agent.db"))
+  )
   return new Repo(sharedDb(cfg.dbPath))
 }
 
@@ -19,7 +25,9 @@ function chatKey(channel: string, chatId: string): string {
 // 主动回复专页:节奏配置 + 每群(游标/滞后/主动回复数) + 最近插话列表
 export async function GET(): Promise<NextResponse> {
   try {
-    const cfg = getConfig(new Repo(sharedDb(process.env.DB_PATH ?? "./data/agent.db")))
+    const cfg = getConfig(
+      new Repo(sharedDb(process.env.DB_PATH ?? "./data/agent.db"))
+    )
     const repo = new Repo(sharedDb(cfg.dbPath))
     const now = Date.now()
 

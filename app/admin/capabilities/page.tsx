@@ -1,88 +1,92 @@
-"use client";
+"use client"
 
-import { useEffect, useState } from "react";
-import { toast } from "sonner";
-import { RotateCw, Boxes, Puzzle, Plug, ShieldCheck } from "lucide-react";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Spinner } from "@/components/ui/spinner";
-import { PageShell } from "@/components/admin/page-shell";
-import { PageHeader } from "@/components/admin/page-header";
-import { SectionCard } from "@/components/admin/section-card";
-import { ItemCard } from "@/components/admin/item-card";
-import { EmptyState, ErrorState } from "@/components/admin/data-state";
+import { useEffect, useState } from "react"
+import { toast } from "sonner"
+import { RotateCw, Boxes, Puzzle, Plug, ShieldCheck } from "lucide-react"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import { Skeleton } from "@/components/ui/skeleton"
+import { Spinner } from "@/components/ui/spinner"
+import { PageShell } from "@/components/admin/page-shell"
+import { PageHeader } from "@/components/admin/page-header"
+import { SectionCard } from "@/components/admin/section-card"
+import { ItemCard } from "@/components/admin/item-card"
+import { EmptyState, ErrorState } from "@/components/admin/data-state"
 
 interface Tool {
-  name: string;
-  description?: string;
-  readOnly?: boolean;
+  name: string
+  description?: string
+  readOnly?: boolean
 }
 interface McpServer {
-  name: string;
-  status: string;
-  version?: string;
-  error?: string;
-  scope?: string;
-  tools: Tool[];
+  name: string
+  status: string
+  version?: string
+  error?: string
+  scope?: string
+  tools: Tool[]
 }
 interface Skill {
-  name: string;
-  description: string;
-  argumentHint?: string;
+  name: string
+  description: string
+  argumentHint?: string
 }
 interface Plugin {
-  name: string;
-  path: string;
-  source?: string;
+  name: string
+  path: string
+  source?: string
 }
 interface ToolPolicy {
-  allowlist: string[];
-  gated: { tool: string; constraint: string }[];
+  allowlist: string[]
+  gated: { tool: string; constraint: string }[]
 }
 interface Capabilities {
-  plugins: Plugin[];
-  skills: Skill[];
-  mcpServers: McpServer[];
-  toolPolicy: ToolPolicy;
-  probedAt: number;
+  plugins: Plugin[]
+  skills: Skill[]
+  mcpServers: McpServer[]
+  toolPolicy: ToolPolicy
+  probedAt: number
 }
 
 function mcpVariant(s: string): "default" | "secondary" | "destructive" {
-  if (s === "connected") return "default";
-  if (s === "failed") return "destructive";
-  return "secondary";
+  if (s === "connected") return "default"
+  if (s === "failed") return "destructive"
+  return "secondary"
 }
 
 export default function CapabilitiesPage() {
-  const [caps, setCaps] = useState<Capabilities | null>(null);
-  const [err, setErr] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [caps, setCaps] = useState<Capabilities | null>(null)
+  const [err, setErr] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
 
   async function load(refresh = false) {
-    setBusy(true);
+    setBusy(true)
     try {
-      const r = await fetch(`/api/capabilities${refresh ? "?refresh=1" : ""}`).then((x) => x.json());
+      const r = await fetch(
+        `/api/capabilities${refresh ? "?refresh=1" : ""}`
+      ).then((x) => x.json())
       if (r.ok) {
-        setCaps(r.data);
-        setErr(null);
+        setCaps(r.data)
+        setErr(null)
       } else {
-        setErr(r.error);
-        if (refresh) toast.error(r.error);
+        setErr(r.error)
+        if (refresh) toast.error(r.error)
       }
     } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
+      setErr(e instanceof Error ? e.message : String(e))
     } finally {
-      setBusy(false);
+      setBusy(false)
     }
   }
 
   useEffect(() => {
-    void load();
-  }, []);
+    void load()
+  }, [])
 
-  const gatedCount = caps ? caps.toolPolicy.allowlist.length + caps.toolPolicy.gated.length : 0;
+  const gatedCount = caps
+    ? caps.toolPolicy.allowlist.length + caps.toolPolicy.gated.length
+    : 0
 
   return (
     <PageShell>
@@ -91,13 +95,23 @@ export default function CapabilitiesPage() {
         description="当前加载的插件、技能、MCP 与工具权限。"
         actions={
           <Button onClick={() => load(true)} disabled={busy}>
-            {busy ? <Spinner data-icon="inline-start" /> : <RotateCw data-icon="inline-start" />}
+            {busy ? (
+              <Spinner data-icon="inline-start" />
+            ) : (
+              <RotateCw data-icon="inline-start" />
+            )}
             刷新
           </Button>
         }
       />
 
-      {err && <ErrorState title="探测失败" description={err} onRetry={() => load(true)} />}
+      {err && (
+        <ErrorState
+          title="探测失败"
+          description={err}
+          onRetry={() => load(true)}
+        />
+      )}
 
       {!caps && !err && <Skeleton className="h-72 w-full" />}
 
@@ -125,19 +139,29 @@ export default function CapabilitiesPage() {
               contentClassName="flex flex-col gap-3"
             >
               {caps.plugins.length === 0 ? (
-                <EmptyState icon={Puzzle} title="无插件" description="尚未加载任何本地插件。" />
+                <EmptyState
+                  icon={Puzzle}
+                  title="无插件"
+                  description="尚未加载任何本地插件。"
+                />
               ) : (
                 caps.plugins.map((p) => (
                   <ItemCard
                     key={p.name}
                     meta={
                       <>
-                        <span className="text-foreground font-medium">{p.name}</span>
-                        {p.source && <Badge variant="secondary">{p.source}</Badge>}
+                        <span className="font-medium text-foreground">
+                          {p.name}
+                        </span>
+                        {p.source && (
+                          <Badge variant="secondary">{p.source}</Badge>
+                        )}
                       </>
                     }
                   >
-                    <code className="text-muted-foreground text-xs break-all">{p.path}</code>
+                    <code className="text-xs break-all text-muted-foreground">
+                      {p.path}
+                    </code>
                   </ItemCard>
                 ))
               )}
@@ -151,19 +175,29 @@ export default function CapabilitiesPage() {
               contentClassName="flex flex-col gap-3"
             >
               {caps.skills.length === 0 ? (
-                <EmptyState icon={Boxes} title="无技能" description="尚未注册任何技能。" />
+                <EmptyState
+                  icon={Boxes}
+                  title="无技能"
+                  description="尚未注册任何技能。"
+                />
               ) : (
                 caps.skills.map((s) => (
                   <ItemCard
                     key={s.name}
                     meta={
                       <>
-                        <span className="text-foreground font-medium">{s.name}</span>
-                        {s.argumentHint && <Badge variant="outline">{s.argumentHint}</Badge>}
+                        <span className="font-medium text-foreground">
+                          {s.name}
+                        </span>
+                        {s.argumentHint && (
+                          <Badge variant="outline">{s.argumentHint}</Badge>
+                        )}
                       </>
                     }
                   >
-                    <span className="text-muted-foreground text-sm">{s.description}</span>
+                    <span className="text-sm text-muted-foreground">
+                      {s.description}
+                    </span>
                   </ItemCard>
                 ))
               )}
@@ -177,22 +211,32 @@ export default function CapabilitiesPage() {
               contentClassName="flex flex-col gap-3"
             >
               {caps.mcpServers.length === 0 ? (
-                <EmptyState icon={Plug} title="无 MCP Server" description="尚未注册任何 MCP 服务。" />
+                <EmptyState
+                  icon={Plug}
+                  title="无 MCP Server"
+                  description="尚未注册任何 MCP 服务。"
+                />
               ) : (
                 caps.mcpServers.map((m) => (
                   <ItemCard
                     key={m.name}
                     meta={
                       <>
-                        <span className="text-foreground font-medium">{m.name}</span>
+                        <span className="font-medium text-foreground">
+                          {m.name}
+                        </span>
                         <Badge variant={mcpVariant(m.status)}>{m.status}</Badge>
                         {m.version && (
-                          <span className="text-muted-foreground text-xs">v{m.version}</span>
+                          <span className="text-xs text-muted-foreground">
+                            v{m.version}
+                          </span>
                         )}
                       </>
                     }
                   >
-                    {m.error && <p className="text-destructive mb-1 text-xs">{m.error}</p>}
+                    {m.error && (
+                      <p className="mb-1 text-xs text-destructive">{m.error}</p>
+                    )}
                     {m.tools.length > 0 && (
                       <ul className="flex flex-col gap-1">
                         {m.tools.map((t) => (
@@ -204,7 +248,9 @@ export default function CapabilitiesPage() {
                               </Badge>
                             )}
                             {t.description && (
-                              <span className="text-muted-foreground ml-2">{t.description}</span>
+                              <span className="ml-2 text-muted-foreground">
+                                {t.description}
+                              </span>
                             )}
                           </li>
                         ))}
@@ -235,12 +281,14 @@ export default function CapabilitiesPage() {
               <div className="flex flex-col gap-2">
                 <span className="text-sm font-medium">受限工具</span>
                 {caps.toolPolicy.gated.length === 0 ? (
-                  <span className="text-muted-foreground text-sm">无</span>
+                  <span className="text-sm text-muted-foreground">无</span>
                 ) : (
                   caps.toolPolicy.gated.map((g) => (
                     <div key={g.tool} className="text-sm">
                       <code className="text-xs">{g.tool}</code>
-                      <span className="text-muted-foreground ml-2">{g.constraint}</span>
+                      <span className="ml-2 text-muted-foreground">
+                        {g.constraint}
+                      </span>
                     </div>
                   ))
                 )}
@@ -250,5 +298,5 @@ export default function CapabilitiesPage() {
         </Tabs>
       )}
     </PageShell>
-  );
+  )
 }

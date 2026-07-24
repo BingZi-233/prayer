@@ -58,27 +58,17 @@ describe("enrichTelegramMessage", () => {
       text: undefined,
       caption: "cap",
     } as never)
-    const out = await enrichTelegramMessage(
-      baseMsg({ rawText: "cap" }),
-      raw,
-      {
-        getRole: async () => "member",
-        downloadImage: async (fid) =>
-          fid === "L"
-            ? { data: "YQ==", mediaType: "image/jpeg" }
-            : null,
-      }
-    )
-    expect(out.images).toEqual([
-      { data: "YQ==", mediaType: "image/jpeg" },
-    ])
+    const out = await enrichTelegramMessage(baseMsg({ rawText: "cap" }), raw, {
+      getRole: async () => "member",
+      downloadImage: async (fid) =>
+        fid === "L" ? { data: "YQ==", mediaType: "image/jpeg" } : null,
+    })
+    expect(out.images).toEqual([{ data: "YQ==", mediaType: "image/jpeg" }])
   })
 
   it("下载失败仍返回消息无图", async () => {
     const raw = rawMsg({
-      photo: [
-        { file_id: "x", width: 1, height: 1, file_unique_id: "1" },
-      ],
+      photo: [{ file_id: "x", width: 1, height: 1, file_unique_id: "1" }],
     } as never)
     const out = await enrichTelegramMessage(baseMsg(), raw, {
       getRole: async () => "owner",
@@ -90,16 +80,12 @@ describe("enrichTelegramMessage", () => {
 
   it("observeMessage 被调用（botMentioned → botRelated）", async () => {
     const seen: { chatId: string; bot: boolean }[] = []
-    await enrichTelegramMessage(
-      baseMsg({ botMentioned: true }),
-      rawMsg(),
-      {
-        getRole: async () => "member",
-        observeMessage: (chatId, botRelated) => {
-          seen.push({ chatId, bot: botRelated })
-        },
-      }
-    )
+    await enrichTelegramMessage(baseMsg({ botMentioned: true }), rawMsg(), {
+      getRole: async () => "member",
+      observeMessage: (chatId, botRelated) => {
+        seen.push({ chatId, bot: botRelated })
+      },
+    })
     expect(seen).toEqual([{ chatId: "-1001", bot: true }])
   })
 
@@ -152,8 +138,6 @@ describe("isBotRelatedMessage", () => {
         false
       )
     ).toBe(true)
-    expect(isBotRelatedMessage(rawMsg({ text: "闲聊" }), 1, false)).toBe(
-      false
-    )
+    expect(isBotRelatedMessage(rawMsg({ text: "闲聊" }), 1, false)).toBe(false)
   })
 })

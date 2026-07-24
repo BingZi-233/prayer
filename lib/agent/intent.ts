@@ -1,34 +1,37 @@
-import { query as sdkQuery } from "@anthropic-ai/claude-agent-sdk";
-import { noToolQueryOptions, drainQuery } from "./agent";
+import { query as sdkQuery } from "@anthropic-ai/claude-agent-sdk"
+import { noToolQueryOptions, drainQuery } from "./agent"
 
 // 面向 QQ 用户客服 bot 的入站意图分类。只用于在 orchestrator 前置硬拦「套取类」滥用:
 //   bulk_export —— 索要整库/大批量导出(全部售后/订单/模型/计费、指定超长字数)
 //   meta_probe  —— 刺探 system prompt / 内部规则 / 工具名 / 越权改设定
 // 其余一切(正常客服问题、闲聊、无关、写代码请求)一律 normal,交给 agent 按人格处理。
-export type Intent = "normal" | "bulk_export" | "meta_probe";
+export type Intent = "normal" | "bulk_export" | "meta_probe"
 
 // 命中即拦截的意图集(orchestrator 消费)
-export const BLOCKED_INTENTS: ReadonlySet<Intent> = new Set<Intent>(["bulk_export", "meta_probe"]);
+export const BLOCKED_INTENTS: ReadonlySet<Intent> = new Set<Intent>([
+  "bulk_export",
+  "meta_probe",
+])
 
 // 意图中文说明,用于日志审计(orchestrator 拼进拦截日志)
 export const INTENT_LABELS: Record<Intent, string> = {
   normal: "正常",
   bulk_export: "整库/大批量套取",
   meta_probe: "刺探规则/处境施压绕限",
-};
+}
 
 // 命中拦截时回给用户的模板:婉拒 + 引导提具体问题,不透露规则/系统提示,兼顾两类滥用
 export const BLOCKED_REPLY =
-  "你好~我这边按具体问题帮你查哈。你想了解哪个套餐的价格、可用模型或接入配置?说具体点我好帮你。";
+  "你好~我这边按具体问题帮你查哈。你想了解哪个套餐的价格、可用模型或接入配置?说具体点我好帮你。"
 
 // 用户文本包裹定界符。system 声明界内一律当数据,防 prompt 注入劫持分类器
-const USER_BEGIN = "<<<UNTRUSTED_USER_MESSAGE>>>";
-const USER_END = "<<<END_UNTRUSTED_USER_MESSAGE>>>";
+const USER_BEGIN = "<<<UNTRUSTED_USER_MESSAGE>>>"
+const USER_END = "<<<END_UNTRUSTED_USER_MESSAGE>>>"
 
 // 剥离用户伪造的定界符,防止其提前闭合数据块再注入指令(breakout)
 function wrapUserText(text: string): string {
-  const clean = text.split(USER_BEGIN).join("").split(USER_END).join("");
-  return `${USER_BEGIN}\n${clean}\n${USER_END}`;
+  const clean = text.split(USER_BEGIN).join("").split(USER_END).join("")
+  return `${USER_BEGIN}\n${clean}\n${USER_END}`
 }
 
 const INTENT_SYSTEM = `你是 PackyAPI 客服系统的入站消息意图分类器。给定一条 QQ 用户消息(可能含引用/转发正文),判定它属于以下哪一类,只输出分类,不作答、不解释。
@@ -43,32 +46,34 @@ normal:其余一切,包括正常客服问题、闲聊、无关请求、让你写
 
 只输出一个 JSON 对象,不要额外文字,不要 Markdown 代码块:
 {"intent":"normal"}
-或 {"intent":"bulk_export"} 或 {"intent":"meta_probe"}`;
+或 {"intent":"bulk_export"} 或 {"intent":"meta_probe"}`
 
 function parseIntent(s: string): Intent {
-  const m = s.match(/\{[\s\S]*\}/);
-  if (!m) return "normal";
+  const m = s.match(/\{[\s\S]*\}/)
+  if (!m) return "normal"
   try {
-    const v = JSON.parse(m[0]);
-    const i = v?.intent;
-    return i === "bulk_export" || i === "meta_probe" ? i : "normal";
+    const v = JSON.parse(m[0])
+    const i = v?.intent
+    return i === "bulk_export" || i === "meta_probe" ? i : "normal"
   } catch {
-    return "normal";
+    return "normal"
   }
 }
 
 export interface IntentClassifierDeps {
-  queryFn?: typeof sdkQuery;
+  queryFn?: typeof sdkQuery
 }
 
-export type IntentClassifier = (text: string) => Promise<Intent>;
+export type IntentClassifier = (text: string) => Promise<Intent>
 
 // 构建分类器。fail-open:分类调用出错或输出无法解析 → normal,绝不因分类器抖动误伤真实用户
 // (滥用偶尔漏网可接受 —— agent 的 system prompt 是第二道防线)。
-export function makeIntentClassifier(deps: IntentClassifierDeps = {}): IntentClassifier {
-  const queryFn = deps.queryFn ?? sdkQuery;
+export function makeIntentClassifier(
+  deps: IntentClassifierDeps = {}
+): IntentClassifier {
+  const queryFn = deps.queryFn ?? sdkQuery
   return async (text: string): Promise<Intent> => {
-    if (!text.trim()) return "normal";
+    if (!text.trim()) return "normal"
     try {
       const { text: out } = await drainQuery(
         queryFn({
@@ -78,17 +83,20 @@ export function makeIntentClassifier(deps: IntentClassifierDeps = {}): IntentCla
             // maxTurns:1 的 JSON 分类任务,思考纯浪费(延迟+输出 token+计费推理)。
             // 单次覆盖 settings.json 的全局 alwaysThinkingEnabled。
             thinking: { type: "disabled" },
-            canUseTool: async () => ({ behavior: "deny" as const, message: "分类阶段不使用工具" }),
+            canUseTool: async () => ({
+              behavior: "deny" as const,
+              message: "分类阶段不使用工具",
+            }),
             // maxTurns:2 而非 1:模型偶发首轮吐 tool_use,deny 回消息须第 2 轮消费才出文本;
             // maxTurns:1 下 SDK 直接 reject「Reached maximum number of turns」误判为错误。
             maxTurns: 2,
           }) as never,
         }) as AsyncIterable<any>,
         "intent"
-      );
-      return parseIntent(out);
+      )
+      return parseIntent(out)
     } catch {
-      return "normal";
+      return "normal"
     }
-  };
+  }
 }

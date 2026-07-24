@@ -27,7 +27,11 @@ describe("formatPriorContext", () => {
   })
 
   it("多行经 clip 再 format 时续行有两空格缩进", () => {
-    const clipped = clipPriorTexts(["第一行\n第二行"], 2000, PRIOR_LINE_MAX_CHARS)
+    const clipped = clipPriorTexts(
+      ["第一行\n第二行"],
+      2000,
+      PRIOR_LINE_MAX_CHARS
+    )
     expect(clipped).toEqual(["第一行\n  第二行"])
     const out = formatPriorContext(clipped, "当前")
     expect(out).toContain("- 第一行\n  第二行")

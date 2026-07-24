@@ -20,8 +20,7 @@ import {
 
 // 主动模式哨兵:无把握时 agent 只输出此串 → poller 判为非答案,沉默不发。
 // 指令并入 user prompt(非 system)以保持 system 前缀跨路径可缓存;见 agent.run 注释。
-export const PROACTIVE_SUFFIX =
-  `【主动模式】你是在无人应答时主动补位。仅当知识库检索到确切依据且你有把握时才作答;否则只输出 ${NO_ANSWER_SENTINEL}(不解释、不道歉、不引导人工或外链、不寒暄)。`
+export const PROACTIVE_SUFFIX = `【主动模式】你是在无人应答时主动补位。仅当知识库检索到确切依据且你有把握时才作答;否则只输出 ${NO_ANSWER_SENTINEL}(不解释、不道歉、不引导人工或外链、不寒暄)。`
 
 export interface UnansweredPollerDeps {
   repo: Repo
@@ -196,13 +195,7 @@ async function scanOnce(d: Resolved): Promise<void> {
           continue // 哨兵/空 → 沉默
         }
         if (result.sessionId) d.store.remember(key, result.sessionId)
-        d.repo.insertProactiveReply(
-          channel,
-          chatId,
-          userId,
-          text,
-          result.text
-        ) // 留痕供监控页
+        d.repo.insertProactiveReply(channel, chatId, userId, text, result.text) // 留痕供监控页
         bus.emit("reply.ready", {
           channel,
           chatId,

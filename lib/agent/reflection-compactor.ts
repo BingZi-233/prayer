@@ -227,11 +227,7 @@ async function compactOneBatch(
     "compact"
   )
 
-  const check = validateCompactedDetailed(
-    structuredOutput,
-    batch.length,
-    out
-  )
+  const check = validateCompactedDetailed(structuredOutput, batch.length, out)
   if (!check.ok) {
     const preview = previewJsonPayload(structuredOutput, out)
     logger.log(
@@ -305,8 +301,7 @@ export async function runCompact(deps: ReflectionCompactorDeps): Promise<void> {
       allFaqs
     )
 
-    const batchNote =
-      batches.length > 1 ? `(分 ${batches.length} 批)` : ""
+    const batchNote = batches.length > 1 ? `(分 ${batches.length} 批)` : ""
     logger.log(
       "info",
       `[reflection-compact] ${entries.length} → ${allFaqs.length} 条${batchNote}`
