@@ -199,7 +199,7 @@ export default function ConfigPage() {
           setCfg({
             ...data,
             groupPolicies: data.groupPolicies ?? {},
-            supportUrl: data.supportUrl ?? "https://www.packyapi.com",
+            supportUrl: data.supportUrl ?? "https://www.packyapi.ai",
             ackEnabled: data.ackEnabled !== false,
             maxReplyChars: data.maxReplyChars ?? 900,
             usageBudgetUsd: data.usageBudgetUsd ?? 0,

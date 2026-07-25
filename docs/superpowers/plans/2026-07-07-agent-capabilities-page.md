@@ -104,7 +104,7 @@ export function buildToolPolicy(): CapabilityToolPolicy {
     gated: [
       { tool: "Bash", constraint: "仅放行 PackyAPI 查询脚本(node …/packy.ts),禁 shell 链接/重定向" },
       { tool: "Read", constraint: "仅读 packyapi 技能的 references/*.md" },
-      { tool: "WebFetch", constraint: "仅访问 packyapi.com 及其子域" },
+      { tool: "WebFetch", constraint: "仅访问 packyapi.ai 及其子域" },
     ],
   };
 }

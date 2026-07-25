@@ -2,7 +2,7 @@
 
 ## 端点
 
-`GET https://www.packyapi.com/api/pricing` — 公开,无需 auth,返回 JSON。
+`GET https://www.packyapi.ai/api/pricing` — 公开,无需 auth,返回 JSON。
 
 ## 顶层字段
 

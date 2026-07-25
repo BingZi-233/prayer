@@ -277,7 +277,7 @@ describe("sdkEnv", () => {
       PATH: "/usr/bin",
       HOME: "/home/x",
       CLAUDE_CONFIG_DIR: "/abs/data/claude-config",
-      ANTHROPIC_BASE_URL: "https://www.packyapi.com",
+      ANTHROPIC_BASE_URL: "https://www.packyapi.ai",
       ANTHROPIC_AUTH_TOKEN: "leak",
       ANTHROPIC_DEFAULT_SONNET_MODEL: "x",
     })

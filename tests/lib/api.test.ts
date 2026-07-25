@@ -28,7 +28,7 @@ const cfg: AppConfig = {
   proactiveScanMs: 60000,
   proactiveSilenceMs: 180000,
   proactiveMaxPerScan: 2,
-  supportUrl: "https://www.packyapi.com",
+  supportUrl: "https://www.packyapi.ai",
   ackEnabled: true,
   maxReplyChars: 900,
   topicScanMs: 300000,

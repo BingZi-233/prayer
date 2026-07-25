@@ -24,8 +24,8 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod"
 
-export const API = "https://www.packyapi.com/api/pricing"
-export const ANNOUNCE_API = "https://www.packyapi.com/api/announcements"
+export const API = "https://www.packyapi.ai/api/pricing"
+export const ANNOUNCE_API = "https://www.packyapi.ai/api/announcements"
 
 export interface Model {
   model_name: string
