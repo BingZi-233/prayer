@@ -1111,6 +1111,22 @@ export class Repo {
     })()
   }
 
+  // 单 chunk 物理删除:kb_vec + kb_chunks + reflection_meta 三表联动,事务内完成。
+  // 用于反思条目升格后清理原 human-reflection chunk(避免列表/检索双重残留)。
+  // 返回是否实际删除(0 = 无此 id)。
+  deleteKbChunk(chunkId: number): boolean {
+    return this.db.transaction(() => {
+      this.db.prepare("DELETE FROM kb_vec WHERE chunk_id = ?").run(chunkId)
+      const info = this.db
+        .prepare("DELETE FROM kb_chunks WHERE id = ?")
+        .run(chunkId)
+      this.db
+        .prepare("DELETE FROM reflection_meta WHERE chunk_id = ?")
+        .run(chunkId)
+      return info.changes > 0
+    })()
+  }
+
   // 重命名文档:同步更新 doc;source 若等于旧路径也一并改(文件入库时 source=路径)。
   renameKbDoc(from: string, to: string): number {
     const info = this.db

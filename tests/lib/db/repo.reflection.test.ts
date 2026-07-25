@@ -128,3 +128,36 @@ describe("reflection_meta / reflectionEntries", () => {
     expect(rc.map((r) => r.ts)).toEqual([300, 200])
   })
 })
+
+describe("deleteKbChunk", () => {
+  it("三表联动:kb_vec + kb_chunks + reflection_meta 全删", () => {
+    const id = repo.insertKbEntry(
+      "human-reflection",
+      "原文",
+      "human-reflection:qq:100:5",
+      vec()
+    )
+    repo.insertReflectionMeta(id, "qq", "100", "问", "答")
+    expect(repo.deleteKbChunk(id)).toBe(true)
+    // 反思 list 查不到(LEFT JOIN 没了)
+    expect(repo.reflectionEntries().find((e) => e.id === id)).toBeUndefined()
+    // 检索也不再命中
+    expect(repo.searchKb(vec(), 5).find((h) => h.id === id)).toBeUndefined()
+    // meta 行也被清,不留孤儿(直接查表)
+    const d = (repo as unknown as { db: import("better-sqlite3").Database })
+      .db
+    expect(
+      d.prepare("SELECT 1 FROM reflection_meta WHERE chunk_id = ?").get(id)
+    ).toBeUndefined()
+  })
+
+  it("不存在 id → 返回 false,无副作用", () => {
+    expect(repo.deleteKbChunk(99999)).toBe(false)
+  })
+
+  it("无 meta 的 chunk 也能删(不报错)", () => {
+    const id = repo.insertKbChunk("human-reflection", "无meta", "human-reflection:qq:0:1")
+    expect(repo.deleteKbChunk(id)).toBe(true)
+    expect(repo.reflectionEntries()).toHaveLength(0)
+  })
+})

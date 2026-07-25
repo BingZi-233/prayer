@@ -82,9 +82,8 @@ describe("reflect-promote helpers", () => {
     expect(r.file).toBe("promoted/reflection-" + id + ".md")
     expect(writes).toHaveLength(1)
     expect(writes[0]!.body).toContain("退款 7 天到账")
-    expect(repo.reflectionEntries().find((e) => e.id === id)!.status).toBe(
-      "promoted"
-    )
+    // 原反思 chunk 已物理删除:不再出现在 reflectionEntries,也不在 searchKb
+    expect(repo.reflectionEntries().find((e) => e.id === id)).toBeUndefined()
     // 反思侧不再命中;正式文档命中
     const hits = repo.searchKb(vec(), 5)
     expect(hits.some((h) => h.content.includes("退款"))).toBe(true)
@@ -98,7 +97,7 @@ describe("reflect-promote helpers", () => {
     expect(repo.kbChunksByDoc(r.file).length).toBeGreaterThan(0)
   })
 
-  it("applyPromote 幂等:已升格 → already", async () => {
+  it("applyPromote 幂等:已升格 → 原 chunk 已物理删除,再调返回条目不存在", async () => {
     const id = repo.insertKbEntry(
       "human-reflection",
       "faq",
@@ -113,6 +112,7 @@ describe("reflect-promote helpers", () => {
       writeFileFn: async () => {},
       mkdirFn: async () => {},
     })
+    // 第二次写盘函数应不被调用(早期 return),且语义变成"条目不存在"
     const r2 = await applyPromote({
       repo,
       chunkId: id,
@@ -122,7 +122,8 @@ describe("reflect-promote helpers", () => {
       },
       mkdirFn: async () => {},
     })
-    expect(r2.ok && r2.already).toBe(true)
+    expect(r2.ok).toBe(false)
+    if (!r2.ok) expect(r2.reason).toBe("条目不存在")
   })
 
   it("applyPromote 拒绝 rejected", async () => {
