@@ -98,12 +98,6 @@ export function registerOrchestrator(deps: OrchestratorDeps): () => void {
             channel: q.channel,
             chatId: q.chatId,
             sessionKey: q.sessionKey,
-            code: "business.intent_block",
-            category: "business",
-            title: "意图拦截",
-            hint: "用户触发滥用意图门,已回模板婉拒(非系统故障)。",
-            retryable: false,
-            skipClassify: true,
           }
         )
         bus.emit("reply.ready", {
@@ -144,12 +138,6 @@ export function registerOrchestrator(deps: OrchestratorDeps): () => void {
         channel: q.channel,
         chatId: q.chatId,
         sessionKey: q.sessionKey,
-        code: "business.no_answer_suppressed",
-        category: "business",
-        title: "吞掉哨兵输出",
-        hint: "模型输出了内部 __NO_ANSWER__ 标记,已拦截未发给用户。",
-        retryable: false,
-        skipClassify: true,
       })
       bus.emit("resolution.recorded", {
         kind: "auto",

@@ -2,7 +2,6 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 import { bus } from "@/lib/bus"
 import {
   registerErrorHandler,
-  explainError,
   formatErrorLine,
   errorMessage,
 } from "@/lib/agent/error-handler"
@@ -77,7 +76,7 @@ describe("error handler", () => {
     expect(log).toHaveBeenCalled()
   })
 
-  it("默认路径写入结构化 logger(含分类与 chat-ref)", () => {
+  it("默认路径写入结构化 logger(含 chat-ref 与原文)", () => {
     registerErrorHandler()
     bus.emit("error.occurred", {
       scope: "reflection",
@@ -89,19 +88,15 @@ describe("error handler", () => {
     })
     const lines = logger.tail()
     expect(lines.length).toBeGreaterThanOrEqual(1)
-    const e =
-      lines.find((l) => l.code === "content_safety.input") ??
-      lines[lines.length - 1]
+    const e = lines[lines.length - 1]
     expect(e.scope).toBe("reflection")
     expect(e.channel).toBe("qq")
     expect(e.chatId).toBe("10086")
-    expect(e.category).toBe("content_safety")
-    expect(e.retryable).toBe(false)
-    expect(e.hint).toBeTruthy()
+    expect(e.msg).toMatch(/new_sensitive/)
     expect(e.raw).toMatch(/new_sensitive/)
   })
 
-  it("同错误去重累加", () => {
+  it("同错误逐条记录不合并", () => {
     registerErrorHandler()
     const err = new Error("API Error: 500 input new_sensitive (1026)")
     for (let i = 0; i < 3; i++) {
@@ -118,8 +113,7 @@ describe("error handler", () => {
         (l) =>
           l.scope === "reflection" && l.channel === "qq" && l.chatId === "1"
       )
-    expect(hits).toHaveLength(1)
-    expect(hits[0].count).toBe(3)
+    expect(hits).toHaveLength(3)
   })
 
   it("TG 错误日志带 channel+chatId", () => {
@@ -135,7 +129,7 @@ describe("error handler", () => {
     expect(e?.chatId).toBe("-1001")
   })
 
-  it("unknown 错误 msg 保留 raw 摘要而非仅「未分类错误」", () => {
+  it("错误 msg 用原文摘要", () => {
     registerErrorHandler()
     bus.emit("error.occurred", {
       scope: "topic",
@@ -145,25 +139,16 @@ describe("error handler", () => {
     })
     const e = logger.tail().find((l) => l.scope === "topic")
     expect(e).toBeTruthy()
-    expect(e!.code).toBe("unknown")
     expect(e!.msg).toContain("something totally unexpected xyz")
     expect(e!.raw).toContain("something totally unexpected xyz")
   })
 })
 
-describe("explainError / formatErrorLine 兼容", () => {
+describe("formatErrorLine / errorMessage", () => {
   it("errorMessage 支持 Error / string / 对象", () => {
     expect(errorMessage(new Error("x"))).toBe("x")
     expect(errorMessage("y")).toBe("y")
     expect(errorMessage({ a: 1 })).toBe('{"a":1}')
-  })
-
-  it("1026 new_sensitive → 内容安全说明", () => {
-    const out = explainError(
-      "API Error: 500 input new_sensitive (1026). This is a server-side issue"
-    )
-    expect(out).toMatch(/内容安全|输入/)
-    expect(out).toContain("原始:")
   })
 
   it("formatErrorLine 从 sessionKey 解析 chat-ref", () => {
