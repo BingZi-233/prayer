@@ -1,7 +1,7 @@
 # PackyAPI 官方文档地图(sitemap 定位)
 
-站点:`https://docs.packyapi.com`(VuePress,无 llms.txt)。按主题定位到**单个** URL 后再 WebFetch。
-刷新全量列表:`curl -s https://docs.packyapi.com/sitemap.xml | grep -oE '<loc>[^<]+'`
+站点:`https://docs.packyapi.ai`(VuePress,无 llms.txt)。按主题定位到**单个** URL 后再 WebFetch。
+刷新全量列表:`curl -s https://docs.packyapi.ai/sitemap.xml | grep -oE '<loc>[^<]+'`
 
 ## 注册 / 入门 `docs/register/`
 | 主题 | URL |

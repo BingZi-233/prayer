@@ -29,7 +29,7 @@ const cfg: AppConfig = {
   reflectPromoteMaxPerRun: 5,
   reflectNotifyAdmin: true,
   resumeTtlMs: 300000,
-  supportUrl: "https://www.packyapi.com",
+  supportUrl: "https://www.packyapi.ai",
   ackEnabled: true,
   maxReplyChars: 900,
   topicScanMs: 300000,

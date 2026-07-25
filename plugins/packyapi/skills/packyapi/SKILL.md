@@ -5,12 +5,12 @@ description: 查询 PackyAPI(Claude/OpenAI/Gemini 中转平台)的模型价格�
 
 # PackyAPI 快查
 
-PackyAPI = AI API 聚合中转平台(`https://www.packyapi.com`),Anthropic/OpenAI/Gemini 协议兼容。
+PackyAPI = AI API 聚合中转平台(`https://www.packyapi.ai`),Anthropic/OpenAI/Gemini 协议兼容。
 本 skill 让你**走结构化 API 拿数据**,而非抓渲染后的 HTML 页面 —— 更省 token、更准。
 
 ## 铁律:优先 API,不抓 HTML
 
-- 价格 / 模型 / 分组 → 一律用 MCP 工具 `packy`,底层读公开 JSON `https://www.packyapi.com/api/pricing`。
+- 价格 / 模型 / 分组 → 一律用 MCP 工具 `packy`,底层读公开 JSON `https://www.packyapi.ai/api/pricing`。
 - 仅当需要**文档正文**(教程步骤、FAQ)时,才 WebFetch,且只抓 `references/docs-map.md` 里定位到的**单个** URL。
 
 ## MCP 工具 `packy`
@@ -37,7 +37,7 @@ Server 为 TypeScript,Node(v22.6+/24)原生 strip 直跑;依赖 `@modelcontextpr
 ## 配置 Claude Agent SDK / Claude Code(走 PackyAPI)
 
 ```
-ANTHROPIC_BASE_URL=https://www.packyapi.com
+ANTHROPIC_BASE_URL=https://www.packyapi.ai
 ANTHROPIC_AUTH_TOKEN=<在「令牌管理」建的 token,选 cc 组>
 ```
 

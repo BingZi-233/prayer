@@ -26,7 +26,7 @@ WebSocket 连接 OneBot 实现(NapCat/Lagrange 等),在群聊中被 @ 触发后�
 ## 3. 环境变量
 
 ```
-ANTHROPIC_BASE_URL=https://www.packyapi.com
+ANTHROPIC_BASE_URL=https://www.packyapi.ai
 ANTHROPIC_AUTH_TOKEN=<PackyAPI CC 组 token>
 ONEBOT_WS_URL=ws://127.0.0.1:3001          # NapCat 正向 WS server
 ONEBOT_ACCESS_TOKEN=<可选,OneBot 鉴权>

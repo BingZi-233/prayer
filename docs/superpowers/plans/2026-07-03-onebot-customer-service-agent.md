@@ -2037,7 +2037,7 @@ Create `.env.example`:
 
 ```
 # PackyAPI(Claude 中转)
-ANTHROPIC_BASE_URL=https://www.packyapi.com
+ANTHROPIC_BASE_URL=https://www.packyapi.ai
 ANTHROPIC_AUTH_TOKEN=your-cc-group-token
 ANTHROPIC_MODEL=claude-sonnet-5
 

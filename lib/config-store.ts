@@ -216,7 +216,7 @@ function seedFromEnv(env: Record<string, string | undefined>): AppConfig {
     proactiveScanMs: Number(env.PROACTIVE_SCAN_MS ?? "60000"),
     proactiveSilenceMs: Number(env.PROACTIVE_SILENCE_MS ?? "180000"),
     proactiveMaxPerScan: Number(env.PROACTIVE_MAX_PER_SCAN ?? "2"),
-    supportUrl: env.SUPPORT_URL ?? "https://www.packyapi.com",
+    supportUrl: env.SUPPORT_URL ?? "https://www.packyapi.ai",
     ackEnabled: env.ACK_ENABLED !== "false",
     maxReplyChars: Number(env.MAX_REPLY_CHARS ?? "900"),
     topicScanMs: Number(env.TOPIC_SCAN_MS ?? "300000"),

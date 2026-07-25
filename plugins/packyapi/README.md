@@ -1,6 +1,6 @@
 # packyapi 插件
 
-快速查询 [PackyAPI](https://www.packyapi.com) 模型价格、可用模型 ID、分组倍率与官方文档。
+快速查询 [PackyAPI](https://www.packyapi.ai) 模型价格、可用模型 ID、分组倍率与官方文档。
 全走公开 JSON API(`/api/pricing`),不抓 HTML —— 省 token、更精确。
 
 ## MCP 工具 `packy`
