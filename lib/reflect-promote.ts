@@ -31,9 +31,9 @@ export interface ApplyPromoteOpts {
  * 将一条 human-reflection 升格为正式文档:
  * 1. 写 docs/kb/promoted/reflection-{id}.md
  * 2. 立即 embed 写入 kb_chunks(doc=相对路径),Agent 检索可命中
- * 3. 标记 status=promoted(反思侧不再参与检索,避免与正式文档重复)
+ * 3. 物理删除原反思 chunk,避免列表 / 检索残留
  *
- * 幂等:已 promoted 则返回 already,不重写(除非需要可强制)。
+ * 幂等:已 promoted 则返回 already,不重写、不再删(原 chunk 早已不在)。
  */
 export async function applyPromote(
   opts: ApplyPromoteOpts
@@ -69,7 +69,8 @@ export async function applyPromote(
   // 正式文档入库:先清旧分块再写,保证幂等
   repo.deleteKbDoc(rel)
   repo.insertKbEntry(rel, body, rel, await embed(body))
-  repo.setReflectionStatus(chunkId, "promoted")
+  // 原反思 chunk 物理删除,避免 list / 检索双份残留
+  repo.deleteKbChunk(chunkId)
 
   return { ok: true, file: rel, content: entry.content }
 }
