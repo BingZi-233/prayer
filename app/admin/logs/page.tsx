@@ -27,52 +27,23 @@ import { SectionCard } from "@/components/admin/section-card"
 import { DataState, EmptyState } from "@/components/admin/data-state"
 import { usePolling } from "@/components/admin/use-polling"
 
-type LogCategory =
-  | "content_safety"
-  | "rate_limit"
-  | "auth"
-  | "model"
-  | "validation"
-  | "infra"
-  | "business"
-  | "unknown"
-
 interface Log {
   ts: number
-  lastTs?: number
   level: string
   msg: string
   scope?: string
-  category?: LogCategory | string
-  code?: string
-  title?: string
-  hint?: string
-  retryable?: boolean
   channel?: string
   chatId?: string
   /** @deprecated 用 channel+chatId */
   groupId?: number
   sessionKey?: string
   raw?: string
-  count?: number
-  fingerprint?: string
 }
 
 function chatLabel(l: Log): string {
   if (l.channel && l.chatId) return `${l.channel}:${l.chatId}`
   if (l.groupId != null) return `qq:${l.groupId}`
   return ""
-}
-
-const CATEGORY_LABEL: Record<string, string> = {
-  content_safety: "内容安全",
-  rate_limit: "限流",
-  auth: "鉴权",
-  model: "模型",
-  validation: "校验",
-  infra: "基础设施",
-  business: "业务",
-  unknown: "未分类",
 }
 
 // 级别:Badge 变体 + 行左侧色条 + 标签文字色
@@ -100,19 +71,11 @@ const levelStyle = (lv: string) =>
 const ANSI = new RegExp(String.fromCharCode(27) + "\\[[0-9;]*m", "g")
 const stripAnsi = (s: string | undefined) => (s ?? "").replace(ANSI, "")
 
-function displayTitle(l: Log): string {
-  if (l.code && l.code !== "unknown" && l.title) return l.title
-  return l.msg || l.title || ""
-}
-
 function searchBlob(l: Log): string {
   return [
     l.msg,
-    l.title,
-    l.hint,
     l.raw,
     l.scope,
-    l.code,
     l.sessionKey,
     chatLabel(l),
     l.channel,
@@ -125,46 +88,29 @@ function searchBlob(l: Log): string {
 }
 
 function formatExport(l: Log): string {
-  const t = new Date(l.lastTs ?? l.ts).toLocaleString()
   const bits = [
-    t,
+    new Date(l.ts).toLocaleString(),
     l.level.toUpperCase(),
-    l.category ? (CATEGORY_LABEL[l.category] ?? l.category) : "",
-    displayTitle(l),
-    l.count && l.count > 1 ? `×${l.count}` : "",
+    l.msg,
     l.scope ? `scope=${l.scope}` : "",
     chatLabel(l) ? `会话=${chatLabel(l)}` : "",
-    l.code ? `code=${l.code}` : "",
-    l.retryable === false ? "不可重试" : l.retryable === true ? "可重试" : "",
-    l.hint ? `处置: ${l.hint}` : "",
-    l.raw ? `原始: ${l.raw}` : "",
+    l.sessionKey ? `session=${l.sessionKey}` : "",
+    l.raw && l.raw !== l.msg ? `原始: ${l.raw}` : "",
   ].filter(Boolean)
   return bits.join(" | ")
 }
 
-// 归一化类别:显式 category 优先,否则 error/warn 归 unknown,其余空
-function catOf(l: Log): string {
-  return String(
-    l.category ?? (l.level === "error" || l.level === "warn" ? "unknown" : "")
-  )
-}
-
+// 同一毫秒可能写入多条(不再去重),index 参与 key 保证唯一
 function rowKey(l: Log, i: number): string {
-  return `${l.ts}-${l.fingerprint ?? l.code ?? i}`
+  return `${l.ts}-${i}`
 }
 
 function hasExpandableDetail(l: Log): boolean {
-  const count = l.count ?? 1
-  const chat = chatLabel(l)
   return Boolean(
-    l.hint ||
+    l.scope ||
       l.sessionKey ||
-      chat ||
-      l.scope ||
-      l.code ||
-      count > 1 ||
-      (l.raw && l.raw !== l.msg && l.raw !== l.title) ||
-      (!l.title && !l.category && l.msg && l.msg !== displayTitle(l))
+      chatLabel(l) ||
+      (l.raw && l.raw !== l.msg)
   )
 }
 
@@ -174,14 +120,13 @@ export default function LogsPage() {
   const [levels, setLevels] = useState<Set<string>>(
     new Set(["info", "warn", "error"])
   )
-  const [categories, setCategories] = useState<Set<string> | "all">("all")
   const [query, setQuery] = useState("")
   const [paused, setPaused] = useState(false)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
   const parentRef = useRef<HTMLDivElement>(null)
 
-  // 先做 level + 搜索过滤(不含类别),供类别计数与最终列表复用
-  const base = useMemo(
+  // level + 搜索过滤;顺序即写入顺序(时间线),不做任何合并
+  const shown = useMemo(
     () =>
       logs
         .map((l) => ({
@@ -190,35 +135,12 @@ export default function LogsPage() {
           raw: l.raw ? stripAnsi(l.raw) : l.raw,
         }))
         .filter((l) => levels.has(l.level))
-        .filter(
-          (l) =>
-            !query.trim() || searchBlob(l).includes(query.toLowerCase())
-        ),
+        .filter((l) => !query.trim() || searchBlob(l).includes(query.toLowerCase())),
     [logs, levels, query]
   )
 
-  // 每类别在当前 level+搜索 下的条数,用于过滤 Badge 计数
-  const catCount = useMemo(() => {
-    const m = new Map<string, number>()
-    for (const l of base) {
-      const c = catOf(l)
-      if (!c) continue
-      m.set(c, (m.get(c) ?? 0) + (l.count ?? 1))
-    }
-    return m
-  }, [base])
-
-  const shown = base.filter((l) => {
-    if (categories === "all") return true
-    const cat = catOf(l)
-    if (!cat) return categories.has("__plain__")
-    return categories.has(cat)
-  })
-
-  const countSig = shown.map((l) => l.count).join(",")
-
   // 虚拟滚动:仅渲染可视区行,变高(展开详情)由 measureElement 自动重测。
-  // 500 条日志全量渲染会卡,虚拟化后 DOM 只保留可视区 + overscan。
+  // 日志全量渲染会卡,虚拟化后 DOM 只保留可视区 + overscan。
   const virtualizer = useVirtualizer({
     count: shown.length,
     getScrollElement: () => parentRef.current,
@@ -227,29 +149,18 @@ export default function LogsPage() {
     getItemKey: (i) => rowKey(shown[i], i),
   })
 
-  // 追新:未暂停时滚到最新一条(替代原 bottomRef.scrollIntoView)
+  // 追新:未暂停时滚到最新一条
   useEffect(() => {
     if (!paused && shown.length > 0) {
       virtualizer.scrollToIndex(shown.length - 1, { align: "end" })
     }
-  }, [shown.length, paused, countSig, virtualizer])
+  }, [shown.length, paused, virtualizer])
 
   function toggleLevel(lv: string) {
     setLevels((prev) => {
       const next = new Set(prev)
       if (next.has(lv)) next.delete(lv)
       else next.add(lv)
-      return next
-    })
-  }
-
-  function toggleCategory(cat: string) {
-    setCategories((prev) => {
-      if (prev === "all") return new Set([cat])
-      const next = new Set(prev)
-      if (next.has(cat)) next.delete(cat)
-      else next.add(cat)
-      if (next.size === 0) return "all"
       return next
     })
   }
@@ -271,13 +182,11 @@ export default function LogsPage() {
     )
   }
 
-  const catKeys = Object.keys(CATEGORY_LABEL)
-
   return (
     <PageShell>
       <PageHeader
         title="运行日志"
-        description="结构化运行日志：自动分类、去重计数、处置建议。内存保留最近 500 条，重启后清空。"
+        description="按时间线逐条输出运行日志。内存保留最近 2000 条，重启后清空。"
       />
 
       <SectionCard
@@ -331,43 +240,6 @@ export default function LogsPage() {
           </div>
         }
       >
-        <div className="mb-4 flex flex-wrap items-center gap-1.5">
-          <Badge
-            variant={categories === "all" ? "default" : "outline"}
-            className="cursor-pointer select-none"
-            onClick={() => setCategories("all")}
-          >
-            全部
-          </Badge>
-          {catKeys.map((cat) => {
-            const active = categories !== "all" && categories.has(cat)
-            const n = catCount.get(cat) ?? 0
-            return (
-              <Badge
-                key={cat}
-                variant={active ? "default" : "outline"}
-                className={cn(
-                  "cursor-pointer select-none",
-                  !active && n === 0 && "opacity-40"
-                )}
-                onClick={() => toggleCategory(cat)}
-              >
-                {CATEGORY_LABEL[cat]}
-                <span
-                  className={cn(
-                    "ml-1 rounded px-1 text-[0.625rem] tabular-nums",
-                    active
-                      ? "bg-primary-foreground/20"
-                      : "bg-muted-foreground/15"
-                  )}
-                >
-                  {n}
-                </span>
-              </Badge>
-            )
-          })}
-        </div>
-
         <DataState
           loading={loading}
           error={error}
@@ -382,7 +254,7 @@ export default function LogsPage() {
             <EmptyState
               icon={SearchX}
               title="无匹配日志"
-              description="调整级别/类别过滤或搜索关键词。"
+              description="调整级别过滤或搜索关键词。"
             />
           ) : (
             <div
@@ -398,9 +270,6 @@ export default function LogsPage() {
               >
                 {virtualizer.getVirtualItems().map((vi) => {
                   const l = shown[vi.index]
-                  const last = l.lastTs ?? l.ts
-                  const count = l.count ?? 1
-                  const cat = l.category
                   const key = rowKey(l, vi.index)
                   const open = expanded.has(key)
                   const s = levelStyle(l.level)
@@ -430,7 +299,8 @@ export default function LogsPage() {
                         className={cn(
                           "absolute inset-y-0 left-0 w-0.5",
                           s.rail,
-                          l.level === "info" && "opacity-0 group-hover/row:opacity-100"
+                          l.level === "info" &&
+                            "opacity-0 group-hover/row:opacity-100"
                         )}
                       />
 
@@ -440,16 +310,14 @@ export default function LogsPage() {
                         onClick={() => expandable && toggleRow(key)}
                         className={cn(
                           "flex w-full items-start gap-3 py-2 pr-3 pl-3.5 text-left",
-                          expandable
-                            ? "cursor-pointer"
-                            : "cursor-default"
+                          expandable ? "cursor-pointer" : "cursor-default"
                         )}
                       >
                         <time
-                          dateTime={new Date(last).toISOString()}
+                          dateTime={new Date(l.ts).toISOString()}
                           className="text-muted-foreground w-[4.5rem] shrink-0 pt-px tabular-nums"
                         >
-                          {new Date(last).toLocaleTimeString()}
+                          {new Date(l.ts).toLocaleTimeString()}
                         </time>
 
                         <span
@@ -461,36 +329,17 @@ export default function LogsPage() {
                           {l.level}
                         </span>
 
-                        <div className="min-w-0 flex-1">
-                          <div className="flex flex-wrap items-center gap-1.5">
-                            {cat ? (
-                              <span className="text-muted-foreground border-border/80 rounded border px-1 py-px text-[0.65rem] leading-none">
-                                {CATEGORY_LABEL[cat] ?? cat}
-                              </span>
-                            ) : null}
-                            {count > 1 ? (
-                              <span className="bg-muted text-muted-foreground rounded px-1 py-px text-[0.65rem] leading-none tabular-nums">
-                                ×{count}
-                              </span>
-                            ) : null}
-                            {l.retryable === false ? (
-                              <span className="text-destructive text-[0.65rem] font-medium">
-                                不可重试
-                              </span>
-                            ) : null}
-                            <span
-                              className={cn(
-                                "min-w-0 break-words",
-                                l.level === "error"
-                                  ? "text-foreground font-medium"
-                                  : "text-foreground/90",
-                                !open && "truncate"
-                              )}
-                            >
-                              {displayTitle(l)}
-                            </span>
-                          </div>
-                        </div>
+                        <span
+                          className={cn(
+                            "min-w-0 flex-1 break-words",
+                            l.level === "error"
+                              ? "text-foreground font-medium"
+                              : "text-foreground/90",
+                            !open && "truncate"
+                          )}
+                        >
+                          {l.msg}
+                        </span>
 
                         {expandable ? (
                           <ChevronRight
@@ -513,13 +362,6 @@ export default function LogsPage() {
                               l.sessionKey
                                 ? (["session", l.sessionKey] as const)
                                 : null,
-                              l.code ? (["code", l.code] as const) : null,
-                              count > 1
-                                ? ([
-                                    "首次",
-                                    new Date(l.ts).toLocaleTimeString(),
-                                  ] as const)
-                                : null,
                             ].filter(Boolean) as ReadonlyArray<
                               readonly [string, string]
                             >
@@ -527,7 +369,10 @@ export default function LogsPage() {
                             return (
                               <div className="text-muted-foreground flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
                                 {meta.map(([k, v]) => (
-                                  <span key={k} className="flex items-center gap-1.5">
+                                  <span
+                                    key={k}
+                                    className="flex items-center gap-1.5"
+                                  >
                                     <span className="opacity-55">{k}</span>
                                     <span className="text-foreground/80 tabular-nums">
                                       {v}
@@ -537,26 +382,10 @@ export default function LogsPage() {
                               </div>
                             )
                           })()}
-                          {l.hint ? (
-                            <p className="text-muted-foreground text-xs leading-relaxed">
-                              <span className="text-foreground/55">处置 </span>
-                              <span className="text-foreground/85">{l.hint}</span>
-                            </p>
-                          ) : null}
-                          {l.raw &&
-                          l.raw !== l.msg &&
-                          l.raw !== l.title ? (
+                          {l.raw && l.raw !== l.msg ? (
                             <pre className="bg-muted/80 text-muted-foreground max-h-36 overflow-auto rounded-md p-2.5 text-[0.7rem] leading-relaxed break-all whitespace-pre-wrap">
                               {l.raw}
                             </pre>
-                          ) : null}
-                          {!l.title &&
-                          !l.category &&
-                          l.msg &&
-                          l.msg !== displayTitle(l) ? (
-                            <p className="text-muted-foreground text-xs break-all whitespace-pre-wrap">
-                              {l.msg}
-                            </p>
                           ) : null}
                         </div>
                       ) : null}

@@ -3,11 +3,7 @@ import type { ErrorOccurred } from "../events"
 import type { ChannelId } from "../channels/types"
 import { legacySessionKeyToCanonical, parseSessionKey } from "../channels/ids"
 import { logger } from "../logger"
-import {
-  classifyError,
-  errorMessage,
-  chatRefFromSession,
-} from "../log-classify"
+import { errorMessage, chatRefFromSession } from "../log-context"
 
 export interface ErrorHandlerDeps {
   /** 自定义记录;缺省走结构化 logger.error(不经 console,避免 ring 双记) */
@@ -23,10 +19,7 @@ export function defaultFallbackText(supportUrl?: string): string {
 }
 
 // 再导出,兼容旧测试/调用方
-export {
-  errorMessage,
-  classifyError as explainErrorClassify,
-} from "../log-classify"
+export { errorMessage } from "../log-context"
 
 /** 从事件解析 channel + chatId(优先字段,否则 sessionKey) */
 function resolveTarget(e: {
@@ -48,14 +41,7 @@ function resolveTarget(e: {
   return {}
 }
 
-/** @deprecated 用 classifyError;保留薄包装兼容旧测试 */
-export function explainError(msg: string): string {
-  const c = classifyError(msg)
-  if (c.code === "unknown") return msg
-  return `【${c.title}】${c.hint} | 原始: ${msg}`
-}
-
-/** @deprecated 结构化日志后由 logger 负责格式;保留兼容旧测试 */
+/** 拼一行带上下文的错误文案(deps.logger 分支与旧测试用) */
 export function formatErrorLine(e: {
   scope: string
   err: unknown
@@ -64,34 +50,24 @@ export function formatErrorLine(e: {
   chatId?: string
 }): string {
   const raw = errorMessage(e.err)
-  const c = classifyError(raw)
   const { chatId, channel } = resolveTarget(e)
   const ctx: string[] = []
   if (channel && chatId) ctx.push(`${channel}:${chatId}`)
   if (e.sessionKey) ctx.push(`session=${e.sessionKey}`)
   const head = ctx.length ? `[${e.scope}] (${ctx.join(" ")})` : `[${e.scope}]`
-  if (c.code === "unknown") return `${head} ${raw}`
-  return `${head} 【${c.title}】${c.hint} | 原始: ${raw}`
+  return `${head} ${raw}`
 }
 
 function defaultLogError(scope: string, err: unknown, e: ErrorOccurred): void {
   const raw = errorMessage(err)
-  const c = classifyError(raw)
   const { channel, chatId } = resolveTarget(e)
-  // unknown:msg 用 raw 首行,避免 ring/stdout 只剩「未分类错误」;已分类用 title
-  const msg = c.code === "unknown" ? raw.split("\n")[0].slice(0, 300) : c.title
-  logger.error(msg, {
+  // 摘要取原文首行,完整原文(含 stack)放 raw,后台展开可看
+  logger.error(raw.split("\n")[0].slice(0, 300), {
     scope,
     channel,
     chatId,
     sessionKey: e.sessionKey,
-    code: c.code,
-    category: c.category,
-    title: c.title,
-    hint: c.hint,
-    retryable: c.retryable,
     raw,
-    skipClassify: true,
   })
 }
 
