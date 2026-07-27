@@ -195,4 +195,77 @@ describe("OneBotClient", () => {
     client = new OneBotClient("ws://127.0.0.1:1")
     expect(await client.getGroupMemberList(111)).toBeUndefined()
   })
+
+  it("open 后按 pingIntervalMs 主动发 ws ping", async () => {
+    let pings = 0
+    const port = await startServer((ws) => {
+      ws.on("ping", () => {
+        pings++
+      })
+    })
+    client = new OneBotClient(`ws://127.0.0.1:${port}`, undefined, undefined, {
+      pingIntervalMs: 30,
+      // 不让看门狗在本例中开火
+      livenessMs: 60_000,
+    })
+    client.start()
+    await new Promise((r) => setTimeout(r, 200))
+    expect(pings).toBeGreaterThanOrEqual(2)
+  })
+
+  it("服务端静默超过 livenessMs → terminate 并重新建连", async () => {
+    let connections = 0
+    const port = await startServer(() => {
+      connections++
+      // 建连后什么都不发，也不回 ping（pingIntervalMs 设得足够大，不会发出 ping）
+    })
+    client = new OneBotClient(`ws://127.0.0.1:${port}`, undefined, undefined, {
+      pingIntervalMs: 60_000,
+      livenessMs: 120,
+    })
+    client.start()
+    // 首连 + 看门狗开火 + backoff 1000ms 后重连
+    await new Promise((r) => setTimeout(r, 2500))
+    expect(connections).toBeGreaterThanOrEqual(2)
+    expect(client.stats().staleReconnects).toBeGreaterThanOrEqual(1)
+  }, 10_000)
+
+  it("heartbeat meta_event 不 emit 消息,且按 interval 收紧 deadline", async () => {
+    let connections = 0
+    let emitted = 0
+    const onMsg = () => {
+      emitted++
+    }
+    bus.on("message.received", onMsg)
+    try {
+      const port = await startServer((ws) => {
+        connections++
+        ws.send(
+          JSON.stringify({
+            post_type: "meta_event",
+            meta_event_type: "heartbeat",
+            interval: 20,
+          })
+        )
+      })
+      client = new OneBotClient(
+        `ws://127.0.0.1:${port}`,
+        undefined,
+        undefined,
+        {
+          pingIntervalMs: 60_000,
+          // 默认 deadline 很长；只有 retune 生效才会在测试窗口内开火
+          livenessMs: 60_000,
+          minLivenessMs: 10,
+          heartbeatFactor: 3,
+        }
+      )
+      client.start()
+      await new Promise((r) => setTimeout(r, 2500))
+      expect(connections).toBeGreaterThanOrEqual(2)
+      expect(emitted).toBe(0)
+    } finally {
+      bus.off("message.received", onMsg)
+    }
+  }, 10_000)
 })
