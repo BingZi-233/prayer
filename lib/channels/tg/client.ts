@@ -275,6 +275,10 @@ export class TelegramChannel implements Channel {
           { signal: this.abort.signal }
         )
         this.lastPollAt = Date.now()
+        // getUpdates 成功返回(哪怕是空数组)本身就是连通性证据。
+        // 必须在这里置位:botId 就位后 ensureIdentity 不再跑,否则超时/401 打成
+        // false 之后永远回不到 true,后台会谎报「已断连」。
+        this.setConnected(true)
 
         if (this.stopped) break
 

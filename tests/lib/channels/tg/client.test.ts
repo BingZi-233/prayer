@@ -381,4 +381,40 @@ describe("TelegramChannel", () => {
     expect(api.getUpdatesCalls).toBeGreaterThanOrEqual(2)
     expect(ch.status().detail).toContain("poll-timeouts=1")
   })
+
+  it("超时把 connected 打成 false 后,下一轮成功轮询要恢复成 true", async () => {
+    const api = makeMockApi({
+      hangFirstCall: true,
+      updatesQueue: [[], []],
+      admins: [{ userId: "55", role: "admin" }],
+    })
+    const ch = track(
+      new TelegramChannel("tok", {
+        getOffset: () => offset,
+        setOffset: (n) => {
+          offset = n
+        },
+        api,
+        pollTimeoutSec: 0,
+        pollDeadlineMs: 50,
+        sleep: (ms) => delay(Math.min(ms, 20)),
+        downloadImage: null,
+      })
+    )
+    await ch.start()
+    // 先等超时真的发生(计数进了 detail)
+    await waitFor(
+      () => (ch.status().detail ?? "").includes("poll-timeouts=1"),
+      "超时被记录",
+      4000
+    )
+    // 恢复:成功一轮 getUpdates 即视为连通,状态必须回到 true。
+    // botId 已就位后 ensureIdentity 不再跑,若成功路径不置位就会永久卡在 false。
+    await waitFor(
+      () => ch.isConnected(),
+      "轮询恢复后 connected 回到 true",
+      4000
+    )
+    expect(ch.status().lastError).toBeUndefined()
+  })
 })
