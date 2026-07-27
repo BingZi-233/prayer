@@ -1,6 +1,6 @@
 import type { ActionSend } from "../../events"
 import type { Channel, ChannelCapabilities, ChannelStatus } from "../types"
-import { OneBotClient } from "./client"
+import { OneBotClient, type OneBotStats } from "./client"
 
 const QQ_CAPABILITIES: ChannelCapabilities = {
   canNotifyOwnAdminSurface: true,
@@ -49,7 +49,7 @@ export class QqChannel implements Channel {
       id: this.id,
       connected: this.isConnected(),
       lastError: this.lastError,
-      detail: this.detail,
+      detail: formatQqDetail(this.client.stats()) ?? this.detail,
     }
   }
 
@@ -80,3 +80,21 @@ export class QqChannel implements Channel {
 }
 
 export { OneBotClient } from "./client"
+
+/**
+ * 把 OneBotStats 拼成人可读的 detail 串,供状态页展示链路是否新鲜。
+ * 两段都缺省时返回 undefined,由调用方回落到既有 detail。
+ */
+export function formatQqDetail(
+  stats: OneBotStats,
+  now: number = Date.now()
+): string | undefined {
+  const parts: string[] = []
+  if (stats.lastRxAt != null) {
+    parts.push(`rx=${Math.round((now - stats.lastRxAt) / 1000)}s ago`)
+  }
+  if (stats.staleReconnects > 0) {
+    parts.push(`stale-reconnects=${stats.staleReconnects}`)
+  }
+  return parts.length > 0 ? parts.join(" ") : undefined
+}
