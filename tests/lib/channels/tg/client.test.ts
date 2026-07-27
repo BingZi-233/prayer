@@ -46,6 +46,8 @@ function makeMockApi(opts?: {
   updatesQueue?: Update[][]
   /** getUpdates 挂起直到 abort（测 stop） */
   hangUntilAbort?: boolean
+  /** 仅第 1 次 getUpdates 挂起直到 abort（测硬超时后循环继续） */
+  hangFirstCall?: boolean
   admins?: { userId: string; role: "owner" | "admin" }[]
   adminsError?: Error
 }): TelegramBotApi & {
@@ -69,7 +71,10 @@ function makeMockApi(opts?: {
       signal?: AbortSignal
     ) {
       api.getUpdatesCalls++
-      if (opts?.hangUntilAbort) {
+      const hang =
+        opts?.hangUntilAbort ||
+        (opts?.hangFirstCall && api.getUpdatesCalls === 1)
+      if (hang) {
         await new Promise<never>((_resolve, reject) => {
           if (signal?.aborted) {
             const e = new Error("aborted")
@@ -349,5 +354,31 @@ describe("TelegramChannel", () => {
     await delay(20)
     await ch.stop()
     expect(ch.isConnected()).toBe(false)
+  })
+
+  it("getUpdates 卡死 → 硬超时后循环继续,下一轮仍能收到消息", async () => {
+    const api = makeMockApi({
+      hangFirstCall: true,
+      updatesQueue: [[groupUpdate(11, "after timeout")], []],
+      admins: [{ userId: "55", role: "admin" }],
+    })
+    const ch = track(
+      new TelegramChannel("tok", {
+        getOffset: () => offset,
+        setOffset: (n) => {
+          offset = n
+        },
+        api,
+        pollTimeoutSec: 0,
+        pollDeadlineMs: 50,
+        sleep: (ms) => delay(Math.min(ms, 20)),
+        downloadImage: null,
+      })
+    )
+    await ch.start()
+    await waitFor(() => received.length === 1, "超时后仍收到消息", 4000)
+    expect(received[0]!.rawText).toBe("after timeout")
+    expect(api.getUpdatesCalls).toBeGreaterThanOrEqual(2)
+    expect(ch.status().detail).toContain("poll-timeouts=1")
   })
 })

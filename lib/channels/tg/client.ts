@@ -5,6 +5,7 @@ import type { ActionSend } from "../../events"
 import { logger } from "../../logger"
 import { getNameCache } from "../../name-cache"
 import type { Channel, ChannelCapabilities, ChannelStatus } from "../types"
+import { DeadlineExceededError, withDeadline } from "../keepalive"
 import {
   AdminsCache,
   mapChatMembersToAdmins,
@@ -20,6 +21,11 @@ const TG_MAX_TEXT = 4096
 
 /** long poll 超时（秒）；单实例假设见文件头注释 */
 const DEFAULT_POLL_TIMEOUT_SEC = 30
+
+/** long poll 硬超时 = 服务端 timeout + 该余量；服务端正常会在 timeout 内回空数组 */
+export const POLL_DEADLINE_MARGIN_MS = 15_000
+/** getMe 身份校验硬超时 */
+export const IDENTITY_DEADLINE_MS = 20_000
 
 /** 可注入的 TG API 面，便于单测 mock */
 export interface TelegramBotApi {
@@ -58,6 +64,10 @@ export interface TelegramChannelOpts {
   api?: TelegramBotApi
   /** getUpdates long-poll 超时秒数，默认 30 */
   pollTimeoutSec?: number
+  /** getUpdates 硬超时毫秒；默认 pollTimeoutSec*1000 + 15000。仅单测覆盖 */
+  pollDeadlineMs?: number
+  /** getMe 硬超时毫秒；默认 20000。仅单测覆盖 */
+  identityDeadlineMs?: number
   /** 可注入 sleep（退避 / 单测加速） */
   sleep?: (ms: number) => Promise<void>
   /** 可注入 admins 缓存（单测） */
@@ -102,6 +112,11 @@ export class TelegramChannel implements Channel {
   private readonly getOffset: () => number
   private readonly setOffset: (n: number) => void
   private readonly pollTimeoutSec: number
+  private readonly pollDeadlineMs: number
+  private readonly identityDeadlineMs: number
+  /** 最近一次 getUpdates 成功返回的时刻（含返回空数组） */
+  private lastPollAt?: number
+  private pollTimeouts = 0
   private readonly sleep: (ms: number) => Promise<void>
   private readonly adminsCache: AdminsCache
   private readonly downloadImage:
@@ -116,6 +131,10 @@ export class TelegramChannel implements Channel {
     this.setOffset = opts.setOffset
     this.onStatus = opts.onStatus
     this.pollTimeoutSec = opts.pollTimeoutSec ?? DEFAULT_POLL_TIMEOUT_SEC
+    this.pollDeadlineMs =
+      opts.pollDeadlineMs ??
+      this.pollTimeoutSec * 1000 + POLL_DEADLINE_MARGIN_MS
+    this.identityDeadlineMs = opts.identityDeadlineMs ?? IDENTITY_DEADLINE_MS
     this.sleep = opts.sleep ?? defaultSleep
     this.api = opts.api ?? createGrammyApi(token)
     this.adminsCache =
@@ -173,6 +192,14 @@ export class TelegramChannel implements Channel {
     const detailParts: string[] = []
     if (this.botUsername) detailParts.push(`@${this.botUsername}`)
     detailParts.push(`offset=${this.safeOffset()}`)
+    if (this.lastPollAt != null) {
+      detailParts.push(
+        `rx=${Math.round((Date.now() - this.lastPollAt) / 1000)}s ago`
+      )
+    }
+    if (this.pollTimeouts > 0) {
+      detailParts.push(`poll-timeouts=${this.pollTimeouts}`)
+    }
     for (const b of this.adminsCache.listBypassBlocks()) {
       detailParts.push(`bypass-off:${b.chatId}:${b.reason}`)
     }
@@ -233,15 +260,21 @@ export class TelegramChannel implements Channel {
 
         this.abort = new AbortController()
         const offset = this.getOffset()
-        const updates = await this.api.getUpdates(
-          {
-            offset,
-            timeout: this.pollTimeoutSec,
-            // Phase 1 只收 message；忽略 edited 等
-            allowed_updates: ["message"],
-          },
-          this.abort.signal
+        const updates = await withDeadline(
+          (signal) =>
+            this.api.getUpdates(
+              {
+                offset,
+                timeout: this.pollTimeoutSec,
+                // Phase 1 只收 message；忽略 edited 等
+                allowed_updates: ["message"],
+              },
+              signal
+            ),
+          this.pollDeadlineMs,
+          { signal: this.abort.signal }
         )
+        this.lastPollAt = Date.now()
 
         if (this.stopped) break
 
@@ -263,7 +296,15 @@ export class TelegramChannel implements Channel {
           await this.sleep(10)
         }
       } catch (err) {
-        if (this.stopped || isAbortError(err)) break
+        // 顺序要紧：停机优先，其次超时（可恢复），最后才是真·停机 abort
+        if (this.stopped) break
+        if (err instanceof DeadlineExceededError) {
+          this.pollTimeouts++
+          this.setConnected(false)
+          await this.handlePollError(err)
+          continue
+        }
+        if (isAbortError(err)) break
         await this.handlePollError(err)
       }
     }
@@ -272,7 +313,11 @@ export class TelegramChannel implements Channel {
 
   private async ensureIdentity(): Promise<void> {
     this.abort = new AbortController()
-    const me = await this.api.getMe(this.abort.signal)
+    const me = await withDeadline(
+      (signal) => this.api.getMe(signal),
+      this.identityDeadlineMs,
+      { signal: this.abort.signal }
+    )
     if (this.stopped) return
     this.botId = me.id
     // username 可能为空（极少见）；mention 匹配依赖小写比较，空串则几乎不匹配
