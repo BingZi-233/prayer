@@ -178,7 +178,7 @@ export default function StatusPage() {
   const hasAlerts = (ov?.humanSessions ?? 0) > 0 || channelDown
 
   return (
-    <PageShell fill className="lg:gap-6">
+    <PageShell className="lg:gap-6">
       <PageHeader
         className="shrink-0"
         title="运行状态"
@@ -399,8 +399,6 @@ export default function StatusPage() {
             </div>
           ) : undefined
         }
-        className="flex min-h-0 flex-col lg:flex-1 lg:overflow-hidden"
-        contentClassName="flex min-h-0 flex-col lg:flex-1 lg:overflow-hidden"
       >
         {!usage ? (
           <div className="flex flex-wrap gap-2">
@@ -409,82 +407,78 @@ export default function StatusPage() {
             ))}
           </div>
         ) : (
-          <div className="lg:min-h-0 lg:flex-1 lg:overflow-auto lg:overscroll-contain">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>调用点</TableHead>
-                  <TableHead className="text-right">次数</TableHead>
-                  <TableHead className="text-right">命中率</TableHead>
-                  <TableHead className="hidden text-right sm:table-cell">
-                    缓存命中/写入
-                  </TableHead>
-                  <TableHead className="hidden text-right md:table-cell">
-                    未缓存输入
-                  </TableHead>
-                  <TableHead className="hidden text-right md:table-cell">
-                    输出
-                  </TableHead>
-                  <TableHead className="text-right">成本($)</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {usage.rows.map((r) => (
-                  <TableRow key={r.site}>
-                    <TableCell className="font-medium whitespace-nowrap">
-                      {r.label}
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {r.count}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <Badge
-                        variant={r.hitRatio >= 0.8 ? "default" : "secondary"}
-                      >
-                        {pct(r.hitRatio)}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="hidden text-right tabular-nums sm:table-cell">
-                      {kfmt(r.cacheRead)} / {kfmt(r.cacheCreation)}
-                    </TableCell>
-                    <TableCell className="hidden text-right tabular-nums md:table-cell">
-                      {kfmt(r.input)}
-                    </TableCell>
-                    <TableCell className="hidden text-right tabular-nums md:table-cell">
-                      {kfmt(r.output)}
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {r.costUsd.toFixed(4)}
-                    </TableCell>
-                  </TableRow>
-                ))}
-                <TableRow className="font-medium">
-                  <TableCell>合计</TableCell>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>调用点</TableHead>
+                <TableHead className="text-right">次数</TableHead>
+                <TableHead className="text-right">命中率</TableHead>
+                <TableHead className="hidden text-right sm:table-cell">
+                  缓存命中/写入
+                </TableHead>
+                <TableHead className="hidden text-right md:table-cell">
+                  未缓存输入
+                </TableHead>
+                <TableHead className="hidden text-right md:table-cell">
+                  输出
+                </TableHead>
+                <TableHead className="text-right">成本($)</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {usage.rows.map((r) => (
+                <TableRow key={r.site}>
+                  <TableCell className="font-medium whitespace-nowrap">
+                    {r.label}
+                  </TableCell>
                   <TableCell className="text-right tabular-nums">
-                    {usage.total.count}
+                    {r.count}
                   </TableCell>
                   <TableCell className="text-right">
-                    <Badge variant="secondary">
-                      {pct(usage.total.hitRatio)}
+                    <Badge
+                      variant={r.hitRatio >= 0.8 ? "default" : "secondary"}
+                    >
+                      {pct(r.hitRatio)}
                     </Badge>
                   </TableCell>
                   <TableCell className="hidden text-right tabular-nums sm:table-cell">
-                    {kfmt(usage.total.cacheRead)} /{" "}
-                    {kfmt(usage.total.cacheCreation)}
+                    {kfmt(r.cacheRead)} / {kfmt(r.cacheCreation)}
                   </TableCell>
                   <TableCell className="hidden text-right tabular-nums md:table-cell">
-                    {kfmt(usage.total.input)}
+                    {kfmt(r.input)}
                   </TableCell>
                   <TableCell className="hidden text-right tabular-nums md:table-cell">
-                    {kfmt(usage.total.output)}
+                    {kfmt(r.output)}
                   </TableCell>
                   <TableCell className="text-right tabular-nums">
-                    {usage.total.costUsd.toFixed(4)}
+                    {r.costUsd.toFixed(4)}
                   </TableCell>
                 </TableRow>
-              </TableBody>
-            </Table>
-          </div>
+              ))}
+              <TableRow className="font-medium">
+                <TableCell>合计</TableCell>
+                <TableCell className="text-right tabular-nums">
+                  {usage.total.count}
+                </TableCell>
+                <TableCell className="text-right">
+                  <Badge variant="secondary">{pct(usage.total.hitRatio)}</Badge>
+                </TableCell>
+                <TableCell className="hidden text-right tabular-nums sm:table-cell">
+                  {kfmt(usage.total.cacheRead)} /{" "}
+                  {kfmt(usage.total.cacheCreation)}
+                </TableCell>
+                <TableCell className="hidden text-right tabular-nums md:table-cell">
+                  {kfmt(usage.total.input)}
+                </TableCell>
+                <TableCell className="hidden text-right tabular-nums md:table-cell">
+                  {kfmt(usage.total.output)}
+                </TableCell>
+                <TableCell className="text-right tabular-nums">
+                  {usage.total.costUsd.toFixed(4)}
+                </TableCell>
+              </TableRow>
+            </TableBody>
+          </Table>
         )}
       </SectionCard>
 
