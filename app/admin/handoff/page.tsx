@@ -79,7 +79,7 @@ export default function HandoffQueuePage() {
       }).then((x) => x.json())
       if (r.ok) {
         toast.success("已恢复自动答")
-        await refresh()
+        await refresh({ force: true })
       } else {
         toast.error(r.error || "恢复失败")
       }
