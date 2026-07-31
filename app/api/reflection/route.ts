@@ -87,7 +87,8 @@ export async function GET(): Promise<NextResponse> {
         },
         groups,
         entries: entryRows,
-        compactions: repo.recentCompactions(30),
+        // 只给摘要:全文走 /api/reflection/compactions/[id](本页 3 秒轮询,全文会把响应顶到 MB 级)
+        compactions: repo.recentCompactionSummaries(10),
       })
     )
   } catch (err) {

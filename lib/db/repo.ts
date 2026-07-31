@@ -41,6 +41,16 @@ export function parseReflectionSource(
   return null
 }
 
+/** 解析存库的 JSON 字符串数组;非法或非数组一律回退 [] */
+function parseStringArray(s: string): string[] {
+  try {
+    const v = JSON.parse(s)
+    return Array.isArray(v) ? v : []
+  } catch {
+    return []
+  }
+}
+
 export class Repo {
   constructor(private db: Database.Database) {}
 
@@ -830,6 +840,67 @@ export class Repo {
     return { ok: true, content: row.content, status }
   }
 
+  // 最近 N 次整理记录的摘要(倒序),不含 before/after 全文。
+  // 反思专页每 3 秒轮询,每条记录的 before_json/after_json 是整批知识条目全文,
+  // 30 条曾把响应顶到 8MB+ / 单请求 30~90s 把进程打死 → 列表只给计数,全文走 compactionDetail。
+  recentCompactionSummaries(limit: number): {
+    id: number
+    ts: number
+    beforeCount: number
+    afterCount: number
+  }[] {
+    const rows = this.db
+      .prepare(
+        "SELECT id, ts, before_count, after_count FROM reflect_compactions ORDER BY ts DESC LIMIT ?"
+      )
+      .all(limit) as {
+      id: number
+      ts: number
+      before_count: number
+      after_count: number
+    }[]
+    return rows.map((r) => ({
+      id: r.id,
+      ts: r.ts,
+      beforeCount: r.before_count,
+      afterCount: r.after_count,
+    }))
+  }
+
+  // 单条整理记录详情(含 before/after 全文);查不到返回 null。前端展开时按需拉取。
+  compactionDetail(id: number): {
+    id: number
+    ts: number
+    beforeCount: number
+    afterCount: number
+    before: string[]
+    after: string[]
+  } | null {
+    const r = this.db
+      .prepare(
+        "SELECT id, ts, before_count, after_count, before_json, after_json FROM reflect_compactions WHERE id = ?"
+      )
+      .get(id) as
+      | {
+          id: number
+          ts: number
+          before_count: number
+          after_count: number
+          before_json: string
+          after_json: string
+        }
+      | undefined
+    if (!r) return null
+    return {
+      id: r.id,
+      ts: r.ts,
+      beforeCount: r.before_count,
+      afterCount: r.after_count,
+      before: parseStringArray(r.before_json),
+      after: parseStringArray(r.after_json),
+    }
+  }
+
   // 最近 N 次整理记录(倒序),before/after 内容内联(解析 JSON)
   recentCompactions(limit: number): {
     id: number
@@ -851,21 +922,13 @@ export class Repo {
       before_json: string
       after_json: string
     }[]
-    const parse = (s: string): string[] => {
-      try {
-        const v = JSON.parse(s)
-        return Array.isArray(v) ? v : []
-      } catch {
-        return []
-      }
-    }
     return rows.map((r) => ({
       id: r.id,
       ts: r.ts,
       beforeCount: r.before_count,
       afterCount: r.after_count,
-      before: parse(r.before_json),
-      after: parse(r.after_json),
+      before: parseStringArray(r.before_json),
+      after: parseStringArray(r.after_json),
     }))
   }
 
