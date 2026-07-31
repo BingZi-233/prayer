@@ -204,7 +204,7 @@ export default function GroupsPage() {
               "群内问 bot 请 @机器人;重置请 @机器人 后发「重置」;转人工请 @机器人 后发「人工」(单独发无效)。",
           })
         }
-        await refresh()
+        await refresh({ force: true })
       } else {
         toast.error(r.error || "保存失败")
       }
@@ -248,7 +248,7 @@ export default function GroupsPage() {
           `已保存 ${channelLabel(editing.channel)} · ${rowLabel(editing, name)} 的策略`
         )
         setEditing(null)
-        await refresh()
+        await refresh({ force: true })
       } else {
         toast.error(r.error || "保存失败")
       }
@@ -274,7 +274,7 @@ export default function GroupsPage() {
           `已恢复跟随全局: ${channelLabel(row.channel)} · ${rowLabel(row, name)}`
         )
         if (editing?.policyKey === row.policyKey) setEditing(null)
-        await refresh()
+        await refresh({ force: true })
       } else toast.error(r.error || "清除失败")
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e))

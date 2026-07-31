@@ -129,6 +129,72 @@ describe("reflection_meta / reflectionEntries", () => {
   })
 })
 
+describe("整理记录摘要 / 详情分离", () => {
+  // 需要直接改库造坏 JSON,单独持有 Database 句柄
+  let db: ReturnType<typeof openDb>
+  beforeEach(() => {
+    db = openDb(":memory:", 3)
+    repo = new Repo(db)
+  })
+
+  it("recentCompactionSummaries 不带 before/after 全文", () => {
+    repo.replaceReflectionEntries([], [], 1_000, ["旧甲", "旧乙"], ["新甲"])
+    const rows = repo.recentCompactionSummaries(10)
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toEqual({
+      id: rows[0].id,
+      ts: 1_000,
+      beforeCount: 2,
+      afterCount: 1,
+    })
+    // 摘要行绝不能夹带全文字段(轮询体积失控的根因)
+    expect(Object.keys(rows[0]).sort()).toEqual([
+      "afterCount",
+      "beforeCount",
+      "id",
+      "ts",
+    ])
+  })
+
+  it("recentCompactionSummaries 按 ts 倒序、limit 生效", () => {
+    for (const ts of [100, 300, 200]) {
+      repo.replaceReflectionEntries([], [], ts, [`b${ts}`], [`a${ts}`])
+    }
+    expect(repo.recentCompactionSummaries(2).map((r) => r.ts)).toEqual([
+      300, 200,
+    ])
+  })
+
+  it("compactionDetail 按 id 取单条全文", () => {
+    repo.replaceReflectionEntries([], [], 2_000, ["旧甲", "旧乙"], ["新甲"])
+    const id = repo.recentCompactionSummaries(1)[0].id
+    expect(repo.compactionDetail(id)).toEqual({
+      id,
+      ts: 2_000,
+      beforeCount: 2,
+      afterCount: 1,
+      before: ["旧甲", "旧乙"],
+      after: ["新甲"],
+    })
+  })
+
+  it("compactionDetail 查不到返回 null", () => {
+    expect(repo.compactionDetail(999999)).toBeNull()
+  })
+
+  it("compactionDetail 遇坏 JSON 回退空数组", () => {
+    repo.replaceReflectionEntries([], [], 3_000, ["旧"], ["新"])
+    const id = repo.recentCompactionSummaries(1)[0].id
+    db.prepare(
+      "UPDATE reflect_compactions SET before_json = '{坏', after_json = 'null' WHERE id = ?"
+    ).run(id)
+    expect(repo.compactionDetail(id)).toMatchObject({
+      before: [],
+      after: [],
+    })
+  })
+})
+
 describe("deleteKbChunk", () => {
   it("三表联动:kb_vec + kb_chunks + reflection_meta 全删", () => {
     const id = repo.insertKbEntry(
@@ -144,8 +210,7 @@ describe("deleteKbChunk", () => {
     // 检索也不再命中
     expect(repo.searchKb(vec(), 5).find((h) => h.id === id)).toBeUndefined()
     // meta 行也被清,不留孤儿(直接查表)
-    const d = (repo as unknown as { db: import("better-sqlite3").Database })
-      .db
+    const d = (repo as unknown as { db: import("better-sqlite3").Database }).db
     expect(
       d.prepare("SELECT 1 FROM reflection_meta WHERE chunk_id = ?").get(id)
     ).toBeUndefined()
@@ -156,7 +221,11 @@ describe("deleteKbChunk", () => {
   })
 
   it("无 meta 的 chunk 也能删(不报错)", () => {
-    const id = repo.insertKbChunk("human-reflection", "无meta", "human-reflection:qq:0:1")
+    const id = repo.insertKbChunk(
+      "human-reflection",
+      "无meta",
+      "human-reflection:qq:0:1"
+    )
     expect(repo.deleteKbChunk(id)).toBe(true)
     expect(repo.reflectionEntries()).toHaveLength(0)
   })

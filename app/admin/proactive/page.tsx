@@ -90,7 +90,7 @@ export default function ProactivePage() {
       }).then((x) => x.json())
       if (r.ok) {
         toast.success(enabled ? "已启用主动回复" : "已关闭主动回复")
-        await refresh()
+        await refresh({ force: true })
       } else toast.error(r.error || "保存失败")
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e))
@@ -109,7 +109,7 @@ export default function ProactivePage() {
       }).then((x) => x.json())
       if (r.ok) {
         toast.success(quality === "ok" ? "已标为恰当" : "已标为不当")
-        await refresh()
+        await refresh({ force: true })
       } else toast.error(r.error || "标记失败")
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e))
