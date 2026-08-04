@@ -1,8 +1,8 @@
 import { readFileSync, readdirSync } from "node:fs"
 import { join, sep } from "node:path"
-import { openDb } from "../lib/db/index"
-import { Repo } from "../lib/db/repo"
-import { embed } from "../lib/tools/embed"
+import { openDb } from "../lib/db/index.ts"
+import { Repo } from "../lib/db/repo.ts"
+import { embed } from "../lib/tools/embed.ts"
 
 export function chunkText(text: string, maxLen = 500): string[] {
   const paras = text

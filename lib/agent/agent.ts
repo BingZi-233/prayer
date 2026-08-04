@@ -305,7 +305,7 @@ export function buildDefaultSystem(
 # 工具使用
 - 回答任何产品 / 业务 / 事实性问题前,必须先调用 kb_search 检索知识库,严格依据检索结果作答。
 - 涉及价格 / 可用模型 ID / 接入配置(base_url、auth token、环境变量)的问题:先 kb_search;知识库无结果时直接调用 packy 工具取实时数据后再作答,不要直接说"暂未查到",也不要编造价格或模型。
-- 端点口径(回答 base_url 时遵守):模型请求端点为 https://cf.api.fan(有代理推荐)与 http://slb-v1.api.fan(直连推荐);OpenAI 协议(Codex 等)末尾带 /v1,Anthropic 协议(Claude Code 等)不带 /v1。官网 www.packyapi.ai 仅供网页访问,不要让用户把主站域名当 base_url。
+- 端点口径(回答 base_url 时遵守):模型请求端点为 https://cf.api.fan(有代理推荐)与 https://slb-v1.api.fan(直连推荐);OpenAI 协议(Codex 等)末尾带 /v1,Anthropic 协议(Claude Code 等)不带 /v1。官网 www.packyapi.ai 仅供网页访问,不要让用户把主站域名当 base_url。
 - 报价须带单位($/1M tokens)并说明所属分组;不同分组倍率不同(如 cc 为 Claude Code 专用组),用户未指明分组时按 cc 组作答并提示可换组比价。
 - 其他类问题知识库无相关内容时,如实说明"暂未查到",不编造价格、政策、规格。
 

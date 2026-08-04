@@ -41,10 +41,10 @@ ANTHROPIC_BASE_URL=https://cf.api.fan
 ANTHROPIC_AUTH_TOKEN=<在「令牌管理」建的 token,选 cc 组>
 ```
 
-模型请求端点二选一:`https://cf.api.fan`(有代理推荐)或 `http://slb-v1.api.fan`(直连推荐)。
+模型请求端点二选一:`https://cf.api.fan`(有代理推荐)或 `https://slb-v1.api.fan`(直连推荐)。
 SDK/CLI 原生读这两个 env → 无需改代码。模型 ID 用 `packy` 工具 `{ action: "models", endpoint: "anthropic" }` 查最新。
 anthropic 端点路径:`/v1/messages`(base_url 本身不带 /v1)。
-OpenAI 协议场景(Codex 等)base_url 末尾需带 /v1,即 `https://cf.api.fan/v1` 或 `http://slb-v1.api.fan/v1`。
+OpenAI 协议场景(Codex 等)base_url 末尾需带 /v1,即 `https://cf.api.fan/v1` 或 `https://slb-v1.api.fan/v1`。
 主站域名 `www.packyapi.ai` 仅供网页访问,不要作为 base_url。
 
 ## 参考

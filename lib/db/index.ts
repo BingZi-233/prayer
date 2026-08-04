@@ -1,6 +1,6 @@
 import Database from "better-sqlite3"
 import * as sqliteVec from "sqlite-vec"
-import { legacySessionKeyToCanonical } from "@/lib/channels/ids"
+import { legacySessionKeyToCanonical } from "../channels/ids.ts"
 
 const DIM = 512 // bge-small-zh-v1.5 输出维度
 
