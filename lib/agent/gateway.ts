@@ -42,6 +42,10 @@ function helpText(supportUrl?: string): string {
   return `用法说明:问我请 @我;重置对话请 @我 后发「重置」;需要人工请 @我 后发「人工」(单独发「人工」无效)。${link}`
 }
 
+function adminHelpText(): string {
+  return "本群仅处理管理命令:`!reset <sessionKey>` 重置该会话上下文;`!resume <sessionKey>` 恢复自动答。客服问答请在生效会话内进行。"
+}
+
 /** atList 是否命中 bot 或任一额外监听 QQ(字符串 id) */
 export function isAtTrigger(
   atList: string[],
@@ -74,10 +78,8 @@ export function registerGateway(deps: GatewayDeps): () => void {
     const { channel, chatId, userId, messageId } = msg
     const onAdmin = isAdminSurface(adminSurface, channel, chatId)
 
-    // 生效会话门:非白名单且非管理面 → 完全忽略
-    if (!onAdmin && !isChatEnabled(enabledCfg, channel, chatId)) return
-
-    // 管理面命令优先（!reset / !resume）
+    // 管理面只负责管理:仅吃 !reset / !resume,绝不进客服流程
+    // （不建 session、不答话、不转人工、不吃「重置/人工/帮助」关键词）
     if (onAdmin && adminSurface) {
       const mReset = msg.rawText.match(/^!reset\s+(\S+)/)
       if (mReset) {
@@ -94,7 +96,18 @@ export function registerGateway(deps: GatewayDeps): () => void {
         bus.emit("handoff.resumed", { sessionKey: mResume[1], by: "admin" })
         return
       }
+      // 未识别的 ! 命令 → 回管理用法(去重,避免重连重放刷屏);其余消息静默
+      if (
+        msg.rawText.trim().startsWith("!") &&
+        !repo.seenMessage(makeDedupeKey(channel, chatId, messageId))
+      ) {
+        sendText(channel, chatId, adminHelpText(), messageId)
+      }
+      return
     }
+
+    // 生效会话门:非白名单 → 完全忽略
+    if (!isChatEnabled(enabledCfg, channel, chatId)) return
 
     const triggered =
       msg.botMentioned ?? isAtTrigger(msg.atList, botQQStr, extraAtQQs)

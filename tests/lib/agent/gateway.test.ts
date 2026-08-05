@@ -308,6 +308,58 @@ describe("gateway", () => {
     expect(repo.getResumeId(SK)).toBeUndefined()
   })
 
+  it("管理群 @bot 提问 → 不进客服流程(无 qualified / 无 session)", async () => {
+    const spy = vi.fn()
+    bus.on("message.qualified", spy)
+    const send = vi.fn()
+    bus.on("action.send", send)
+    bus.emit("message.received", {
+      channel: "qq" as const,
+      chatId: "999",
+      userId: "7",
+      messageId: "24",
+      rawText: "订单在哪",
+      atList: [BOT],
+    })
+    await new Promise((r) => setTimeout(r, 50))
+    expect(spy).not.toHaveBeenCalled()
+    expect(send).not.toHaveBeenCalled()
+    expect(repo.listSessions().some((s) => s.key.includes("999"))).toBe(false)
+  })
+
+  it("管理群「人工」关键词 → 不 emit handoff", async () => {
+    const spy = vi.fn()
+    bus.on("handoff.requested", spy)
+    bus.emit("message.received", {
+      channel: "qq" as const,
+      chatId: "999",
+      userId: "7",
+      messageId: "25",
+      rawText: "人工",
+      atList: [BOT],
+    })
+    await new Promise((r) => setTimeout(r, 50))
+    expect(spy).not.toHaveBeenCalled()
+  })
+
+  it("管理群未识别的 ! 命令 → 回管理用法,且同 messageId 不重复回", async () => {
+    const send = vi.fn()
+    bus.on("action.send", send)
+    const msg = {
+      channel: "qq" as const,
+      chatId: "999",
+      userId: "7",
+      messageId: "26",
+      rawText: "!foo bar",
+      atList: [BOT],
+    }
+    bus.emit("message.received", msg)
+    bus.emit("message.received", msg)
+    await new Promise((r) => setTimeout(r, 50))
+    expect(send).toHaveBeenCalledTimes(1)
+    expect(send.mock.calls[0][0].text).toContain("!reset")
+  })
+
   it("帮助关键词回用法", async () => {
     const p = new Promise<any>((res) => bus.once("action.send", res))
     bus.emit(

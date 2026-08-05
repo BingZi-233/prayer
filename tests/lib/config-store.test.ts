@@ -10,6 +10,7 @@ import {
   enabledChatsFromLegacy,
   normalizeChatRefs,
   normalizeAdminSurface,
+  excludeAdminSurface,
 } from "@/lib/config-store"
 
 function mkRepo(): Repo {
@@ -207,6 +208,71 @@ describe("config-store", () => {
       { channel: "qq", chatId: "100" },
       { channel: "tg", chatId: "-99" },
     ])
+  })
+
+  it("excludeAdminSurface:剔除同 channel+chatId,null 管理面原样返回", () => {
+    const chats = [
+      { channel: "qq" as const, chatId: "100" },
+      { channel: "qq" as const, chatId: "999" },
+      { channel: "tg" as const, chatId: "999" },
+    ]
+    expect(
+      excludeAdminSurface(chats, { channel: "qq", chatId: "999" })
+    ).toEqual([
+      { channel: "qq", chatId: "100" },
+      { channel: "tg", chatId: "999" },
+    ])
+    expect(excludeAdminSurface(chats, null)).toEqual(chats)
+  })
+
+  it("setConfig:管理群写进 enabledChats 会被剔除(改哪一侧都成立)", () => {
+    const repo = mkRepo()
+    getConfig(repo, {})
+    setConfig(repo, { adminSurface: { channel: "qq", chatId: "999" } })
+    // 白名单侧误写管理群
+    setConfig(repo, {
+      enabledChats: [
+        { channel: "qq", chatId: "100" },
+        { channel: "qq", chatId: "999" },
+      ],
+    })
+    expect(getConfig(repo, {}).enabledChats).toEqual([
+      { channel: "qq", chatId: "100" },
+    ])
+
+    // 反向:先进白名单,再把该群设为管理面
+    setConfig(repo, {
+      adminSurface: null,
+      enabledChats: [
+        { channel: "qq", chatId: "100" },
+        { channel: "qq", chatId: "200" },
+      ],
+    })
+    setConfig(repo, { adminSurface: { channel: "qq", chatId: "200" } })
+    expect(getConfig(repo, {}).enabledChats).toEqual([
+      { channel: "qq", chatId: "100" },
+    ])
+  })
+
+  it("旧库残留:管理群在 enabledChats 里 → 读取时剔除并写回", () => {
+    const repo = mkRepo()
+    repo.setConfigRow(
+      "app",
+      JSON.stringify({
+        botQQ: 5,
+        adminSurface: { channel: "qq", chatId: "999" },
+        enabledChats: [
+          { channel: "qq", chatId: "999" },
+          { channel: "qq", chatId: "100" },
+        ],
+      })
+    )
+    const cfg = getConfig(repo, {})
+    expect(cfg.enabledChats).toEqual([{ channel: "qq", chatId: "100" }])
+    const stored = JSON.parse(repo.getConfigRow("app")!) as {
+      enabledChats: unknown
+    }
+    expect(stored.enabledChats).toEqual([{ channel: "qq", chatId: "100" }])
   })
 
   it("旧库 dual fields 一次性 migrate 写回 SOT", () => {

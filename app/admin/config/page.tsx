@@ -130,6 +130,14 @@ function withTgChats(chats: ChatRef[], ids: string[]): ChatRef[] {
   ]
 }
 
+/** 管理面与生效会话互斥：切换管理面时同步剔除白名单里的同一 chat */
+function withoutAdminChat(chats: ChatRef[], admin: ChatRef | null): ChatRef[] {
+  if (!admin) return chats
+  const id = admin.chatId.trim()
+  if (!id) return chats
+  return chats.filter((c) => !(c.channel === admin.channel && c.chatId === id))
+}
+
 function adminQqId(surface: ChatRef | null | undefined): number {
   if (surface?.channel === "qq") {
     const n = Number(surface.chatId)
@@ -378,6 +386,17 @@ export default function ConfigPage() {
     if (!cfg) return
     const id = tgChatDraft.trim()
     if (!id) return
+    // 管理面同一 chat 不能当生效会话
+    if (
+      cfg.adminSurface?.channel === "tg" &&
+      cfg.adminSurface.chatId.trim() === id
+    ) {
+      toast.message("管理面会话不能设为生效会话", {
+        description: "该会话只处理 !reset / !resume 管理命令。",
+      })
+      setTgChatDraft("")
+      return
+    }
     // 禁止 Number 化：超级群 id 常为负大整数，字符串原样保留
     const next = mergeTgChats(tgChatIds(cfg.enabledChats), id)
     setCfg({ ...cfg, enabledChats: withTgChats(cfg.enabledChats, next) })
@@ -394,6 +413,13 @@ export default function ConfigPage() {
 
   function toggleGroup(id: number) {
     if (!cfg) return
+    // 管理群只负责管理命令,不能同时当生效会话
+    if (adminQqId(cfg.adminSurface) === id) {
+      toast.message("管理群不能设为生效群", {
+        description: "该群只处理 !reset / !resume 管理命令,不参与客服问答。",
+      })
+      return
+    }
     const set = new Set(qqChatIds(cfg.enabledChats))
     if (set.has(id)) set.delete(id)
     else set.add(id)
@@ -411,20 +437,24 @@ export default function ConfigPage() {
       return
     }
     const prev = cfg.adminSurface
+    const next: ChatRef = {
+      channel,
+      chatId: prev?.channel === channel ? prev.chatId : "",
+    }
     setCfg({
       ...cfg,
-      adminSurface: {
-        channel,
-        chatId: prev?.channel === channel ? prev.chatId : "",
-      },
+      adminSurface: next,
+      enabledChats: withoutAdminChat(cfg.enabledChats, next),
     })
   }
 
   function setAdminChatId(chatId: string) {
     if (!cfg || !cfg.adminSurface) return
+    const next: ChatRef = { ...cfg.adminSurface, chatId }
     setCfg({
       ...cfg,
-      adminSurface: { ...cfg.adminSurface, chatId },
+      adminSurface: next,
+      enabledChats: withoutAdminChat(cfg.enabledChats, next),
     })
   }
 
@@ -599,13 +629,20 @@ export default function ConfigPage() {
                                   <CommandItem
                                     key={g.groupId}
                                     value={`${g.groupName} ${g.groupId}`}
+                                    disabled={adminQq === g.groupId}
                                     onSelect={() => toggleGroup(g.groupId)}
                                   >
                                     <Checkbox
                                       checked={enabledQqIds.includes(g.groupId)}
+                                      disabled={adminQq === g.groupId}
                                       className="mr-2"
                                     />
                                     {g.groupName} ({g.groupId})
+                                    {adminQq === g.groupId && (
+                                      <span className="ml-1 text-xs text-muted-foreground">
+                                        管理群
+                                      </span>
+                                    )}
                                   </CommandItem>
                                 ))}
                               </CommandGroup>
@@ -629,7 +666,8 @@ export default function ConfigPage() {
                         </div>
                       )}
                       <FieldDescription>
-                        仅这些群里 bot 才会回复。也可在「生效会话」页一键开关。
+                        仅这些群里 bot
+                        才会回复。管理群不可选(只处理管理命令)。也可在「生效会话」页一键开关。
                       </FieldDescription>
                     </>
                   ) : (

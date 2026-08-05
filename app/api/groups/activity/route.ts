@@ -26,6 +26,10 @@ export async function GET(): Promise<NextResponse> {
     const enabled = listEnabledChats(cfg)
     const enabledSet = new Set(enabled.map((c) => chatKey(c.channel, c.chatId)))
     const { cursors, msg, sed } = buildGroupStatMaps(repo)
+    // 管理面:始终列出但不可勾生效(只跑管理命令,不进客服流程)
+    const adminKey = cfg.adminSurface
+      ? chatKey(cfg.adminSurface.channel, cfg.adminSurface.chatId)
+      : null
 
     // 含有策略覆盖但尚未产生消息的群也要列出
     // 策略 key 可能是 "qq:100" / "tg:-1" 新格式,或旧库裸群号字符串
@@ -35,6 +39,7 @@ export async function GET(): Promise<NextResponse> {
       ...msg.keys(),
       ...cursors.keys(),
     ])
+    if (adminKey) ids.add(adminKey)
     for (const k of policyKeys) {
       if (k.includes(":")) {
         ids.add(k)
@@ -52,12 +57,15 @@ export async function GET(): Promise<NextResponse> {
         const policy: GroupPolicy = getGroupPolicy(cfg, channel, chatId) ?? {}
         const hasOverride = Object.keys(policy).length > 0
         const gid = Number(chatId)
+        const isAdmin = adminKey === key
         return {
           channel,
           chatId,
           // 兼容旧前端
           groupId: Number.isFinite(gid) ? gid : 0,
-          enabled: enabledSet.has(chatKey(channel, chatId)),
+          isAdmin,
+          // 管理群与生效会话互斥,永远 false
+          enabled: !isAdmin && enabledSet.has(chatKey(channel, chatId)),
           messageCount: msg.get(key)?.count ?? 0,
           lastTs: msg.get(key)?.lastTs ?? 0,
           cursor: cursors.get(key) ?? 0,

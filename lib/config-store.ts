@@ -133,6 +133,20 @@ export function normalizeChatRefs(raw: unknown): ChatRef[] {
   return out
 }
 
+/**
+ * 管理面与生效会话互斥：管理群只跑管理命令，不进客服流程。
+ * 后台误勾 / 旧库残留一律在写路径剔除。
+ */
+export function excludeAdminSurface(
+  chats: ChatRef[],
+  admin: ChatRef | null
+): ChatRef[] {
+  if (!admin) return chats
+  return chats.filter(
+    (c) => !(c.channel === admin.channel && c.chatId === admin.chatId)
+  )
+}
+
 /** 规范化管理面：合法 chat-ref 或 null */
 export function normalizeAdminSurface(raw: unknown): ChatRef | null {
   if (raw == null) return null
@@ -305,6 +319,15 @@ export function migrateConfigShape(
   // 再规范化一次，防止 rest 里脏 chat-ref
   merged.enabledChats = normalizeChatRefs(merged.enabledChats)
   merged.adminSurface = normalizeAdminSurface(merged.adminSurface)
+  // 管理群若残留在白名单里 → 剔除并写回
+  const withoutAdmin = excludeAdminSurface(
+    merged.enabledChats,
+    merged.adminSurface
+  )
+  if (withoutAdmin.length !== merged.enabledChats.length) {
+    merged.enabledChats = withoutAdmin
+    migrated = true
+  }
 
   return { cfg: merged, migrated }
 }
@@ -343,6 +366,8 @@ export function setConfig(repo: Repo, patch: Partial<AppConfig>): AppConfig {
   if (patch.adminSurface !== undefined) {
     next.adminSurface = normalizeAdminSurface(patch.adminSurface)
   }
+  // 互斥不变式:管理群永不出现在生效会话里(改哪一侧都重算)
+  next.enabledChats = excludeAdminSurface(next.enabledChats, next.adminSurface)
   repo.setConfigRow(KEY, JSON.stringify(next))
   return next
 }

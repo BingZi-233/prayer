@@ -62,6 +62,8 @@ interface Row {
   chatId: string
   /** 兼容旧字段；勿作主键 */
   groupId: number
+  /** 管理群：只跑管理命令，不可勾生效、无策略 */
+  isAdmin?: boolean
   enabled: boolean
   messageCount: number
   lastTs: number
@@ -322,7 +324,7 @@ export default function GroupsPage() {
       <SectionCard
         title="会话活动与策略"
         icon={Users}
-        description="可在配置页修改全局默认；表格内可按会话覆盖。"
+        description="可在配置页修改全局默认；表格内可按会话覆盖。管理群只处理 !reset / !resume，不参与客服问答。"
       >
         <DataState
           loading={loading}
@@ -357,6 +359,14 @@ export default function GroupsPage() {
                           {channelLabel(r.channel)}
                         </Badge>
                         <span>{rowLabel(r, name)}</span>
+                        {r.isAdmin && (
+                          <Badge
+                            variant="secondary"
+                            className="px-1.5 text-[10px]"
+                          >
+                            管理群
+                          </Badge>
+                        )}
                       </div>
                       <span className="font-mono text-xs text-muted-foreground">
                         {r.chatId}
@@ -364,62 +374,82 @@ export default function GroupsPage() {
                     </div>
                   </TableCell>
                   <TableCell>
-                    <div className="flex items-center gap-2">
-                      <Switch
-                        checked={r.enabled}
-                        disabled={busyKey === r.policyKey}
-                        onCheckedChange={(v) => toggle(r, v)}
-                      />
-                      <Badge variant={r.enabled ? "default" : "secondary"}>
-                        {r.enabled ? "生效" : "未生效"}
-                      </Badge>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-1.5">
-                      <Badge
-                        variant={
-                          r.effective.proactiveEnabled ? "default" : "secondary"
-                        }
-                      >
-                        {r.effective.proactiveEnabled ? "开" : "关"}
-                      </Badge>
-                      {r.policy.proactiveEnabled !== undefined && (
-                        <span className="text-[10px] text-muted-foreground">
-                          覆盖
-                        </span>
-                      )}
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-sm tabular-nums">
-                        {min(r.effective.proactiveSilenceMs)}
+                    {r.isAdmin ? (
+                      <span className="text-xs text-muted-foreground">
+                        仅管理命令
                       </span>
-                      {r.policy.proactiveSilenceMs !== undefined && (
-                        <span className="text-[10px] text-muted-foreground">
-                          覆盖
-                        </span>
-                      )}
-                    </div>
+                    ) : (
+                      <div className="flex items-center gap-2">
+                        <Switch
+                          checked={r.enabled}
+                          disabled={busyKey === r.policyKey}
+                          onCheckedChange={(v) => toggle(r, v)}
+                        />
+                        <Badge variant={r.enabled ? "default" : "secondary"}>
+                          {r.enabled ? "生效" : "未生效"}
+                        </Badge>
+                      </div>
+                    )}
                   </TableCell>
                   <TableCell>
-                    <div className="flex items-center gap-1.5">
-                      <Badge
-                        variant={
-                          r.effective.notifyAdminOnHandoff
-                            ? "outline"
-                            : "secondary"
-                        }
-                      >
-                        {r.effective.notifyAdminOnHandoff ? "通知" : "静默"}
-                      </Badge>
-                      {r.policy.notifyAdminOnHandoff !== undefined && (
-                        <span className="text-[10px] text-muted-foreground">
-                          覆盖
+                    {r.isAdmin ? (
+                      <span className="text-muted-foreground">—</span>
+                    ) : (
+                      <div className="flex items-center gap-1.5">
+                        <Badge
+                          variant={
+                            r.effective.proactiveEnabled
+                              ? "default"
+                              : "secondary"
+                          }
+                        >
+                          {r.effective.proactiveEnabled ? "开" : "关"}
+                        </Badge>
+                        {r.policy.proactiveEnabled !== undefined && (
+                          <span className="text-[10px] text-muted-foreground">
+                            覆盖
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    {r.isAdmin ? (
+                      <span className="text-muted-foreground">—</span>
+                    ) : (
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-sm tabular-nums">
+                          {min(r.effective.proactiveSilenceMs)}
                         </span>
-                      )}
-                    </div>
+                        {r.policy.proactiveSilenceMs !== undefined && (
+                          <span className="text-[10px] text-muted-foreground">
+                            覆盖
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    {r.isAdmin ? (
+                      <span className="text-muted-foreground">—</span>
+                    ) : (
+                      <div className="flex items-center gap-1.5">
+                        <Badge
+                          variant={
+                            r.effective.notifyAdminOnHandoff
+                              ? "outline"
+                              : "secondary"
+                          }
+                        >
+                          {r.effective.notifyAdminOnHandoff ? "通知" : "静默"}
+                        </Badge>
+                        {r.policy.notifyAdminOnHandoff !== undefined && (
+                          <span className="text-[10px] text-muted-foreground">
+                            覆盖
+                          </span>
+                        )}
+                      </div>
+                    )}
                   </TableCell>
                   <TableCell className="text-right tabular-nums">
                     {r.messageCount}
@@ -429,14 +459,16 @@ export default function GroupsPage() {
                   </TableCell>
                   <TableCell>
                     <div className="flex gap-1">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => openEditor(r)}
-                      >
-                        <Settings2 data-icon="inline-start" />
-                        编辑
-                      </Button>
+                      {!r.isAdmin && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => openEditor(r)}
+                        >
+                          <Settings2 data-icon="inline-start" />
+                          编辑
+                        </Button>
+                      )}
                       {r.hasOverride && (
                         <Button
                           size="sm"
