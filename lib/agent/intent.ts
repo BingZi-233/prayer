@@ -1,5 +1,6 @@
 import { query as sdkQuery } from "@anthropic-ai/claude-agent-sdk"
 import { noToolQueryOptions, drainQuery } from "./agent"
+import { sanitizeForModel } from "./sanitize-input"
 
 // 面向 QQ 用户客服 bot 的入站意图分类。只用于在 orchestrator 前置硬拦「套取类」滥用:
 //   bulk_export —— 索要整库/大批量导出(全部售后/订单/模型/计费、指定超长字数)
@@ -28,9 +29,12 @@ export const BLOCKED_REPLY =
 const USER_BEGIN = "<<<UNTRUSTED_USER_MESSAGE>>>"
 const USER_END = "<<<END_UNTRUSTED_USER_MESSAGE>>>"
 
-// 剥离用户伪造的定界符,防止其提前闭合数据块再注入指令(breakout)
+// 剥离用户伪造的定界符,防止其提前闭合数据块再注入指令(breakout);
+// 再 sanitize 敏感词,避免分类请求被 MiniMax new_sensitive 整单拒绝。
 function wrapUserText(text: string): string {
-  const clean = text.split(USER_BEGIN).join("").split(USER_END).join("")
+  const clean = sanitizeForModel(
+    text.split(USER_BEGIN).join("").split(USER_END).join("")
+  )
   return `${USER_BEGIN}\n${clean}\n${USER_END}`
 }
 

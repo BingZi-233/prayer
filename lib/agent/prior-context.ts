@@ -1,3 +1,5 @@
+import { sanitizeForModel } from "./sanitize-input"
+
 export const PRIOR_USER_CONTEXT_LIMIT = 10
 export const PRIOR_CONTEXT_MAX_CHARS = 2000
 export const PRIOR_LINE_MAX_CHARS = 400
@@ -5,7 +7,8 @@ export const EMPTY_AT_PLACEHOLDER =
   "（用户仅 @ 了 bot，无新正文；请结合近期发言作答）"
 
 function normalizeLine(text: string, lineMax: number): string {
-  let t = text.trim()
+  // prior 会并入 agent prompt,先剔敏感词
+  let t = sanitizeForModel(text).trim()
   if (t.length > lineMax) t = t.slice(0, lineMax - 1) + "…"
   return t
     .replace(/\n+/g, "\n")

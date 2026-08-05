@@ -1,10 +1,12 @@
 import { query as sdkQuery } from "@anthropic-ai/claude-agent-sdk"
 import { bus } from "../bus"
 import { logger } from "../logger"
+import { errorMessage } from "../log-context"
 import type { Repo, KbHit } from "../db/repo"
 import { embed as defaultEmbed } from "../tools/embed"
 import { noToolQueryOptions, drainQuery } from "./agent"
 import { pickArrayFieldDual, previewJsonPayload } from "./json-output"
+import { isNewSensitiveError, sanitizeForModel } from "./sanitize-input"
 import type { ChannelId } from "../channels/types"
 import type { ChatRef } from "../channels/enabled-chats"
 
@@ -283,7 +285,7 @@ async function scanOnce(d: Resolved): Promise<void> {
       const transcript = window
         .map(
           (m) =>
-            `[ts=${m.createdAt}][${label(m.senderRole)} ${m.userId}] ${m.text}`
+            `[ts=${m.createdAt}][${label(m.senderRole)} ${m.userId}] ${sanitizeForModel(m.text)}`
         )
         .join("\n")
       // 用客服发言 + 用户问题检索已有知识,供 LLM 去重判断
@@ -295,7 +297,7 @@ async function scanOnce(d: Resolved): Promise<void> {
             m.senderRole === "member" ||
             !m.senderRole
         )
-        .map((m) => m.text)
+        .map((m) => sanitizeForModel(m.text))
       const kbHits = await collectKbContext(
         d.repo,
         d.embed,
@@ -373,6 +375,16 @@ async function scanOnce(d: Resolved): Promise<void> {
       }
       d.repo.setGroupReflectCursor(channel, chatId, until) // 成功才推进游标
     } catch (err) {
+      // MiniMax 敏感审核:清洗后仍可能漏网。跳过本窗推进游标,避免反复重撞。
+      // 不发 error.occurred → 避免 error-handler 向整群广播「系统繁忙」。
+      if (isNewSensitiveError(err)) {
+        d.repo.setGroupReflectCursor(channel, chatId, until)
+        logger.warn(
+          `new_sensitive 跳过本窗 cursor→${until}: ${errorMessage(err).split("\n")[0].slice(0, 200)}`,
+          { scope: "reflection", channel: channel as ChannelId, chatId }
+        )
+        continue
+      }
       // 该会话不推进游标 → 下轮重试;剪枝上限保证最终自愈(超 lookback+settle 放弃)
       bus.emit("error.occurred", {
         scope: "reflection",

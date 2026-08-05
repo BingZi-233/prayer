@@ -5,6 +5,7 @@ import type {
   SDKUserMessage,
 } from "@anthropic-ai/claude-agent-sdk"
 import { usageStats, type UsageSite, type UsageDelta } from "../usage-stats"
+import { sanitizeForModel } from "./sanitize-input"
 
 // 当前消息的会话上下文(orchestrator/poller 绑定,透传给 run;工具改由 cs 插件承载后当前未使用,保留签名)
 export interface ToolContext {
@@ -162,12 +163,13 @@ export interface AgentMedia {
   forwarded?: string
 }
 
-// 折叠引用/转发为文本前言,与正文拼接
+// 折叠引用/转发为文本前言,与正文拼接;用户侧文本一律 sanitize,防 MiniMax new_sensitive
 function foldPreamble(text: string, media?: AgentMedia): string {
   return [
-    media?.quoted && `【用户引用了一条消息:${media.quoted}】`,
-    media?.forwarded && `【用户转发的合并消息:\n${media.forwarded}】`,
-    text,
+    media?.quoted && `【用户引用了一条消息:${sanitizeForModel(media.quoted)}】`,
+    media?.forwarded &&
+      `【用户转发的合并消息:\n${sanitizeForModel(media.forwarded)}】`,
+    sanitizeForModel(text),
   ]
     .filter(Boolean)
     .join("\n")

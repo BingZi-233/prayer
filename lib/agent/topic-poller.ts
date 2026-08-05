@@ -1,11 +1,13 @@
 import { query as sdkQuery } from "@anthropic-ai/claude-agent-sdk"
 import { bus } from "../bus"
 import { logger } from "../logger"
+import { errorMessage } from "../log-context"
 import type { Repo } from "../db/repo"
 import { embed as defaultEmbed } from "../tools/embed"
 import { noToolQueryOptions, drainQuery } from "./agent"
 import { pickArrayFieldDual, previewJsonPayload } from "./json-output"
 import { textNearlySame } from "./reflection-poller"
+import { isNewSensitiveError, sanitizeForModel } from "./sanitize-input"
 import type { ChannelId } from "../channels/types"
 import type { ChatRef } from "../channels/enabled-chats"
 
@@ -155,8 +157,15 @@ async function scanOnce(d: Resolved): Promise<void> {
     if (!d.isBypassEnabled(channel, chatId)) continue
     const cursor = d.repo.topicCursor(channel, chatId)
     if (until <= cursor) continue
+    // 提到 try 外:new_sensitive 时需用本批 msgs 推进游标,避免整群卡死
+    let msgs: {
+      userId: string
+      text: string
+      createdAt: number
+      messageId: string | null
+    }[] = []
     try {
-      const msgs = d.repo
+      msgs = d.repo
         .groupMemberMessagesBetween(channel, chatId, cursor, until)
         .filter((m) => m.text.trim())
         .slice(0, d.windowMax)
@@ -172,9 +181,14 @@ async function scanOnce(d: Resolved): Promise<void> {
       const existingIds = new Set(topics.map((t) => t.id))
       const topicBlock =
         topics.length > 0
-          ? topics.map((t) => `[${t.id}] ${t.title}`).join("\n")
+          ? topics
+              .map((t) => `[${t.id}] ${sanitizeForModel(t.title)}`)
+              .join("\n")
           : "(无)"
-      const qBlock = msgs.map((m, i) => `[${i}] ${m.text}`).join("\n")
+      // 送模型前剔除敏感词;occurrence 仍写 DB 原文
+      const qBlock = msgs
+        .map((m, i) => `[${i}] ${sanitizeForModel(m.text)}`)
+        .join("\n")
       const prompt = `【现有主题】\n${topicBlock}\n\n【待归类问题】\n${qBlock}`
 
       const { text: out, structuredOutput } = await drainQuery(
@@ -250,6 +264,17 @@ async function scanOnce(d: Resolved): Promise<void> {
         d.repo.setTopicCursor(channel, chatId, maxTs)
       })
     } catch (err) {
+      // MiniMax 敏感审核:清洗后仍可能漏网。跳过本批推进游标,避免每 5 分钟重撞同一批。
+      // 不发 error.occurred → 避免 error-handler 向整群广播「系统繁忙」。
+      if (isNewSensitiveError(err)) {
+        const skipTo = msgs.length ? msgs[msgs.length - 1].createdAt : until
+        d.repo.setTopicCursor(channel, chatId, skipTo)
+        logger.warn(
+          `new_sensitive 跳过本批 n=${msgs.length} cursor→${skipTo}: ${errorMessage(err).split("\n")[0].slice(0, 200)}`,
+          { scope: "topic", channel, chatId }
+        )
+        continue
+      }
       bus.emit("error.occurred", {
         scope: "topic",
         err,

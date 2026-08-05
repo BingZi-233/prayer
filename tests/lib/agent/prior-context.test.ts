@@ -53,4 +53,14 @@ describe("clipPriorTexts", () => {
     expect(kept).toEqual(["中消息BBBBBBBB", "新消息CCCCCCCC"])
     expect(kept).not.toContain("旧消息AAAAAAAA")
   })
+
+  it("prior 行剔除敏感词后再计入预算", () => {
+    const [line] = clipPriorTexts(
+      ["更换分组得翻墙是不是"],
+      2000,
+      PRIOR_LINE_MAX_CHARS
+    )
+    expect(line).toBe("更换分组得[网络]是不是")
+    expect(line).not.toContain("翻墙")
+  })
 })

@@ -1,5 +1,6 @@
 import { query as sdkQuery } from "@anthropic-ai/claude-agent-sdk"
 import { noToolQueryOptions, drainQuery } from "./agent"
+import { sanitizeForModel } from "./sanitize-input"
 
 // 主动兜底的可答性判官:判定一条群消息是否为「值得客服主动补位回答的 PackyAPI 产品咨询」。
 // 与 intent.ts 相反,fail-CLOSED:出错/无法解析 → false(主动插话宁可少发)。
@@ -9,7 +10,9 @@ const USER_BEGIN = "<<<UNTRUSTED_USER_MESSAGE>>>"
 const USER_END = "<<<END_UNTRUSTED_USER_MESSAGE>>>"
 
 function wrapUserText(text: string): string {
-  const clean = text.split(USER_BEGIN).join("").split(USER_END).join("")
+  const clean = sanitizeForModel(
+    text.split(USER_BEGIN).join("").split(USER_END).join("")
+  )
   return `${USER_BEGIN}\n${clean}\n${USER_END}`
 }
 

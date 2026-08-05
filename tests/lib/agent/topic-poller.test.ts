@@ -326,4 +326,60 @@ describe("topic-poller runScan", () => {
     expect(qf).not.toHaveBeenCalled()
     expect(repo.topicCursor("tg", "-1001")).toBe(0)
   })
+
+  it("送 LLM 的 prompt 已剔除敏感词(DB 原文保留)", async () => {
+    seed(repo, 100, 200, "member", "更换分组得翻墙是不是", NOW - 5000)
+    seed(repo, 100, 201, "member", "fq也算敏感词", NOW - 4000)
+    let seenPrompt = ""
+    const qf = vi.fn(async function* (args: { prompt: string }) {
+      seenPrompt = args.prompt
+      yield {
+        type: "result",
+        subtype: "success",
+        structured_output: {
+          items: [
+            { i: 0, noise: true },
+            { i: 1, noise: true },
+          ],
+        },
+      }
+    })
+    await runScan(opts(repo, { queryFn: qf as never }))
+    expect(qf).toHaveBeenCalled()
+    expect(seenPrompt).toContain("[网络]")
+    expect(seenPrompt).not.toMatch(/翻墙/)
+    expect(seenPrompt).not.toMatch(/(?<![a-zA-Z0-9])fq(?![a-zA-Z0-9])/i)
+    // 落库 occurrence 若有应是原文;本批 noise 无 occurrence,查 group_messages 仍是原文
+    const raw = repoDb(repo)
+      .prepare("SELECT text FROM group_messages WHERE group_id=? ORDER BY id")
+      .all("100") as { text: string }[]
+    expect(raw.map((r) => r.text)).toEqual([
+      "更换分组得翻墙是不是",
+      "fq也算敏感词",
+    ])
+  })
+
+  it("new_sensitive 错误 → 跳过本批推进游标,不卡死、不回用户", async () => {
+    seed(repo, 100, 200, "member", "怎么退款", NOW - 5000)
+    seed(repo, 100, 201, "member", "退款多久", NOW - 4000)
+    const errs: ErrorOccurred[] = []
+    const sends: unknown[] = []
+    bus.on("error.occurred", (e) => errs.push(e))
+    bus.on("action.send", (a) => sends.push(a))
+    await runScan(
+      opts(repo, {
+        queryFn: async function* () {
+          throw new Error(
+            "Claude Code returned an error result: API Error: 500 input new_sensitive (1026)"
+          )
+        } as never,
+      })
+    )
+    // 游标推进到本批最大 created_at,下轮不再重试同一批
+    expect(repo.topicCursor("qq", "100")).toBe(NOW - 4000)
+    expect(repo.rankingByWindow(0)).toHaveLength(0)
+    // 不发 error.occurred(避免 error-handler 向整群丢「系统繁忙」)
+    expect(errs.filter((e) => e.scope === "topic")).toHaveLength(0)
+    expect(sends).toHaveLength(0)
+  })
 })
