@@ -28,6 +28,8 @@ export function VirtualList<T>({
   className?: string
 }) {
   const parentRef = useRef<HTMLDivElement>(null)
+  // tanstack virtual 返回的函数无法被 React Compiler 安全 memo,属已知不兼容库,压掉警告
+  // eslint-disable-next-line react-hooks/incompatible-library
   const virtualizer = useVirtualizer({
     count: items.length,
     getScrollElement: () => parentRef.current,

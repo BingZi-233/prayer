@@ -116,7 +116,8 @@ function hasExpandableDetail(l: Log): boolean {
 
 export default function LogsPage() {
   const { data, error, loading, refresh } = usePolling<Log[]>("/api/logs")
-  const logs = data ?? []
+  // useMemo 固定引用:data 未变时 logs 不变,下游 useMemo 依赖才稳定
+  const logs = useMemo(() => data ?? [], [data])
   const [levels, setLevels] = useState<Set<string>>(
     new Set(["info", "warn", "error"])
   )
@@ -141,6 +142,8 @@ export default function LogsPage() {
 
   // 虚拟滚动:仅渲染可视区行,变高(展开详情)由 measureElement 自动重测。
   // 日志全量渲染会卡,虚拟化后 DOM 只保留可视区 + overscan。
+  // tanstack virtual 返回的函数无法被 React Compiler 安全 memo,属已知不兼容库,压掉警告
+  // eslint-disable-next-line react-hooks/incompatible-library
   const virtualizer = useVirtualizer({
     count: shown.length,
     getScrollElement: () => parentRef.current,

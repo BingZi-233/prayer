@@ -151,7 +151,8 @@ export default function GroupsPage() {
   const [silenceMin, setSilenceMin] = useState("3")
   const [handoffTri, setHandoffTri] = useState<Tri>("inherit")
 
-  const rows = data?.groups ?? []
+  // useMemo 固定引用:data 未变时 rows 不变,下游 useMemo 依赖才稳定
+  const rows = useMemo(() => data?.groups ?? [], [data?.groups])
   const globals = data?.globals
 
   const overrideCount = useMemo(

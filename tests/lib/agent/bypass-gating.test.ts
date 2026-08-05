@@ -15,7 +15,6 @@ import type {
   ChannelId,
 } from "@/lib/channels/types"
 import type Database from "better-sqlite3"
-import type { ActionSend } from "@/lib/events"
 import {
   isTgChatBypassEnabled,
   setTgBypassBlocked,
@@ -44,7 +43,7 @@ function makeTgChannel(): Channel {
     async stop() {},
     isConnected: () => true,
     status: () => ({ id: "tg", connected: true }),
-    async send(_a: ActionSend) {},
+    async send() {},
     isBypassEnabled: (chatId: string) => {
       // 与 TelegramChannel 相同：读 module 级 bypass-state
       return isTgChatBypassEnabled(chatId)

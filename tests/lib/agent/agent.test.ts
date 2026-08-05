@@ -15,7 +15,7 @@ type QueryFn = NonNullable<AgentDeps["queryFn"]>
 type QueryArgs = Parameters<QueryFn>[0]
 
 // 模拟 SDK query:产出 init(带 session_id)+ 一条 assistant 文本
-async function* fakeQuery(_args: QueryArgs) {
+async function* fakeQuery() {
   yield { type: "system", subtype: "init", session_id: "sid-new" }
   yield {
     type: "assistant",

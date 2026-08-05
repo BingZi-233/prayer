@@ -59,7 +59,7 @@ async function defaultBuilders(): Promise<RuntimeBuilders> {
     // 异步 scanOnce(await agent.run 期间)不会撞到 "database connection is not open"
     openDb: (p) => sharedDb(p),
     makeRepo: (db) => new Repo(db as never),
-    makeAgent: (cfg, _repo) =>
+    makeAgent: (cfg) =>
       new Agent({
         // 支持链接注入 system prompt,办不了事务时引导
         systemPrompt: "",
