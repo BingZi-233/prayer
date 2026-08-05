@@ -91,7 +91,7 @@ export function makeIntentClassifier(
             // maxTurns:1 下 SDK 直接 reject「Reached maximum number of turns」误判为错误。
             maxTurns: 2,
           }) as never,
-        }) as AsyncIterable<any>,
+        }),
         "intent"
       )
       return parseIntent(out)

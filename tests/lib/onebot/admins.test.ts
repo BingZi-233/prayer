@@ -73,6 +73,8 @@ describe("collectAdmins", () => {
     expect(
       collectAdmins([{ groupId: 1, members: [{ user_id: 0, role: "admin" }] }])
     ).toEqual([])
-    expect(collectAdmins([{ groupId: 1, members: "bad" as any }])).toEqual([])
+    expect(
+      collectAdmins([{ groupId: 1, members: "bad" as unknown as unknown[] }])
+    ).toEqual([])
   })
 })

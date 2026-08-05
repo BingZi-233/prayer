@@ -3,12 +3,24 @@ import { bus } from "../../bus"
 import type { ActionSend } from "../../events"
 import { logger } from "../../logger"
 import { enrich } from "../../onebot/enrich"
-import { parseGroupMessage } from "../../onebot/parse"
+import {
+  parseGroupMessage,
+  type RawGroupMessageEvent,
+} from "../../onebot/parse"
 import { StaleWatchdog } from "../keepalive"
 
 interface Pending {
-  resolve: (v: any) => void
+  resolve: (v: unknown) => void
   timer: ReturnType<typeof setTimeout>
+}
+
+// 入站帧(JSON.parse 结果):群消息事件字段 + 心跳/echo 回执字段的并集,只声明用到的;
+// 回执 data 为各 OneBot API 的应答载荷,留给调用方自行窄化
+type InboundFrame = RawGroupMessageEvent & {
+  meta_event_type?: string
+  interval?: number
+  echo?: string
+  data?: unknown
 }
 
 /** 主动 ping 间隔 */
@@ -150,7 +162,7 @@ export class OneBotClient {
       // 收到任何帧就算活着(解析成不成功都算)
       this.lastRxAt = Date.now()
       this.watchdog?.touch()
-      let evt: any
+      let evt: InboundFrame
       try {
         evt = JSON.parse(raw.toString())
       } catch {
@@ -262,7 +274,7 @@ export class OneBotClient {
     action: string,
     params: Record<string, unknown>,
     timeoutMs = 8000
-  ): Promise<any> {
+  ): Promise<unknown> {
     if (this.ws?.readyState !== WebSocket.OPEN)
       return Promise.resolve(undefined)
     const echo = `req_${++this.echoSeq}`

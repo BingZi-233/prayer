@@ -221,24 +221,29 @@ export default function KbPage() {
     setChunks([])
   }, [])
 
+  // 初始加载挪进异步边界:setState 不落在 effect 同步路径上
   useEffect(() => {
-    void loadFiles()
-    void loadStats()
+    void (async () => {
+      await Promise.all([loadFiles(), loadStats()])
+    })()
   }, [loadFiles, loadStats])
 
-  // 有文件时默认展开一级目录
-  useEffect(() => {
-    if (!files?.length) return
-    setExpanded((prev) => {
-      if (prev.size > 0) return prev
-      const next = new Set<string>()
-      for (const f of files) {
-        const i = f.indexOf("/")
-        if (i > 0) next.add(f.slice(0, i))
-      }
-      return next
-    })
-  }, [files])
+  // 有文件时默认展开一级目录(渲染期调整,替代 effect 内同步 setState)
+  const [prevFiles, setPrevFiles] = useState(files)
+  if (files !== prevFiles) {
+    setPrevFiles(files)
+    if (files?.length) {
+      setExpanded((prev) => {
+        if (prev.size > 0) return prev
+        const next = new Set<string>()
+        for (const f of files) {
+          const i = f.indexOf("/")
+          if (i > 0) next.add(f.slice(0, i))
+        }
+        return next
+      })
+    }
+  }
 
   // 离开页面前拦截未保存
   useEffect(() => {
@@ -276,19 +281,25 @@ export default function KbPage() {
 
   const tree = useMemo(() => buildTree(filteredFiles), [filteredFiles])
 
-  // 搜索时自动展开匹配路径上的目录
-  useEffect(() => {
-    if (!query.trim()) return
-    setExpanded((prev) => {
-      const next = new Set(prev)
-      for (const f of filteredFiles) {
-        const parts = f.split("/")
-        for (let i = 1; i < parts.length; i++)
-          next.add(parts.slice(0, i).join("/"))
-      }
-      return next
-    })
-  }, [query, filteredFiles])
+  // 搜索时自动展开匹配路径上的目录(渲染期调整,替代 effect 内同步 setState)
+  const [prevSearch, setPrevSearch] = useState({ query, filteredFiles })
+  if (
+    prevSearch.query !== query ||
+    prevSearch.filteredFiles !== filteredFiles
+  ) {
+    setPrevSearch({ query, filteredFiles })
+    if (query.trim()) {
+      setExpanded((prev) => {
+        const next = new Set(prev)
+        for (const f of filteredFiles) {
+          const parts = f.split("/")
+          for (let i = 1; i < parts.length; i++)
+            next.add(parts.slice(0, i).join("/"))
+        }
+        return next
+      })
+    }
+  }
 
   async function loadChunks(f: string) {
     setLoadingChunks(true)

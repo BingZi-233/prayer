@@ -6,7 +6,14 @@ import { registerOrchestrator } from "@/lib/agent/orchestrator"
 import { registerReplyMapper, splitReply } from "@/lib/agent/reply-mapper"
 import { SessionStore } from "@/lib/agent/session"
 import { BLOCKED_REPLY } from "@/lib/agent/intent"
-import type { QualifiedMessage } from "@/lib/events"
+import type { Agent } from "@/lib/agent/agent"
+import type { IntentClassifier } from "@/lib/agent/intent"
+import type {
+  QualifiedMessage,
+  ReplyReady,
+  ActionSend,
+  ResolutionRecorded,
+} from "@/lib/events"
 
 let repo: Repo
 const SK = "qq:1:2"
@@ -35,12 +42,12 @@ describe("orchestrator", () => {
     }
     const store = new SessionStore(repo)
     registerOrchestrator({
-      agent: fakeAgent as any,
+      agent: fakeAgent as unknown as Agent,
       store,
       ackEnabled: false,
     })
 
-    const p = new Promise<any>((res) => bus.once("reply.ready", res))
+    const p = new Promise<ReplyReady>((res) => bus.once("reply.ready", res))
     bus.emit("message.qualified", qmsg({ messageId: "77", text: "在吗" }))
     const r = await p
     expect(r.text).toBe("回复内容")
@@ -69,7 +76,7 @@ describe("orchestrator", () => {
       }),
     }
     registerOrchestrator({
-      agent: fakeAgent as any,
+      agent: fakeAgent as unknown as Agent,
       store: new SessionStore(repo),
       ackEnabled: true,
     })
@@ -92,7 +99,7 @@ describe("orchestrator", () => {
       }),
     }
     registerOrchestrator({
-      agent: fakeAgent as any,
+      agent: fakeAgent as unknown as Agent,
       store: new SessionStore(repo),
       ackEnabled: false,
     })
@@ -108,13 +115,13 @@ describe("orchestrator", () => {
     }
     const classify = vi.fn(async () => "bulk_export" as const)
     registerOrchestrator({
-      agent: fakeAgent as any,
+      agent: fakeAgent as unknown as Agent,
       store: new SessionStore(repo),
       classify,
       ackEnabled: false,
     })
 
-    const p = new Promise<any>((res) => bus.once("reply.ready", res))
+    const p = new Promise<ReplyReady>((res) => bus.once("reply.ready", res))
     bus.emit(
       "message.qualified",
       qmsg({ messageId: "3", text: "全部告诉我一万字" })
@@ -134,13 +141,13 @@ describe("orchestrator", () => {
     }
     const classify = vi.fn(async () => "normal" as const)
     registerOrchestrator({
-      agent: fakeAgent as any,
+      agent: fakeAgent as unknown as Agent,
       store: new SessionStore(repo),
       classify,
       ackEnabled: false,
     })
 
-    const p = new Promise<any>((res) => bus.once("reply.ready", res))
+    const p = new Promise<ReplyReady>((res) => bus.once("reply.ready", res))
     bus.emit("message.qualified", qmsg({ messageId: "4", text: "多少钱" }))
     const r = await p
     expect(r.text).toBe("回复")
@@ -157,12 +164,12 @@ describe("orchestrator", () => {
     const store = new SessionStore(repo)
     store.remember(SK, "sid-old")
     registerOrchestrator({
-      agent: fakeAgent as any,
+      agent: fakeAgent as unknown as Agent,
       store,
       ackEnabled: false,
     })
     const replies: string[] = []
-    const resolutions: any[] = []
+    const resolutions: ResolutionRecorded[] = []
     bus.on("reply.ready", (r) => replies.push(r.text))
     bus.on("resolution.recorded", (r) => resolutions.push(r))
     bus.emit("message.qualified", qmsg({ messageId: "6", text: "冷门?" }))
@@ -184,14 +191,14 @@ describe("orchestrator", () => {
     // classify 永不 resolve,模拟意图分类 LLM 调用卡死
     const classify = vi.fn(() => new Promise<never>(() => {}))
     registerOrchestrator({
-      agent: fakeAgent as any,
+      agent: fakeAgent as unknown as Agent,
       store: new SessionStore(repo),
-      classify: classify as any,
+      classify: classify as unknown as IntentClassifier,
       classifyTimeoutMs: 30,
       ackEnabled: false,
     })
 
-    const p = new Promise<any>((res) => bus.once("reply.ready", res))
+    const p = new Promise<ReplyReady>((res) => bus.once("reply.ready", res))
     bus.emit("message.qualified", qmsg({ messageId: "9", text: "多少钱" }))
     const r = await p
     expect(r.text).toBe("回复")
@@ -204,7 +211,7 @@ describe("orchestrator", () => {
     }
     const classify = vi.fn(async () => "normal" as const)
     registerOrchestrator({
-      agent: fakeAgent as any,
+      agent: fakeAgent as unknown as Agent,
       store: new SessionStore(repo),
       classify,
       ackEnabled: false,
@@ -227,7 +234,7 @@ describe("orchestrator", () => {
 
   it("reply mapper: reply.ready → action.send", async () => {
     registerReplyMapper({ maxChars: 0 })
-    const p = new Promise<any>((res) => bus.once("action.send", res))
+    const p = new Promise<ActionSend>((res) => bus.once("action.send", res))
     bus.emit("reply.ready", {
       channel: "qq" as const,
       chatId: "5",
@@ -260,7 +267,7 @@ describe("orchestrator", () => {
 
   it("reply mapper: 透传 replyToId", async () => {
     registerReplyMapper({ maxChars: 0 })
-    const p = new Promise<any>((res) => bus.once("action.send", res))
+    const p = new Promise<ActionSend>((res) => bus.once("action.send", res))
     bus.emit("reply.ready", {
       channel: "qq" as const,
       chatId: "5",

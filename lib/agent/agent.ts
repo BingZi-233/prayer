@@ -1,4 +1,9 @@
 import { query as sdkQuery } from "@anthropic-ai/claude-agent-sdk"
+import type {
+  Options,
+  SDKMessage,
+  SDKUserMessage,
+} from "@anthropic-ai/claude-agent-sdk"
 import { usageStats, type UsageSite, type UsageDelta } from "../usage-stats"
 
 // 当前消息的会话上下文(orchestrator/poller 绑定,透传给 run;工具改由 cs 插件承载后当前未使用,保留签名)
@@ -168,15 +173,19 @@ function foldPreamble(text: string, media?: AgentMedia): string {
     .join("\n")
 }
 
+// Anthropic Base64ImageSource 允许的 media_type 全集(见 @anthropic-ai/sdk ImageBlockParam);
+// enrich/tg 只收 image/*,运行时值必落在并集内,此处仅作类型窄化
+type Base64MediaType = "image/jpeg" | "image/png" | "image/gif" | "image/webp"
+
 // 有图 → 多模态 prompt(AsyncIterable<SDKUserMessage>);无图 → 字符串
 function buildPrompt(
   text: string,
   media?: AgentMedia
-): string | AsyncIterable<any> {
+): string | AsyncIterable<SDKUserMessage> {
   const preamble = foldPreamble(text, media)
   const images = media?.images ?? []
   if (images.length === 0) return preamble
-  return (async function* () {
+  return (async function* (): AsyncGenerator<SDKUserMessage> {
     yield {
       type: "user",
       parent_tool_use_id: null,
@@ -185,8 +194,12 @@ function buildPrompt(
         content: [
           { type: "text", text: preamble || "(图片)" },
           ...images.map((im) => ({
-            type: "image",
-            source: { type: "base64", media_type: im.mediaType, data: im.data },
+            type: "image" as const,
+            source: {
+              type: "base64" as const,
+              media_type: im.mediaType as Base64MediaType,
+              data: im.data,
+            },
           })),
         ],
       },
@@ -194,8 +207,22 @@ function buildPrompt(
   })()
 }
 
+// usage 提取只依赖这几个字段;SDK result 消息 / 测试桩的形状都落在这个子集上
+export interface ResultUsageLike {
+  type?: string
+  usage?: {
+    cache_read_input_tokens?: number
+    cache_creation_input_tokens?: number
+    input_tokens?: number
+    output_tokens?: number
+  }
+  total_cost_usd?: unknown
+}
+
 // 从 SDK 末尾 result 消息(SDKResultSuccess)提取用量增量;非 result 或无 usage → undefined
-export function usageFromResult(msg: any): UsageDelta | undefined {
+export function usageFromResult(
+  msg: ResultUsageLike | null | undefined
+): UsageDelta | undefined {
   if (!msg || msg.type !== "result") return undefined
   const u = msg.usage ?? {}
   return {
@@ -223,11 +250,25 @@ export interface DrainResult {
  *   3) result.structured_output(SDK 终态,最权威)
  * 强制路径下模型常只调工具不吐文本;只读 result 会在部分失败/中断形态丢数据。
  */
-function pickStructuredFromMessage(msg: any): unknown | undefined {
+// 流内结构化载荷的载体形状(assistant tool_use / attachment / result 三种来源的取用子集)
+interface StructuredCarrier {
+  type?: string
+  message?: { content?: unknown }
+  attachment?: unknown
+  structured_output?: unknown
+}
+
+function pickStructuredFromMessage(msg: unknown): unknown | undefined {
   if (!msg || typeof msg !== "object") return undefined
-  if (msg.type === "assistant" && Array.isArray(msg.message?.content)) {
+  const m = msg as StructuredCarrier
+  if (m.type === "assistant" && Array.isArray(m.message?.content)) {
     let found: unknown | undefined
-    for (const b of msg.message.content) {
+    const blocks = m.message.content as {
+      type?: string
+      name?: unknown
+      input?: unknown
+    }[]
+    for (const b of blocks) {
       if (
         b?.type === "tool_use" &&
         isStructuredOutputTool(String(b.name ?? "")) &&
@@ -240,22 +281,19 @@ function pickStructuredFromMessage(msg: any): unknown | undefined {
   }
   // 流消息可能是 {type:"attachment", attachment:{type:"structured_output", data}}
   // 或扁平 {type:"attachment", ...fields} / 直接带 attachment 字段
-  if (msg.type === "attachment") {
-    const att =
-      msg.attachment && typeof msg.attachment === "object"
-        ? msg.attachment
-        : msg
+  if (m.type === "attachment") {
+    const att = (
+      m.attachment && typeof m.attachment === "object" ? m.attachment : m
+    ) as { type?: string; data?: unknown }
     if (att.type === "structured_output" && att.data !== undefined)
       return att.data
   }
-  if (
-    msg.attachment?.type === "structured_output" &&
-    msg.attachment.data !== undefined
-  ) {
-    return msg.attachment.data
+  const nested = m.attachment as { type?: string; data?: unknown } | undefined
+  if (nested?.type === "structured_output" && nested.data !== undefined) {
+    return nested.data
   }
-  if (msg.type === "result" && msg.structured_output !== undefined) {
-    return msg.structured_output
+  if (m.type === "result" && m.structured_output !== undefined) {
+    return m.structured_output
   }
   return undefined
 }
@@ -265,14 +303,16 @@ function pickStructuredFromMessage(msg: any): unknown | undefined {
 // 抛错语义保留:迭代中断直接向上抛(供一次性调用方的 fail-open/closed / 反思不推进游标依赖)。
 // 主 agent 因有降级需求(保留部分文本)不走此助手,单独在 run 内联同款记账。
 export async function drainQuery(
-  iter: AsyncIterable<any>,
+  iter: AsyncIterable<unknown>,
   site: UsageSite
 ): Promise<DrainResult> {
   let text = ""
   let sessionId: string | undefined
   let usage: UsageDelta | undefined
   let structuredOutput: unknown | undefined
-  for await (const msg of iter) {
+  for await (const raw of iter) {
+    // 生产为 SDKMessage;测试桩是形状子集,仅编译期断言,不改变运行时
+    const msg = raw as SDKMessage
     if (msg.type === "system" && msg.subtype === "init" && msg.session_id) {
       sessionId = msg.session_id
     } else if (
@@ -355,6 +395,8 @@ export function isNoAnswerText(text: string): boolean {
 // 新增 server/工具免改白名单;再叠加非 MCP 的显式放行项(Skill)。Bash/Read/Web* 等宿主工具一律拒绝。
 export function isToolAllowed(
   toolName: string,
+  // 入参占位以匹配 SDK canUseTool 回调签名;当前判定只按工具名,不看入参
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   _input: Record<string, unknown>
 ): boolean {
   return toolName.startsWith("mcp__") || TOOL_ALLOWLIST.has(toolName)
@@ -390,7 +432,7 @@ export class Agent {
     // 即便子进程忽略 abort,下方 Promise.race 也会靠计时器兜底返回,run 不会卡死。
     const abortController = new AbortController()
     const iter = this.queryFn({
-      prompt: buildPrompt(text, media) as any,
+      prompt: buildPrompt(text, media),
       options: agentQueryOptions({
         abortController,
         // 模型由 CLAUDE_CONFIG_DIR 内配置决定,不在此覆盖
@@ -429,7 +471,8 @@ export class Agent {
         // 强制 default:CLAUDE_CONFIG_DIR/settings.json 里若合了 bypassPermissions,
         // 会整体跳过 canUseTool,让上面的白名单形同虚设 —— 显式钉死模式堵死这个绕过口子
         // (permissionMode / env / settingSources / tools / skills 已由 agentQueryOptions 钉好)
-      }) as any,
+        // agentQueryOptions 返回宽松 Record(供多处覆盖合并),此处收拢为 SDK Options
+      }) as Options,
     })
 
     let sessionId: string | undefined = resumeId
@@ -437,7 +480,7 @@ export class Agent {
     // 迭代累积独立成 promise,供 Promise.race 与超时计时器竞速。
     // out / sessionId 由闭包写入,超时胜出时仍能返回已累积内容。
     const drain = (async () => {
-      for await (const msg of iter as AsyncIterable<any>) {
+      for await (const msg of iter) {
         if (msg.type === "system" && msg.subtype === "init" && msg.session_id) {
           sessionId = msg.session_id
         }

@@ -1,6 +1,7 @@
 interface Segment {
   type: string
-  data: Record<string, string>
+  // 值标 undefined:CQ 段字段按 type 而异,缺省字段在调用方联合字面量里推成 undefined
+  data: Record<string, string | undefined>
 }
 
 // parse 只做同步结构化抽取;引用/转发内容与图片下载在 enrich 阶段异步完成
@@ -16,7 +17,20 @@ export interface ParsedMessage {
   forwardId?: string // 合并转发:res_id,待 get_forward_msg 回查
 }
 
-export function parseGroupMessage(evt: any): ParsedMessage | null {
+// NapCat 原始群消息事件(只声明取用到的字段;心跳/echo 回执字段由 client 侧类型承载)
+export interface RawGroupMessageEvent {
+  post_type?: string
+  message_type?: string
+  message?: Segment[] | string
+  group_id?: number | string
+  user_id?: number | string
+  message_id?: number | string
+  sender?: { role?: string }
+}
+
+export function parseGroupMessage(
+  evt: RawGroupMessageEvent
+): ParsedMessage | null {
   if (evt?.post_type !== "message" || evt?.message_type !== "group") return null
 
   const atList: number[] = []

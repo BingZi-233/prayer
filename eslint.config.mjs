@@ -12,6 +12,10 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // 运行时产物,非源码(gitignored):
+    "data/**",
+    "logs/**",
+    "docs/kb/**",
   ]),
 ]);
 

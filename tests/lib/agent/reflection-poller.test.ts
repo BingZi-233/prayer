@@ -12,6 +12,11 @@ import {
   itemsFromStructured,
   REFLECT_OUTPUT_SCHEMA,
 } from "@/lib/agent/reflection-poller"
+import type { ActionSend, ErrorOccurred } from "@/lib/events"
+import type Database from "better-sqlite3"
+
+/** Repo.db 是 private;测试需要直写 SQL 种子数据 */
+const repoDb = (repo: Repo) => (repo as unknown as { db: Database.Database }).db
 let repo: Repo
 const embed = async () => new Float32Array([1, 0, 0]) // 与 openDb(:memory:,3) 一致
 
@@ -50,7 +55,7 @@ function seed(
   text: string,
   at: number
 ) {
-  ;(repo as any).db
+  repoDb(repo)
     .prepare(
       "INSERT INTO group_messages (channel,group_id,user_id,sender_role,text,created_at) VALUES (?,?,?,?,?,?)"
     )
@@ -161,7 +166,9 @@ describe("reflection-poller runScan", () => {
     seed(100, 200, "member", "退款多久到账?", NOW - 5000)
     seed(100, 201, "admin", "一般 3 个工作日", NOW - 4000)
     seed(100, 200, "member", "好的谢谢解决了", NOW - 3000)
-    const notice = new Promise<any>((res) => bus.once("action.send", res))
+    const notice = new Promise<ActionSend>((res) =>
+      bus.once("action.send", res)
+    )
     await runScan(
       opts({
         queryFn: fakeQuery({
@@ -443,7 +450,9 @@ describe("reflection-poller runScan", () => {
         items: [item({ question: "q", answer: "a", faq: "群200知识条" })],
       })()
     }
-    const err = new Promise<any>((res) => bus.once("error.occurred", res))
+    const err = new Promise<ErrorOccurred>((res) =>
+      bus.once("error.occurred", res)
+    )
     await runScan(
       opts({
         enabledChats: [
@@ -472,12 +481,12 @@ describe("reflection-poller runScan", () => {
   })
 
   it("isBypassEnabled=false 时跳过该 chat，不调 LLM", async () => {
-    ;(repo as any).db
+    repoDb(repo)
       .prepare(
         "INSERT INTO group_messages (channel,group_id,user_id,sender_role,text,created_at) VALUES (?,?,?,?,?,?)"
       )
       .run("tg", "-1001", "200", "member", "退款多久?", NOW - 5000)
-    ;(repo as any).db
+    repoDb(repo)
       .prepare(
         "INSERT INTO group_messages (channel,group_id,user_id,sender_role,text,created_at) VALUES (?,?,?,?,?,?)"
       )
@@ -534,7 +543,7 @@ describe("reflection-poller prune 下界协调(与 topicCursor)", () => {
     repo.setTopicCursor("qq", "100", 8_000_000) // 小于反思阈值 8_999_000
     seed(100, 200, "member", "落在(topicCursor, 反思阈值)之间", 8_500_000)
     await runScan(opts({ queryFn: fakeQuery({ items: [] }) as never }))
-    const rows = (repo as any).db
+    const rows = repoDb(repo)
       .prepare("SELECT created_at FROM group_messages WHERE group_id = '100'")
       .all() as { created_at: number }[]
     expect(rows).toHaveLength(1) // 未被删:prune 下界压到 topicCursor=8_000_000
@@ -544,7 +553,7 @@ describe("reflection-poller prune 下界协调(与 topicCursor)", () => {
     seed(100, 200, "member", "足够老的消息", 8_000_000) // < 8_999_000 反思阈值
     seed(100, 200, "member", "较新的消息", 9_500_000) // > 8_999_000 反思阈值
     await runScan(opts({ queryFn: fakeQuery({ items: [] }) as never }))
-    const rows = (repo as any).db
+    const rows = repoDb(repo)
       .prepare("SELECT created_at FROM group_messages WHERE group_id = '100'")
       .all() as { created_at: number }[]
     expect(rows.map((r) => r.created_at)).toEqual([9_500_000]) // 老消息已删,新消息保留

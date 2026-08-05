@@ -51,8 +51,16 @@ describe("answerability 判官", () => {
   })
 
   it("cache 友好:tools=[] / skills=[] / strictMcpConfig", async () => {
-    let seen: any
-    const capture = (arg: any) => {
+    interface CapturedArgs {
+      options: {
+        tools: unknown[]
+        skills: unknown[]
+        strictMcpConfig: boolean
+        mcpServers: Record<string, unknown>
+      }
+    }
+    let seen!: CapturedArgs
+    const capture = (arg: CapturedArgs) => {
       seen = arg
       return (async function* () {
         yield {

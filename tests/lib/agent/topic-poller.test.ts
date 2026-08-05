@@ -3,6 +3,11 @@ import { classifyItems, runScan } from "@/lib/agent/topic-poller"
 import { openDb } from "@/lib/db/index"
 import { Repo } from "@/lib/db/repo"
 import { bus } from "@/lib/bus"
+import type { ErrorOccurred } from "@/lib/events"
+import type Database from "better-sqlite3"
+
+/** Repo.db 是 private;测试需要直写 SQL 种子数据 */
+const repoDb = (repo: Repo) => (repo as unknown as { db: Database.Database }).db
 describe("classifyItems 业务对齐(structured 优先 + 文本兜底)", () => {
   const existing = new Set([1, 2])
   it("合法项对齐;越界/重复/缺 i 丢弃;幻觉 topicId 丢弃", () => {
@@ -74,7 +79,7 @@ function seed(
   text: string,
   at: number
 ) {
-  ;(repo as any).db
+  repoDb(repo)
     .prepare(
       "INSERT INTO group_messages (channel,group_id,user_id,sender_role,text,created_at) VALUES (?,?,?,?,?,?)"
     )
@@ -238,11 +243,14 @@ describe("topic-poller runScan", () => {
     seed(repo, 100, 201, "member", "退款要多久", NOW - 4000)
     const orig = repo.insertQuestionOccurrence.bind(repo)
     let n = 0
-    ;(repo as any).insertQuestionOccurrence = (...a: any[]) => {
+    type InsertOcc = Repo["insertQuestionOccurrence"]
+    ;(
+      repo as unknown as { insertQuestionOccurrence: InsertOcc }
+    ).insertQuestionOccurrence = (...a: Parameters<InsertOcc>) => {
       if (++n === 2) throw new Error("boom")
-      return (orig as any)(...a)
+      return orig(...a)
     }
-    const errs: unknown[] = []
+    const errs: ErrorOccurred[] = []
     bus.on("error.occurred", (e) => errs.push(e))
     await runScan(
       opts(repo, {
@@ -254,7 +262,7 @@ describe("topic-poller runScan", () => {
     )
     expect(repo.rankingByWindow(0)).toHaveLength(0) // 事务回滚:第 1 条也没落
     expect(repo.topicCursor("qq", "100")).toBe(0) // 游标未推进
-    expect(errs.some((e) => (e as any).scope === "topic")).toBe(true)
+    expect(errs.some((e) => e.scope === "topic")).toBe(true)
   })
 
   it("命中已有 topicId → 刷新 updated_at,保持热门主题留在前排", async () => {
@@ -266,7 +274,7 @@ describe("topic-poller runScan", () => {
       })
     )
     expect(repo.questionTopics()[0].id).toBe(topicId)
-    const row = (repo as any).db
+    const row = repoDb(repo)
       .prepare("SELECT updated_at FROM question_topics WHERE id=?")
       .get(topicId) as {
       updated_at: number
@@ -302,7 +310,7 @@ describe("topic-poller runScan", () => {
   })
 
   it("isBypassEnabled=false 时跳过该 chat，不调 LLM", async () => {
-    ;(repo as any).db
+    repoDb(repo)
       .prepare(
         "INSERT INTO group_messages (channel,group_id,user_id,sender_role,text,created_at) VALUES (?,?,?,?,?,?)"
       )

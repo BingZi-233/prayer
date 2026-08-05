@@ -80,8 +80,11 @@ export default function CapabilitiesPage() {
     }
   }
 
+  // 初始加载挪进异步边界:setBusy 等 setState 不落在 effect 同步路径上
   useEffect(() => {
-    void load()
+    void (async () => {
+      await load()
+    })()
   }, [])
 
   const gatedCount = caps

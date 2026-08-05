@@ -31,6 +31,9 @@ describe("buildToolPolicy", () => {
 import { probeCapabilities, type ProbeOptions } from "@/lib/agent/introspect"
 import type { AppConfig } from "@/lib/config-store"
 
+type QueryFn = NonNullable<ProbeOptions["queryFn"]>
+type QueryParams = Parameters<QueryFn>[0]
+
 const cfg: AppConfig = {
   onebotWsUrl: "ws://x:1",
   onebotAccessToken: "",
@@ -105,14 +108,14 @@ function fakeQuery(over: Record<string, unknown> = {}) {
   })
 }
 
+const captured: { options?: QueryParams["options"] } = {}
+
 function opts(over: Partial<ProbeOptions> = {}): ProbeOptions {
-  const captured: { options?: any } = {}
   return {
-    queryFn: ((params: any) => {
+    queryFn: ((params: QueryParams) => {
       captured.options = params.options
-      ;(opts as any)._captured = captured
       return fakeQuery()
-    }) as any,
+    }) as unknown as QueryFn,
     refresh: true,
     now: () => 1000,
     ...over,
@@ -146,8 +149,7 @@ describe("probeCapabilities", () => {
 
   it("探针结束后 abort 被触发", async () => {
     await probeCapabilities(cfg, opts())
-    const captured = (opts as any)._captured
-    expect(captured.options.abortController.signal.aborted).toBe(true)
+    expect(captured.options?.abortController?.signal.aborted).toBe(true)
   })
 
   it("单控制方法 rejected → 该区空,其余保留", async () => {
@@ -159,7 +161,7 @@ describe("probeCapabilities", () => {
             reloadSkills: async () => {
               throw new Error("boom")
             },
-          })) as any,
+          })) as unknown as QueryFn,
       })
     )
     expect(caps.skills).toEqual([])
@@ -170,7 +172,7 @@ describe("probeCapabilities", () => {
 describe("probeCapabilities MCP 动态发现", () => {
   it("cs 由 mcpServerStatus 动态上报(不再静态补入),含 kb_search(只读)", async () => {
     const caps = await probeCapabilities(cfg, {
-      queryFn: (() => fakeQuery()) as any, // fakeQuery 默认 mcpServerStatus 报 cs
+      queryFn: (() => fakeQuery()) as unknown as QueryFn, // fakeQuery 默认 mcpServerStatus 报 cs
       refresh: true,
       now: () => 2000,
     })
@@ -182,7 +184,8 @@ describe("probeCapabilities MCP 动态发现", () => {
 
   it("SDK 未报任何 MCP → mcpServers 为空(无静态补入)", async () => {
     const caps = await probeCapabilities(cfg, {
-      queryFn: (() => fakeQuery({ mcpServerStatus: async () => [] })) as any,
+      queryFn: (() =>
+        fakeQuery({ mcpServerStatus: async () => [] })) as unknown as QueryFn,
       refresh: true,
       now: () => 2000,
     })
@@ -198,7 +201,7 @@ describe("probeCapabilities 缓存", () => {
       queryFn: (() => {
         calls++
         return fakeQuery()
-      }) as any,
+      }) as unknown as QueryFn,
       refresh,
       now: () => t,
     })
@@ -218,16 +221,18 @@ describe("probeCapabilities 零 token", () => {
   it("探针用流式空输入(async iterable),不发字符串 prompt —— 防误触发模型回合", async () => {
     let capturedPrompt: unknown
     await probeCapabilities(cfg, {
-      queryFn: ((params: any) => {
+      queryFn: ((params: QueryParams) => {
         capturedPrompt = params.prompt
         return fakeQuery()
-      }) as any,
+      }) as unknown as QueryFn,
       refresh: true,
       now: () => 1,
     })
     expect(typeof capturedPrompt).not.toBe("string")
-    expect(typeof (capturedPrompt as any)?.[Symbol.asyncIterator]).toBe(
-      "function"
-    )
+    expect(
+      typeof (capturedPrompt as { [Symbol.asyncIterator]?: unknown } | null)?.[
+        Symbol.asyncIterator
+      ]
+    ).toBe("function")
   })
 })

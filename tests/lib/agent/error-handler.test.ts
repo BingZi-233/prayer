@@ -6,6 +6,7 @@ import {
   errorMessage,
 } from "@/lib/agent/error-handler"
 import { logger } from "@/lib/logger"
+import type { ActionSend } from "@/lib/events"
 
 beforeEach(() => {
   bus.removeAllListeners()
@@ -15,7 +16,7 @@ beforeEach(() => {
 describe("error handler", () => {
   it("带 sessionKey 的错误 → 兜底话术发回会话", async () => {
     registerErrorHandler({ logger: () => {} })
-    const p = new Promise<any>((res) => bus.once("action.send", res))
+    const p = new Promise<ActionSend>((res) => bus.once("action.send", res))
     bus.emit("error.occurred", {
       scope: "test",
       err: new Error("boom"),
@@ -29,7 +30,7 @@ describe("error handler", () => {
 
   it("历史两段 sessionKey 也能解析目标", async () => {
     registerErrorHandler({ logger: () => {} })
-    const p = new Promise<any>((res) => bus.once("action.send", res))
+    const p = new Promise<ActionSend>((res) => bus.once("action.send", res))
     bus.emit("error.occurred", {
       scope: "test",
       err: new Error("boom"),

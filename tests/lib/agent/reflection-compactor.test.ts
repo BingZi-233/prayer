@@ -12,6 +12,7 @@ import {
   DEFAULT_COMPACT_BATCH_SIZE,
   DEFAULT_COMPACT_MS,
 } from "@/lib/agent/reflection-compactor"
+import type { ActionSend, ErrorOccurred } from "@/lib/events"
 
 let repo: Repo
 const vec = () => new Float32Array([1, 0, 0])
@@ -83,7 +84,9 @@ describe("runCompact", () => {
 
   it("正常整理 → 库被替换为新集 + 通知管理群 + gid 为 0", async () => {
     seedReflections(5)
-    const notice = new Promise<any>((res) => bus.once("action.send", res))
+    const notice = new Promise<ActionSend>((res) =>
+      bus.once("action.send", res)
+    )
     // 5 条 → 3 条(≥ 40% 下限),模拟近义合并
     await runCompact(opts({ queryFn: fakeQuery(faqsItems(3)) as never }))
     const a = await notice
@@ -169,7 +172,9 @@ describe("runCompact", () => {
 
   it("安全底线:空 items → 保留旧库 + emit error,不替换", async () => {
     seedReflections(5)
-    const err = new Promise<any>((res) => bus.once("error.occurred", res))
+    const err = new Promise<ErrorOccurred>((res) =>
+      bus.once("error.occurred", res)
+    )
     const spy = vi.fn()
     bus.on("action.send", spy)
     await runCompact(opts({ queryFn: fakeQuery({ items: [] }) as never }))
@@ -180,7 +185,9 @@ describe("runCompact", () => {
 
   it("安全底线:无 structured_output → 保留旧库", async () => {
     seedReflections(5)
-    const err = new Promise<any>((res) => bus.once("error.occurred", res))
+    const err = new Promise<ErrorOccurred>((res) =>
+      bus.once("error.occurred", res)
+    )
     const spy = vi.fn()
     bus.on("action.send", spy)
     await runCompact(opts({ queryFn: fakeQuery(undefined) as never }))
@@ -194,7 +201,9 @@ describe("runCompact", () => {
     const big = {
       items: Array.from({ length: 7 }, (_, i) => ({ faq: `x${i}` })),
     }
-    const err = new Promise<any>((res) => bus.once("error.occurred", res))
+    const err = new Promise<ErrorOccurred>((res) =>
+      bus.once("error.occurred", res)
+    )
     const spy = vi.fn()
     bus.on("action.send", spy)
     await runCompact(opts({ queryFn: fakeQuery(big) as never }))
@@ -206,9 +215,12 @@ describe("runCompact", () => {
   it("安全底线:完整产出低于 COMPLETE_MIN_RATIO → 保留旧库", async () => {
     seedReflections(10)
     // 10 → 2 远低于 40% 下限(floor=4)
-    const err = new Promise<any>((res) => bus.once("error.occurred", res))
+    const err = new Promise<ErrorOccurred>((res) =>
+      bus.once("error.occurred", res)
+    )
     await runCompact(opts({ queryFn: fakeQuery(faqsItems(2)) as never }))
-    expect((await err).err.message).toMatch(/过度删除|下限/)
+    const e = (await err).err as Error
+    expect(e.message).toMatch(/过度删除|下限/)
     expect(repo.reflectionEntries()).toHaveLength(10)
   })
 
@@ -237,7 +249,9 @@ describe("runCompact", () => {
 
   it("旁路:context 阶段 embed 抛错 → emit error,不抛不替换", async () => {
     seedReflections(5)
-    const err = new Promise<any>((res) => bus.once("error.occurred", res))
+    const err = new Promise<ErrorOccurred>((res) =>
+      bus.once("error.occurred", res)
+    )
     let n = 0
     const throwingEmbed = async () => {
       if (n++ === 0) throw new Error("embed boom")
@@ -274,7 +288,9 @@ describe("runCompact", () => {
       const out = Math.max(2, Math.ceil(n * 0.5))
       return fakeQuery(faqsItems(out, `批${qf.mock.calls.length}`))()
     })
-    const notice = new Promise<any>((res) => bus.once("action.send", res))
+    const notice = new Promise<ActionSend>((res) =>
+      bus.once("action.send", res)
+    )
     await runCompact(
       opts({
         batchSize: 3,

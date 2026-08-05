@@ -3,6 +3,7 @@ import { openDb } from "@/lib/db/index"
 import { Repo } from "@/lib/db/repo"
 import { bus } from "@/lib/bus"
 import { registerHandoffHandler } from "@/lib/agent/handoff-handler"
+import type { ActionSend } from "@/lib/events"
 
 let repo: Repo
 const SK = "qq:1:2"
@@ -21,7 +22,7 @@ beforeEach(() => {
 
 describe("handoff handler", () => {
   it("handoff.requested → human_mode + 通知,不建工单", async () => {
-    const sends: any[] = []
+    const sends: ActionSend[] = []
     bus.on("action.send", (a) => sends.push(a))
     bus.emit("handoff.requested", {
       channel: "qq" as const,
@@ -57,7 +58,7 @@ describe("handoff handler", () => {
       lastQuestion: "退款",
     })
     await new Promise((r) => setTimeout(r, 10))
-    const sends: any[] = []
+    const sends: ActionSend[] = []
     bus.on("action.send", (a) => sends.push(a))
     bus.emit("handoff.resumed", { sessionKey: SK, by: "admin" })
     await new Promise((r) => setTimeout(r, 10))
@@ -78,7 +79,7 @@ describe("handoff handler", () => {
   it("历史两段 sessionKey 恢复时也能解析 chat", async () => {
     const legacy = "1:2"
     repo.setHumanMode(legacy, true)
-    const sends: any[] = []
+    const sends: ActionSend[] = []
     bus.on("action.send", (a) => sends.push(a))
     bus.emit("handoff.resumed", { sessionKey: legacy, by: "admin" })
     await new Promise((r) => setTimeout(r, 10))
@@ -91,7 +92,7 @@ describe("handoff handler", () => {
   })
 
   it("TG 用户 handoff → 用户回 TG，通知发 adminSurface(QQ)", async () => {
-    const sends: any[] = []
+    const sends: ActionSend[] = []
     bus.on("action.send", (a) => sends.push(a))
     bus.emit("handoff.requested", {
       channel: "tg" as const,
@@ -134,7 +135,7 @@ describe("handoff handler", () => {
       handoffTimeoutMin: 30,
       scanMs: 60_000,
     })
-    const sends: any[] = []
+    const sends: ActionSend[] = []
     bus.on("action.send", (a) => sends.push(a))
     bus.emit("handoff.requested", {
       channel: "qq" as const,
@@ -175,7 +176,7 @@ describe("handoff handler", () => {
       handoffTimeoutMin: 30,
       scanMs: 60_000,
     })
-    const sends: any[] = []
+    const sends: ActionSend[] = []
     bus.on("action.send", (a) => sends.push(a))
     bus.emit("handoff.requested", {
       channel: "tg" as const,

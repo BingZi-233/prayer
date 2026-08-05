@@ -6,11 +6,16 @@ import {
   noToolQueryOptions,
   agentQueryOptions,
   AGENT_FALLBACK_TEXT,
+  type AgentDeps,
 } from "@/lib/agent/agent"
 import { usageStats } from "@/lib/usage-stats"
 
+// 与 Agent 内部 queryFn 同型;spy 捕获的入参即 SDK query 的参数
+type QueryFn = NonNullable<AgentDeps["queryFn"]>
+type QueryArgs = Parameters<QueryFn>[0]
+
 // 模拟 SDK query:产出 init(带 session_id)+ 一条 assistant 文本
-async function* fakeQuery(_args: any) {
+async function* fakeQuery(_args: QueryArgs) {
   yield { type: "system", subtype: "init", session_id: "sid-new" }
   yield {
     type: "assistant",
@@ -21,7 +26,10 @@ async function* fakeQuery(_args: any) {
 
 describe("Agent.run", () => {
   it("返回最终文本 + 新 session_id", async () => {
-    const agent = new Agent({ systemPrompt: "客服", queryFn: fakeQuery as any })
+    const agent = new Agent({
+      systemPrompt: "客服",
+      queryFn: fakeQuery as unknown as QueryFn,
+    })
     const out = await agent.run("在吗", undefined, {
       sessionKey: "1:2",
       groupId: 1,
@@ -32,64 +40,73 @@ describe("Agent.run", () => {
   })
 
   it("传入 resumeId 时透传给 options.resume", async () => {
-    let seen: any
-    const spyQuery = async function* (args: any) {
+    let seen!: QueryArgs
+    const spyQuery = async function* (args: QueryArgs) {
       seen = args
       yield { type: "system", subtype: "init", session_id: "sid-x" }
       yield { type: "result", subtype: "success" }
     }
-    const agent = new Agent({ systemPrompt: "s", queryFn: spyQuery as any })
+    const agent = new Agent({
+      systemPrompt: "s",
+      queryFn: spyQuery as unknown as QueryFn,
+    })
     await agent.run("hi", "sid-prev", {
       sessionKey: "1:2",
       groupId: 1,
       userId: 2,
     })
-    expect(seen.options.resume).toBe("sid-prev")
+    expect(seen.options!.resume).toBe("sid-prev")
   })
 
   it("pluginPaths 转成 options.plugins 的 local 项(开启 MCP 发现,不设 skipMcpDiscovery)", async () => {
-    let seen: any
-    const spyQuery = async function* (args: any) {
+    let seen!: QueryArgs
+    const spyQuery = async function* (args: QueryArgs) {
       seen = args
       yield { type: "result", subtype: "success" }
     }
     const agent = new Agent({
       systemPrompt: "s",
       pluginPaths: ["/abs/plugins/packyapi"],
-      queryFn: spyQuery as any,
+      queryFn: spyQuery as unknown as QueryFn,
     })
     await agent.run("hi", undefined, {
       sessionKey: "1:2",
       groupId: 1,
       userId: 2,
     })
-    expect(seen.options.plugins).toEqual([
+    expect(seen.options!.plugins).toEqual([
       { type: "local", path: "/abs/plugins/packyapi" },
     ])
   })
 
   it("未给 pluginPaths 时 options.plugins 为空数组", async () => {
-    let seen: any
-    const spyQuery = async function* (args: any) {
+    let seen!: QueryArgs
+    const spyQuery = async function* (args: QueryArgs) {
       seen = args
       yield { type: "result", subtype: "success" }
     }
-    const agent = new Agent({ systemPrompt: "s", queryFn: spyQuery as any })
+    const agent = new Agent({
+      systemPrompt: "s",
+      queryFn: spyQuery as unknown as QueryFn,
+    })
     await agent.run("hi", undefined, {
       sessionKey: "1:2",
       groupId: 1,
       userId: 2,
     })
-    expect(seen.options.plugins).toEqual([])
+    expect(seen.options!.plugins).toEqual([])
   })
 
   it("无图:prompt 为字符串(向后兼容)", async () => {
-    let seen: any
-    const spyQuery = async function* (args: any) {
+    let seen!: QueryArgs
+    const spyQuery = async function* (args: QueryArgs) {
       seen = args
       yield { type: "result", subtype: "success" }
     }
-    const agent = new Agent({ systemPrompt: "s", queryFn: spyQuery as any })
+    const agent = new Agent({
+      systemPrompt: "s",
+      queryFn: spyQuery as unknown as QueryFn,
+    })
     await agent.run("在吗", undefined, {
       sessionKey: "1:2",
       groupId: 1,
@@ -99,12 +116,15 @@ describe("Agent.run", () => {
   })
 
   it("引用/转发折叠进文本前言(无图仍字符串)", async () => {
-    let seen: any
-    const spyQuery = async function* (args: any) {
+    let seen!: QueryArgs
+    const spyQuery = async function* (args: QueryArgs) {
       seen = args
       yield { type: "result", subtype: "success" }
     }
-    const agent = new Agent({ systemPrompt: "s", queryFn: spyQuery as any })
+    const agent = new Agent({
+      systemPrompt: "s",
+      queryFn: spyQuery as unknown as QueryFn,
+    })
     await agent.run(
       "这是啥",
       undefined,
@@ -117,12 +137,15 @@ describe("Agent.run", () => {
   })
 
   it("有图:prompt 为 AsyncIterable,首条含 image block(base64)+ 文本", async () => {
-    let seen: any
-    const spyQuery = async function* (args: any) {
+    let seen!: QueryArgs
+    const spyQuery = async function* (args: QueryArgs) {
       seen = args
       yield { type: "result", subtype: "success" }
     }
-    const agent = new Agent({ systemPrompt: "s", queryFn: spyQuery as any })
+    const agent = new Agent({
+      systemPrompt: "s",
+      queryFn: spyQuery as unknown as QueryFn,
+    })
     await agent.run(
       "看图",
       undefined,
@@ -131,8 +154,12 @@ describe("Agent.run", () => {
         images: [{ data: "AAAA", mediaType: "image/png" }],
       }
     )
-    expect(typeof seen.prompt[Symbol.asyncIterator]).toBe("function")
-    const first = (await seen.prompt[Symbol.asyncIterator]().next()).value
+    const prompt = seen.prompt as AsyncIterable<{
+      type: string
+      message: { role: string; content: Record<string, unknown>[] }
+    }>
+    expect(typeof prompt[Symbol.asyncIterator]).toBe("function")
+    const first = (await prompt[Symbol.asyncIterator]().next()).value
     expect(first.type).toBe("user")
     expect(first.message.role).toBe("user")
     const content = first.message.content
@@ -144,20 +171,23 @@ describe("Agent.run", () => {
   })
 
   it("cache 友好:tools=[] 砍内置工具 schema,skills=all 保留插件技能", async () => {
-    let seen: any
-    const spyQuery = async function* (args: any) {
+    let seen!: QueryArgs
+    const spyQuery = async function* (args: QueryArgs) {
       seen = args
       yield { type: "result", subtype: "success" }
     }
-    const agent = new Agent({ systemPrompt: "s", queryFn: spyQuery as any })
+    const agent = new Agent({
+      systemPrompt: "s",
+      queryFn: spyQuery as unknown as QueryFn,
+    })
     await agent.run("hi", undefined, {
       sessionKey: "1:2",
       groupId: 1,
       userId: 2,
     })
-    expect(seen.options.tools).toEqual([])
-    expect(seen.options.skills).toBe("all")
-    expect(seen.options.settingSources).toEqual(["user"])
+    expect(seen.options!.tools).toEqual([])
+    expect(seen.options!.skills).toBe("all")
+    expect(seen.options!.settingSources).toEqual(["user"])
   })
 })
 
@@ -172,7 +202,7 @@ describe("Agent.run 超时", () => {
     }
     const agent = new Agent({
       systemPrompt: "s",
-      queryFn: hang as any,
+      queryFn: hang as unknown as QueryFn,
       timeoutMs: 30,
     })
     const out = await agent.run("在吗", undefined, ctx)
@@ -192,7 +222,7 @@ describe("Agent.run 超时", () => {
     }
     const agent = new Agent({
       systemPrompt: "s",
-      queryFn: hang as any,
+      queryFn: hang as unknown as QueryFn,
       timeoutMs: 30,
     })
     const out = await agent.run("在吗", undefined, ctx)
@@ -200,21 +230,24 @@ describe("Agent.run 超时", () => {
   })
 
   it("传入 abortController 给 SDK query(超时时可 abort 子进程)", async () => {
-    let seen: any
-    const spyQuery = async function* (args: any) {
+    let seen!: QueryArgs
+    const spyQuery = async function* (args: QueryArgs) {
       seen = args
       yield { type: "result", subtype: "success" }
     }
-    const agent = new Agent({ systemPrompt: "s", queryFn: spyQuery as any })
+    const agent = new Agent({
+      systemPrompt: "s",
+      queryFn: spyQuery as unknown as QueryFn,
+    })
     await agent.run("hi", undefined, ctx)
-    expect(seen.options.abortController).toBeInstanceOf(AbortController)
+    expect(seen.options!.abortController).toBeInstanceOf(AbortController)
   })
 })
 
 describe("Agent.run systemPrompt", () => {
   it("systemPrompt 恒定 = deps.systemPrompt(无按调用拼接的后缀 → 主动/正常路径共享前缀)", async () => {
-    let captured: any
-    const queryFn = ((args: any) => {
+    let captured!: QueryArgs
+    const queryFn = ((args: QueryArgs) => {
       captured = args
       return (async function* () {
         yield {
@@ -222,14 +255,14 @@ describe("Agent.run systemPrompt", () => {
           message: { content: [{ type: "text", text: "ok" }] },
         }
       })()
-    }) as any
+    }) as unknown as QueryFn
     const agent = new Agent({ systemPrompt: "BASE", queryFn })
     await agent.run("hi", undefined, {
       sessionKey: "1:2",
       groupId: 1,
       userId: 2,
     })
-    expect(captured.options.systemPrompt).toBe("BASE")
+    expect(captured.options!.systemPrompt).toBe("BASE")
   })
 })
 
@@ -254,7 +287,10 @@ describe("Agent.run 用量记账", () => {
         },
       }
     }
-    const agent = new Agent({ systemPrompt: "s", queryFn: q as any })
+    const agent = new Agent({
+      systemPrompt: "s",
+      queryFn: q as unknown as QueryFn,
+    })
     await agent.run("hi", undefined, {
       sessionKey: "1:2",
       groupId: 1,
@@ -352,18 +388,21 @@ describe("Agent.run env", () => {
   it("options.env 剥掉 ANTHROPIC_*(不 shadow settings.json)", async () => {
     const prev = process.env.ANTHROPIC_BASE_URL
     process.env.ANTHROPIC_BASE_URL = "https://inherited.example"
-    let seen: any
-    const spyQuery = async function* (args: any) {
+    let seen!: QueryArgs
+    const spyQuery = async function* (args: QueryArgs) {
       seen = args
       yield { type: "result", subtype: "success" }
     }
-    const agent = new Agent({ systemPrompt: "s", queryFn: spyQuery as any })
+    const agent = new Agent({
+      systemPrompt: "s",
+      queryFn: spyQuery as unknown as QueryFn,
+    })
     await agent.run("hi", undefined, {
       sessionKey: "1:2",
       groupId: 1,
       userId: 2,
     })
-    expect(seen.options.env.ANTHROPIC_BASE_URL).toBeUndefined()
+    expect(seen.options!.env!.ANTHROPIC_BASE_URL).toBeUndefined()
     if (prev === undefined) delete process.env.ANTHROPIC_BASE_URL
     else process.env.ANTHROPIC_BASE_URL = prev
   })

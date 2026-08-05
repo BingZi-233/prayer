@@ -5,6 +5,11 @@ import { bus } from "@/lib/bus"
 import { SessionStore } from "@/lib/agent/session"
 import { runScan } from "@/lib/agent/unanswered-poller"
 import { AGENT_FALLBACK_TEXT } from "@/lib/agent/agent"
+import type { ErrorOccurred, ReplyReady } from "@/lib/events"
+import type Database from "better-sqlite3"
+
+/** Repo.db 是 private;测试需要直写 SQL 种子数据 */
+const repoDb = (repo: Repo) => (repo as unknown as { db: Database.Database }).db
 let repo: Repo
 const NOW = 10_000_000
 
@@ -16,7 +21,7 @@ function seed(
   at: number,
   messageId?: number
 ) {
-  ;(repo as any).db
+  repoDb(repo)
     .prepare(
       "INSERT INTO group_messages (channel,group_id,user_id,sender_role,text,created_at,message_id) VALUES (?,?,?,?,?,?,?)"
     )
@@ -59,7 +64,7 @@ describe("unanswered-poller runScan", () => {
     repo.setGroupProactiveCursor("qq", "100", 1) // 非冷启动
     seed(100, 200, "member", "claude 价格?", NOW - 5000)
     const agent = fakeAgent("cc 组每百万 token 20 美元", "sess-1")
-    const reply = new Promise<any>((res) => bus.once("reply.ready", res))
+    const reply = new Promise<ReplyReady>((res) => bus.once("reply.ready", res))
     await runScan(base({ agent: agent as never }))
     const r = await reply
     expect(r.channel).toBe("qq")
@@ -84,7 +89,7 @@ describe("unanswered-poller runScan", () => {
     repo.setGroupProactiveCursor("qq", "100", 1)
     seed(100, 200, "member", "第一句", NOW - 6000, 501)
     seed(100, 200, "member", "第二句?", NOW - 5000, 502) // band 内最后一条 → 代表
-    const reply = new Promise<any>((res) => bus.once("reply.ready", res))
+    const reply = new Promise<ReplyReady>((res) => bus.once("reply.ready", res))
     await runScan(base())
     const r = await reply
     expect(r.replyToId).toBe("502")
@@ -158,7 +163,7 @@ describe("unanswered-poller runScan", () => {
     seed(100, 200, "member", "价格?", NOW - 5000)
     repo.setSessionId("qq:100:200", "sid-main")
     // 压制②靠 session.updated_at > questionTs;把 updated_at 拨回问题之前以便放行
-    ;(repo as any).db
+    repoDb(repo)
       .prepare("UPDATE sessions SET updated_at = ? WHERE key = ?")
       .run(NOW - 6000, "qq:100:200")
     const agent = fakeAgent("答案", "sess-proactive")
@@ -243,7 +248,9 @@ describe("unanswered-poller runScan", () => {
         throw new Error("boom")
       }),
     }
-    const err = new Promise<any>((res) => bus.once("error.occurred", res))
+    const err = new Promise<ErrorOccurred>((res) =>
+      bus.once("error.occurred", res)
+    )
     await runScan(base({ agent: boom as never }))
     const e = await err
     expect(e.scope).toBe("proactive")
@@ -252,7 +259,7 @@ describe("unanswered-poller runScan", () => {
   })
 
   it("isBypassEnabled=false 时跳过该 chat，不调 agent", async () => {
-    ;(repo as any).db
+    repoDb(repo)
       .prepare(
         "INSERT INTO group_messages (channel,group_id,user_id,sender_role,text,created_at) VALUES (?,?,?,?,?,?)"
       )

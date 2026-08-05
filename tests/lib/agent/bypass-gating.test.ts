@@ -14,6 +14,7 @@ import type {
   ChannelCapabilities,
   ChannelId,
 } from "@/lib/channels/types"
+import type Database from "better-sqlite3"
 import type { ActionSend } from "@/lib/events"
 import {
   isTgChatBypassEnabled,
@@ -22,6 +23,9 @@ import {
 } from "@/lib/channels/tg/bypass-state"
 
 const NOW = 10_000_000
+
+/** Repo.db 是 private;测试需要直写 SQL 种子数据 */
+const repoDb = (repo: Repo) => (repo as unknown as { db: Database.Database }).db
 const caps: ChannelCapabilities = {
   canNotifyOwnAdminSurface: false,
   supportsAdminCommands: false,
@@ -62,7 +66,7 @@ describe("registry → poller bypass chain", () => {
     reg.register(makeTgChannel())
     setTgBypassBlocked("-1001", "admins-failed")
 
-    ;(repo as any).db
+    repoDb(repo)
       .prepare(
         "INSERT INTO group_messages (channel,group_id,user_id,sender_role,text,created_at) VALUES (?,?,?,?,?,?)"
       )
@@ -92,7 +96,7 @@ describe("registry → poller bypass chain", () => {
     const reg = new ChannelRegistry()
     reg.register(makeTgChannel())
 
-    ;(repo as any).db
+    repoDb(repo)
       .prepare(
         "INSERT INTO group_messages (channel,group_id,user_id,sender_role,text,created_at) VALUES (?,?,?,?,?,?)"
       )

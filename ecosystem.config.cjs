@@ -1,6 +1,7 @@
 // PM2 进程配置。单进程:Next.js prod server 通过 instrumentation.ts 拉起 OneBot 客服 Agent。
 // better-sqlite3(native)+ 单条 NapCat WS 长连接 → 必须 fork 模式、单实例,不可 cluster。
-const path = require("path");
+/* eslint-disable @typescript-eslint/no-require-imports -- .cjs 是 pm2 的 CommonJS 配置,require 为合法入口写法 */
+const path = require("path")
 
 module.exports = {
   apps: [
@@ -26,4 +27,4 @@ module.exports = {
       retain: 5,
     },
   ],
-};
+}

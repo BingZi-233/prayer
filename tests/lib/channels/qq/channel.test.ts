@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from "vitest"
-import { WebSocketServer } from "ws"
+import { WebSocketServer, type WebSocket } from "ws"
 import type { AddressInfo } from "node:net"
 import { bus } from "@/lib/bus"
 import { ChannelRegistry } from "@/lib/channels/registry"
@@ -16,7 +16,7 @@ afterEach(async () => {
   bus.removeAllListeners()
 })
 
-function startServer(onConn: (ws: any) => void): Promise<number> {
+function startServer(onConn: (ws: WebSocket) => void): Promise<number> {
   return new Promise((resolve) => {
     wss = new WebSocketServer({ port: 0 }, () => {
       resolve((wss!.address() as AddressInfo).port)
@@ -27,7 +27,10 @@ function startServer(onConn: (ws: any) => void): Promise<number> {
 
 describe("QqChannel + ChannelRegistry 出站", () => {
   it("registry 分发 action.send → send_group_msg", async () => {
-    const gotAction = new Promise<any>((res) => {
+    const gotAction = new Promise<{
+      action: string
+      params: { group_id: number; message: unknown }
+    }>((res) => {
       startServer((ws) => {
         ws.on("message", (raw: Buffer) => res(JSON.parse(raw.toString())))
       }).then(async (port) => {

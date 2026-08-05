@@ -13,6 +13,7 @@ import {
   PROMOTE_OUTPUT_SCHEMA,
 } from "@/lib/agent/reflection-promoter"
 import { bus } from "@/lib/bus"
+import type { ActionSend, ErrorOccurred } from "@/lib/events"
 
 let repo: Repo
 const vec = () => new Float32Array([1, 0, 0])
@@ -185,7 +186,9 @@ describe("runPromote", () => {
 
   it("LLM 决策升格 → promoteFn 被调用 + 通知", async () => {
     const ids = seedApproved(3)
-    const notice = new Promise<any>((res) => bus.once("action.send", res))
+    const notice = new Promise<ActionSend>((res) =>
+      bus.once("action.send", res)
+    )
     const promoteFn = vi.fn(async ({ chunkId }: { chunkId: number }) => ({
       ok: true as const,
       file: `promoted/reflection-${chunkId}.md`,
@@ -245,7 +248,9 @@ describe("runPromote", () => {
 
   it("非法 structured → 不升格 + emit error", async () => {
     seedApproved(2)
-    const err = new Promise<any>((res) => bus.once("error.occurred", res))
+    const err = new Promise<ErrorOccurred>((res) =>
+      bus.once("error.occurred", res)
+    )
     const promoteFn = vi.fn()
     const r = await runPromote({
       repo,

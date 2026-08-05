@@ -1,5 +1,6 @@
 import { resolve } from "path"
 import { query as sdkQuery } from "@anthropic-ai/claude-agent-sdk"
+import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk"
 import type { AppConfig } from "../config-store"
 import { TOOL_ALLOWLIST, isToolAllowed, sdkEnv } from "./agent"
 
@@ -141,6 +142,15 @@ const capCacheHolder = globalThis as unknown as {
   __capCache?: { at: number; data: Capabilities }
 }
 
+// probe 用到的控制面(Query 的结构子集):真实 SDK Query 与测试桩都收敛到这个形状,
+// 只声明实际消费的方法与字段,不绑定 SDK 控制响应的全量类型
+interface ProbeQuery extends AsyncIterable<SDKMessage> {
+  reloadPlugins(): Promise<{ plugins?: CapabilityPlugin[] }>
+  reloadSkills(): Promise<{ skills?: CapabilitySkill[] }>
+  mcpServerStatus(): Promise<McpStatusRaw[]>
+  getContextUsage?: () => Promise<ContextUsageLite>
+}
+
 export async function probeCapabilities(
   cfg: AppConfig,
   opts: ProbeOptions = {}
@@ -182,7 +192,7 @@ async function probeUncached(
           once: true,
         })
       })
-    })() as any,
+    })(),
     options: {
       // cs / packyapi 及其 MCP server 全部经 enabledPlugins(settingSources:["user"])动态加载并被
       // mcpServerStatus() 上报 —— 不再静态装配 in-process cs,也不显式传 pluginPaths。
@@ -191,13 +201,13 @@ async function probeUncached(
       maxTurns: 1,
       abortController,
       env: sdkEnv(),
-    } as any,
-  }) as any
+    },
+  }) as unknown as ProbeQuery
 
   // 防御性 drain:确保 transport 被读取,控制响应能落地
   const drain = (async () => {
     try {
-      for await (const _ of q as AsyncIterable<unknown>) void _
+      for await (const _ of q) void _
     } catch {
       /* abort 会中断迭代,忽略 */
     }
@@ -212,12 +222,12 @@ async function probeUncached(
     // getContextUsage 在 MCP 连上后再取 —— mcpTools 要等 server 握手才上报;与 poll 并发会拿到空表。
     // systemTools/deferredBuiltinTools(内建宿主工具)需模型 turn 才上报,零 token probe 下仍多为空,
     // 由 buildToolPolicy 的规则兜底条覆盖。async thunk:老 SDK 无此方法时同步 throw 也转 reject 被 settled 兜住。
-    const ctxUsage = await settled(
+    const ctxUsage = await settled<ContextUsageLite>(
       (async () =>
         typeof q.getContextUsage === "function"
           ? await q.getContextUsage()
-          : {})() as Promise<ContextUsageLite>,
-      {} as ContextUsageLite
+          : {})(),
+      {}
     )
     const mcpServers = normalizeMcp(mcp)
     // liveTools 只取 getContextUsage(工具名是完全限定的 mcp__… / 内建裸名),逐个跑 isToolAllowed 分区。
@@ -233,7 +243,7 @@ async function probeUncached(
         path: p.path,
         source: p.source,
       })),
-      skills: (skills.skills ?? []).map((s: any) => ({
+      skills: (skills.skills ?? []).map((s: CapabilitySkill) => ({
         name: s.name,
         description: s.description,
         argumentHint: s.argumentHint || undefined,

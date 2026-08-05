@@ -306,12 +306,12 @@ export function getNameCache(): NameCache {
   if (g.__nameCache) return g.__nameCache
   const cache = new NameCache()
   try {
-    // 延迟 require,避免纯内存单测强依赖 native 初始化顺序
+    // 延迟 require,避免纯内存单测强依赖 native better-sqlite3 初始化顺序;
+    // 合法 require:此处必须在运行时按需加载,不能提为顶层静态 import
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { sharedDb } =
-      require("@/lib/db/shared") as typeof import("@/lib/db/shared")
+    const mod = require("@/lib/db/shared") as typeof import("@/lib/db/shared")
     cache.attachPersistence(
-      createSqliteNameCachePersistence(sharedDb(defaultDbPath()))
+      createSqliteNameCachePersistence(mod.sharedDb(defaultDbPath()))
     )
   } catch {
     /* DB 不可用时仍提供内存缓存 */

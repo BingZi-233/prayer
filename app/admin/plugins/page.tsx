@@ -51,8 +51,11 @@ export default function PluginsPage() {
     if (r.ok) setPlugins(r.data)
     else setErr(r.error)
   }
+  // 初始加载挪进异步边界:setState 不落在 effect 同步路径上
   useEffect(() => {
-    void load()
+    void (async () => {
+      await load()
+    })()
   }, [])
 
   async function act(fn: () => Promise<Response>) {

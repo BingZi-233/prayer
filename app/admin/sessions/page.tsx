@@ -173,9 +173,12 @@ function SessionsInner() {
   const [resetKey, setResetKey] = useState<string | null>(null)
   const [query, setQuery] = useState("")
   const deferredQuery = useDeferredValue(query)
-  const [filter, setFilter] = useState<Filter>(() =>
-    params.get("human") === "1" ? "human" : "all"
-  )
+  const [filter, setFilter] = useState<Filter>(() => {
+    // 筛选仅在 URL 明确带 human/active 时初始化一次;之后以本地 filter 为准,避免轮询/导航抖
+    if (params.get("human") === "1") return "human"
+    if (params.get("active") === "1") return "active"
+    return "all"
+  })
   const [showTools, setShowTools] = useState(false)
 
   // 选中态以 ref 为准,避免轮询 / 过期 URL / 过期 fetch 把界面拉回旧会话
@@ -191,9 +194,6 @@ function SessionsInner() {
 
   const { label } = useGroupNames()
   const memberName = useMemberNames((sessions ?? []).map((s) => s.key))
-
-  filterRef.current = filter
-  sessionsRef.current = sessions
 
   const keyLabel = useCallback(
     (key: string) => {
@@ -302,18 +302,12 @@ function SessionsInner() {
     return null
   }, [])
 
-  // 首屏拉列表
+  // 首屏拉列表;挪进异步边界,setState 不落在 effect 同步路径上
   useEffect(() => {
-    void loadSessions()
+    void (async () => {
+      await loadSessions()
+    })()
   }, [loadSessions])
-
-  // 筛选仅在 URL 明确带 human/active 时初始化一次;之后以本地 filter 为准,避免轮询/导航抖
-  useEffect(() => {
-    if (params.get("human") === "1") setFilter("human")
-    else if (params.get("active") === "1") setFilter("active")
-    // 只在挂载时读一次
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
 
   // 仅当 URL 的 key 真的变化时才从外链打开;sessions 轮询不触发
   const paramKey = params.get("key")

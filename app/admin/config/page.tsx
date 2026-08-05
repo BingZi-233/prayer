@@ -253,15 +253,20 @@ export default function ConfigPage() {
     .slice()
     .sort((a, b) => a - b)
     .join(",")
-  useEffect(() => {
-    if (!cfg) return
-    if (!enabledQq.length) {
+  // 渲染期调整 loading/清空,避免在 effect 同步路径里 setState
+  const [prevEnabledKey, setPrevEnabledKey] = useState(enabledKey)
+  if (prevEnabledKey !== enabledKey) {
+    setPrevEnabledKey(enabledKey)
+    if (enabledKey) {
+      setAdminsLoading(true)
+    } else {
       setAdmins([])
       setAdminsLoading(false)
-      return
     }
+  }
+  useEffect(() => {
+    if (!enabledKey) return
     let cancelled = false
-    setAdminsLoading(true)
     fetch(`/api/onebot/admins?groups=${encodeURIComponent(enabledKey)}`)
       .then((x) => x.json())
       .then((r) => {
@@ -278,7 +283,6 @@ export default function ConfigPage() {
       cancelled = true
     }
     // 仅随 QQ 生效群集合变化刷新;cfg 本体其它字段不触发
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabledKey])
 
   function upd(k: keyof Cfg, v: string) {

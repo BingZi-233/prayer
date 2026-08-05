@@ -196,7 +196,7 @@ export async function runPromote(
           }),
           maxTurns: 2,
         }) as never,
-      }) as AsyncIterable<any>,
+      }),
       "promote"
     )
 

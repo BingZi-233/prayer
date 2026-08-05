@@ -191,7 +191,7 @@ async function scanOnce(d: Resolved): Promise<void> {
             }),
             maxTurns: 2,
           }) as never,
-        }) as AsyncIterable<any>,
+        }),
         "topic"
       )
 

@@ -3,7 +3,14 @@ import { openDb } from "@/lib/db/index"
 import { Repo } from "@/lib/db/repo"
 import { bus } from "@/lib/bus"
 import { registerGateway, isAtTrigger } from "@/lib/agent/gateway"
-import type { IncomingMessage, QualifiedMessage } from "@/lib/events"
+import type {
+  ActionSend,
+  ErrorOccurred,
+  HandoffRequested,
+  HandoffResumed,
+  IncomingMessage,
+  QualifiedMessage,
+} from "@/lib/events"
 
 let repo: Repo
 const BOT = "555"
@@ -138,7 +145,7 @@ describe("gateway", () => {
     repo.setSessionId(SK, "sid-old")
     const qualified = vi.fn()
     bus.on("message.qualified", qualified)
-    const p = new Promise<any>((res) => bus.once("action.send", res))
+    const p = new Promise<ActionSend>((res) => bus.once("action.send", res))
     bus.emit(
       "message.received",
       qqMsg({ messageId: "20", rawText: "重新开始", atList: [BOT] })
@@ -164,7 +171,9 @@ describe("gateway", () => {
   })
 
   it("@bot 人工 → handoff.requested(含 channel)", async () => {
-    const p = new Promise<any>((res) => bus.once("handoff.requested", res))
+    const p = new Promise<HandoffRequested>((res) =>
+      bus.once("handoff.requested", res)
+    )
     bus.emit(
       "message.received",
       qqMsg({ messageId: "50", rawText: "人工", atList: [BOT] })
@@ -187,7 +196,9 @@ describe("gateway", () => {
       ],
       supportUrl: "https://example.com",
     })
-    const p = new Promise<any>((res) => bus.once("handoff.requested", res))
+    const p = new Promise<HandoffRequested>((res) =>
+      bus.once("handoff.requested", res)
+    )
     bus.emit("message.received", {
       channel: "tg" as const,
       chatId: "-1001",
@@ -214,7 +225,7 @@ describe("gateway", () => {
     })
     const handoff = vi.fn()
     bus.on("handoff.requested", handoff)
-    const p = new Promise<any>((res) => bus.once("action.send", res))
+    const p = new Promise<ActionSend>((res) => bus.once("action.send", res))
     bus.emit("message.received", {
       channel: "tg" as const,
       chatId: "-1001",
@@ -245,7 +256,7 @@ describe("gateway", () => {
 
   it("管理群 !reset <key> → 清 resumeId 并回确认", async () => {
     repo.setSessionId(SK, "sid-old")
-    const p = new Promise<any>((res) => bus.once("action.send", res))
+    const p = new Promise<ActionSend>((res) => bus.once("action.send", res))
     bus.emit("message.received", {
       channel: "qq" as const,
       chatId: "999",
@@ -263,7 +274,9 @@ describe("gateway", () => {
   })
 
   it("管理群 !resume <key> → handoff.resumed", async () => {
-    const p = new Promise<any>((res) => bus.once("handoff.resumed", res))
+    const p = new Promise<HandoffResumed>((res) =>
+      bus.once("handoff.resumed", res)
+    )
     bus.emit("message.received", {
       channel: "qq" as const,
       chatId: "999",
@@ -294,7 +307,7 @@ describe("gateway", () => {
 
   it("非生效群不影响管理群命令(adminGroup 豁免)", async () => {
     repo.setSessionId(SK, "sid-old")
-    const p = new Promise<any>((res) => bus.once("action.send", res))
+    const p = new Promise<ActionSend>((res) => bus.once("action.send", res))
     bus.emit("message.received", {
       channel: "qq" as const,
       chatId: "999",
@@ -361,7 +374,7 @@ describe("gateway", () => {
   })
 
   it("帮助关键词回用法", async () => {
-    const p = new Promise<any>((res) => bus.once("action.send", res))
+    const p = new Promise<ActionSend>((res) => bus.once("action.send", res))
     bus.emit(
       "message.received",
       qqMsg({ messageId: "60", rawText: "帮助", atList: [BOT] })
@@ -397,7 +410,7 @@ describe("gateway", () => {
     })
     const sk = "qq:1:2"
     repo.setSessionId(sk, "sid-tg-admin")
-    const p = new Promise<any>((res) => bus.once("action.send", res))
+    const p = new Promise<ActionSend>((res) => bus.once("action.send", res))
     bus.emit("message.received", {
       channel: "tg" as const,
       chatId: "-100999",
@@ -423,7 +436,9 @@ describe("gateway", () => {
       supportUrl: "https://example.com",
     })
     const sk = "qq:1:2"
-    const p = new Promise<any>((res) => bus.once("handoff.resumed", res))
+    const p = new Promise<HandoffResumed>((res) =>
+      bus.once("handoff.resumed", res)
+    )
     bus.emit("message.received", {
       channel: "tg" as const,
       chatId: "-100999",
@@ -461,7 +476,7 @@ describe("gateway", () => {
   it("空白 @ 无 prior → 用法说明", async () => {
     const qualified = vi.fn()
     bus.on("message.qualified", qualified)
-    const p = new Promise<any>((res) => bus.once("action.send", res))
+    const p = new Promise<ActionSend>((res) => bus.once("action.send", res))
     bus.emit(
       "message.received",
       qqMsg({ messageId: "p-blank", rawText: "  \n\t", atList: [BOT] })
@@ -487,7 +502,9 @@ describe("gateway", () => {
   it("重置后 prior 隔离:纯 @ 回用法说明,不 qualified", async () => {
     seedPrior(["旧问题"])
     // 先重置推进 prior_since
-    const resetP = new Promise<any>((res) => bus.once("action.send", res))
+    const resetP = new Promise<ActionSend>((res) =>
+      bus.once("action.send", res)
+    )
     bus.emit(
       "message.received",
       qqMsg({ messageId: "p-reset", rawText: "重置", atList: [BOT] })
@@ -496,7 +513,7 @@ describe("gateway", () => {
 
     const qualified = vi.fn()
     bus.on("message.qualified", qualified)
-    const helpP = new Promise<any>((res) => bus.once("action.send", res))
+    const helpP = new Promise<ActionSend>((res) => bus.once("action.send", res))
     bus.emit(
       "message.received",
       qqMsg({ messageId: "p-after-reset", rawText: "", atList: [BOT] })
@@ -510,7 +527,9 @@ describe("gateway", () => {
     vi.spyOn(repo, "recentUserGroupMessages").mockImplementation(() => {
       throw new Error("db down")
     })
-    const errP = new Promise<any>((res) => bus.once("error.occurred", res))
+    const errP = new Promise<ErrorOccurred>((res) =>
+      bus.once("error.occurred", res)
+    )
     const qP = collectQualified()
     bus.emit(
       "message.received",

@@ -148,6 +148,49 @@ export function useGroupNames() {
   return { names, name, label }
 }
 
+// 解析 joined key 列表:缓存仍新鲜的成员映射(seeded)、待拉取的群(missing),
+// 以及把 "gid:uid" 成员映射投影回原始 session key(含 tg: 前缀)的函数。
+function resolveMembers(joined: string): {
+  seeded: Record<string, string>
+  missing: number[]
+  applyToKeys: (memberMap: Record<string, string>) => Record<string, string>
+} {
+  const uniq = Array.from(new Set(joined.split(",").filter(Boolean)))
+  const parts = uniq
+    .map((k) => {
+      const p = sessionKeyParts(k)
+      return p ? { key: k, ...p } : null
+    })
+    .filter(
+      (
+        x
+      ): x is {
+        key: string
+        groupId: number
+        userId: string
+        channel: string
+      } => !!x
+    )
+
+  const gids = Array.from(new Set(parts.map((p) => p.groupId)))
+  const seeded: Record<string, string> = {}
+  const missing: number[] = []
+  for (const g of gids) {
+    const hit = membersByGroup.get(g)
+    if (hit && alive(hit.exp)) Object.assign(seeded, hit.data)
+    else missing.push(g)
+  }
+  const applyToKeys = (memberMap: Record<string, string>) => {
+    const out: Record<string, string> = {}
+    for (const p of parts) {
+      const nick = memberMap[`${p.groupId}:${p.userId}`]
+      if (nick) out[p.key] = nick
+    }
+    return out
+  }
+  return { seeded, missing, applyToKeys }
+}
+
 // 解析 session key 对应的群成员群名片/昵称。
 // QQ:按 gid 拉 /api/onebot/members;TG 暂无 → 空串。
 // bot 断连/查不到 → memberName(key) 返回 ""(调用方回退 uid)。
@@ -155,50 +198,21 @@ export function useMemberNames(keys: string[]) {
   const [map, setMap] = useState<Record<string, string>>({})
   const joined = keys.join(",")
 
-  useEffect(() => {
-    const uniq = Array.from(new Set(joined.split(",").filter(Boolean)))
-    const parts = uniq
-      .map((k) => {
-        const p = sessionKeyParts(k)
-        return p ? { key: k, ...p } : null
-      })
-      .filter(
-        (
-          x
-        ): x is {
-          key: string
-          groupId: number
-          userId: string
-          channel: string
-        } => !!x
-      )
-
-    const gids = Array.from(new Set(parts.map((p) => p.groupId)))
-    if (gids.length === 0) return
-
-    let aliveFlag = true
-
-    // 先同步灌入仍新鲜的群缓存,首屏立刻有名
-    const seeded: Record<string, string> = {}
-    const missing: number[] = []
-    for (const g of gids) {
-      const hit = membersByGroup.get(g)
-      if (hit && alive(hit.exp)) Object.assign(seeded, hit.data)
-      else missing.push(g)
-    }
-    // 把 "gid:uid" 映射回原始 session key(含 tg: 前缀)
-    const applyToKeys = (memberMap: Record<string, string>) => {
-      const out: Record<string, string> = {}
-      for (const p of parts) {
-        const nick = memberMap[`${p.groupId}:${p.userId}`]
-        if (nick) out[p.key] = nick
-      }
-      return out
-    }
+  // 缓存命中部分渲染期同步灌入,首屏立刻有名(替代 effect 内同步 setState)
+  const [seededFor, setSeededFor] = useState<string | null>(null)
+  if (seededFor !== joined) {
+    setSeededFor(joined)
+    const { seeded, applyToKeys } = resolveMembers(joined)
     if (Object.keys(seeded).length > 0) {
       setMap((prev) => ({ ...prev, ...applyToKeys(seeded) }))
     }
+  }
+
+  useEffect(() => {
+    const { missing, applyToKeys } = resolveMembers(joined)
     if (missing.length === 0) return
+
+    let aliveFlag = true
 
     void Promise.all(missing.map((g) => loadMembers(g))).then((memberParts) => {
       if (!aliveFlag) return

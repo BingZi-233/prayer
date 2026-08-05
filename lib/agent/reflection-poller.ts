@@ -325,7 +325,7 @@ async function scanOnce(d: Resolved): Promise<void> {
             // maxTurns:2:StructuredOutput 强制路径可能占一轮;schema 重试再占一轮
             maxTurns: 2,
           }) as never,
-        }) as AsyncIterable<any>,
+        }),
         "reflect"
       )
       const items = itemsFromStructured(structuredOutput, out)

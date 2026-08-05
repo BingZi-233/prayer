@@ -139,7 +139,7 @@ describe("config-store", () => {
 
   it("reflect 参数有默认值,env 可覆盖", () => {
     const repo = new Repo(openDb(":memory:", 3))
-    const cfg = getConfig(repo, { REFLECT_SETTLE_MS: "1000" } as any)
+    const cfg = getConfig(repo, { REFLECT_SETTLE_MS: "1000" })
     expect(cfg.reflectSettleMs).toBe(1000)
     expect(cfg.reflectScanMs).toBe(300000) // 默认
     expect(cfg.reflectLookbackMs).toBe(7200000)

@@ -1,8 +1,15 @@
 import { describe, it, expect, afterEach } from "vitest"
-import { WebSocketServer } from "ws"
+import { WebSocketServer, type WebSocket } from "ws"
 import type { AddressInfo } from "node:net"
 import { bus } from "@/lib/bus"
+import type { IncomingMessage } from "@/lib/events"
 import { OneBotClient } from "@/lib/onebot/client"
+
+// OneBot 服务端收到的 API 请求帧(测试断言用)
+interface SentAction {
+  action: string
+  params: { group_id: number; message: unknown }
+}
 
 let wss: WebSocketServer | undefined
 let client: OneBotClient | undefined
@@ -12,7 +19,7 @@ afterEach(() => {
   wss?.close()
 })
 
-function startServer(onConn: (ws: any) => void): Promise<number> {
+function startServer(onConn: (ws: WebSocket) => void): Promise<number> {
   return new Promise((resolve) => {
     wss = new WebSocketServer({ port: 0 }, () => {
       resolve((wss!.address() as AddressInfo).port)
@@ -38,7 +45,7 @@ describe("OneBotClient", () => {
     const received = new Promise((res) => bus.once("message.received", res))
     client = new OneBotClient(`ws://127.0.0.1:${port}`)
     client.start()
-    const m: any = await received
+    const m = (await received) as IncomingMessage
     expect(m.channel).toBe("qq")
     expect(m.chatId).toBe("1")
     expect(m.userId).toBe("2")
@@ -67,7 +74,7 @@ describe("OneBotClient", () => {
   })
 
   it("client.send → 对端收到 send_group_msg", async () => {
-    const gotAction = new Promise<any>((res) => {
+    const gotAction = new Promise<SentAction>((res) => {
       startServer((ws) => {
         ws.on("message", (raw: Buffer) => res(JSON.parse(raw.toString())))
       }).then((port) => {
@@ -91,7 +98,7 @@ describe("OneBotClient", () => {
   })
 
   it("client.send 不订阅 bus：action.send 事件本身不触发 OneBot", async () => {
-    let got: any
+    let got: unknown
     const port = await startServer((ws) => {
       ws.on("message", (raw: Buffer) => {
         got = JSON.parse(raw.toString())
@@ -110,7 +117,7 @@ describe("OneBotClient", () => {
   })
 
   it("client.send 带 replyToId → message 为 reply+text 消息段数组", async () => {
-    const gotAction = new Promise<any>((res) => {
+    const gotAction = new Promise<SentAction>((res) => {
       startServer((ws) => {
         ws.on("message", (raw: Buffer) => res(JSON.parse(raw.toString())))
       }).then((port) => {
@@ -158,7 +165,9 @@ describe("OneBotClient", () => {
     await new Promise((r) => setTimeout(r, 100)) // 等连接 open
     const list = await client.getGroupList()
     expect(Array.isArray(list)).toBe(true)
-    expect((list as any[]).map((g) => g.group_id)).toEqual([111, 222])
+    expect((list as { group_id: number }[]).map((g) => g.group_id)).toEqual([
+      111, 222,
+    ])
   })
 
   it("getGroupList 未连接 → undefined", async () => {
@@ -188,7 +197,9 @@ describe("OneBotClient", () => {
     client.start()
     await new Promise((r) => setTimeout(r, 100))
     const list = await client.getGroupMemberList(111)
-    expect((list as any[]).map((m) => m.user_id)).toEqual([5, 6])
+    expect((list as { user_id: number }[]).map((m) => m.user_id)).toEqual([
+      5, 6,
+    ])
   })
 
   it("getGroupMemberList 未连接 → undefined", async () => {

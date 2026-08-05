@@ -74,7 +74,8 @@ export async function downloadTelegramImage(
     if (buf.byteLength > maxBytes) return null
 
     const ct = res.headers.get("content-type")?.split(";")[0]?.trim()
-    let mediaType = ct && ct.startsWith("image/") ? ct : mimeFromPath(filePath)
+    const mediaType =
+      ct && ct.startsWith("image/") ? ct : mimeFromPath(filePath)
     if (!mediaType || !mediaType.startsWith("image/")) {
       return null
     }

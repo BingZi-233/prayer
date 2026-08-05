@@ -2,7 +2,9 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 import { openDb } from "@/lib/db/index"
 import { Repo } from "@/lib/db/repo"
 import { bus } from "@/lib/bus"
+import type { ActionSend } from "@/lib/events"
 import { assemble } from "@/lib/assemble"
+import type { Agent } from "@/lib/agent/agent"
 
 beforeEach(() => bus.removeAllListeners())
 
@@ -17,11 +19,11 @@ describe("assemble e2e(总线级)", () => {
       botQQ: 555,
       adminSurface: { channel: "qq", chatId: "999" },
       enabledChats: [{ channel: "qq", chatId: "1" }],
-      agent: fakeAgent as any,
+      agent: fakeAgent as unknown as Agent,
       ackEnabled: false, // 测主答案,不测 ACK(意图门可能耗时)
     })
 
-    const sent = new Promise<any>((res) => bus.once("action.send", res))
+    const sent = new Promise<ActionSend>((res) => bus.once("action.send", res))
     bus.emit("message.received", {
       channel: "qq",
       chatId: "1",
@@ -50,7 +52,7 @@ describe("assemble e2e(总线级)", () => {
           botQQ: 555,
           adminSurface: { channel: "qq", chatId: "999" },
           enabledChats: [{ channel: "qq", chatId: "1" }],
-          agent: fakeAgent as any,
+          agent: fakeAgent as unknown as Agent,
           ...extra,
         })
 

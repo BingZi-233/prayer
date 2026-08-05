@@ -492,7 +492,7 @@ describe("repo 主动兜底支持", () => {
   it("groupMemberMessagesBetween:只取(after,until]内非管理发言,升序", () => {
     const r = mk()
     const seed = (uid: string, role: string | null, text: string, at: number) =>
-      (r as any).db
+      (r as unknown as { db: Database.Database }).db
         .prepare(
           "INSERT INTO group_messages (channel,group_id,user_id,sender_role,text,created_at) VALUES (?,?,?,?,?,?)"
         )
@@ -524,7 +524,7 @@ describe("repo 主动兜底支持", () => {
 describe("question ranking schema", () => {
   it("question_topics / question_occurrences 表存在且可写", () => {
     const r = new Repo(openDb(":memory:", 3))
-    const d = (r as any).db as import("better-sqlite3").Database
+    const d = (r as unknown as { db: Database.Database }).db
     d.prepare("INSERT INTO question_topics (title) VALUES (?)").run("退款相关")
     const tid = (
       d.prepare("SELECT id FROM question_topics").get() as { id: number }
@@ -706,7 +706,7 @@ describe("channel schema migration", () => {
     r.bufferGroupMessage("qq", "100", "200", "member", "hi", "1")
     r.bufferGroupMessage("tg", "100", "200", "member", "hi", "1")
     const n = (
-      ((r as any).db as Database.Database)
+      (r as unknown as { db: Database.Database }).db
         .prepare("SELECT COUNT(*) AS c FROM group_messages")
         .get() as { c: number }
     ).c
@@ -714,7 +714,7 @@ describe("channel schema migration", () => {
     // 同 channel 重复 message_id 忽略
     r.bufferGroupMessage("qq", "100", "200", "member", "hi again", "1")
     const n2 = (
-      ((r as any).db as Database.Database)
+      (r as unknown as { db: Database.Database }).db
         .prepare("SELECT COUNT(*) AS c FROM group_messages")
         .get() as { c: number }
     ).c
@@ -730,7 +730,7 @@ describe("channel schema migration", () => {
 
   it("legacy session key 迁移为 canonical", () => {
     const r = new Repo(openDb(":memory:", 3))
-    const d = (r as any).db as Database.Database
+    const d = (r as unknown as { db: Database.Database }).db
     // openDb 已迁完空库;手动插入旧 key 后补跑
     d.prepare(
       "INSERT INTO sessions (key, session_id, updated_at) VALUES (?, ?, ?)"
