@@ -71,6 +71,24 @@ function migrate(db: Database.Database, dim: number): void {
     ensureSessionsPriorSince(db)
     ensureGmUserTimeIndex(db)
   }
+
+  // v4: group_messages.mentioned_bot(@bot 消息标记;主动补位不拿它当候选,幂等)
+  if (userVersion(db) < 4) {
+    ensureGmMentionedBot(db)
+    setUserVersion(db, 4)
+  } else {
+    ensureGmMentionedBot(db)
+  }
+}
+
+/** v4: group_messages 补 mentioned_bot 列(已存在则跳过) */
+function ensureGmMentionedBot(db: Database.Database): void {
+  if (!tableExists(db, "group_messages")) return
+  if (!tableColumns(db, "group_messages").has("mentioned_bot")) {
+    db.exec(
+      "ALTER TABLE group_messages ADD COLUMN mentioned_bot INTEGER NOT NULL DEFAULT 0"
+    )
+  }
 }
 
 /** v3: sessions 补 prior_since 列(已存在则跳过) */

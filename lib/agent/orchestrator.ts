@@ -64,6 +64,9 @@ export function registerOrchestrator(deps: OrchestratorDeps): () => void {
   const chains = new Map<string, Promise<void>>()
 
   async function handle(q: QualifiedMessage): Promise<void> {
+    // 入口即触活:处理途中(ACK/classify/agent.run 窗口期)主动补位压制②
+    // 即可见 updated_at > questionTs,不把本条 @ 消息当「无人应答」抢答双发。
+    store.touch(q.sessionKey)
     if (ackEnabled) {
       bus.emit("reply.ready", {
         channel: q.channel,

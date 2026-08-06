@@ -41,6 +41,22 @@ describe("Repo sessions", () => {
     expect(repo.getSessionId("g:u2")).toBe("sid-2")
   })
 
+  it("touchSession:仅刷 updated_at,保留 session_id/resume_id(主管线处理途中触活用)", () => {
+    repo.setSessionId("g:u", "sid-1")
+    db.prepare("UPDATE sessions SET updated_at = 1000 WHERE key = 'g:u'").run()
+    repo.touchSession("g:u")
+    expect(repo.getSessionId("g:u")).toBe("sid-1") // 展示指针不动
+    expect(repo.getResumeId("g:u")).toBe("sid-1") // 续接指针不动
+    expect(repo.sessionUpdatedAt("g:u")!).toBeGreaterThan(1000)
+  })
+
+  it("touchSession:无行则新建(仅 key + updated_at),session_id 保持 NULL", () => {
+    repo.touchSession("g:new")
+    expect(repo.sessionUpdatedAt("g:new")).toBeDefined()
+    expect(repo.getSessionId("g:new")).toBeUndefined()
+    expect(repo.getResumeId("g:new")).toBeUndefined()
+  })
+
   it("listSessions 返回 humanSince/lastQuestion", () => {
     repo.setSessionId("g:u", "sid-1")
     db.prepare(
@@ -178,6 +194,29 @@ describe("Repo group_messages buffer", () => {
     expect(win.map((m) => m.text)).toEqual(["问题一", "回答一"])
     expect(win[1].senderRole).toBe("admin")
     expect(win[1].userId).toBe("201")
+  })
+
+  it("bufferGroupMessage mentionedBot 标记落库;groupMemberMessagesBetween 排除 @bot 消息", () => {
+    const now = Date.now()
+    repo.bufferGroupMessage("qq", "100", "200", "member", "普通问题", "9001")
+    repo.bufferGroupMessage(
+      "qq",
+      "100",
+      "200",
+      "member",
+      "@bot 价格?",
+      "9002",
+      true // 主链路在处理,不作主动补位原料
+    )
+    const rows = repo.groupMemberMessagesBetween("qq", "100", 0, now + 1000)
+    expect(rows.map((r) => r.text)).toEqual(["普通问题"])
+    // @bot 消息本身仍在库里(反思/prior 上下文要看全量)
+    const cnt = db
+      .prepare(
+        "SELECT COUNT(*) AS c FROM group_messages WHERE mentioned_bot = 1"
+      )
+      .get() as { c: number }
+    expect(cnt.c).toBe(1)
   })
 
   it("groupsWithAdminMessagesUpTo 返 until 前有管理发言的群;hasAdminMessageBetween 判 band 内", () => {
@@ -834,8 +873,15 @@ describe("channel schema migration", () => {
     raw.close()
 
     const migrated = openDb(p, 3)
-    // v1→v2→v3 一路升完
-    expect(migrated.pragma("user_version", { simple: true }) as number).toBe(3)
+    // v1→v2→v3→v4 一路升完
+    expect(migrated.pragma("user_version", { simple: true }) as number).toBe(4)
+    // v4: group_messages 补 mentioned_bot 列,老数据默认 0
+    const gmCols = (
+      migrated.prepare("PRAGMA table_info(group_messages)").all() as {
+        name: string
+      }[]
+    ).map((c) => c.name)
+    expect(gmCols).toContain("mentioned_bot")
     const sk = migrated.prepare("SELECT key FROM sessions").get() as {
       key: string
     }
@@ -875,7 +921,7 @@ describe("channel schema migration", () => {
     // 幂等:再 open 不炸
     migrated.close()
     const again = openDb(p, 3)
-    expect(again.pragma("user_version", { simple: true })).toBe(3)
+    expect(again.pragma("user_version", { simple: true })).toBe(4)
     again.close()
     rmSync(dir, { recursive: true, force: true })
   })
