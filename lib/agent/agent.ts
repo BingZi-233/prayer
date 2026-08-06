@@ -209,7 +209,10 @@ function buildPrompt(
   })()
 }
 
-// usage 提取只依赖这几个字段;SDK result 消息 / 测试桩的形状都落在这个子集上
+// usage 提取只依赖这几个字段;SDK result 消息 / 测试桩的形状都落在这个子集上。
+// 末尾三个可选字段兼容 SDK>=0.3.222 新增的 SDKTaskNotificationMessage.usage 形状
+// (total_tokens/tool_uses/duration_ms),使 SDKMessage 全 union 可直接传入;
+// 函数内 type!=="result" 守卫照常过滤,不会误取任务通知的 usage。
 export interface ResultUsageLike {
   type?: string
   usage?: {
@@ -217,6 +220,9 @@ export interface ResultUsageLike {
     cache_creation_input_tokens?: number
     input_tokens?: number
     output_tokens?: number
+    total_tokens?: number
+    tool_uses?: number
+    duration_ms?: number
   }
   total_cost_usd?: unknown
 }
