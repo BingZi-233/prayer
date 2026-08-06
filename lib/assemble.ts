@@ -119,6 +119,7 @@ export function assemble(deps: AssembleDeps): () => void {
     registerMessageBuffer({
       repo,
       botQQ,
+      extraAtQQs: deps.extraAtQQs,
       enabledChats,
       adminSurface,
     }),

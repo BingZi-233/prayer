@@ -88,6 +88,49 @@ describe("orchestrator", () => {
     expect(replies).toContain("答案")
   })
 
+  it("handle 入口即触活会话:agent 处理途中 session.updated_at 已刷新(堵主动补位竞态)", async () => {
+    let duringRun: number | undefined
+    const fakeAgent = {
+      run: vi.fn(async () => {
+        duringRun = repo.sessionUpdatedAt(SK) // in-flight 快照:remember 之前
+        return { text: "回复", sessionId: "s" }
+      }),
+    }
+    registerOrchestrator({
+      agent: fakeAgent as unknown as Agent,
+      store: new SessionStore(repo),
+      ackEnabled: false,
+    })
+    const before = Date.now()
+    const p = new Promise<ReplyReady>((res) => bus.once("reply.ready", res))
+    bus.emit("message.qualified", qmsg({ messageId: "42", text: "价" }))
+    await p
+    expect(duringRun).toBeDefined()
+    expect(duringRun!).toBeGreaterThanOrEqual(before)
+  })
+
+  it("触活不清空已有 session_id/resume_id", async () => {
+    const store = new SessionStore(repo)
+    store.remember(SK, "sid-old")
+    const fakeAgent = {
+      run: vi.fn(async () => {
+        // 触活发生在 run 之前:此时旧指针必须仍在
+        expect(repo.getSessionId(SK)).toBe("sid-old")
+        expect(repo.getResumeId(SK)).toBe("sid-old")
+        return { text: "回复", sessionId: "sid-new" }
+      }),
+    }
+    registerOrchestrator({
+      agent: fakeAgent as unknown as Agent,
+      store,
+      ackEnabled: false,
+    })
+    const p = new Promise<ReplyReady>((res) => bus.once("reply.ready", res))
+    bus.emit("message.qualified", qmsg({ messageId: "43", text: "价" }))
+    await p
+    expect(repo.getSessionId(SK)).toBe("sid-new") // 完成后正常轮换
+  })
+
   it("同一 session 串行:第二条等第一条完成", async () => {
     const order: string[] = []
     const fakeAgent = {

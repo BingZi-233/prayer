@@ -69,6 +69,18 @@ export class Repo {
       .run(key, sessionId, sessionId)
   }
 
+  // 仅刷 updated_at,不动 session_id/resume_id。
+  // 主管线 handle 入口调用:处理途中就让主动补位压制②看见「已接管」,堵
+  // agent.run 窗口期(秒~数十秒)内同一消息被 unanswered-poller 抢答双发。
+  touchSession(key: string): void {
+    this.db
+      .prepare(
+        `INSERT INTO sessions (key, updated_at) VALUES (?, unixepoch('subsec')*1000)
+         ON CONFLICT(key) DO UPDATE SET updated_at = unixepoch('subsec')*1000`
+      )
+      .run(key)
+  }
+
   // 仅清 resume_id → 下条消息开全新 SDK session;保留 session_id 供网页仍能查看历史。
   // 同时推进 prior_since 纪元:此后 recentUserGroupMessages 不再回看边界前消息。
   clearResumeId(key: string): void {
@@ -173,6 +185,7 @@ export class Repo {
   }
 
   // 群消息缓冲(被动反思用):落库。messageId 供主动回复引用原消息;缺省 → NULL(不引用)。
+  // mentionedBot 标记 @bot 消息:主链路在处理,主动补位不拿它当候选(仍落库供反思/prior 看全量)。
   // OR IGNORE + (channel, group_id, message_id) 唯一索引:多实例/重推时同一消息只落一行(NULL 不去重)。
   bufferGroupMessage(
     channel: string,
@@ -180,13 +193,22 @@ export class Repo {
     userId: string,
     senderRole: string | null,
     text: string,
-    messageId?: string | null
+    messageId?: string | null,
+    mentionedBot?: boolean
   ): void {
     this.db
       .prepare(
-        "INSERT OR IGNORE INTO group_messages (channel, group_id, user_id, sender_role, text, message_id) VALUES (?, ?, ?, ?, ?, ?)"
+        "INSERT OR IGNORE INTO group_messages (channel, group_id, user_id, sender_role, text, message_id, mentioned_bot) VALUES (?, ?, ?, ?, ?, ?, ?)"
       )
-      .run(channel, chatId, userId, senderRole, text, messageId ?? null)
+      .run(
+        channel,
+        chatId,
+        userId,
+        senderRole,
+        text,
+        messageId ?? null,
+        mentionedBot ? 1 : 0
+      )
   }
 
   // 某用户在某群的最近非空消息(@ 前 prior 上下文用)。
@@ -506,6 +528,7 @@ export class Repo {
   }
 
   // 某 chat (afterTs, untilTs] 内的非管理发言(member/NULL),升序。主动兜底候选原料。
+  // 排除 @bot 消息:那归主链路处理,不作「无人应答」候选。
   groupMemberMessagesBetween(
     channel: string,
     chatId: string,
@@ -522,6 +545,7 @@ export class Repo {
         `SELECT user_id, text, created_at, message_id FROM group_messages
          WHERE channel = ? AND group_id = ? AND created_at > ? AND created_at <= ?
            AND (sender_role IS NULL OR sender_role NOT IN ('owner','admin'))
+           AND mentioned_bot = 0
          ORDER BY created_at ASC`
       )
       .all(channel, chatId, afterTs, untilTs) as {

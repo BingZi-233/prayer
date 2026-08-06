@@ -137,6 +137,21 @@ describe("unanswered-poller runScan", () => {
     expect(spy).not.toHaveBeenCalled()
   })
 
+  it("@bot 消息不作补位候选(归主链路处理,不抢答)", async () => {
+    repo.setGroupProactiveCursor("qq", "100", 1)
+    repoDb(repo)
+      .prepare(
+        "INSERT INTO group_messages (channel,group_id,user_id,sender_role,text,created_at,message_id,mentioned_bot) VALUES (?,?,?,?,?,?,?,1)"
+      )
+      .run("qq", "100", "200", "member", "价格?", NOW - 5000, "601")
+    const agent = fakeAgent("答案")
+    const spy = vi.fn()
+    bus.on("reply.ready", spy)
+    await runScan(base({ agent: agent as never }))
+    expect(agent.run).not.toHaveBeenCalled()
+    expect(spy).not.toHaveBeenCalled()
+  })
+
   it("门1 判官=false → 不进 agent、不发", async () => {
     repo.setGroupProactiveCursor("qq", "100", 1)
     seed(100, 200, "member", "今天天气?", NOW - 5000)
