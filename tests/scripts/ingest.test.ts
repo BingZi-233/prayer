@@ -75,4 +75,26 @@ describe("runIngest", () => {
     expect(repo.kbDocStats()).toEqual([{ doc: "doc.md", chunks: 1 }])
     expect(repo.kbChunksByDoc("doc.md")[0]?.content).toBe("只剩一段")
   })
+
+  it("磁盘已删文件的 doc 被 prune,human-reflection 不受影响", async () => {
+    writeFileSync(join(dir, "keep.md"), "保留")
+    writeFileSync(join(dir, "gone.md"), "待删")
+    const repo = new Repo(openDb(":memory:", 3))
+    await runIngest(repo, dir)
+    // human-reflection 是 DB 专有 doc(反思沉淀),磁盘无文件
+    repo.insertKbEntry(
+      "human-reflection",
+      "反思条目",
+      "human-reflection:qq:0:0",
+      new Float32Array([0.1, 0.2, 0.3])
+    )
+
+    rmSync(join(dir, "gone.md"))
+    await runIngest(repo, dir)
+
+    expect(repo.kbDocStats().map((d) => d.doc).sort()).toEqual([
+      "human-reflection",
+      "keep.md",
+    ])
+  })
 })

@@ -24,6 +24,9 @@ export interface IngestResult {
   chunks: number
 }
 
+// 只存在于 DB、磁盘无对应文件的 doc(人工反思沉淀),prune 时不得误删
+const DB_ONLY_DOCS = new Set(["human-reflection"])
+
 export async function runIngest(
   repo: Repo,
   dir = "docs/kb"
@@ -42,6 +45,11 @@ export async function runIngest(
       repo.insertKbEntry(f, c, f, await embed(c))
     }
     out.push({ file: f, chunks: chunks.length })
+  }
+  // prune:文件已从磁盘删除的 doc 清出索引,避免幽灵检索结果
+  const onDisk = new Set(files)
+  for (const { doc } of repo.kbDocStats()) {
+    if (!onDisk.has(doc) && !DB_ONLY_DOCS.has(doc)) repo.deleteKbDoc(doc)
   }
   return out
 }
