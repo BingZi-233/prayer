@@ -79,6 +79,33 @@ function migrate(db: Database.Database, dim: number): void {
   } else {
     ensureGmMentionedBot(db)
   }
+
+  // v5: tool_stats_daily(按工具名的调用统计,算知识库覆盖率;幂等)
+  if (userVersion(db) < 5) {
+    ensureToolStatsDaily(db)
+    setUserVersion(db, 5)
+  } else {
+    ensureToolStatsDaily(db)
+  }
+}
+
+/**
+ * v5: 工具调用日表。
+ * runs = 出现过该工具的 run 数(每 run 每工具最多 +1),calls = 总调用次数。
+ * tool='__run__' 是总 run 数特殊行(覆盖率分母);
+ * '__kb_prefetch__' / '__kb_grounded__' 是伪工具行(见 lib/tool-stats.ts)。
+ */
+function ensureToolStatsDaily(db: Database.Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS tool_stats_daily (
+      day   TEXT NOT NULL,
+      site  TEXT NOT NULL,
+      tool  TEXT NOT NULL,
+      runs  INTEGER NOT NULL DEFAULT 0,
+      calls INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (day, site, tool)
+    );
+  `)
 }
 
 /** v4: group_messages 补 mentioned_bot 列(已存在则跳过) */

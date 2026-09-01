@@ -17,7 +17,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 关键 gotcha（不说会踩）
 
-- **真实 LLM 是 MiniMax-M3,不是 Claude。** 所有 Anthropic 模型档（opus/sonnet/haiku）在 `data/claude-config/settings.json` 的 `env` 块里被映射到 `MiniMax-M3[1m]`（`ANTHROPIC_BASE_URL` 指向 MiniMax 的 Anthropic 兼容端点）。模型 + relay 凭据只在这个文件里,**不在 `.env`**,后台 UI 也不编辑这三项;运行时会剥掉继承来的 `ANTHROPIC_*`。该文件已 gitignore 且含明文 token,勿泄露。
+- **真实 LLM 是 MiniMax-M3,不是 Claude。** 所有 Anthropic 模型档（opus/sonnet/haiku）在 `data/claude-config/settings.json` 的 `env` 块里被映射到 `MiniMax-M3[1m]`（`ANTHROPIC_BASE_URL` 指向 MiniMax 的 Anthropic 兼容端点）。模型 + relay 凭据只在这个文件里,**不在 `.env`**,后台 UI 也不编辑这三项;运行时会剥掉继承来的 `ANTHROPIC_*`。该文件已 gitignore 且含明文 token,勿泄露。**该端点认 Anthropic prompt cache**(2026-09 实测:近 7 天主客服 370 次调用中 218 次 `cache_read>1k`),所以 system prompt 恒定、动态内容全放 user 侧、`tools:[]` 压前缀这些做法有实效,别当无用功删掉。
 - **生产严禁 `next dev`。** claude-agent-sdk 要在真实 Node runtime 调本地 `claude` 二进制,只有 `pnpm build && pnpm start` 才对;`next dev` 的 HMR websocket 跨 LAN 不稳会挂骨架屏。不支持 edge/serverless/Vercel 部署。
 - **`instrumentation.ts` 是启动入口**,仅在 Node runtime 跑,负责接 DB、config-store、runtime 并拉起 OneBot agent + 后台循环 + WS。管住那一个 `next start` 进程就管住了整个 agent。
 - pm2 用 fork 单实例,**不能 cluster**（native better-sqlite3 + 单条 WS 长连接）。`pm:enable/disable` 是 Linux/systemd+sudo,macOS 开发机上不适用。

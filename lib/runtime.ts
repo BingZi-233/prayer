@@ -6,6 +6,7 @@ import type { Repo } from "./db/repo"
 import type { Agent } from "./agent/agent"
 import type { AssembleDeps } from "./assemble"
 import { bindUsagePersistence } from "./usage-stats"
+import { bindToolStatsPersistence } from "./tool-stats"
 import type { Channel, ChannelId, ChannelStatus } from "./channels/types"
 import { ChannelRegistry } from "./channels/registry"
 import { createChannels } from "./channels/factory"
@@ -53,17 +54,32 @@ async function defaultBuilders(): Promise<RuntimeBuilders> {
   const { sharedDb } = await import("./db/shared")
   const { Repo } = await import("./db/repo")
   const { Agent } = await import("./agent/agent")
+  const { makeKbPrefetch } = await import("./agent/kb-prefetch")
+  // 本地嵌入模型是 native 依赖,只在 Node runtime 动态加载,别提到模块顶层
+  const { embed } = await import("./tools/embed")
   const { assemble } = await import("./assemble")
   return {
     // 复用 API 路由的进程级共享连接:reconfigure 不关它,in-flight 的
     // 异步 scanOnce(await agent.run 期间)不会撞到 "database connection is not open"
     openDb: (p) => sharedDb(p),
     makeRepo: (db) => new Repo(db as never),
-    makeAgent: (cfg) =>
+    makeAgent: (cfg, repo) =>
       new Agent({
         // 支持链接注入 system prompt,办不了事务时引导
         systemPrompt: "",
         supportUrl: cfg.supportUrl,
+        // 预检索注入:把"要不要查知识库"从模型手里拿走 —— resume 续聊的长会话里
+        // 模型常自认已知而跳过 kb_search(实测覆盖率掉到 11%~70%)。关掉则退回纯工具路径。
+        kbPrefetch: cfg.kbPrefetchEnabled
+          ? makeKbPrefetch({
+              repo,
+              embed,
+              topK: cfg.kbPrefetchTopK,
+              maxDistance: cfg.kbPrefetchMaxDistance,
+              // 去重记忆与会话续接窗口对齐:超窗后会开新对话,片段不再在 context 里
+              memoTtlMs: cfg.resumeTtlMs,
+            })
+          : undefined,
         // 不显式传 pluginPaths:插件(cs / packyapi)及其 MCP server 唯一由 CLAUDE_CONFIG_DIR/settings.json
         // 的 enabledPlugins(settingSources:["user"])加载,避免与显式 plugins 双加载/冲突。
         // web 插件管理器通过 claude plugin CLI 管理 enabledPlugins + cache。
@@ -82,6 +98,7 @@ export class RuntimeManager {
   private registry?: ChannelRegistry
   private teardown?: () => void
   private unbindUsage?: () => void
+  private unbindToolStats?: () => void
   private wsConnected = false
   private usageBudgetUsd = 0
 
@@ -144,6 +161,7 @@ export class RuntimeManager {
           }
         },
       })
+      this.unbindToolStats = bindToolStatsPersistence(repo)
 
       // 空 registry 先挂上：assemble 闭包引用 isBypassEnabled；
       // register 在 assemble 之后同步完成，poller 首轮 tick 前通道已就绪。
@@ -252,6 +270,11 @@ export class RuntimeManager {
       /* ignore */
     }
     try {
+      this.unbindToolStats?.()
+    } catch {
+      /* ignore */
+    }
+    try {
       this.teardown?.()
     } catch (e) {
       logger.log(
@@ -277,6 +300,7 @@ export class RuntimeManager {
     }
     this.teardown = undefined
     this.unbindUsage = undefined
+    this.unbindToolStats = undefined
     this.registry = undefined
     this.repo = undefined
     this.wsConnected = false

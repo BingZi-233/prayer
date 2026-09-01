@@ -2,11 +2,7 @@ import { bus } from "../bus"
 import { logger } from "../logger"
 import type { Repo } from "../db/repo"
 import type { Agent } from "./agent"
-import {
-  AGENT_FALLBACK_TEXT,
-  isNoAnswerText,
-  NO_ANSWER_SENTINEL,
-} from "./agent"
+import { AGENT_FALLBACK_TEXT, isNoAnswerText, PROACTIVE_SUFFIX } from "./agent"
 import type { SessionStore } from "./session"
 import type { AnswerabilityClassifier } from "./answerability"
 import type { GroupPolicy } from "../config-store"
@@ -18,9 +14,8 @@ import {
   type ChatRef,
 } from "../channels/enabled-chats"
 
-// 主动模式哨兵:无把握时 agent 只输出此串 → poller 判为非答案,沉默不发。
-// 指令并入 user prompt(非 system)以保持 system 前缀跨路径可缓存;见 agent.run 注释。
-export const PROACTIVE_SUFFIX = `【主动模式】你是在无人应答时主动补位。仅当知识库检索到确切依据且你有把握时才作答;否则只输出 ${NO_ANSWER_SENTINEL}(不解释、不道歉、不引导人工或外链、不寒暄)。`
+// 主动模式指令改定义在 agent.ts:预检索要按它剥前缀才能拿到干净的检索 query
+// (见 kbProbeText),常量留在这边会形成 agent → poller 的循环依赖。
 
 export interface UnansweredPollerDeps {
   repo: Repo

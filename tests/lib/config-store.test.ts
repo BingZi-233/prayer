@@ -380,6 +380,33 @@ describe("config-store", () => {
     expect(getConfig(repo, {}).resumeTtlMs).toBe(60000)
   })
 
+  it("知识库预检索:默认开 + topK 5 + 距离 1.0;env 可覆盖", () => {
+    const repo = mkRepo()
+    const cfg = getConfig(repo, {})
+    expect(cfg.kbPrefetchEnabled).toBe(true)
+    expect(cfg.kbPrefetchTopK).toBe(5)
+    expect(cfg.kbPrefetchMaxDistance).toBe(1.0)
+
+    const repo2 = mkRepo()
+    const cfg2 = getConfig(repo2, {
+      KB_PREFETCH_ENABLED: "false",
+      KB_PREFETCH_TOP_K: "3",
+      KB_PREFETCH_MAX_DISTANCE: "0.7",
+    })
+    expect(cfg2.kbPrefetchEnabled).toBe(false)
+    expect(cfg2.kbPrefetchTopK).toBe(3)
+    expect(cfg2.kbPrefetchMaxDistance).toBe(0.7)
+
+    // 只有显式 "false" 才关
+    const repo3 = mkRepo()
+    expect(
+      getConfig(repo3, { KB_PREFETCH_ENABLED: "0" }).kbPrefetchEnabled
+    ).toBe(true)
+
+    setConfig(repo, { kbPrefetchTopK: 2 })
+    expect(getConfig(repo, {}).kbPrefetchTopK).toBe(2)
+  })
+
   it("migrateConfigShape 已是 SOT 不标 migrated（无 legacy 键）", () => {
     const seed = getConfig(mkRepo(), {})
     const { cfg, migrated } = migrateConfigShape(

@@ -87,6 +87,9 @@ interface Cfg {
   reflectPromoteMaxPerRun: number
   reflectNotifyAdmin: boolean
   resumeTtlMs: number
+  kbPrefetchEnabled: boolean
+  kbPrefetchTopK: number
+  kbPrefetchMaxDistance: number
   proactiveEnabled: boolean
   proactiveScanMs: number
   proactiveSilenceMs: number
@@ -166,6 +169,8 @@ const NUM_KEYS: (keyof Cfg)[] = [
   "reflectPromoteMinEntries",
   "reflectPromoteMaxPerRun",
   "resumeTtlMs",
+  "kbPrefetchTopK",
+  "kbPrefetchMaxDistance",
   "proactiveScanMs",
   "proactiveSilenceMs",
   "proactiveMaxPerScan",
@@ -209,6 +214,9 @@ export default function ConfigPage() {
             groupPolicies: data.groupPolicies ?? {},
             supportUrl: data.supportUrl ?? "https://www.packyapi.ai",
             ackEnabled: data.ackEnabled !== false,
+            kbPrefetchEnabled: data.kbPrefetchEnabled !== false,
+            kbPrefetchTopK: data.kbPrefetchTopK ?? 5,
+            kbPrefetchMaxDistance: data.kbPrefetchMaxDistance ?? 1.0,
             maxReplyChars: data.maxReplyChars ?? 900,
             usageBudgetUsd: data.usageBudgetUsd ?? 0,
             extraAtQQs: data.extraAtQQs ?? [],
@@ -1093,6 +1101,54 @@ export default function ConfigPage() {
                   />
                   <FieldDescription>
                     默认 5 分钟。设 0 关闭超时。
+                  </FieldDescription>
+                </Field>
+              </FieldGroup>
+            </SectionCard>
+
+            <SectionCard
+              title="知识库预检索"
+              description="每轮消息进模型前自动检索知识库并把片段拼进提问，不依赖模型自己决定要不要查。"
+            >
+              <FieldGroup>
+                <Field orientation="horizontal">
+                  <Checkbox
+                    id="kbPrefetchEnabled"
+                    checked={cfg.kbPrefetchEnabled !== false}
+                    onCheckedChange={(v) =>
+                      setCfg({ ...cfg, kbPrefetchEnabled: v === true })
+                    }
+                  />
+                  <FieldLabel htmlFor="kbPrefetchEnabled">
+                    开启预检索注入
+                  </FieldLabel>
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor="kbPrefetchTopK">注入片段条数</FieldLabel>
+                  <Input
+                    id="kbPrefetchTopK"
+                    inputMode="numeric"
+                    value={num("kbPrefetchTopK")}
+                    onChange={(e) => upd("kbPrefetchTopK", e.target.value)}
+                  />
+                  <FieldDescription>
+                    默认 5。调小可压住长会话的上下文增长。
+                  </FieldDescription>
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor="kbPrefetchMaxDistance">
+                    相关性距离上限
+                  </FieldLabel>
+                  <Input
+                    id="kbPrefetchMaxDistance"
+                    inputMode="decimal"
+                    value={num("kbPrefetchMaxDistance")}
+                    onChange={(e) =>
+                      upd("kbPrefetchMaxDistance", e.target.value)
+                    }
+                  />
+                  <FieldDescription>
+                    越大越宽松;向量 L2 距离,1.0 约等于余弦相似度 0.5。默认 1.0。
                   </FieldDescription>
                 </Field>
               </FieldGroup>

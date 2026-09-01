@@ -1127,6 +1127,35 @@ export class Repo {
     }))
   }
 
+  // 工具调用日持久化:整个 run 的若干行一次事务写入,增量累加
+  addToolStatsDaily(
+    day: string,
+    site: string,
+    rows: { tool: string; runs: number; calls: number }[]
+  ): void {
+    if (!rows.length) return
+    const stmt = this.db.prepare(
+      `INSERT INTO tool_stats_daily (day, site, tool, runs, calls)
+       VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(day, site, tool) DO UPDATE SET
+         runs = runs + excluded.runs,
+         calls = calls + excluded.calls`
+    )
+    this.db.transaction(() => {
+      for (const r of rows) stmt.run(day, site, r.tool, r.runs, r.calls)
+    })()
+  }
+
+  toolStatsDaily(
+    day: string
+  ): { site: string; tool: string; runs: number; calls: number }[] {
+    return this.db
+      .prepare(
+        "SELECT site, tool, runs, calls FROM tool_stats_daily WHERE day = ? ORDER BY site, calls DESC"
+      )
+      .all(day) as { site: string; tool: string; runs: number; calls: number }[]
+  }
+
   usageDailyTotalCost(day: string): number {
     const row = this.db
       .prepare(

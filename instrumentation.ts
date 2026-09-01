@@ -20,5 +20,14 @@ export async function register(): Promise<void> {
 
   const builders = await defaultBuilders()
   await getRuntime().start(cfg, builders)
+
+  // 预热本地嵌入模型:首次 embed 要加载模型(数秒),不预热则第一条真实用户消息
+  // 会在预检索里撞上超时、白白退回纯 kb_search 路径。后台不阻塞启动。
+  if (cfg.kbPrefetchEnabled) {
+    void import("./lib/tools/embed")
+      .then(({ embed }) => embed("预热"))
+      .catch((e) => console.warn("[agent] 嵌入模型预热失败:", e))
+  }
+
   console.log("[agent] OneBot 客服 Agent 已启动")
 }
