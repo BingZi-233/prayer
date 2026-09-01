@@ -92,9 +92,11 @@ describe("runIngest", () => {
     rmSync(join(dir, "gone.md"))
     await runIngest(repo, dir)
 
-    expect(repo.kbDocStats().map((d) => d.doc).sort()).toEqual([
-      "human-reflection",
-      "keep.md",
-    ])
+    expect(
+      repo
+        .kbDocStats()
+        .map((d) => d.doc)
+        .sort()
+    ).toEqual(["human-reflection", "keep.md"])
   })
 })

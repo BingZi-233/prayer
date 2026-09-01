@@ -873,8 +873,8 @@ describe("channel schema migration", () => {
     raw.close()
 
     const migrated = openDb(p, 3)
-    // v1→v2→v3→v4 一路升完
-    expect(migrated.pragma("user_version", { simple: true }) as number).toBe(4)
+    // v1→v2→v3→v4→v5 一路升完
+    expect(migrated.pragma("user_version", { simple: true }) as number).toBe(5)
     // v4: group_messages 补 mentioned_bot 列,老数据默认 0
     const gmCols = (
       migrated.prepare("PRAGMA table_info(group_messages)").all() as {
@@ -921,7 +921,7 @@ describe("channel schema migration", () => {
     // 幂等:再 open 不炸
     migrated.close()
     const again = openDb(p, 3)
-    expect(again.pragma("user_version", { simple: true })).toBe(4)
+    expect(again.pragma("user_version", { simple: true })).toBe(5)
     again.close()
     rmSync(dir, { recursive: true, force: true })
   })

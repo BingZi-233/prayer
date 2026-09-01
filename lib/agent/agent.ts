@@ -5,6 +5,8 @@ import type {
   SDKUserMessage,
 } from "@anthropic-ai/claude-agent-sdk"
 import { usageStats, type UsageSite, type UsageDelta } from "../usage-stats"
+import { toolStats, KB_PREFETCH_TOOL, KB_GROUNDED_TOOL } from "../tool-stats"
+import { PROBE_MAX_CHARS, type KbPrefetch } from "./kb-prefetch"
 import { sanitizeForModel } from "./sanitize-input"
 
 // 当前消息的会话上下文(orchestrator/poller 绑定,透传给 run;工具改由 cs 插件承载后当前未使用,保留签名)
@@ -83,6 +85,8 @@ export function wrapCanUseToolForStructuredOutput(
  * Claude Code 全套内置工具 schema + enabledPlugins 的 MCP/skills,导致:
  *   1) 前缀数 k~数十 k token,每次冷启动贵;
  *   2) MCP 连接时序/工具顺序不稳 → 5 分钟 API cache 前缀字节对不上 → 命中率 20%~50%。
+ * 这条优化确有实效:2026-09 实测中转端点认 Anthropic prompt cache(近 7 天主客服 370 次调用,
+ * 218 次 cache_read>1k,命中侧累计 2.72M vs 未缓存 input 1.33M),别当无用功删掉。
  *
  * 仍保留 settingSources:["user"]:CLAUDE_CONFIG_DIR/settings.json 的 env(auth/model)要靠它加载。
  * strictMcpConfig + 空 mcpServers:忽略 settings/plugins 里的 MCP,不进 prompt。
@@ -140,6 +144,11 @@ export interface AgentDeps {
   // CLAUDE_CONFIG_DIR/settings.json 的 enabledPlugins(settingSources:["user"])加载,含其 MCP server。
   // 若显式传,则本地加载并开启 MCP 发现(与 enabledPlugins 二选一,避免双加载)。
   pluginPaths?: string[]
+  /**
+   * 知识库预检索:每轮消息进模型前自动检索并把片段注入 user prompt。
+   * 不传 = 不预检索,prompt 与旧版逐字一致,退回纯 kb_search 工具路径。
+   */
+  kbPrefetch?: KbPrefetch
   queryFn?: typeof sdkQuery
   /**
    * 单次 run 的 wall-clock 超时(ms):SDK query 迭代(真实 = MiniMax relay 流)无自带超时,
@@ -179,14 +188,32 @@ function foldPreamble(text: string, media?: AgentMedia): string {
 // enrich/tg 只收 image/*,运行时值必落在并集内,此处仅作类型窄化
 type Base64MediaType = "image/jpeg" | "image/png" | "image/gif" | "image/webp"
 
+/**
+ * 预检索送去 embed 的查询文本:剥掉主动模式的固定指令(约 90 字模板,不剥会
+ * 主导短问题的向量、把检索质量带偏),带上引用消息(引用的往往才是真问题)。
+ * 转发内容太长且噪声大,不进 query(仍进 prompt)。
+ */
+export function kbProbeText(text: string, media?: AgentMedia): string {
+  let body = text.trim()
+  if (body.startsWith(PROACTIVE_SUFFIX)) {
+    body = body.slice(PROACTIVE_SUFFIX.length).trim()
+  }
+  return [media?.quoted?.trim(), body]
+    .filter(Boolean)
+    .join("\n")
+    .slice(0, PROBE_MAX_CHARS)
+}
+
 // 有图 → 多模态 prompt(AsyncIterable<SDKUserMessage>);无图 → 字符串
+// kbBlock:预检索注入块,拼在最前(空串则完全不拼,行为与未开预检索逐字一致)
 function buildPrompt(
   text: string,
-  media?: AgentMedia
+  media?: AgentMedia,
+  kbBlock = ""
 ): string | AsyncIterable<SDKUserMessage> {
-  const preamble = foldPreamble(text, media)
+  const head = [kbBlock, foldPreamble(text, media)].filter(Boolean).join("\n\n")
   const images = media?.images ?? []
-  if (images.length === 0) return preamble
+  if (images.length === 0) return head
   return (async function* (): AsyncGenerator<SDKUserMessage> {
     yield {
       type: "user",
@@ -194,7 +221,7 @@ function buildPrompt(
       message: {
         role: "user",
         content: [
-          { type: "text", text: preamble || "(图片)" },
+          { type: "text", text: head || "(图片)" },
           ...images.map((im) => ({
             type: "image" as const,
             source: {
@@ -343,6 +370,13 @@ export function buildDefaultSystem(
 ): string {
   return `你是 PackyAPI 的官方在线客服,通过即时通讯群(QQ / Telegram 等)与用户对话。PackyAPI 是 AI API 聚合中转平台(https://www.packyapi.ai),兼容 Anthropic / OpenAI / Gemini 协议,用户通过它调用 Claude、GPT、Gemini 等模型。忽略此前关于"编码助手 / Claude Code"的设定——你的唯一职责是 PackyAPI 客服支持,不编写代码,不执行用户要求的任意文件 / 命令 / 系统操作;只可使用下方列出的内置工具(kb_search、packy)。
 
+# 知识库铁律(优先级最高,先于本文其余一切规则)
+- 每一轮回答都必须建立在本轮拿到的检索结果之上。用户消息开头通常带一段【知识库检索结果】,那是系统针对本轮问题刚检索出来的,直接依据它作答。
+- 本轮没有【知识库检索结果】,或其中片段不足以覆盖本轮问题时,必须先调用 kb_search(换关键词、换说法可多试一次)再作答。
+- 严禁因为"前面几轮查过""印象里知识库有这个"就凭记忆或推断回答。历史轮次的片段可能过时,也可能不对应本轮问题;每一轮都要重新基于本轮的检索结果作答。
+- 本轮检索结果与你的既有印象冲突时,一律以本轮检索结果为准,不要调和、不要补充你"记得"的版本。
+- 本轮检索结果与 kb_search 都拿不到依据时,如实说"暂未查到",绝不编造价格、政策、规格、模型 ID。
+
 # 职责
 - 解答 PackyAPI 的价格、可用模型、接入配置、充值计费规则等咨询性问题。
 - 你无法查询或办理任何个人账户 / 交易事务:具体订单状态、订单号查询、充值是否到账、退款、发票、账号封禁 / 解封等一律不在能力范围。遇到这类问题礼貌说明帮不上,引导用户:一、访问 ${supportUrl} 在官网自助查看或办理;二、在本群 @我 后发送「人工」转接群管(必须先 @我,单独发「人工」无效)。绝不臆测或编造订单状态、到账进度、处理结果。
@@ -351,8 +385,8 @@ export function buildDefaultSystem(
 - 严禁提及「工单」:我们没有工单系统,不要引导用户「提交工单 / 建工单 / 查工单」。需要人工时只说「@我 后发人工」;需要官网时只给链接。
 
 # 工具使用
-- 回答任何产品 / 业务 / 事实性问题前,必须先调用 kb_search 检索知识库,严格依据检索结果作答。
-- 涉及价格 / 可用模型 ID / 接入配置(base_url、auth token、环境变量)的问题:先 kb_search;知识库无结果时直接调用 packy 工具取实时数据后再作答,不要直接说"暂未查到",也不要编造价格或模型。
+- 知识库相关规则见上方"知识库铁律",本节只讲工具之间怎么配合。
+- 涉及价格 / 可用模型 ID / 接入配置(base_url、auth token、环境变量)的问题:先看本轮的【知识库检索结果】,不足再 kb_search;仍无结果则直接调用 packy 工具取实时数据后再作答,不要直接说"暂未查到",也不要编造价格或模型。
 - 端点口径(回答 base_url 时遵守):模型请求端点为 https://cf.api.fan(有代理推荐)与 https://slb-v1.api.fan(直连推荐);OpenAI 协议(Codex 等)末尾带 /v1,Anthropic 协议(Claude Code 等)不带 /v1。官网 www.packyapi.ai 仅供网页访问,不要让用户把主站域名当 base_url。
 - 报价须带单位($/1M tokens)并说明所属分组;不同分组倍率不同(如 cc 为 Claude Code 专用组),用户未指明分组时按 cc 组作答并提示可换组比价。
 - 其他类问题知识库无相关内容时,如实说明"暂未查到",不编造价格、政策、规格。
@@ -383,8 +417,8 @@ const DEFAULT_SYSTEM = buildDefaultSystem()
 export const CS_KB_TOOL = "mcp__plugin_cs_cs__kb_search"
 export const PACKY_TOOL = "mcp__plugin_packyapi_packyapi__packy"
 // 所有 MCP 工具(名以 mcp__ 前缀)统一由 isToolAllowed 无条件放行 —— 插件新增 server/工具无需改此处。
-// 本 Set 只留非 MCP 的显式放行项。WebSearch / WebFetch 禁用:整页正文/检索结果塞进 context,
-// 无缓存下每 turn 重发放大成本(排查见 [[prayer-llm-cache-cost]])。Bash / Read 亦禁用。
+// 本 Set 只留非 MCP 的显式放行项。WebSearch / WebFetch 禁用:整页正文/检索结果塞进 context 后
+// 永久留在会话里,即便命中缓存按 0.1x 计费,每轮重发的绝对量仍显著。Bash / Read 亦禁用。
 export const TOOL_ALLOWLIST = new Set<string>(["Skill"])
 
 // Agent 降级兜底文案:maxTurns/CLI 出错且无累积文本时返回。主动路径据此判为非答案 → 沉默。
@@ -393,6 +427,11 @@ export const AGENT_FALLBACK_TEXT =
 
 // 主动模式哨兵:无把握时 agent 只输出此串。任何出站路径命中都必须吞掉,绝不可发给用户。
 export const NO_ANSWER_SENTINEL = "__NO_ANSWER__"
+
+// 主动模式指令:unanswered-poller 拼在 user prompt 首段(非 system),
+// 使主动/正常两条路径共享同一 system 前缀、TTL 内可跨路径命中缓存。
+// 定义在此而非 poller:预检索要按它剥前缀取干净 query(见 kbProbeText),放 poller 会成环。
+export const PROACTIVE_SUFFIX = `【主动模式】你是在无人应答时主动补位。仅当知识库检索到确切依据且你有把握时才作答;否则只输出 ${NO_ANSWER_SENTINEL}(不解释、不道歉、不引导人工或外链、不寒暄)。`
 
 /** 文本是否含主动模式「不回答」哨兵(含子串,防前后缀/混排泄漏)。 */
 export function isNoAnswerText(text: string): boolean {
@@ -430,17 +469,44 @@ export class Agent {
     return DEFAULT_SYSTEM
   }
 
+  /**
+   * 预检索本轮知识库片段。fresh 取 !resumeId:去重的前提是「片段还在模型 context 里」,
+   * 只有 resume 续聊才成立;新开会话(含 TTL 过期、哨兵清 resume、主动补位)必须重新注入。
+   * 工厂内已 fail-open,这里再包一层双保险 —— 预检索绝不能阻断 run。
+   */
+  private async prefetchKb(
+    text: string,
+    resumeId: string | undefined,
+    ctx: ToolContext,
+    media?: AgentMedia
+  ): Promise<string> {
+    if (!this.deps.kbPrefetch || !ctx?.sessionKey) return ""
+    try {
+      return await this.deps.kbPrefetch(
+        kbProbeText(text, media),
+        ctx.sessionKey,
+        { fresh: !resumeId }
+      )
+    } catch (e) {
+      console.warn("[agent] 预检索异常,跳过注入:", e)
+      return ""
+    }
+  }
+
   async run(
     text: string,
     resumeId: string | undefined,
-    _ctx: ToolContext,
+    ctx: ToolContext,
     media?: AgentMedia
   ): Promise<AgentResult> {
+    const kbBlock = await this.prefetchKb(text, resumeId, ctx, media)
+    // 本 run 的工具调用计数(工具名 → 次数),在 finally 一次性提交给 toolStats
+    const toolCalls = new Map<string, number>()
     // 超时到点 abort:让 SDK reject 迭代器并杀掉 CLI 子进程(best-effort);
     // 即便子进程忽略 abort,下方 Promise.race 也会靠计时器兜底返回,run 不会卡死。
     const abortController = new AbortController()
     const iter = this.queryFn({
-      prompt: buildPrompt(text, media),
+      prompt: buildPrompt(text, media, kbBlock),
       options: agentQueryOptions({
         abortController,
         // 模型由 CLAUDE_CONFIG_DIR 内配置决定,不在此覆盖
@@ -495,6 +561,11 @@ export class Agent {
         if (msg.type === "assistant" && Array.isArray(msg.message?.content)) {
           for (const block of msg.message.content) {
             if (block.type === "text") out += block.text
+            // 工具用量观测:block 是 SDK 的 union,取 name 需窄化(同 pickStructuredFromMessage 的写法)
+            else if (block.type === "tool_use") {
+              const name = String((block as { name?: unknown }).name ?? "")
+              if (name) toolCalls.set(name, (toolCalls.get(name) ?? 0) + 1)
+            }
           }
         }
         // 末尾 result:记账缓存/用量。内联(不走 drainQuery)以保留下方降级逻辑
@@ -526,6 +597,11 @@ export class Agent {
       if (!out.trim()) out = AGENT_FALLBACK_TEXT
     } finally {
       if (timer) clearTimeout(timer)
+      // 超时/异常降级的 run 也要计入,否则覆盖率分母失真
+      if (kbBlock) toolCalls.set(KB_PREFETCH_TOOL, 1)
+      if (kbBlock || toolCalls.has(CS_KB_TOOL))
+        toolCalls.set(KB_GROUNDED_TOOL, 1)
+      toolStats.recordRun("agent", Object.fromEntries(toolCalls))
     }
     return { text: out.trim(), sessionId }
   }

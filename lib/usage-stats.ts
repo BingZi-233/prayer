@@ -1,5 +1,8 @@
 // LLM 用量/缓存命中聚合器。仿 lib/logger.ts 的 globalThis 单例:热重载/多次 import 复用同一实例。
 // 内存滚动累计 + 可选 SQLite 日表持久化(bindUsagePersistence)。
+// 2026-09 实测:本部署的中转端点认 Anthropic prompt cache,cacheRead 是真实有值的指标
+// (近 7 天主客服 370 次调用,218 次 cache_read>1k,命中侧 2.72M vs 未缓存 input 1.33M)。
+// 注意快照是「本进程启动以来」的滚动累计,不是单次调用值 —— 看绝对数请除以 count。
 
 import type { Repo } from "./db/repo"
 

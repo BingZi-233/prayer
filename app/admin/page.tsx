@@ -17,6 +17,7 @@ import {
   Gauge,
   Target,
   Zap,
+  Wrench,
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -67,10 +68,29 @@ interface UsageRow {
   costUsd: number
   hitRatio: number
 }
+interface ToolRow {
+  tool: string
+  toolLabel: string
+  runs: number
+  calls: number
+  perRun: number
+}
+interface KbCoverageView {
+  totalRuns: number
+  groundedRuns: number
+  searchRuns: number
+  prefetchRuns: number
+  ratio: number
+}
 interface Usage {
   rows: UsageRow[]
   total: UsageRow
   daily?: { day: string; costUsd: number; budgetUsd: number } | null
+  tools?: {
+    day: string
+    process: { rows: ToolRow[]; coverage: KbCoverageView }
+    daily: { rows: ToolRow[]; coverage: KbCoverageView }
+  }
 }
 interface Metrics {
   auto: number
@@ -93,7 +113,23 @@ interface Overview {
 
 const pct = (r: number) => `${Math.round(r * 100)}%`
 const kfmt = (n: number) =>
-  n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n)
+  n >= 1e6
+    ? `${(n / 1e6).toFixed(2)}M`
+    : n >= 1000
+      ? `${(n / 1000).toFixed(1)}k`
+      : String(Math.round(n))
+
+/** 单元格:上为本次运行累计,下为单次调用均值(防把进程累计误读成单次量) */
+function TokenCell({ total, count }: { total: number; count: number }) {
+  return (
+    <>
+      {kfmt(total)}
+      <div className="text-xs text-muted-foreground">
+        均 {kfmt(total / Math.max(count, 1))}
+      </div>
+    </>
+  )
+}
 
 const STATE_LABEL: Record<string, string> = {
   running: "运行中",
@@ -381,8 +417,8 @@ export default function StatusPage() {
         icon={Gauge}
         description={
           usage?.daily
-            ? `本次运行累计；今日已记账 $${usage.daily.costUsd.toFixed(4)}${usage.daily.budgetUsd > 0 ? ` / 预算 $${usage.daily.budgetUsd}` : ""}。`
-            : "按调用点统计本次运行用量。重启后内存计数清零，日汇总仍保留。"
+            ? `本次运行累计（token 列下方为单次调用均值）；今日已记账 $${usage.daily.costUsd.toFixed(4)}${usage.daily.budgetUsd > 0 ? ` / 预算 $${usage.daily.budgetUsd}` : ""}。`
+            : "按调用点统计本次运行用量，token 列下方为单次调用均值。重启后内存计数清零，日汇总仍保留。"
         }
         action={
           usage ? (
@@ -443,12 +479,15 @@ export default function StatusPage() {
                   </TableCell>
                   <TableCell className="hidden text-right tabular-nums sm:table-cell">
                     {kfmt(r.cacheRead)} / {kfmt(r.cacheCreation)}
+                    <div className="text-xs text-muted-foreground">
+                      均 {kfmt(r.cacheRead / Math.max(r.count, 1))}
+                    </div>
                   </TableCell>
                   <TableCell className="hidden text-right tabular-nums md:table-cell">
-                    {kfmt(r.input)}
+                    <TokenCell total={r.input} count={r.count} />
                   </TableCell>
                   <TableCell className="hidden text-right tabular-nums md:table-cell">
-                    {kfmt(r.output)}
+                    <TokenCell total={r.output} count={r.count} />
                   </TableCell>
                   <TableCell className="text-right tabular-nums">
                     {r.costUsd.toFixed(4)}
@@ -466,17 +505,111 @@ export default function StatusPage() {
                 <TableCell className="hidden text-right tabular-nums sm:table-cell">
                   {kfmt(usage.total.cacheRead)} /{" "}
                   {kfmt(usage.total.cacheCreation)}
+                  <div className="text-xs font-normal text-muted-foreground">
+                    均{" "}
+                    {kfmt(
+                      usage.total.cacheRead / Math.max(usage.total.count, 1)
+                    )}
+                  </div>
                 </TableCell>
                 <TableCell className="hidden text-right tabular-nums md:table-cell">
-                  {kfmt(usage.total.input)}
+                  <TokenCell
+                    total={usage.total.input}
+                    count={usage.total.count}
+                  />
                 </TableCell>
                 <TableCell className="hidden text-right tabular-nums md:table-cell">
-                  {kfmt(usage.total.output)}
+                  <TokenCell
+                    total={usage.total.output}
+                    count={usage.total.count}
+                  />
                 </TableCell>
                 <TableCell className="text-right tabular-nums">
                   {usage.total.costUsd.toFixed(4)}
                 </TableCell>
               </TableRow>
+            </TableBody>
+          </Table>
+        )}
+      </SectionCard>
+
+      <SectionCard
+        title="工具调用"
+        icon={Wrench}
+        description={
+          usage?.tools
+            ? `主客服本次运行的工具使用；今日已记账 ${usage.tools.daily.coverage.totalRuns} 轮。`
+            : "主客服每轮回答用到的工具。"
+        }
+        action={
+          usage?.tools ? (
+            <div className="flex flex-wrap items-center gap-1.5">
+              <Badge
+                variant={
+                  usage.tools.process.coverage.ratio >= 0.9
+                    ? "default"
+                    : usage.tools.process.coverage.ratio >= 0.7
+                      ? "secondary"
+                      : "destructive"
+                }
+                className="tabular-nums"
+              >
+                知识库覆盖 {pct(usage.tools.process.coverage.ratio)}
+              </Badge>
+              <span className="text-xs text-muted-foreground tabular-nums">
+                {usage.tools.process.coverage.groundedRuns}/
+                {usage.tools.process.coverage.totalRuns} 轮
+              </span>
+              <Badge variant="outline" className="tabular-nums">
+                其中 kb_search{" "}
+                {pct(
+                  usage.tools.process.coverage.searchRuns /
+                    Math.max(usage.tools.process.coverage.totalRuns, 1)
+                )}
+              </Badge>
+            </div>
+          ) : undefined
+        }
+      >
+        {!usage?.tools ? (
+          <div className="flex flex-wrap gap-2">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <Skeleton key={i} className="h-8 w-24" />
+            ))}
+          </div>
+        ) : usage.tools.process.rows.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            本次运行还没有工具调用记录。
+          </p>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>工具</TableHead>
+                <TableHead className="text-right">出现轮次</TableHead>
+                <TableHead className="text-right">调用次数</TableHead>
+                <TableHead className="hidden text-right sm:table-cell">
+                  每轮均次
+                </TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {usage.tools.process.rows.map((r) => (
+                <TableRow key={r.tool}>
+                  <TableCell className="font-medium whitespace-nowrap">
+                    {r.toolLabel}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {r.runs}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {r.calls}
+                  </TableCell>
+                  <TableCell className="hidden text-right tabular-nums sm:table-cell">
+                    {r.perRun.toFixed(1)}
+                  </TableCell>
+                </TableRow>
+              ))}
             </TableBody>
           </Table>
         )}

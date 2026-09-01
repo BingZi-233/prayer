@@ -1,5 +1,15 @@
 import { NextResponse } from "next/server"
 import { usageStats, cacheHitRatio, type UsageStat } from "@/lib/usage-stats"
+import {
+  toolStats,
+  kbCoverage,
+  shortToolName,
+  RUN_TOTAL_TOOL,
+  KB_PREFETCH_TOOL,
+  KB_GROUNDED_TOOL,
+  type KbCoverage,
+  type ToolStat,
+} from "@/lib/tool-stats"
 import { sharedDb } from "@/lib/db/shared"
 import { Repo } from "@/lib/db/repo"
 import { getConfig } from "@/lib/config-store"
@@ -43,6 +53,53 @@ function toRow(site: string, s: UsageStat) {
   }
 }
 
+interface ToolRow extends ToolStat {
+  tool: string
+  toolLabel: string
+  perRun: number
+}
+
+// 伪工具行的中文名(真实工具名走 shortToolName 剥 MCP 前缀)
+const TOOL_LABEL: Record<string, string> = {
+  [KB_PREFETCH_TOOL]: "知识库预检索注入",
+  [KB_GROUNDED_TOOL]: "有知识库依据(注入或检索)",
+}
+
+/** __run__ 是覆盖率分母、不进表格;其余按调用次数降序 */
+function toToolRows(stats: Record<string, ToolStat>): ToolRow[] {
+  return Object.entries(stats)
+    .filter(([tool]) => tool !== RUN_TOTAL_TOOL)
+    .map(([tool, s]) => ({
+      tool,
+      toolLabel: TOOL_LABEL[tool] ?? shortToolName(tool),
+      ...s,
+      perRun: s.runs > 0 ? s.calls / s.runs : 0,
+    }))
+    .sort((a, b) => b.calls - a.calls)
+}
+
+/** 日表行(site/tool/runs/calls) → 与内存快照同形的 site → tool → stat */
+function groupDailyTools(
+  rows: { site: string; tool: string; runs: number; calls: number }[]
+): Record<string, Record<string, ToolStat>> {
+  const out: Record<string, Record<string, ToolStat>> = {}
+  for (const r of rows) {
+    out[r.site] ??= {}
+    out[r.site][r.tool] = { runs: r.runs, calls: r.calls }
+  }
+  return out
+}
+
+function toolSection(stats: Record<string, ToolStat> | undefined): {
+  rows: ToolRow[]
+  coverage: KbCoverage
+} {
+  return {
+    rows: toToolRows(stats ?? {}),
+    coverage: kbCoverage(stats),
+  }
+}
+
 // 本次进程运行以来的 LLM 用量/缓存命中 + 今日持久化汇总
 // 始终返回全部已知调用点(零用量也展示),不再因空数据整表隐藏。
 export async function GET(): Promise<NextResponse> {
@@ -68,6 +125,18 @@ export async function GET(): Promise<NextResponse> {
     { ...ZERO }
   )
 
+  // 工具调用:只看主客服站点(其余调用点本就 tools:[],无工具可记)
+  const day = new Date().toISOString().slice(0, 10)
+  const tools: {
+    day: string
+    process: { rows: ToolRow[]; coverage: KbCoverage }
+    daily: { rows: ToolRow[]; coverage: KbCoverage }
+  } = {
+    day,
+    process: toolSection(toolStats.snapshot().agent),
+    daily: toolSection(undefined),
+  }
+
   let daily: {
     day: string
     costUsd: number
@@ -79,7 +148,6 @@ export async function GET(): Promise<NextResponse> {
       new Repo(sharedDb(process.env.DB_PATH ?? "./data/agent.db"))
     )
     const repo = new Repo(sharedDb(cfg.dbPath))
-    const day = new Date().toISOString().slice(0, 10)
     const drows = repo.usageDaily(day)
     daily = {
       day,
@@ -92,11 +160,17 @@ export async function GET(): Promise<NextResponse> {
         costUsd: r.costUsd,
       })),
     }
+    tools.daily = toolSection(groupDailyTools(repo.toolStatsDaily(day)).agent)
   } catch {
     /* 持久化读失败不阻断内存快照 */
   }
 
   return NextResponse.json(
-    ok({ rows, total: { ...total, hitRatio: cacheHitRatio(total) }, daily })
+    ok({
+      rows,
+      total: { ...total, hitRatio: cacheHitRatio(total) },
+      daily,
+      tools,
+    })
   )
 }

@@ -46,6 +46,12 @@ export interface AppConfig {
   reflectNotifyAdmin: boolean
   // 会话空闲 TTL:超时后不 resume,下条消息开全新对话。默认 5 分钟
   resumeTtlMs: number
+  /** 每轮消息进模型前自动检索知识库并注入片段。默认开;关掉退回纯 kb_search 工具路径 */
+  kbPrefetchEnabled: boolean
+  /** 每轮注入的片段条数。默认 5 */
+  kbPrefetchTopK: number
+  /** 注入的向量距离上限(sqlite-vec L2,越大越宽松;1.0 约等于余弦 0.5)。默认 1.0 */
+  kbPrefetchMaxDistance: number
   /** 生效会话白名单（跨通道 chat-ref） */
   enabledChats: ChatRef[]
   /** Telegram Bot API token；空 = 未配置 */
@@ -224,6 +230,10 @@ function seedFromEnv(env: Record<string, string | undefined>): AppConfig {
     // 默认开:env 显式 "false" 才关(与当前始终通知的行为兼容)
     reflectNotifyAdmin: env.REFLECT_NOTIFY_ADMIN !== "false",
     resumeTtlMs: Number(env.RESUME_TTL_MS ?? "300000"),
+    // 默认开:env 显式 "false" 才关
+    kbPrefetchEnabled: env.KB_PREFETCH_ENABLED !== "false",
+    kbPrefetchTopK: Number(env.KB_PREFETCH_TOP_K ?? "5"),
+    kbPrefetchMaxDistance: Number(env.KB_PREFETCH_MAX_DISTANCE ?? "1.0"),
     enabledChats: enabledChatsFromEnv(env),
     telegramBotToken: env.TELEGRAM_BOT_TOKEN ?? "",
     proactiveEnabled: env.PROACTIVE_ENABLED === "true",
