@@ -12,6 +12,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
+    "check": "pnpm typecheck && pnpm lint && pnpm test",
     "ingest": "node --experimental-transform-types scripts/ingest.ts",
     "pm:start": "next build && pm2 start ecosystem.config.cjs",
     "pm:stop": "pm2 stop prayer",
