@@ -1,5 +1,11 @@
 packages: []
 
+# 依赖安全:父级钉版卡住的三条高危链,统一顶到官方修复版(仅覆盖未达标实例)
+overrides:
+  "adm-zip@<0.6.0": "^0.6.0"
+  "fast-uri@<3.1.6": "^3.1.6"
+  "sharp@<0.35.0": "^0.35.4"
+
 allowBuilds:
   sharp: true
   unrs-resolver: true
