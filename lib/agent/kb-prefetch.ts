@@ -15,6 +15,7 @@ import type { KbHit, Repo } from "../db/repo"
 import { errorMessage } from "../log-context"
 import { logger } from "../logger"
 import { sanitizeForModel } from "./sanitize-input"
+import { withTimeout } from "./timeout"
 
 /** 每轮注入的片段条数 */
 export const DEFAULT_KB_PREFETCH_TOP_K = 5
@@ -144,22 +145,6 @@ export function formatKbBlock(hits: { content: string }[]): string {
     body,
     "以上是针对本轮问题实时检索到的片段。请优先严格依据它们作答;若不足以回答,换关键词调用 kb_search 补检;不要凭记忆或此前轮次的印象推断。",
   ].join("\n")
-}
-
-/** 检索超时:embed 首次调用要加载本地模型,慢就放弃注入而非拖死整条 run */
-async function withTimeout<T>(ms: number, task: Promise<T>): Promise<T> {
-  if (ms <= 0) return task
-  let timer: ReturnType<typeof setTimeout> | undefined
-  try {
-    return await Promise.race([
-      task,
-      new Promise<never>((_, reject) => {
-        timer = setTimeout(() => reject(new Error(`预检索超时(${ms}ms)`)), ms)
-      }),
-    ])
-  } finally {
-    if (timer) clearTimeout(timer)
-  }
 }
 
 export function makeKbPrefetch(deps: KbPrefetchDeps): KbPrefetch {

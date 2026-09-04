@@ -169,4 +169,30 @@ describe("AdminsCache", () => {
     )
     expect(listTgBypassBlocks().length).toBeGreaterThanOrEqual(2)
   })
+
+  it("同 chat 冷 miss 并发:复用在飞 promise,只发一次拉取", async () => {
+    let calls = 0
+    const c = new AdminsCache({
+      getChatAdministrators: async () => {
+        calls++
+        await new Promise((r) => setTimeout(r, 20))
+        return [{ userId: "10", role: "owner" }]
+      },
+      now: () => now,
+    })
+    const roles = await Promise.all([
+      c.getRole("777", "10"),
+      c.getRole("777", "99"),
+      c.getRole("777", "10"),
+    ])
+    expect(roles).toEqual(["owner", "member", "owner"])
+    expect(calls).toBe(1)
+    // TTL 内:同 chat 再查走缓存,inflight 清理不影响
+    expect(await c.getRole("777", "10")).toBe("owner")
+    expect(calls).toBe(1)
+    // TTL 过期:inflight 已清理,重新拉取可达
+    now += 16 * 60_000
+    expect(await c.getRole("777", "10")).toBe("owner")
+    expect(calls).toBe(2)
+  })
 })

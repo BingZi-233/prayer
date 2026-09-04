@@ -67,4 +67,43 @@ describe("fetchImageBase64", () => {
     )
     await expect(fetchImageBase64("http://x")).rejects.toThrow("404")
   })
+
+  it("挂起的下载在 timeoutMs 后抛错(AbortController 硬超时)", async () => {
+    const fetchFn = ((_url: unknown, init?: { signal?: AbortSignal }) =>
+      new Promise<Response>((_, reject) => {
+        init?.signal?.addEventListener("abort", () => reject(new Error("aborted")))
+      })) as unknown as typeof fetch
+    await expect(
+      fetchImageBase64("http://x/slow.jpg", { fetchFn, timeoutMs: 30 })
+    ).rejects.toThrow()
+  })
+
+  it("content-length 超过 maxBytes → 不读 body 直接抛错", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        arrayBuffer: async () => {
+          throw new Error("不应读取 body")
+        },
+        headers: {
+          get: (k: string) =>
+            k === "content-length" ? String(6 * 1024 * 1024) : null,
+        },
+      }))
+    )
+    await expect(fetchImageBase64("http://x/big.jpg")).rejects.toThrow("大小上限")
+  })
+
+  it("实际字节数超过 maxBytes → 抛错", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        arrayBuffer: async () => new Uint8Array(6 * 1024 * 1024).buffer,
+        headers: { get: () => null },
+      }))
+    )
+    await expect(fetchImageBase64("http://x/big2.jpg")).rejects.toThrow("大小上限")
+  })
 })

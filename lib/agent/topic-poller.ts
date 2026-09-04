@@ -4,6 +4,7 @@ import { logger } from "../logger"
 import { errorMessage } from "../log-context"
 import type { Repo } from "../db/repo"
 import { embed as defaultEmbed } from "../tools/embed"
+import { DEFAULT_QUERY_TIMEOUT_MS, withTimeout } from "./timeout"
 import { noToolQueryOptions, drainQuery } from "./agent"
 import { pickArrayFieldDual, previewJsonPayload } from "./json-output"
 import { textNearlySame } from "./reflection-poller"
@@ -71,6 +72,8 @@ export interface TopicPollerDeps {
   topicPromptMax?: number
   embed?: (text: string) => Promise<Float32Array>
   queryFn?: typeof sdkQuery
+  /** LLM(drainQuery)硬超时毫秒;<=0 关闭。默认 180s,防 relay 挂起静默停摆 */
+  queryTimeoutMs?: number
   now?: () => number
   /**
    * per-chat 旁路是否可用（ChannelRegistry 注入）。
@@ -87,6 +90,7 @@ interface Resolved {
   topicPromptMax: number
   embed: (text: string) => Promise<Float32Array>
   queryFn: typeof sdkQuery
+  queryTimeoutMs: number
   now: () => number
   isBypassEnabled: (channel: ChannelId, chatId: string) => boolean
 }
@@ -142,6 +146,7 @@ function resolve(deps: TopicPollerDeps): Resolved {
     topicPromptMax: deps.topicPromptMax ?? 40,
     embed: deps.embed ?? defaultEmbed,
     queryFn: deps.queryFn ?? sdkQuery,
+    queryTimeoutMs: deps.queryTimeoutMs ?? DEFAULT_QUERY_TIMEOUT_MS,
     now: deps.now ?? (() => Date.now()),
     isBypassEnabled: deps.isBypassEnabled ?? (() => true),
   }
@@ -194,22 +199,25 @@ async function scanOnce(d: Resolved): Promise<void> {
         .join("\n")
       const prompt = `【现有主题】\n${topicBlock}\n\n【待归类问题】\n${qBlock}`
 
-      const { text: out, structuredOutput } = await drainQuery(
-        d.queryFn({
-          prompt,
-          options: noToolQueryOptions({
-            systemPrompt: TOPIC_SYSTEM,
-            // 仍挂 schema:StructuredOutput 成功时形状更稳;失败则文本兜底
-            outputFormat: { type: "json_schema", schema: TOPIC_SCHEMA },
-            thinking: { type: "disabled" },
-            canUseTool: async () => ({
-              behavior: "deny" as const,
-              message: "归类阶段不使用工具",
-            }),
-            maxTurns: 2,
-          }) as never,
-        }),
-        "topic"
+      const { text: out, structuredOutput } = await withTimeout(
+        d.queryTimeoutMs,
+        drainQuery(
+          d.queryFn({
+            prompt,
+            options: noToolQueryOptions({
+              systemPrompt: TOPIC_SYSTEM,
+              // 仍挂 schema:StructuredOutput 成功时形状更稳;失败则文本兜底
+              outputFormat: { type: "json_schema", schema: TOPIC_SCHEMA },
+              thinking: { type: "disabled" },
+              canUseTool: async () => ({
+                behavior: "deny" as const,
+                message: "归类阶段不使用工具",
+              }),
+              maxTurns: 2,
+            }) as never,
+          }),
+          "topic"
+        )
       )
 
       // structured 优先 + 文本 JSON 兜底;皆无则本会话不推进,下轮重试

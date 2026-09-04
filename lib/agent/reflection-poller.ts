@@ -7,6 +7,12 @@ import { embed as defaultEmbed } from "../tools/embed"
 import { noToolQueryOptions, drainQuery } from "./agent"
 import { pickArrayFieldDual, previewJsonPayload } from "./json-output"
 import { isNewSensitiveError, sanitizeForModel } from "./sanitize-input"
+import {
+  DEFAULT_EMBED_TIMEOUT_MS,
+  DEFAULT_QUERY_TIMEOUT_MS,
+  withTimeout,
+  withTimeoutFn,
+} from "./timeout"
 import type { ChannelId } from "../channels/types"
 import type { ChatRef } from "../channels/enabled-chats"
 
@@ -29,6 +35,10 @@ export interface ReflectionPollerDeps {
   kbContextK?: number
   embed?: (text: string) => Promise<Float32Array>
   queryFn?: typeof sdkQuery
+  /** 本地 embed 硬超时毫秒;<=0 关闭。默认 60s(冷启动加载模型 ~20s+) */
+  embedTimeoutMs?: number
+  /** LLM(drainQuery)硬超时毫秒;<=0 关闭。默认 180s,防 relay 挂起静默停摆 */
+  queryTimeoutMs?: number
   now?: () => number
   /**
    * per-chat 旁路是否可用（由 ChannelRegistry / channel.isBypassEnabled 注入）。
@@ -50,6 +60,8 @@ interface Resolved {
   kbContextK: number
   embed: (text: string) => Promise<Float32Array>
   queryFn: typeof sdkQuery
+  embedTimeoutMs: number
+  queryTimeoutMs: number
   now: () => number
   isBypassEnabled: (channel: ChannelId, chatId: string) => boolean
 }
@@ -248,8 +260,14 @@ function resolve(deps: ReflectionPollerDeps): Resolved {
     dupTopK: deps.dupTopK ?? DEFAULT_DUP_TOP_K,
     dupMaxDistance: deps.dupMaxDistance ?? DEFAULT_DUP_MAX_DISTANCE,
     kbContextK: deps.kbContextK ?? DEFAULT_KB_CONTEXT_K,
-    embed: deps.embed ?? defaultEmbed,
+    // embed/LLM 全部套硬超时:挂起的调用只烧掉本轮,下轮重试;不做防护会静默停摆
+    embed: withTimeoutFn(
+      deps.embedTimeoutMs ?? DEFAULT_EMBED_TIMEOUT_MS,
+      deps.embed ?? defaultEmbed
+    ),
     queryFn: deps.queryFn ?? sdkQuery,
+    embedTimeoutMs: deps.embedTimeoutMs ?? DEFAULT_EMBED_TIMEOUT_MS,
+    queryTimeoutMs: deps.queryTimeoutMs ?? DEFAULT_QUERY_TIMEOUT_MS,
     now: deps.now ?? (() => Date.now()),
     isBypassEnabled: deps.isBypassEnabled ?? (() => true),
   }
@@ -309,26 +327,29 @@ async function scanOnce(d: Resolved): Promise<void> {
           ? kbHits.map((h, i) => `(${i + 1}) ${h.content}`).join("\n")
           : "(无相近片段)"
       const prompt = `已沉降时间区间(只判定此区间内客服发言):(${cursor}, ${until}]\n\n【已有知识库相关片段】\n${kbBlock}\n\n对话记录:\n${transcript}`
-      const { text: out, structuredOutput } = await drainQuery(
-        d.queryFn({
-          prompt,
-          options: noToolQueryOptions({
-            systemPrompt: REFLECT_SYSTEM,
-            outputFormat: {
-              type: "json_schema",
-              schema: REFLECT_OUTPUT_SCHEMA,
-            },
-            // JSON 抽取任务,关思考省成本/延迟;单次覆盖全局 alwaysThinkingEnabled
-            thinking: { type: "disabled" },
-            canUseTool: async () => ({
-              behavior: "deny" as const,
-              message: "反思阶段不使用工具",
-            }),
-            // maxTurns:2:StructuredOutput 强制路径可能占一轮;schema 重试再占一轮
-            maxTurns: 2,
-          }) as never,
-        }),
-        "reflect"
+      const { text: out, structuredOutput } = await withTimeout(
+        d.queryTimeoutMs,
+        drainQuery(
+          d.queryFn({
+            prompt,
+            options: noToolQueryOptions({
+              systemPrompt: REFLECT_SYSTEM,
+              outputFormat: {
+                type: "json_schema",
+                schema: REFLECT_OUTPUT_SCHEMA,
+              },
+              // JSON 抽取任务,关思考省成本/延迟;单次覆盖全局 alwaysThinkingEnabled
+              thinking: { type: "disabled" },
+              canUseTool: async () => ({
+                behavior: "deny" as const,
+                message: "反思阶段不使用工具",
+              }),
+              // maxTurns:2:StructuredOutput 强制路径可能占一轮;schema 重试再占一轮
+              maxTurns: 2,
+            }) as never,
+          }),
+          "reflect"
+        )
       )
       const items = itemsFromStructured(structuredOutput, out)
       if (items === null) {

@@ -5,6 +5,12 @@ import type { Repo } from "../db/repo"
 import { embed as defaultEmbed } from "../tools/embed"
 import { noToolQueryOptions, drainQuery } from "./agent"
 import { pickArrayFieldDual, previewJsonPayload } from "./json-output"
+import {
+  DEFAULT_EMBED_TIMEOUT_MS,
+  DEFAULT_QUERY_TIMEOUT_MS,
+  withTimeout,
+  withTimeoutFn,
+} from "./timeout"
 import type { ChatRef } from "../channels/enabled-chats"
 
 export interface ReflectionCompactorDeps {
@@ -23,6 +29,10 @@ export interface ReflectionCompactorDeps {
   notifyAdmin?: boolean
   embed?: (text: string) => Promise<Float32Array>
   queryFn?: typeof sdkQuery
+  /** 本地 embed 硬超时毫秒;<=0 关闭。默认 60s */
+  embedTimeoutMs?: number
+  /** LLM(drainQuery)硬超时毫秒;<=0 关闭。默认 180s,防 relay 挂起静默停摆 */
+  queryTimeoutMs?: number
   now?: () => number
 }
 
@@ -35,6 +45,7 @@ interface Resolved {
   notifyAdmin: boolean
   embed: (text: string) => Promise<Float32Array>
   queryFn: typeof sdkQuery
+  queryTimeoutMs: number
   now: () => number
 }
 
@@ -102,8 +113,13 @@ function resolve(deps: ReflectionCompactorDeps): Resolved {
     batchSize: deps.batchSize ?? DEFAULT_COMPACT_BATCH_SIZE,
     baseContextK: deps.baseContextK ?? 3,
     notifyAdmin: deps.notifyAdmin ?? true,
-    embed: deps.embed ?? defaultEmbed,
+    // embed/LLM 全部套硬超时:挂起的调用只烧掉本轮,下轮重试;不做防护会静默停摆
+    embed: withTimeoutFn(
+      deps.embedTimeoutMs ?? DEFAULT_EMBED_TIMEOUT_MS,
+      deps.embed ?? defaultEmbed
+    ),
     queryFn: deps.queryFn ?? sdkQuery,
+    queryTimeoutMs: deps.queryTimeoutMs ?? DEFAULT_QUERY_TIMEOUT_MS,
     now: deps.now ?? (() => Date.now()),
   }
 }
@@ -207,24 +223,27 @@ async function compactOneBatch(
   const refBlock = batch.map((e, i) => `[${i + 1}] ${e.content}`).join("\n")
   const prompt = `【权威基础文档片段】\n${baseBlock || "(无)"}\n\n【现有反思条目】(第 ${batchIndex + 1}/${batchTotal} 批,共 ${batch.length} 条)\n${refBlock}`
 
-  const { text: out, structuredOutput } = await drainQuery(
-    d.queryFn({
-      prompt,
-      options: noToolQueryOptions({
-        systemPrompt: COMPACT_SYSTEM,
-        // 仍挂 schema;失败时文本 JSON(+截断 salvage)兜底
-        outputFormat: { type: "json_schema", schema: COMPACT_OUTPUT_SCHEMA },
-        // JSON 整理任务,关思考省成本/延迟;单次覆盖全局 alwaysThinkingEnabled
-        thinking: { type: "disabled" },
-        canUseTool: async () => ({
-          behavior: "deny" as const,
-          message: "压缩阶段不使用工具",
-        }),
-        // maxTurns:2:StructuredOutput 强制路径可能占一轮;schema 重试再占一轮
-        maxTurns: 2,
-      }) as never,
-    }),
-    "compact"
+  const { text: out, structuredOutput } = await withTimeout(
+    d.queryTimeoutMs,
+    drainQuery(
+      d.queryFn({
+        prompt,
+        options: noToolQueryOptions({
+          systemPrompt: COMPACT_SYSTEM,
+          // 仍挂 schema;失败时文本 JSON(+截断 salvage)兜底
+          outputFormat: { type: "json_schema", schema: COMPACT_OUTPUT_SCHEMA },
+          // JSON 整理任务,关思考省成本/延迟;单次覆盖全局 alwaysThinkingEnabled
+          thinking: { type: "disabled" },
+          canUseTool: async () => ({
+            behavior: "deny" as const,
+            message: "压缩阶段不使用工具",
+          }),
+          // maxTurns:2:StructuredOutput 强制路径可能占一轮;schema 重试再占一轮
+          maxTurns: 2,
+        }) as never,
+      }),
+      "compact"
+    )
   )
 
   const check = validateCompactedDetailed(structuredOutput, batch.length, out)
