@@ -192,6 +192,10 @@ export function registerOrchestrator(deps: OrchestratorDeps): () => void {
         })
       })
     chains.set(q.sessionKey, next)
+    // 链尾自清理:跑完且没有后继接上时移除,防止 chains 随历史 sessionKey 无界增长
+    next.finally(() => {
+      if (chains.get(q.sessionKey) === next) chains.delete(q.sessionKey)
+    })
   }
 
   bus.on("message.qualified", onQualified)

@@ -50,7 +50,7 @@ export default function RankingPage() {
     error,
     loading,
     refresh,
-  } = usePolling<Data>(`/api/ranking?window=${win}`)
+  } = usePolling<Data>(`/api/ranking?window=${win}`, 30_000)
 
   return (
     <PageShell>
