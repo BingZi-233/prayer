@@ -14,7 +14,10 @@ function sessionContext(): { repo: Repo; resumeTtlMs: number } {
 
 export async function GET(): Promise<NextResponse> {
   const { repo: sessionRepo, resumeTtlMs } = sessionContext()
-  return NextResponse.json(ok(sessionRepo.listSessions(resumeTtlMs)))
+  // 虚拟滚动列表用不到全量历史;会话表随 (群,用户) 只增不减,给个上限防逐年变重
+  return NextResponse.json(
+    ok(sessionRepo.listSessions(resumeTtlMs, Date.now(), 500))
+  )
 }
 
 // 会话操作:

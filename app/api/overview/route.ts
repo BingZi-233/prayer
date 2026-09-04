@@ -30,8 +30,8 @@ export async function GET(): Promise<NextResponse> {
     return NextResponse.json(
       ok({
         enabledChats: cfg.enabledChats.length,
-        reflectionCount: repo.reflectionEntries().length,
-        humanSessions: repo.listSessions().filter((s) => s.humanMode).length,
+        reflectionCount: repo.countReflectionEntries(),
+        humanSessions: repo.countHumanSessions(),
         // 结果指标(今日 0 点起)
         metrics: {
           since,

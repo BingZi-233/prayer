@@ -107,9 +107,7 @@ export class RuntimeManager {
       state: this.state,
       wsConnected: this.wsConnected,
       sessionCount: this.repo ? this.repo.countSessions() : 0,
-      handoffQueue: this.repo
-        ? this.repo.listSessions().filter((s) => s.humanMode).length
-        : 0,
+      handoffQueue: this.repo ? this.repo.countHumanSessions() : 0,
       lastError: this.lastError,
       bootedAt: this.bootedAt,
       channels: this.registry?.status(),

@@ -87,6 +87,16 @@ function migrate(db: Database.Database, dim: number): void {
   } else {
     ensureToolStatsDaily(db)
   }
+
+  // v6: 读侧性能索引 + question_topics.title 唯一(幂等)
+  if (userVersion(db) < 6) {
+    ensurePerfIndexes(db)
+    ensureQuestionTopicUnique(db)
+    setUserVersion(db, 6)
+  } else {
+    ensurePerfIndexes(db)
+    ensureQuestionTopicUnique(db)
+  }
 }
 
 /**
@@ -106,6 +116,66 @@ function ensureToolStatsDaily(db: Database.Database): void {
       PRIMARY KEY (day, site, tool)
     );
   `)
+}
+
+/**
+ * v6: 读侧性能索引(只加索引,不动表结构与数据)。
+ * 管理页 3~4s 轮询的监控查询此前全走全表扫,数据增长后线性恶化并阻塞
+ * better-sqlite3 同步连接(拖慢共用连接的 API 与 agent 写入):
+ * - resolution_events(created_at):overview 每 3s resolutionCounts 按时间窗
+ *   GROUP BY;原只有 (kind,created_at),单独按 created_at 无法 seek
+ * - group_messages(created_at):prune 的 DELETE 与反思侧 DISTINCT 按
+ *   created_at 过滤;原索引首列都是 channel
+ * - kb_chunks(doc,id):沉淀条目读取/计数按 doc='human-reflection' 过滤,
+ *   kb_chunks 原本只有主键
+ * - proactive_replies(channel,group_id,created_at):proactiveGroupCounts
+ *   按群聚合,原只有 created_at 单列
+ */
+export function ensurePerfIndexes(db: Database.Database): void {
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_re_created_at ON resolution_events(created_at);
+    CREATE INDEX IF NOT EXISTS idx_gm_created_at ON group_messages(created_at);
+    CREATE INDEX IF NOT EXISTS idx_kb_doc ON kb_chunks(doc, id);
+    CREATE INDEX IF NOT EXISTS idx_pr_chat_time ON proactive_replies(channel, group_id, created_at);
+  `)
+}
+
+/**
+ * v6: question_topics.title 唯一化。
+ * 此前同名查重是 SELECT-then-INSERT,并发下可产生同名主题且查重全表扫;
+ * 改唯一索引 + INSERT..ON CONFLICT 后一条语句原子完成。
+ * 建唯一索引前先把存量同名主题并重:保留最小 id,occurrences 重指向。
+ */
+export function ensureQuestionTopicUnique(db: Database.Database): void {
+  if (!tableExists(db, "question_topics")) return
+  const dupTitles = db
+    .prepare(
+      "SELECT title FROM question_topics GROUP BY title HAVING COUNT(*) > 1"
+    )
+    .all() as { title: string }[]
+  if (dupTitles.length > 0) {
+    db.transaction(() => {
+      // occurrences 只重指向指向重复主题的行;孤儿(topic_id 无对应主题)保持原样
+      db.exec(`
+        UPDATE question_occurrences SET topic_id = (
+          SELECT MIN(keep.id) FROM question_topics keep
+          WHERE keep.title = (
+            SELECT dup.title FROM question_topics dup
+            WHERE dup.id = question_occurrences.topic_id
+          )
+        )
+        WHERE topic_id IN (
+          SELECT id FROM question_topics
+          WHERE id NOT IN (SELECT MIN(id) FROM question_topics GROUP BY title)
+        );
+        DELETE FROM question_topics
+        WHERE id NOT IN (SELECT MIN(id) FROM question_topics GROUP BY title);
+      `)
+    })()
+  }
+  db.exec(
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_qt_title ON question_topics(title)"
+  )
 }
 
 /** v4: group_messages 补 mentioned_bot 列(已存在则跳过) */

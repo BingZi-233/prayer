@@ -5,7 +5,7 @@ import { Repo } from "@/lib/db/repo"
 import { getConfig } from "@/lib/config-store"
 import { listEnabledChats } from "@/lib/channels/enabled-chats"
 import { ok, fail } from "@/lib/api"
-import { buildGroupStatMaps } from "@/lib/reflect-stats"
+import { buildGroupChatStats } from "@/lib/reflect-stats"
 import { applyPromote } from "@/lib/reflect-promote"
 import { embed } from "@/lib/tools/embed"
 
@@ -29,7 +29,9 @@ export async function GET(): Promise<NextResponse> {
     const repo = new Repo(sharedDb(cfg.dbPath))
     const now = Date.now()
 
-    const { cursors, msg, sed, entries } = buildGroupStatMaps(repo)
+    const { cursors, msg, sed } = buildGroupChatStats(repo)
+    // 条目列表本体仍需全文;统计部分已改走轻量 source 列
+    const entries = repo.reflectionEntries()
 
     const enabled = listEnabledChats(cfg)
     const ids = new Set<string>([

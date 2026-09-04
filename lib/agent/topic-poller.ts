@@ -152,6 +152,9 @@ async function scanOnce(d: Resolved): Promise<void> {
   const until = now - d.settleMs
   if (until <= 0) return
 
+  // 归并候选池对全部 chat 同值:每轮扫描取一次,循环内用副本(push 回填互不影响)
+  const basePool = d.repo.questionTopics(500)
+
   for (const { channel, chatId } of d.enabledChats) {
     // 旁路降级：由 channel.isBypassEnabled 决定
     if (!d.isBypassEnabled(channel, chatId)) continue
@@ -176,7 +179,7 @@ async function scanOnce(d: Resolved): Promise<void> {
       }
       // 近义归并候选池:取更大集合(本地 textNearlySame 比对无 LLM 成本),
       // 防近义老主题掉出 LLM 提示窗口(top-N)后被重复新建。LLM 提示仍只喂前 N 控 prompt 体积。
-      const mergePool = d.repo.questionTopics(500)
+      const mergePool = [...basePool]
       const topics = mergePool.slice(0, d.topicPromptMax)
       const existingIds = new Set(topics.map((t) => t.id))
       const topicBlock =
