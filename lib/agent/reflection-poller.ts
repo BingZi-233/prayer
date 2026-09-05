@@ -7,6 +7,12 @@ import { embed as defaultEmbed } from "../tools/embed"
 import { noToolQueryOptions, drainQuery } from "./agent"
 import { pickArrayFieldDual, previewJsonPayload } from "./json-output"
 import { isNewSensitiveError, sanitizeForModel } from "./sanitize-input"
+import {
+  DEFAULT_EMBED_TIMEOUT_MS,
+  DEFAULT_QUERY_TIMEOUT_MS,
+  withTimeout,
+  withTimeoutFn,
+} from "./timeout"
 import type { ChannelId } from "../channels/types"
 import type { ChatRef } from "../channels/enabled-chats"
 
@@ -29,6 +35,10 @@ export interface ReflectionPollerDeps {
   kbContextK?: number
   embed?: (text: string) => Promise<Float32Array>
   queryFn?: typeof sdkQuery
+  /** 本地 embed 硬超时毫秒;<=0 关闭。默认 60s(冷启动加载模型 ~20s+) */
+  embedTimeoutMs?: number
+  /** LLM(drainQuery)硬超时毫秒;<=0 关闭。默认 180s,防 relay 挂起静默停摆 */
+  queryTimeoutMs?: number
   now?: () => number
   /**
    * per-chat 旁路是否可用（由 ChannelRegistry / channel.isBypassEnabled 注入）。
@@ -50,6 +60,8 @@ interface Resolved {
   kbContextK: number
   embed: (text: string) => Promise<Float32Array>
   queryFn: typeof sdkQuery
+  embedTimeoutMs: number
+  queryTimeoutMs: number
   now: () => number
   isBypassEnabled: (channel: ChannelId, chatId: string) => boolean
 }
@@ -99,6 +111,14 @@ const PRE_CONTEXT = 10 // band 前作为问题上下文的消息条数
 export const DEFAULT_DUP_TOP_K = 5
 export const DEFAULT_DUP_MAX_DISTANCE = 0.45
 export const DEFAULT_KB_CONTEXT_K = 6
+
+// ── 数据保留窗口(消费方口径,见 scanOnce 尾部注释)──
+/** resolution_events:看板只按「今日 0 点起」计数,90 天余量足够 */
+export const RETENTION_RESOLUTION_MS = 90 * 24 * 3600_000
+/** proactive_replies:主动回复页是近期插话/计数视角 */
+export const RETENTION_PROACTIVE_MS = 90 * 24 * 3600_000
+/** seen_messages:入站去重,OneBot 重推发生在秒级 */
+export const RETENTION_SEEN_MS = 7 * 24 * 3600_000
 
 export type ReflectItem = {
   question: string
@@ -248,8 +268,14 @@ function resolve(deps: ReflectionPollerDeps): Resolved {
     dupTopK: deps.dupTopK ?? DEFAULT_DUP_TOP_K,
     dupMaxDistance: deps.dupMaxDistance ?? DEFAULT_DUP_MAX_DISTANCE,
     kbContextK: deps.kbContextK ?? DEFAULT_KB_CONTEXT_K,
-    embed: deps.embed ?? defaultEmbed,
+    // embed/LLM 全部套硬超时:挂起的调用只烧掉本轮,下轮重试;不做防护会静默停摆
+    embed: withTimeoutFn(
+      deps.embedTimeoutMs ?? DEFAULT_EMBED_TIMEOUT_MS,
+      deps.embed ?? defaultEmbed
+    ),
     queryFn: deps.queryFn ?? sdkQuery,
+    embedTimeoutMs: deps.embedTimeoutMs ?? DEFAULT_EMBED_TIMEOUT_MS,
+    queryTimeoutMs: deps.queryTimeoutMs ?? DEFAULT_QUERY_TIMEOUT_MS,
     now: deps.now ?? (() => Date.now()),
     isBypassEnabled: deps.isBypassEnabled ?? (() => true),
   }
@@ -309,26 +335,29 @@ async function scanOnce(d: Resolved): Promise<void> {
           ? kbHits.map((h, i) => `(${i + 1}) ${h.content}`).join("\n")
           : "(无相近片段)"
       const prompt = `已沉降时间区间(只判定此区间内客服发言):(${cursor}, ${until}]\n\n【已有知识库相关片段】\n${kbBlock}\n\n对话记录:\n${transcript}`
-      const { text: out, structuredOutput } = await drainQuery(
-        d.queryFn({
-          prompt,
-          options: noToolQueryOptions({
-            systemPrompt: REFLECT_SYSTEM,
-            outputFormat: {
-              type: "json_schema",
-              schema: REFLECT_OUTPUT_SCHEMA,
-            },
-            // JSON 抽取任务,关思考省成本/延迟;单次覆盖全局 alwaysThinkingEnabled
-            thinking: { type: "disabled" },
-            canUseTool: async () => ({
-              behavior: "deny" as const,
-              message: "反思阶段不使用工具",
-            }),
-            // maxTurns:2:StructuredOutput 强制路径可能占一轮;schema 重试再占一轮
-            maxTurns: 2,
-          }) as never,
-        }),
-        "reflect"
+      const { text: out, structuredOutput } = await withTimeout(
+        d.queryTimeoutMs,
+        drainQuery(
+          d.queryFn({
+            prompt,
+            options: noToolQueryOptions({
+              systemPrompt: REFLECT_SYSTEM,
+              outputFormat: {
+                type: "json_schema",
+                schema: REFLECT_OUTPUT_SCHEMA,
+              },
+              // JSON 抽取任务,关思考省成本/延迟;单次覆盖全局 alwaysThinkingEnabled
+              thinking: { type: "disabled" },
+              canUseTool: async () => ({
+                behavior: "deny" as const,
+                message: "反思阶段不使用工具",
+              }),
+              // maxTurns:2:StructuredOutput 强制路径可能占一轮;schema 重试再占一轮
+              maxTurns: 2,
+            }) as never,
+          }),
+          "reflect"
+        )
       )
       const items = itemsFromStructured(structuredOutput, out)
       if (items === null) {
@@ -402,6 +431,13 @@ async function scanOnce(d: Resolved): Promise<void> {
       d.repo.minTopicCursor(d.enabledChats)
     )
   )
+
+  // 数据保留:三张「只增不减」表跟着本循环(5 分钟一轮)做时间窗清理。
+  // 窗口选择按消费方口径:resolution_events/proactive_replies 服务近期看板(90 天),
+  // seen_messages 纯秒级重推去重(7 天)。DELETE 走 v6/v7 时间索引,量级恒定。
+  d.repo.pruneResolutionEvents(now - RETENTION_RESOLUTION_MS)
+  d.repo.pruneProactiveReplies(now - RETENTION_PROACTIVE_MS)
+  d.repo.pruneSeenMessages(now - RETENTION_SEEN_MS)
 }
 
 // 供测试直接驱动一次扫描

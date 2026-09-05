@@ -1,10 +1,15 @@
 import { query as sdkQuery } from "@anthropic-ai/claude-agent-sdk"
 import { noToolQueryOptions, drainQuery } from "./agent"
 import { sanitizeForModel } from "./sanitize-input"
+import { withTimeout } from "./timeout"
+import { logger } from "../logger"
 
 // 主动兜底的可答性判官:判定一条群消息是否为「值得客服主动补位回答的 PackyAPI 产品咨询」。
 // 与 intent.ts 相反,fail-CLOSED:出错/无法解析 → false(主动插话宁可少发)。
 export type AnswerabilityClassifier = (text: string) => Promise<boolean>
+
+/** 判官 LLM 硬超时:短判定任务,超时按不可答处理(fail-closed),防 relay 挂起拖死兜底循环 */
+export const DEFAULT_ANSWERABILITY_TIMEOUT_MS = 30_000
 
 const USER_BEGIN = "<<<UNTRUSTED_USER_MESSAGE>>>"
 const USER_END = "<<<END_UNTRUSTED_USER_MESSAGE>>>"
@@ -38,35 +43,43 @@ function parseAnswer(s: string): boolean {
 
 export interface AnswerabilityDeps {
   queryFn?: typeof sdkQuery
+  /** 判官超时毫秒;<=0 关闭。默认 30s */
+  timeoutMs?: number
 }
 
 export function makeAnswerabilityClassifier(
   deps: AnswerabilityDeps = {}
 ): AnswerabilityClassifier {
   const queryFn = deps.queryFn ?? sdkQuery
+  const timeoutMs = deps.timeoutMs ?? DEFAULT_ANSWERABILITY_TIMEOUT_MS
   return async (text: string): Promise<boolean> => {
     if (!text.trim()) return false
     try {
-      const { text: out } = await drainQuery(
-        queryFn({
-          prompt: wrapUserText(text),
-          options: noToolQueryOptions({
-            systemPrompt: SYSTEM,
-            // maxTurns:1 的 JSON 判定任务,关思考省成本/延迟;单次覆盖全局 alwaysThinkingEnabled
-            thinking: { type: "disabled" },
-            canUseTool: async () => ({
-              behavior: "deny" as const,
-              message: "判定阶段不使用工具",
-            }),
-            // maxTurns:2 而非 1:模型偶发首轮吐 tool_use,deny 回消息须第 2 轮消费才出文本;
-            // maxTurns:1 下 SDK 直接 reject「Reached maximum number of turns」误判为错误。
-            maxTurns: 2,
-          }) as never,
-        }),
-        "answerability"
+      const { text: out } = await withTimeout(
+        timeoutMs,
+        drainQuery(
+          queryFn({
+            prompt: wrapUserText(text),
+            options: noToolQueryOptions({
+              systemPrompt: SYSTEM,
+              // maxTurns:1 的 JSON 判定任务,关思考省成本/延迟;单次覆盖全局 alwaysThinkingEnabled
+              thinking: { type: "disabled" },
+              canUseTool: async () => ({
+                behavior: "deny" as const,
+                message: "判定阶段不使用工具",
+              }),
+              // maxTurns:2 而非 1:模型偶发首轮吐 tool_use,deny 回消息须第 2 轮消费才出文本;
+              // maxTurns:1 下 SDK 直接 reject「Reached maximum number of turns」误判为错误。
+              maxTurns: 2,
+            }) as never,
+          }),
+          "answerability"
+        )
       )
       return parseAnswer(out)
     } catch {
+      // 超时/出错一律 fail-closed;记 warn 便于区分「判官挂了」与「真的不可答」
+      logger.warn(`可答性判定失败(fail-closed)`, { scope: "answerability" })
       return false
     }
   }

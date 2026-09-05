@@ -62,6 +62,8 @@ export class AdminsCache {
   private readonly privacyMin: number
   private readonly privacyShareMin: number
   private readonly cache = new Map<string, CacheEntry>()
+  /** 在飞拉取去重:同一 chat 冷 miss 并发 lookup 只发一次 getChatAdministrators */
+  private readonly inflight = new Map<string, Promise<CacheEntry>>()
   private readonly privacy = new Map<string, PrivacyStats>()
 
   constructor(opts: AdminsCacheOpts) {
@@ -142,7 +144,14 @@ export class AdminsCache {
     if (existing?.failed && t - existing.fetchedAt < this.ttlMs) {
       return existing
     }
-    return this.fetch(id)
+    // 冷 miss 并发(同一批消息同 chat):复用在飞 promise,避免重复 API 调用
+    const pending = this.inflight.get(id)
+    if (pending) return pending
+    const p = this.fetch(id).finally(() => {
+      this.inflight.delete(id)
+    })
+    this.inflight.set(id, p)
+    return p
   }
 
   private async fetch(chatId: string): Promise<CacheEntry> {

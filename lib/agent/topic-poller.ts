@@ -4,6 +4,7 @@ import { logger } from "../logger"
 import { errorMessage } from "../log-context"
 import type { Repo } from "../db/repo"
 import { embed as defaultEmbed } from "../tools/embed"
+import { DEFAULT_QUERY_TIMEOUT_MS, withTimeout } from "./timeout"
 import { noToolQueryOptions, drainQuery } from "./agent"
 import { pickArrayFieldDual, previewJsonPayload } from "./json-output"
 import { textNearlySame } from "./reflection-poller"
@@ -71,6 +72,8 @@ export interface TopicPollerDeps {
   topicPromptMax?: number
   embed?: (text: string) => Promise<Float32Array>
   queryFn?: typeof sdkQuery
+  /** LLM(drainQuery)硬超时毫秒;<=0 关闭。默认 180s,防 relay 挂起静默停摆 */
+  queryTimeoutMs?: number
   now?: () => number
   /**
    * per-chat 旁路是否可用（ChannelRegistry 注入）。
@@ -87,6 +90,7 @@ interface Resolved {
   topicPromptMax: number
   embed: (text: string) => Promise<Float32Array>
   queryFn: typeof sdkQuery
+  queryTimeoutMs: number
   now: () => number
   isBypassEnabled: (channel: ChannelId, chatId: string) => boolean
 }
@@ -142,6 +146,7 @@ function resolve(deps: TopicPollerDeps): Resolved {
     topicPromptMax: deps.topicPromptMax ?? 40,
     embed: deps.embed ?? defaultEmbed,
     queryFn: deps.queryFn ?? sdkQuery,
+    queryTimeoutMs: deps.queryTimeoutMs ?? DEFAULT_QUERY_TIMEOUT_MS,
     now: deps.now ?? (() => Date.now()),
     isBypassEnabled: deps.isBypassEnabled ?? (() => true),
   }
@@ -151,6 +156,9 @@ async function scanOnce(d: Resolved): Promise<void> {
   const now = d.now()
   const until = now - d.settleMs
   if (until <= 0) return
+
+  // 归并候选池对全部 chat 同值:每轮扫描取一次,循环内用副本(push 回填互不影响)
+  const basePool = d.repo.questionTopics(500)
 
   for (const { channel, chatId } of d.enabledChats) {
     // 旁路降级：由 channel.isBypassEnabled 决定
@@ -176,7 +184,7 @@ async function scanOnce(d: Resolved): Promise<void> {
       }
       // 近义归并候选池:取更大集合(本地 textNearlySame 比对无 LLM 成本),
       // 防近义老主题掉出 LLM 提示窗口(top-N)后被重复新建。LLM 提示仍只喂前 N 控 prompt 体积。
-      const mergePool = d.repo.questionTopics(500)
+      const mergePool = [...basePool]
       const topics = mergePool.slice(0, d.topicPromptMax)
       const existingIds = new Set(topics.map((t) => t.id))
       const topicBlock =
@@ -191,22 +199,25 @@ async function scanOnce(d: Resolved): Promise<void> {
         .join("\n")
       const prompt = `【现有主题】\n${topicBlock}\n\n【待归类问题】\n${qBlock}`
 
-      const { text: out, structuredOutput } = await drainQuery(
-        d.queryFn({
-          prompt,
-          options: noToolQueryOptions({
-            systemPrompt: TOPIC_SYSTEM,
-            // 仍挂 schema:StructuredOutput 成功时形状更稳;失败则文本兜底
-            outputFormat: { type: "json_schema", schema: TOPIC_SCHEMA },
-            thinking: { type: "disabled" },
-            canUseTool: async () => ({
-              behavior: "deny" as const,
-              message: "归类阶段不使用工具",
-            }),
-            maxTurns: 2,
-          }) as never,
-        }),
-        "topic"
+      const { text: out, structuredOutput } = await withTimeout(
+        d.queryTimeoutMs,
+        drainQuery(
+          d.queryFn({
+            prompt,
+            options: noToolQueryOptions({
+              systemPrompt: TOPIC_SYSTEM,
+              // 仍挂 schema:StructuredOutput 成功时形状更稳;失败则文本兜底
+              outputFormat: { type: "json_schema", schema: TOPIC_SCHEMA },
+              thinking: { type: "disabled" },
+              canUseTool: async () => ({
+                behavior: "deny" as const,
+                message: "归类阶段不使用工具",
+              }),
+              maxTurns: 2,
+            }) as never,
+          }),
+          "topic"
+        )
       )
 
       // structured 优先 + 文本 JSON 兜底;皆无则本会话不推进,下轮重试
@@ -249,6 +260,9 @@ async function scanOnce(d: Resolved): Promise<void> {
               topicId = d.repo.insertQuestionTopic(c.newTitle!, now)
               // 回填候选池:同批后续近义项归并到此,防批内重复新建
               mergePool.push({ id: topicId, title: c.newTitle! })
+              // 同步回填整轮基池:后续 chat 的近义判定也能看到,补上
+              // 「基池只取一次」丢失的跨群去重
+              basePool.push({ id: topicId, title: c.newTitle! })
             }
           }
           d.repo.insertQuestionOccurrence(

@@ -89,6 +89,7 @@ function fakeBuilders(
     makeRepo: () =>
       ({
         countSessions: () => 3,
+        countHumanSessions: () => 2,
         listSessions: () => [
           { humanMode: true },
           { humanMode: true },
@@ -285,6 +286,7 @@ describe("RuntimeManager", () => {
     })
     const repo = {
       countSessions: () => 0,
+      countHumanSessions: () => 0,
       listSessions: () => [],
       getConfigRow: () => undefined,
       setConfigRow: () => {},

@@ -2,7 +2,11 @@ import { describe, it, expect, beforeEach } from "vitest"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { openDb, migrateLegacySessionKeys } from "@/lib/db/index"
+import {
+  openDb,
+  migrateLegacySessionKeys,
+  ensureQuestionTopicUnique,
+} from "@/lib/db/index"
 import { Repo } from "@/lib/db/repo"
 import BetterSqlite3 from "better-sqlite3"
 import type Database from "better-sqlite3"
@@ -873,8 +877,8 @@ describe("channel schema migration", () => {
     raw.close()
 
     const migrated = openDb(p, 3)
-    // v1→v2→v3→v4→v5 一路升完
-    expect(migrated.pragma("user_version", { simple: true }) as number).toBe(5)
+    // v1→v2→…→v7 一路升完
+    expect(migrated.pragma("user_version", { simple: true }) as number).toBe(7)
     // v4: group_messages 补 mentioned_bot 列,老数据默认 0
     const gmCols = (
       migrated.prepare("PRAGMA table_info(group_messages)").all() as {
@@ -921,7 +925,7 @@ describe("channel schema migration", () => {
     // 幂等:再 open 不炸
     migrated.close()
     const again = openDb(p, 3)
-    expect(again.pragma("user_version", { simple: true })).toBe(5)
+    expect(again.pragma("user_version", { simple: true })).toBe(7)
     again.close()
     rmSync(dir, { recursive: true, force: true })
   })
@@ -984,5 +988,322 @@ describe("Repo prior context", () => {
     repo.bufferGroupMessage("qq", "1", "2", null, "a", "1")
     expect(repo.recentUserGroupMessages("qq", "1", "2", 0)).toEqual([])
     expect(repo.recentUserGroupMessages("qq", "1", "2", -1)).toEqual([])
+  })
+})
+
+describe("v6 迁移:性能索引", () => {
+  it("openDb 后四张热表都有 v6 索引", () => {
+    const names = (table: string) =>
+      (
+        db
+          .prepare(
+            "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name=?"
+          )
+          .all(table) as { name: string }[]
+      ).map((r) => r.name)
+    expect(names("group_messages")).toContain("idx_gm_created_at")
+    expect(names("resolution_events")).toContain("idx_re_created_at")
+    expect(names("kb_chunks")).toContain("idx_kb_doc")
+    expect(names("proactive_replies")).toContain("idx_pr_chat_time")
+    expect(names("question_topics")).toContain("idx_qt_title")
+  })
+
+  it("磁盘库升级一路到最新 user_version 且幂等重开", () => {
+    const dir = mkdtempSync(join(tmpdir(), "prayer-v6-"))
+    const p = join(dir, "v5.db")
+    const raw = new BetterSqlite3(p)
+    raw.exec(`
+      CREATE TABLE sessions (
+        key TEXT PRIMARY KEY,
+        session_id TEXT,
+        resume_id TEXT,
+        human_mode INTEGER NOT NULL DEFAULT 0,
+        human_since INTEGER,
+        last_question TEXT,
+        updated_at INTEGER NOT NULL DEFAULT 0
+      );
+      CREATE TABLE config (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL,
+        updated_at INTEGER NOT NULL DEFAULT 0
+      );
+    `)
+    raw.pragma("user_version = 5")
+    raw.close()
+
+    const upgraded = openDb(p, 3)
+    // v6(索引+唯一化)→ v7(seen_messages 索引)一路升完
+    expect(upgraded.pragma("user_version", { simple: true }) as number).toBe(7)
+    upgraded.close()
+    const again = openDb(p, 3)
+    expect(again.pragma("user_version", { simple: true })).toBe(7)
+    again.close()
+    rmSync(dir, { recursive: true, force: true })
+  })
+})
+
+describe("v6 迁移:question_topics 唯一化", () => {
+  function rawTopicsDb(): Database.Database {
+    const raw = new BetterSqlite3(":memory:")
+    raw.exec(`
+      CREATE TABLE question_topics (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        title TEXT NOT NULL
+      );
+      CREATE TABLE question_occurrences (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        topic_id INTEGER NOT NULL
+      );
+    `)
+    return raw
+  }
+
+  it("同名主题并重:保留最小 id,occurrences 重指向,再建唯一索引", () => {
+    const raw = rawTopicsDb()
+    const ins = raw.prepare("INSERT INTO question_topics (title) VALUES (?)")
+    const t1 = Number(ins.run("怎么退款").lastInsertRowid)
+    const t2 = Number(ins.run("怎么退款").lastInsertRowid)
+    const t3 = Number(ins.run("怎么发货").lastInsertRowid)
+    const occ = raw.prepare(
+      "INSERT INTO question_occurrences (topic_id) VALUES (?)"
+    )
+    occ.run(t2)
+    occ.run(t2)
+    occ.run(t3)
+
+    ensureQuestionTopicUnique(raw)
+
+    const topics = raw
+      .prepare("SELECT id, title FROM question_topics ORDER BY id")
+      .all() as { id: number; title: string }[]
+    expect(topics).toEqual([
+      { id: t1, title: "怎么退款" },
+      { id: t3, title: "怎么发货" },
+    ])
+    const pointAt = (
+      raw
+        .prepare("SELECT DISTINCT topic_id FROM question_occurrences")
+        .all() as { topic_id: number }[]
+    ).map((r) => r.topic_id)
+    expect(pointAt).toEqual([t1, t3])
+    // 唯一索引已生效
+    expect(() =>
+      raw
+        .prepare("INSERT INTO question_topics (title) VALUES ('怎么退款')")
+        .run()
+    ).toThrow()
+    raw.close()
+  })
+
+  it("孤儿 occurrence(指向不存在主题)不被误改", () => {
+    const raw = rawTopicsDb()
+    const t1 = Number(
+      raw.prepare("INSERT INTO question_topics (title) VALUES ('a')").run()
+        .lastInsertRowid
+    )
+    const dup = Number(
+      raw.prepare("INSERT INTO question_topics (title) VALUES ('a')").run()
+        .lastInsertRowid
+    )
+    const occ = raw.prepare(
+      "INSERT INTO question_occurrences (topic_id) VALUES (?)"
+    )
+    occ.run(dup)
+    occ.run(99) // 孤儿
+
+    ensureQuestionTopicUnique(raw)
+
+    const orphan = (
+      raw
+        .prepare(
+          "SELECT COUNT(*) AS n FROM question_occurrences WHERE topic_id = 99"
+        )
+        .get() as { n: number }
+    ).n
+    expect(orphan).toBe(1)
+    const kept = (
+      raw.prepare("SELECT COUNT(*) AS n FROM question_topics").get() as {
+        n: number
+      }
+    ).n
+    expect(kept).toBe(1)
+    expect(t1).toBeGreaterThan(0)
+    raw.close()
+  })
+})
+
+describe("v6 读侧计数与单行取值", () => {
+  it("countReflectionEntries / reflectionSources 与 reflectionEntries 同源一致", () => {
+    expect(repo.countReflectionEntries()).toBe(0)
+    repo.insertKbEntry(
+      "human-reflection",
+      "条目一",
+      "human-reflection:qq:100:1700000000000",
+      new Float32Array([1, 0, 0])
+    )
+    repo.insertKbEntry(
+      "human-reflection",
+      "条目二",
+      "human-reflection:tg:-100abc:1700000000001",
+      new Float32Array([1, 0, 0])
+    )
+    repo.insertKbEntry(
+      "kb-other",
+      "正式文档",
+      "docs/kb/x.md",
+      new Float32Array([1, 0, 0])
+    )
+
+    expect(repo.countReflectionEntries()).toBe(2)
+    const sources = repo.reflectionSources()
+    expect(sources).toHaveLength(2)
+    expect(sources[0].source).toContain("tg:-100abc")
+    const entries = repo.reflectionEntries()
+    expect(entries.map((e) => e.id)).toEqual(sources.map((s) => s.id))
+    expect(entries[0].chatId).toBe("-100abc")
+  })
+
+  it("countHumanSessions 只数 human_mode=1", () => {
+    repo.setHumanMode("g:u1", true)
+    repo.setHumanMode("g:u2", true)
+    repo.setHumanMode("g:u3", false)
+    expect(repo.countHumanSessions()).toBe(2)
+    repo.setHumanMode("g:u2", false)
+    expect(repo.countHumanSessions()).toBe(1)
+  })
+
+  it("lastQuestion 单行返回,无行回退 null", () => {
+    expect(repo.lastQuestion("g:u1")).toBeNull()
+    repo.setLastQuestion("g:u1", "怎么退款")
+    expect(repo.lastQuestion("g:u1")).toBe("怎么退款")
+    expect(repo.lastQuestion("g:u2")).toBeNull()
+  })
+
+  it("listSessions limit 截断且保持 updated_at 降序", () => {
+    repo.setSessionId("g:a", "s1")
+    repo.setSessionId("g:b", "s2")
+    repo.setSessionId("g:c", "s3")
+    const all = repo.listSessions(0)
+    expect(all).toHaveLength(3)
+    const capped = repo.listSessions(0, Date.now(), 2)
+    expect(capped).toHaveLength(2)
+    expect(capped.map((s) => s.key)).toEqual(all.slice(0, 2).map((s) => s.key))
+  })
+})
+
+describe("沉淀条目摘要与详情", () => {
+  it("summaries 截断全文但带 contentLen;detail 返回全文;非反思 doc 不入列表", () => {
+    const longContent = "退".repeat(500)
+    const longQ = "问".repeat(300)
+    const longA = "答".repeat(300)
+    const id1 = repo.insertKbEntry(
+      "human-reflection",
+      longContent,
+      "human-reflection:qq:100:1700",
+      new Float32Array([1, 0, 0])
+    )
+    repo.insertReflectionMeta(id1, "qq", "100", longQ, longA)
+    repo.insertKbEntry(
+      "human-reflection",
+      "短条目",
+      "human-reflection:qq:100:1701",
+      new Float32Array([1, 0, 0])
+    )
+    repo.insertKbEntry(
+      "kb-other",
+      "正式文档不算条目",
+      "docs/kb/x.md",
+      new Float32Array([1, 0, 0])
+    )
+
+    const sums = repo.reflectionEntrySummaries()
+    expect(sums).toHaveLength(2)
+    const long = sums.find((s) => s.id === id1)!
+    // SQL substr 按默认 300/200 截断;contentLen 是全文字符数
+    expect(long.content).toHaveLength(300)
+    expect(long.contentLen).toBe(500)
+    expect(long.question).toHaveLength(200)
+    expect(long.answer).toHaveLength(200)
+    expect(long.channel).toBe("qq")
+    expect(long.chatId).toBe("100")
+    const short = sums.find((s) => s.id !== id1)!
+    expect(short.content).toBe("短条目")
+    expect(short.contentLen).toBe(3)
+
+    const detail = repo.reflectionEntryDetail(id1)
+    expect(detail).not.toBeNull()
+    expect(detail!.content).toHaveLength(500)
+    expect(detail!.question).toHaveLength(300)
+    expect(detail!.answer).toHaveLength(300)
+    expect(detail!.status).toBe("approved")
+
+    // 自定义上限
+    const tight = repo.reflectionEntrySummaries(5, 3)
+    expect(tight.find((s) => s.id === id1)!.content).toHaveLength(5)
+    expect(tight.find((s) => s.id === id1)!.question).toHaveLength(3)
+
+    expect(repo.reflectionEntryDetail(999999)).toBeNull()
+  })
+})
+
+describe("v7 数据保留 prune", () => {
+  it("openDb 后 seen_messages 有 created_at 索引", () => {
+    const names = (
+      db
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='seen_messages'"
+        )
+        .all() as { name: string }[]
+    ).map((r) => r.name)
+    expect(names).toContain("idx_seen_created")
+  })
+
+  it("三个 prune 只删窗口外行,窗口内保留", () => {
+    const now = 1_000_000_000_000
+    const old = now - 100 * 24 * 3600_000 // 100 天前
+    db.prepare(
+      "INSERT INTO resolution_events (kind, created_at) VALUES ('auto', ?), ('auto', ?)"
+    ).run(old, now)
+    db.prepare(
+      "INSERT INTO proactive_replies (channel, group_id, user_id, question, answer, created_at) VALUES ('qq','1','2','q','a', ?), ('qq','1','2','q2','a2', ?)"
+    ).run(old, now)
+    db.prepare(
+      "INSERT INTO seen_messages (dedupe_key, created_at) VALUES ('k-old', ?), ('k-new', ?)"
+    ).run(old, now)
+
+    repo.pruneResolutionEvents(now - 90 * 24 * 3600_000)
+    repo.pruneProactiveReplies(now - 90 * 24 * 3600_000)
+    repo.pruneSeenMessages(now - 7 * 24 * 3600_000)
+
+    expect(
+      (
+        db.prepare("SELECT COUNT(*) n FROM resolution_events").get() as {
+          n: number
+        }
+      ).n
+    ).toBe(1)
+    expect(
+      (
+        db.prepare("SELECT COUNT(*) n FROM proactive_replies").get() as {
+          n: number
+        }
+      ).n
+    ).toBe(1)
+    expect(
+      (
+        db.prepare("SELECT dedupe_key FROM seen_messages").all() as {
+          dedupe_key: string
+        }[]
+      ).map((r) => r.dedupe_key)
+    ).toEqual(["k-new"])
+  })
+})
+
+describe("反思循环数据保留窗口常量", () => {
+  it("消费方口径:resolution/proactive 90 天,seen 7 天", async () => {
+    const m = await import("@/lib/agent/reflection-poller")
+    expect(m.RETENTION_RESOLUTION_MS).toBe(90 * 24 * 3600_000)
+    expect(m.RETENTION_PROACTIVE_MS).toBe(90 * 24 * 3600_000)
+    expect(m.RETENTION_SEEN_MS).toBe(7 * 24 * 3600_000)
   })
 })

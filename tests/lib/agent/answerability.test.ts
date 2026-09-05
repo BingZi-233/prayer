@@ -76,4 +76,18 @@ describe("answerability 判官", () => {
     expect(seen.options.strictMcpConfig).toBe(true)
     expect(seen.options.mcpServers).toEqual({})
   })
+
+  it("挂起的 LLM 在超时后 fail-closed → false(防 relay 挂起拖死兜底循环)", async () => {
+    const c = makeAnswerabilityClassifier({
+      queryFn: (() =>
+        (async function* () {
+          await new Promise(() => {}) // 永不产出:模拟 relay 挂起
+        })()) as never,
+      timeoutMs: 30,
+    })
+    const t0 = Date.now()
+    expect(await c("价格多少")).toBe(false)
+    // 远小于永不 settle 的等待:确实走了超时而非死等
+    expect(Date.now() - t0).toBeLessThan(5_000)
+  })
 })

@@ -1,5 +1,7 @@
 import type { Message } from "grammy/types"
 import type { ImageInput, IncomingMessage } from "../../events"
+import { errorMessage } from "../../log-context"
+import { logger } from "../../logger"
 import type { SenderRole } from "./admins-cache"
 import {
   downloadTelegramImage,
@@ -48,15 +50,24 @@ export async function enrichTelegramMessage(
   let senderRole: string = "member"
   try {
     senderRole = await deps.getRole(msg.chatId, msg.userId)
-  } catch {
+  } catch (err) {
+    // getRole 挂了会连 getChatAdministrators 也挂(admins-failed 已另行封锁旁路),此处留痕便于排查
+    logger.warn(`[tg-enrich] getRole 降级 member: ${errorMessage(err)}`, {
+      scope: "tg.enrich",
+      chatId: msg.chatId,
+      raw: msg.messageId,
+    })
     senderRole = "member"
   }
 
   try {
     const botRelated = isBotRelatedMessage(raw, deps.botId, !!msg.botMentioned)
     deps.observeMessage?.(msg.chatId, botRelated)
-  } catch {
-    /* 观察失败忽略 */
+  } catch (err) {
+    logger.warn(`[tg-enrich] privacy 观察降级: ${errorMessage(err)}`, {
+      scope: "tg.enrich",
+      chatId: msg.chatId,
+    })
   }
 
   const images: ImageInput[] = []
@@ -66,8 +77,15 @@ export async function enrichTelegramMessage(
       try {
         const img = await deps.downloadImage(fid)
         if (img) images.push(img)
-      } catch {
-        /* 单张跳过 */
+      } catch (err) {
+        logger.warn(
+          `[tg-enrich] 跳过下载失败图片 ${fid}: ${errorMessage(err)}`,
+          {
+            scope: "tg.enrich",
+            chatId: msg.chatId,
+            raw: msg.messageId,
+          }
+        )
       }
     }
   }

@@ -166,9 +166,7 @@ export function registerGateway(deps: GatewayDeps): () => void {
         )
         return
       }
-      const lastQ =
-        repo.listSessions().find((s) => s.key === sessionKey)?.lastQuestion ??
-        body
+      const lastQ = repo.lastQuestion(sessionKey) ?? body
       bus.emit("handoff.requested", {
         channel,
         sessionKey,

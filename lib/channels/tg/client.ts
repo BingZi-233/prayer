@@ -27,6 +27,11 @@ export const POLL_DEADLINE_MARGIN_MS = 15_000
 /** getMe 身份校验硬超时 */
 export const IDENTITY_DEADLINE_MS = 20_000
 
+/** 非 poll 的 Bot API 调用(getChatAdministrators/getFile/sendMessage/getChat)硬超时:
+ * poll 路径有 pollDeadlineMs,这些裸调用此前没有 —— grammY 默认 fetch 无超时,
+ * API 挂起会卡死 handleUpdate 热路径(getRole 在每条 TG 消息上)与出站发送 */
+export const API_DEADLINE_MS = 20_000
+
 /** 可注入的 TG API 面，便于单测 mock */
 export interface TelegramBotApi {
   getMe(signal?: AbortSignal): Promise<{ id: number; username?: string }>
@@ -383,14 +388,20 @@ export class TelegramChannel implements Channel {
     if (!this.api.getChatAdministrators) {
       throw new Error("getChatAdministrators not available")
     }
-    return this.api.getChatAdministrators(chatId)
+    return withDeadline(
+      (signal) => this.api.getChatAdministrators!(chatId, signal),
+      API_DEADLINE_MS
+    )
   }
 
   private async fetchFile(fileId: string): Promise<TelegramFileInfo> {
     if (!this.api.getFile) {
       throw new Error("getFile not available")
     }
-    return this.api.getFile(fileId)
+    return withDeadline(
+      (signal) => this.api.getFile!(fileId, signal),
+      API_DEADLINE_MS
+    )
   }
 
   /**
@@ -402,7 +413,10 @@ export class TelegramChannel implements Channel {
     if (hit) return hit
     if (!this.api.getChat) return undefined
     try {
-      const chat = await this.api.getChat(chatId)
+      const chat = await withDeadline(
+        (signal) => this.api.getChat!(chatId, signal),
+        API_DEADLINE_MS
+      )
       const title = chat.title?.trim()
       if (title) {
         getNameCache().setChatName("tg", chatId, title)
@@ -446,13 +460,18 @@ export class TelegramChannel implements Channel {
     for (let i = 0; i < chunks.length; i++) {
       const text = chunks[i]!
       try {
-        await this.api.sendMessage(
-          a.chatId,
-          text,
-          // 仅首条带 reply_to，避免刷一串引用
-          i === 0 && replyTo != null && Number.isFinite(replyTo)
-            ? { reply_to_message_id: replyTo }
-            : undefined
+        await withDeadline(
+          (signal) =>
+            this.api.sendMessage(
+              a.chatId,
+              text,
+              // 仅首条带 reply_to，避免刷一串引用
+              i === 0 && replyTo != null && Number.isFinite(replyTo)
+                ? { reply_to_message_id: replyTo }
+                : undefined,
+              signal
+            ),
+          API_DEADLINE_MS
         )
       } catch (err) {
         const m = err instanceof Error ? err.message : String(err)

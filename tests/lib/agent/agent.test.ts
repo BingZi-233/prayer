@@ -252,6 +252,20 @@ describe("Agent.run 超时", () => {
     await agent.run("hi", undefined, ctx)
     expect(seen.options!.abortController).toBeInstanceOf(AbortController)
   })
+
+  it("queryFn 同步抛错(SDK 校验/spawn 失败)→ run 降级返回,不 reject", async () => {
+    const boom = () => {
+      throw new Error("options 校验失败")
+    }
+    const agent = new Agent({
+      systemPrompt: "s",
+      queryFn: boom as unknown as QueryFn,
+    })
+    // 此前该路径 run 整体 reject,orchestrator 只记 error,用户收到纯沉默
+    const out = await agent.run("在吗", undefined, ctx)
+    expect(out.text).toBe(AGENT_FALLBACK_TEXT)
+    expect(out.sessionId).toBeUndefined()
+  })
 })
 
 describe("Agent.run systemPrompt", () => {

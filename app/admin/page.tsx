@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useState } from "react"
 import Link from "next/link"
 import { toast } from "sonner"
 import {
@@ -46,17 +46,13 @@ import { PageShell } from "@/components/admin/page-shell"
 import { PageHeader } from "@/components/admin/page-header"
 import { SectionCard } from "@/components/admin/section-card"
 import { MetricBadge, MetricBadgeRow } from "@/components/admin/stat"
-import type { ChannelStatusView } from "@/components/live-provider"
+import { usePolling } from "@/components/admin/use-polling"
+import {
+  useLive,
+  type Status,
+  type ChannelStatusView,
+} from "@/components/live-provider"
 
-interface Status {
-  state: string
-  wsConnected: boolean
-  sessionCount: number
-  lastError?: string
-  bootedAt?: number
-  handoffQueue: number
-  channels?: ChannelStatusView[]
-}
 interface UsageRow {
   site: string
   label: string
@@ -91,24 +87,6 @@ interface Usage {
     process: { rows: ToolRow[]; coverage: KbCoverageView }
     daily: { rows: ToolRow[]; coverage: KbCoverageView }
   }
-}
-interface Metrics {
-  auto: number
-  proactive: number
-  handoff: number
-  error: number
-  blocked: number
-  proactiveSilent: number
-  autoResolutionRate: number | null
-  proactiveBad: number
-  usageCostUsd: number
-  usageBudgetUsd: number
-}
-interface Overview {
-  enabledChats: number
-  reflectionCount: number
-  humanSessions: number
-  metrics?: Metrics
 }
 
 const pct = (r: number) => `${Math.round(r * 100)}%`
@@ -156,34 +134,11 @@ function channelError(s: Status, id: string): boolean {
 }
 
 export default function StatusPage() {
-  const [s, setS] = useState<Status | null>(null)
+  // status/overview 来自全局 LiveProvider(单份轮询,本页不再重复打 /api/status、/api/overview);
+  // usage 只在本页需要,走带 in-flight 闸门的 usePolling
+  const { status: s, overview: ov, refresh: refreshLive } = useLive()
+  const { data: usage } = usePolling<Usage>("/api/usage", 30_000)
   const [busy, setBusy] = useState(false)
-  const [ov, setOv] = useState<Overview | null>(null)
-  const [usage, setUsage] = useState<Usage | null>(null)
-
-  async function load() {
-    try {
-      const [st, o, ug] = await Promise.all([
-        fetch("/api/status").then((x) => x.json()),
-        fetch("/api/overview").then((x) => x.json()),
-        fetch("/api/usage").then((x) => x.json()),
-      ])
-      if (st.ok) setS(st.data)
-      if (o.ok) setOv(o.data)
-      if (ug.ok) setUsage(ug.data)
-    } catch {
-      /* 轮询失败静默 */
-    }
-  }
-
-  useEffect(() => {
-    const boot = window.setTimeout(() => void load(), 0)
-    const t = window.setInterval(() => void load(), 3000)
-    return () => {
-      window.clearTimeout(boot)
-      window.clearInterval(t)
-    }
-  }, [])
 
   async function restart() {
     setBusy(true)
@@ -192,7 +147,6 @@ export default function StatusPage() {
         (x) => x.json()
       )
       if (r.ok) {
-        setS(r.data)
         toast.success("Agent 已重启")
       } else {
         toast.error(`重启失败:${r.error}`)
@@ -200,7 +154,7 @@ export default function StatusPage() {
     } catch (e) {
       toast.error(`重启失败:${e instanceof Error ? e.message : String(e)}`)
     } finally {
-      await load()
+      await refreshLive()
       setBusy(false)
     }
   }

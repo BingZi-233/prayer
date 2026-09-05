@@ -6,6 +6,12 @@ import { embed as defaultEmbed } from "../tools/embed"
 import { applyPromote } from "../reflect-promote"
 import { noToolQueryOptions, drainQuery } from "./agent"
 import { pickArrayFieldDual, previewJsonPayload } from "./json-output"
+import {
+  DEFAULT_EMBED_TIMEOUT_MS,
+  DEFAULT_QUERY_TIMEOUT_MS,
+  withTimeout,
+  withTimeoutFn,
+} from "./timeout"
 import type { ChatRef } from "../channels/enabled-chats"
 
 export interface ReflectionPromoterDeps {
@@ -23,6 +29,10 @@ export interface ReflectionPromoterDeps {
   notifyAdmin?: boolean
   embed?: (text: string) => Promise<Float32Array>
   queryFn?: typeof sdkQuery
+  /** 本地 embed 硬超时毫秒;<=0 关闭。默认 60s */
+  embedTimeoutMs?: number
+  /** LLM(drainQuery)硬超时毫秒;<=0 关闭。默认 180s,防 relay 挂起静默停摆 */
+  queryTimeoutMs?: number
   now?: () => number
   /** 测试可注入升格实现 */
   promoteFn?: typeof applyPromote
@@ -38,6 +48,7 @@ interface Resolved {
   notifyAdmin: boolean
   embed: (text: string) => Promise<Float32Array>
   queryFn: typeof sdkQuery
+  queryTimeoutMs: number
   now: () => number
   promoteFn: typeof applyPromote
   cwd?: string
@@ -97,8 +108,13 @@ function resolve(deps: ReflectionPromoterDeps): Resolved {
     maxPerRun: deps.maxPerRun ?? 5,
     baseContextK: deps.baseContextK ?? 3,
     notifyAdmin: deps.notifyAdmin ?? true,
-    embed: deps.embed ?? defaultEmbed,
+    // embed/LLM 全部套硬超时:挂起的调用只烧掉本轮,下轮重试;不做防护会静默停摆
+    embed: withTimeoutFn(
+      deps.embedTimeoutMs ?? DEFAULT_EMBED_TIMEOUT_MS,
+      deps.embed ?? defaultEmbed
+    ),
     queryFn: deps.queryFn ?? sdkQuery,
+    queryTimeoutMs: deps.queryTimeoutMs ?? DEFAULT_QUERY_TIMEOUT_MS,
     now: deps.now ?? (() => Date.now()),
     promoteFn: deps.promoteFn ?? applyPromote,
     cwd: deps.cwd,
@@ -183,21 +199,27 @@ export async function runPromote(
       .join("\n")
     const prompt = `【权威基础文档片段】\n${baseBlock || "(无)"}\n\n【候选反思条目】\n${candBlock}`
 
-    const { text: out, structuredOutput } = await drainQuery(
-      d.queryFn({
-        prompt,
-        options: noToolQueryOptions({
-          systemPrompt: PROMOTE_SYSTEM,
-          outputFormat: { type: "json_schema", schema: PROMOTE_OUTPUT_SCHEMA },
-          thinking: { type: "disabled" },
-          canUseTool: async () => ({
-            behavior: "deny" as const,
-            message: "升格阶段不使用工具",
-          }),
-          maxTurns: 2,
-        }) as never,
-      }),
-      "promote"
+    const { text: out, structuredOutput } = await withTimeout(
+      d.queryTimeoutMs,
+      drainQuery(
+        d.queryFn({
+          prompt,
+          options: noToolQueryOptions({
+            systemPrompt: PROMOTE_SYSTEM,
+            outputFormat: {
+              type: "json_schema",
+              schema: PROMOTE_OUTPUT_SCHEMA,
+            },
+            thinking: { type: "disabled" },
+            canUseTool: async () => ({
+              behavior: "deny" as const,
+              message: "升格阶段不使用工具",
+            }),
+            maxTurns: 2,
+          }) as never,
+        }),
+        "promote"
+      )
     )
 
     const decisions = decisionsFromPayload(structuredOutput, out)

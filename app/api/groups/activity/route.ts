@@ -9,7 +9,7 @@ import {
 } from "@/lib/channels/enabled-chats"
 import type { ChannelId } from "@/lib/channels/types"
 import { ok, fail } from "@/lib/api"
-import { buildGroupStatMaps } from "@/lib/reflect-stats"
+import { buildGroupChatStats } from "@/lib/reflect-stats"
 
 function chatKey(channel: string, chatId: string): string {
   return `${channel}:${chatId}`
@@ -25,7 +25,7 @@ export async function GET(): Promise<NextResponse> {
 
     const enabled = listEnabledChats(cfg)
     const enabledSet = new Set(enabled.map((c) => chatKey(c.channel, c.chatId)))
-    const { cursors, msg, sed } = buildGroupStatMaps(repo)
+    const { cursors, msg, sed } = buildGroupChatStats(repo)
     // 管理面:始终列出但不可勾生效(只跑管理命令,不进客服流程)
     const adminKey = cfg.adminSurface
       ? chatKey(cfg.adminSurface.channel, cfg.adminSurface.chatId)

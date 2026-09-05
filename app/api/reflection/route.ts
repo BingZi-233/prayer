@@ -5,7 +5,7 @@ import { Repo } from "@/lib/db/repo"
 import { getConfig } from "@/lib/config-store"
 import { listEnabledChats } from "@/lib/channels/enabled-chats"
 import { ok, fail } from "@/lib/api"
-import { buildGroupStatMaps } from "@/lib/reflect-stats"
+import { buildGroupChatStats } from "@/lib/reflect-stats"
 import { applyPromote } from "@/lib/reflect-promote"
 import { embed } from "@/lib/tools/embed"
 
@@ -29,7 +29,10 @@ export async function GET(): Promise<NextResponse> {
     const repo = new Repo(sharedDb(cfg.dbPath))
     const now = Date.now()
 
-    const { cursors, msg, sed, entries } = buildGroupStatMaps(repo)
+    const { cursors, msg, sed } = buildGroupChatStats(repo)
+    // 条目列表仍需展示,但只带预览截断(SQL 内截断):全文按需走
+    // /api/reflection/entries/[id],3 秒轮询不背全量全文(compactions 同款修法)
+    const entries = repo.reflectionEntrySummaries()
 
     const enabled = listEnabledChats(cfg)
     const ids = new Set<string>([
