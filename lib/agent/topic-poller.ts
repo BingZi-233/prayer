@@ -260,6 +260,9 @@ async function scanOnce(d: Resolved): Promise<void> {
               topicId = d.repo.insertQuestionTopic(c.newTitle!, now)
               // 回填候选池:同批后续近义项归并到此,防批内重复新建
               mergePool.push({ id: topicId, title: c.newTitle! })
+              // 同步回填整轮基池:后续 chat 的近义判定也能看到,补上
+              // 「基池只取一次」丢失的跨群去重
+              basePool.push({ id: topicId, title: c.newTitle! })
             }
           }
           d.repo.insertQuestionOccurrence(

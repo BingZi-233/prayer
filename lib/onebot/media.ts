@@ -57,7 +57,8 @@ export interface FetchImageBase64Opts {
 }
 
 // 下载图片 url → base64 + media_type。失败抛错,由调用方(enrich)兜底跳过。
-// 带 AbortController 硬超时 + Content-Length 预检 + 实际字节数上限(对齐 tg/media.ts)。
+// AbortController 硬超时覆盖到 body 读取完毕(headers 先回、body 挂起同样要掐断)
+// + Content-Length 预检 + 实际字节数上限(对齐并补齐 tg/media.ts)。
 export async function fetchImageBase64(
   url: string,
   opts: FetchImageBase64Opts = {}
@@ -68,20 +69,22 @@ export async function fetchImageBase64(
   const ac = new AbortController()
   const timer = setTimeout(() => ac.abort(), timeoutMs)
   let res: Response
+  let buf: Buffer
   try {
     res = await fetchFn(url, { signal: ac.signal })
+    if (!res.ok) throw new Error(`图片下载失败 HTTP ${res.status}`)
+    // 优先 Content-Length 预检,再兜底实际字节数
+    const cl = res.headers.get("content-length")
+    if (cl != null && Number(cl) > maxBytes) {
+      throw new Error(`图片超过大小上限 ${maxBytes} 字节`)
+    }
+    // body 读取也在超时保护内:服务器回完 headers 再挂起是真实场景
+    buf = Buffer.from(await res.arrayBuffer())
+    if (buf.byteLength > maxBytes) {
+      throw new Error(`图片超过大小上限 ${maxBytes} 字节`)
+    }
   } finally {
     clearTimeout(timer)
-  }
-  if (!res.ok) throw new Error(`图片下载失败 HTTP ${res.status}`)
-  // 优先 Content-Length 预检,再兜底实际字节数
-  const cl = res.headers.get("content-length")
-  if (cl != null && Number(cl) > maxBytes) {
-    throw new Error(`图片超过大小上限 ${maxBytes} 字节`)
-  }
-  const buf = Buffer.from(await res.arrayBuffer())
-  if (buf.byteLength > maxBytes) {
-    throw new Error(`图片超过大小上限 ${maxBytes} 字节`)
   }
   const ct = res.headers.get("content-type")?.split(";")[0]?.trim()
   const mediaType = ct && ct.startsWith("image/") ? ct : "image/jpeg"

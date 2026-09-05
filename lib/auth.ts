@@ -71,7 +71,9 @@ export function clearLoginFails(ip: string): void {
   throttleMap().delete(ip)
 }
 
-/** 从代理头里尽量取客户端 IP(XFF 首段);取不到就归并到 unknown */
+/** 从代理头里尽量取客户端 IP(XFF 首段);取不到就归并到 unknown。
+ *  已知权衡:直连(无代理头)部署下所有请求共用 unknown 桶,连续口令错误会
+ *  连管理员一起锁 15 分钟(廉价 DoS 面);本服务假定部署在可信反代后(XFF 可信)。 */
 export function clientIp(req: Headers): string {
   return (
     req.get("x-forwarded-for")?.split(",")[0]?.trim() ||

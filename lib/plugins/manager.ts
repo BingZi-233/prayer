@@ -41,10 +41,10 @@ export class PluginManager {
         (err, stdout, stderr) => {
           if (err) {
             const tail = stdout?.toString().slice(-500).trim()
-            const reason =
-              (err as NodeJS.ErrnoException).code === "ETIMEDOUT"
-                ? "超时(30s)被杀"
-                : stderr?.toString().trim() || err.message
+            // execFile 超时走 kill 信号:err.killed=true(signal=SIGKILL),code 为空
+            const reason = (err as { killed?: boolean }).killed
+              ? "超时(30s)被杀"
+              : stderr?.toString().trim() || err.message
             rej(new Error(tail ? `${reason}\nstdout 尾部: ${tail}` : reason))
           } else res({ stdout: stdout.toString(), stderr: stderr.toString() })
         }

@@ -30,8 +30,20 @@ const chatRefSchema = z.object({
 // 周期字段下限:0/负值经 setInterval 按 1ms 计,一次误填就让后台循环空转打满 CPU。
 // 0 作为「关闭」语义只保留给 reflectPromoteMs(reflect-promoter 的 ≤0 即不注册)与
 // resumeTtlMs(getResumeId 的 <=0 关闭过期);其余周期一律 ≥1000ms。
-const scanMs = z.number().int().min(1000)
-const durationMs = z.number().int().min(0)
+//
+// 存量兼容:config 页 PUT 回传全量对象,老库可能存过超范围值(旧 schema 无约束)——
+// 整体 400 会让用户连无关字段都保存不了。故数值字段用 clamp 而非拒绝:
+// 超范围值取整后钳到下限入库,GET 回读即见安全值。
+const safeInt =
+  (min: number) =>
+  (v: unknown): unknown =>
+    typeof v === "number" && Number.isFinite(v)
+      ? Math.max(min, Math.round(v))
+      : v
+const scanMs = z.preprocess(safeInt(1000), z.number().int().min(1000))
+const durationMs = z.preprocess(safeInt(0), z.number().int().min(0))
+const countAtLeast = (min: number) =>
+  z.preprocess(safeInt(min), z.number().int().min(min))
 
 const patchSchema = z.object({
   onebotWsUrl: z.string().optional(),
@@ -40,7 +52,7 @@ const patchSchema = z.object({
   extraAtQQs: z.array(z.number()).optional(),
   /** null = 清除管理面 */
   adminSurface: chatRefSchema.nullable().optional(),
-  handoffTimeoutMin: z.number().int().min(1).optional(),
+  handoffTimeoutMin: countAtLeast(1).optional(),
   dbPath: z.string().optional(),
   claudeConfigDir: z.string().optional(),
   enabledChats: z.array(chatRefSchema).optional(),
@@ -48,26 +60,26 @@ const patchSchema = z.object({
   reflectScanMs: scanMs.optional(),
   reflectLookbackMs: durationMs.optional(),
   reflectSettleMs: durationMs.optional(),
-  reflectWindowMax: z.number().int().min(1).optional(),
+  reflectWindowMax: countAtLeast(1).optional(),
   reflectCompactMs: durationMs.optional(),
-  reflectCompactMinEntries: z.number().int().min(1).optional(),
+  reflectCompactMinEntries: countAtLeast(1).optional(),
   // 0 = 关闭升格循环(reflect-promoter 约定)
   reflectPromoteMs: durationMs.optional(),
-  reflectPromoteMinEntries: z.number().int().min(1).optional(),
-  reflectPromoteMaxPerRun: z.number().int().min(1).optional(),
+  reflectPromoteMinEntries: countAtLeast(1).optional(),
+  reflectPromoteMaxPerRun: countAtLeast(1).optional(),
   reflectNotifyAdmin: z.boolean().optional(),
   // 0 = 关闭续接过期(getResumeId 约定)
   resumeTtlMs: durationMs.optional(),
   kbPrefetchEnabled: z.boolean().optional(),
-  kbPrefetchTopK: z.number().int().min(1).optional(),
+  kbPrefetchTopK: countAtLeast(1).optional(),
   kbPrefetchMaxDistance: z.number().min(0).optional(),
   proactiveEnabled: z.boolean().optional(),
   proactiveScanMs: scanMs.optional(),
   proactiveSilenceMs: durationMs.optional(),
-  proactiveMaxPerScan: z.number().int().min(1).optional(),
+  proactiveMaxPerScan: countAtLeast(1).optional(),
   supportUrl: z.string().optional(),
   ackEnabled: z.boolean().optional(),
-  maxReplyChars: z.number().int().min(50).optional(),
+  maxReplyChars: z.preprocess(safeInt(50), z.number().int().min(50)).optional(),
   usageBudgetUsd: z.number().min(0).optional(),
   // null = 清除该群全部覆盖,回到跟随全局;object = 整份替换该群策略(非字段浅合并)
   groupPolicies: z.record(z.string(), groupPolicySchema.nullable()).optional(),

@@ -10,7 +10,7 @@
  *   向量近邻 SQL 在此内联,以 repo-like { searchKb } 传给 runKbSearch(kb.ts 仅 import type Repo,运行时不加载 repo.ts)。
  * DB 路径:父进程 env DB_PATH 传入(runtime.start / introspect 已绝对化),只读打开,不建表/迁移。
  */
-import { existsSync, readFileSync } from "node:fs"
+import { existsSync, readFileSync, realpathSync } from "node:fs"
 import { dirname, join, resolve } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import Database from "better-sqlite3"
@@ -99,9 +99,13 @@ async function main(): Promise<void> {
 }
 
 // 直接运行时启动 stdio server;被 import(测试)时不启动。
-// pathToFileURL 而非裸 `file://${argv[1]}` 拼接:路径含空格/需百分号编码字符,
-// 或入口经 symlink(argv[1] 非 realpath)时裸拼接永远不成立 → 进程无声退出。
-if (import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+// pathToFileURL + realpath 而非裸 `file://${argv[1]}` 拼接:路径含空格/需百分号
+// 编码字符时裸拼接不成立;入口经 symlink 时 argv[1] 非 realpath(import.meta.url
+// 是),realpathSync 对齐后再比较。
+if (
+  import.meta.url ===
+  pathToFileURL(realpathSync(resolve(process.argv[1]!))).href
+) {
   main().catch((e) => {
     console.error(e)
     process.exit(1)
