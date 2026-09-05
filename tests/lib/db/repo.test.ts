@@ -1189,3 +1189,58 @@ describe("v6 读侧计数与单行取值", () => {
     expect(capped.map((s) => s.key)).toEqual(all.slice(0, 2).map((s) => s.key))
   })
 })
+
+describe("沉淀条目摘要与详情", () => {
+  it("summaries 截断全文但带 contentLen;detail 返回全文;非反思 doc 不入列表", () => {
+    const longContent = "退".repeat(500)
+    const longQ = "问".repeat(300)
+    const longA = "答".repeat(300)
+    const id1 = repo.insertKbEntry(
+      "human-reflection",
+      longContent,
+      "human-reflection:qq:100:1700",
+      new Float32Array([1, 0, 0])
+    )
+    repo.insertReflectionMeta(id1, "qq", "100", longQ, longA)
+    repo.insertKbEntry(
+      "human-reflection",
+      "短条目",
+      "human-reflection:qq:100:1701",
+      new Float32Array([1, 0, 0])
+    )
+    repo.insertKbEntry(
+      "kb-other",
+      "正式文档不算条目",
+      "docs/kb/x.md",
+      new Float32Array([1, 0, 0])
+    )
+
+    const sums = repo.reflectionEntrySummaries()
+    expect(sums).toHaveLength(2)
+    const long = sums.find((s) => s.id === id1)!
+    // SQL substr 按默认 300/200 截断;contentLen 是全文字符数
+    expect(long.content).toHaveLength(300)
+    expect(long.contentLen).toBe(500)
+    expect(long.question).toHaveLength(200)
+    expect(long.answer).toHaveLength(200)
+    expect(long.channel).toBe("qq")
+    expect(long.chatId).toBe("100")
+    const short = sums.find((s) => s.id !== id1)!
+    expect(short.content).toBe("短条目")
+    expect(short.contentLen).toBe(3)
+
+    const detail = repo.reflectionEntryDetail(id1)
+    expect(detail).not.toBeNull()
+    expect(detail!.content).toHaveLength(500)
+    expect(detail!.question).toHaveLength(300)
+    expect(detail!.answer).toHaveLength(300)
+    expect(detail!.status).toBe("approved")
+
+    // 自定义上限
+    const tight = repo.reflectionEntrySummaries(5, 3)
+    expect(tight.find((s) => s.id === id1)!.content).toHaveLength(5)
+    expect(tight.find((s) => s.id === id1)!.question).toHaveLength(3)
+
+    expect(repo.reflectionEntryDetail(999999)).toBeNull()
+  })
+})

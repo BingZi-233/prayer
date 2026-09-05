@@ -30,8 +30,9 @@ export async function GET(): Promise<NextResponse> {
     const now = Date.now()
 
     const { cursors, msg, sed } = buildGroupChatStats(repo)
-    // 条目列表本体仍需全文;统计部分已改走轻量 source 列
-    const entries = repo.reflectionEntries()
+    // 条目列表仍需展示,但只带预览截断(SQL 内截断):全文按需走
+    // /api/reflection/entries/[id],3 秒轮询不背全量全文(compactions 同款修法)
+    const entries = repo.reflectionEntrySummaries()
 
     const enabled = listEnabledChats(cfg)
     const ids = new Set<string>([

@@ -51,6 +51,42 @@ function parseStringArray(s: string): string[] {
   }
 }
 
+// kb_chunks(reflection JOIN meta)行 → 反思条目视图;reflectionEntries/
+// reflectionEntrySummaries/reflectionEntryDetail 三处共用,保证形状一致
+function mapReflectionRow(r: {
+  id: number
+  content: string
+  source: string | null
+  question: string | null
+  answer: string | null
+  status: string
+}): {
+  id: number
+  content: string
+  channel: string | null
+  chatId: string | null
+  ts: number | null
+  question: string | null
+  answer: string | null
+  status: ReflectionStatus
+} {
+  const parsed = parseReflectionSource(r.source)
+  const st =
+    r.status === "rejected" || r.status === "pending" || r.status === "promoted"
+      ? r.status
+      : "approved"
+  return {
+    id: r.id,
+    content: r.content,
+    channel: parsed?.channel ?? null,
+    chatId: parsed?.chatId ?? null,
+    ts: parsed?.ts ?? null,
+    question: r.question,
+    answer: r.answer,
+    status: st as ReflectionStatus,
+  }
+}
+
 export class Repo {
   private stmts = new Map<string, Database.Statement>()
 
@@ -736,25 +772,73 @@ export class Repo {
       answer: string | null
       status: string
     }[]
-    return rows.map((r) => {
-      const parsed = parseReflectionSource(r.source)
-      const st =
-        r.status === "rejected" ||
-        r.status === "pending" ||
-        r.status === "promoted"
-          ? r.status
-          : "approved"
-      return {
-        id: r.id,
-        content: r.content,
-        channel: parsed?.channel ?? null,
-        chatId: parsed?.chatId ?? null,
-        ts: parsed?.ts ?? null,
-        question: r.question,
-        answer: r.answer,
-        status: st as ReflectionStatus,
-      }
-    })
+    return rows.map(mapReflectionRow)
+  }
+
+  // 沉淀条目列表摘要(反思专页 3s 轮询):content/question/answer 在 SQL 内截断,
+  // 全文走 reflectionEntryDetail —— 全量全文曾把响应顶到 MB 级(compactions 同款事故)。
+  // contentLen 供前端判断是否截断(展开后拉全文)。
+  reflectionEntrySummaries(
+    contentCap = 300,
+    sourceCap = 200
+  ): {
+    id: number
+    content: string
+    contentLen: number
+    channel: string | null
+    chatId: string | null
+    ts: number | null
+    question: string | null
+    answer: string | null
+    status: ReflectionStatus
+  }[] {
+    const rows = this.prep(
+      `SELECT c.id, substr(c.content, 1, ?) AS content, length(c.content) AS contentLen,
+              c.source, substr(m.question, 1, ?) AS question, substr(m.answer, 1, ?) AS answer,
+              COALESCE(m.status, 'approved') AS status
+         FROM kb_chunks c LEFT JOIN reflection_meta m ON m.chunk_id = c.id
+         WHERE c.doc = 'human-reflection' ORDER BY c.id DESC`
+    ).all(contentCap, sourceCap, sourceCap) as {
+      id: number
+      content: string
+      contentLen: number
+      source: string | null
+      question: string | null
+      answer: string | null
+      status: string
+    }[]
+    return rows.map((r) => ({
+      ...mapReflectionRow(r),
+      contentLen: r.contentLen,
+    }))
+  }
+
+  // 单条沉淀条目全文(前端展开时按需拉);不存在 → null
+  reflectionEntryDetail(id: number): {
+    id: number
+    content: string
+    channel: string | null
+    chatId: string | null
+    ts: number | null
+    question: string | null
+    answer: string | null
+    status: ReflectionStatus
+  } | null {
+    const row = this.prep(
+      `SELECT c.id, c.content, c.source, m.question, m.answer, COALESCE(m.status, 'approved') AS status
+         FROM kb_chunks c LEFT JOIN reflection_meta m ON m.chunk_id = c.id
+         WHERE c.id = ? AND c.doc = 'human-reflection'`
+    ).get(id) as
+      | {
+          id: number
+          content: string
+          source: string | null
+          question: string | null
+          answer: string | null
+          status: string
+        }
+      | undefined
+    return row ? mapReflectionRow(row) : null
   }
 
   // 沉淀条数(overview 每 3s 轮询):SQL 计数,不再全量物化条目全文
