@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs"
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { parseTranscript, findTranscript } from "@/lib/transcript"
@@ -162,5 +162,17 @@ describe("findTranscript", () => {
     writeFileSync(join(proj, "abc-123.jsonl"), "")
     expect(findTranscript(dir, "abc-123")).toBe(join(proj, "abc-123.jsonl"))
     expect(findTranscript(dir, "nope")).toBeNull()
+  })
+
+  it("命中后走进程内缓存:整棵目录树删除后仍返回原路径", () => {
+    const dir = mkdtempSync(join(tmpdir(), "cfg-cache-"))
+    const proj = join(dir, "projects", "-x")
+    mkdirSync(proj, { recursive: true })
+    writeFileSync(join(proj, "cached-1.jsonl"), "")
+    const first = findTranscript(dir, "cached-1")
+    expect(first).toBe(join(proj, "cached-1.jsonl"))
+    // 目录树没了,第二次不再遍历 → 直接从缓存返回
+    rmSync(join(dir, "projects"), { recursive: true, force: true })
+    expect(findTranscript(dir, "cached-1")).toBe(first)
   })
 })
