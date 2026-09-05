@@ -6,6 +6,8 @@ import type {
 } from "@anthropic-ai/claude-agent-sdk"
 import { usageStats, type UsageSite, type UsageDelta } from "../usage-stats"
 import { toolStats, KB_PREFETCH_TOOL, KB_GROUNDED_TOOL } from "../tool-stats"
+import { logger } from "../logger"
+import type { ChannelId } from "../channels/types"
 import { PROBE_MAX_CHARS, type KbPrefetch } from "./kb-prefetch"
 import { sanitizeForModel } from "./sanitize-input"
 
@@ -502,83 +504,93 @@ export class Agent {
     const kbBlock = await this.prefetchKb(text, resumeId, ctx, media)
     // 本 run 的工具调用计数(工具名 → 次数),在 finally 一次性提交给 toolStats
     const toolCalls = new Map<string, number>()
-    // 超时到点 abort:让 SDK reject 迭代器并杀掉 CLI 子进程(best-effort);
-    // 即便子进程忽略 abort,下方 Promise.race 也会靠计时器兜底返回,run 不会卡死。
-    const abortController = new AbortController()
-    const iter = this.queryFn({
-      prompt: buildPrompt(text, media, kbBlock),
-      options: agentQueryOptions({
-        abortController,
-        // 模型由 CLAUDE_CONFIG_DIR 内配置决定,不在此覆盖
-        // 用完整自定义 system prompt(不套 claude_code preset):preset 的编码助手人格会
-        // 干扰视觉输入(实测带图时模型回"无图"),且本就需靠 prompt 抹掉编码设定 —— 直接替换更干净。
-        // system prompt 恒定(无按调用方拼接的后缀)—— 主动/正常两条路径共享同一前缀,
-        // TTL 内可跨路径命中缓存;主动模式的行为指令改由 unanswered-poller 并入 user prompt。
-        systemPrompt: this.resolvedSystem(),
-        // cs / packyapi 及其 MCP server 由 enabledPlugins(settingSources:["user"])加载,不在此显式装配。
-        // 仅当显式传 pluginPaths 时本地加载并开启 MCP 发现(默认发现,不设 skipMcpDiscovery)。
-        plugins: (this.deps.pluginPaths ?? []).map((p) => ({
-          type: "local" as const,
-          path: p,
-        })),
-        // 单一放行出口:不用 allowedTools 预授权(bare 名会 shadow canUseTool),全部工具落到此回调
-        // 白名单判定见 isToolAllowed;未命中一律拒绝(headless 不弹交互授权)
-        canUseTool: async (
-          toolName: string,
-          input: Record<string, unknown>
-        ) => {
-          if (isToolAllowed(toolName, input)) {
-            return { behavior: "allow" as const, updatedInput: input }
-          }
-          // 精准拒因 message:笼统的"未授权"会让模型误以为是语法问题、换参数重试,
-          // 白烧 turn 直到 maxTurns。明确"停手 + 改走 kb_search/技能"堵掉 deny 循环。
-          const message = denyMessage(toolName)
-          console.warn(
-            "[agent] 拒绝工具调用:",
-            toolName,
-            JSON.stringify(input).slice(0, 200)
-          )
-          return { behavior: "deny" as const, message }
-        },
-        resume: resumeId,
-        maxTurns: 20,
-        // 强制 default:CLAUDE_CONFIG_DIR/settings.json 里若合了 bypassPermissions,
-        // 会整体跳过 canUseTool,让上面的白名单形同虚设 —— 显式钉死模式堵死这个绕过口子
-        // (permissionMode / env / settingSources / tools / skills 已由 agentQueryOptions 钉好)
-        // agentQueryOptions 返回宽松 Record(供多处覆盖合并),此处收拢为 SDK Options
-      }) as Options,
-    })
-
     let sessionId: string | undefined = resumeId
     let out = ""
-    // 迭代累积独立成 promise,供 Promise.race 与超时计时器竞速。
-    // out / sessionId 由闭包写入,超时胜出时仍能返回已累积内容。
-    const drain = (async () => {
-      for await (const msg of iter) {
-        if (msg.type === "system" && msg.subtype === "init" && msg.session_id) {
-          sessionId = msg.session_id
-        }
-        if (msg.type === "assistant" && Array.isArray(msg.message?.content)) {
-          for (const block of msg.message.content) {
-            if (block.type === "text") out += block.text
-            // 工具用量观测:block 是 SDK 的 union,取 name 需窄化(同 pickStructuredFromMessage 的写法)
-            else if (block.type === "tool_use") {
-              const name = String((block as { name?: unknown }).name ?? "")
-              if (name) toolCalls.set(name, (toolCalls.get(name) ?? 0) + 1)
-            }
-          }
-        }
-        // 末尾 result:记账缓存/用量。内联(不走 drainQuery)以保留下方降级逻辑
-        const usage = usageFromResult(msg)
-        if (usage) usageStats.record("agent", usage)
-      }
-    })()
-    // 超时胜出后 drain 常因 abort 迟到 reject:挂一个吞噬 handler 防 unhandledRejection
-    // (race 仍会各自收到该 reject,不影响下方降级)
-    drain.catch(() => {})
-
     let timer: ReturnType<typeof setTimeout> | undefined
     try {
+      // 超时到点 abort:让 SDK reject 迭代器并杀掉 CLI 子进程(best-effort);
+      // 即便子进程忽略 abort,下方 Promise.race 也会靠计时器兜底返回,run 不会卡死。
+      // queryFn 同步抛错(SDK options 校验 / spawn 立即失败)也纳入 try:
+      // 否则 run 整体 reject 不走降级,用户对该消息收到纯沉默。
+      const abortController = new AbortController()
+      const iter = this.queryFn({
+        prompt: buildPrompt(text, media, kbBlock),
+        options: agentQueryOptions({
+          abortController,
+          // 模型由 CLAUDE_CONFIG_DIR 内配置决定,不在此覆盖
+          // 用完整自定义 system prompt(不套 claude_code preset):preset 的编码助手人格会
+          // 干扰视觉输入(实测带图时模型回"无图"),且本就需靠 prompt 抹掉编码设定 —— 直接替换更干净。
+          // system prompt 恒定(无按调用方拼接的后缀)—— 主动/正常两条路径共享同一前缀,
+          // TTL 内可跨路径命中缓存;主动模式的行为指令改由 unanswered-poller 并入 user prompt。
+          systemPrompt: this.resolvedSystem(),
+          // cs / packyapi 及其 MCP server 由 enabledPlugins(settingSources:["user"])加载,不在此显式装配。
+          // 仅当显式传 pluginPaths 时本地加载并开启 MCP 发现(默认发现,不设 skipMcpDiscovery)。
+          plugins: (this.deps.pluginPaths ?? []).map((p) => ({
+            type: "local" as const,
+            path: p,
+          })),
+          // 单一放行出口:不用 allowedTools 预授权(bare 名会 shadow canUseTool),全部工具落到此回调
+          // 白名单判定见 isToolAllowed;未命中一律拒绝(headless 不弹交互授权)
+          canUseTool: async (
+            toolName: string,
+            input: Record<string, unknown>
+          ) => {
+            if (isToolAllowed(toolName, input)) {
+              return { behavior: "allow" as const, updatedInput: input }
+            }
+            // 精准拒因 message:笼统的"未授权"会让模型误以为是语法问题、换参数重试,
+            // 白烧 turn 直到 maxTurns。明确"停手 + 改走 kb_search/技能"堵掉 deny 循环。
+            const message = denyMessage(toolName)
+            // 走结构化 logger(带 scope/会话定位):裸 console 会把群友可控的
+            // tool input 原样投进 ring buffer,且无定位元数据;截断防刷屏
+            logger.warn(`[agent] 拒绝工具调用: ${toolName}`, {
+              scope: "agent.deny",
+              channel: ctx.channel as ChannelId | undefined,
+              chatId: ctx.chatId,
+              sessionKey: ctx.sessionKey,
+              raw: JSON.stringify(input).slice(0, 120),
+            })
+            return { behavior: "deny" as const, message }
+          },
+          resume: resumeId,
+          maxTurns: 20,
+          // 强制 default:CLAUDE_CONFIG_DIR/settings.json 里若合了 bypassPermissions,
+          // 会整体跳过 canUseTool,让上面的白名单形同虚设 —— 显式钉死模式堵死这个绕过口子
+          // (permissionMode / env / settingSources / tools / skills 已由 agentQueryOptions 钉好)
+          // agentQueryOptions 返回宽松 Record(供多处覆盖合并),此处收拢为 SDK Options
+        }) as Options,
+      })
+
+      // 迭代累积独立成 promise,供 Promise.race 与超时计时器竞速。
+      // out / sessionId 由闭包写入,超时胜出时仍能返回已累积内容。
+      const drain = (async () => {
+        for await (const msg of iter) {
+          if (
+            msg.type === "system" &&
+            msg.subtype === "init" &&
+            msg.session_id
+          ) {
+            sessionId = msg.session_id
+          }
+          if (msg.type === "assistant" && Array.isArray(msg.message?.content)) {
+            for (const block of msg.message.content) {
+              if (block.type === "text") out += block.text
+              // 工具用量观测:block 是 SDK 的 union,取 name 需窄化(同 pickStructuredFromMessage 的写法)
+              else if (block.type === "tool_use") {
+                const name = String((block as { name?: unknown }).name ?? "")
+                if (name) toolCalls.set(name, (toolCalls.get(name) ?? 0) + 1)
+              }
+            }
+          }
+          // 末尾 result:记账缓存/用量。内联(不走 drainQuery)以保留下方降级逻辑
+          const usage = usageFromResult(msg)
+          if (usage) usageStats.record("agent", usage)
+        }
+      })()
+      // 超时胜出后 drain 常因 abort 迟到 reject:挂一个吞噬 handler 防 unhandledRejection
+      // (race 仍会各自收到该 reject,不影响下方降级)
+      drain.catch(() => {})
+
       if (this.timeoutMs > 0) {
         const timeout = new Promise<never>((_, reject) => {
           timer = setTimeout(() => {
@@ -591,9 +603,9 @@ export class Agent {
         await drain
       }
     } catch (e) {
-      // maxTurns / CLI 异常(SDK reject 迭代器)或超时:降级 —— 保留已累积文本与
-      // sessionId,避免整个请求 500、丢掉会话,更避免 handle 永挂拖死编排串行链
-      console.error("[agent] query 迭代中断/超时,降级返回已累积内容:", e)
+      // maxTurns / CLI 异常(SDK reject 迭代器)、超时或 queryFn 同步抛错:降级 ——
+      // 保留已累积文本与 sessionId,避免整个请求 500、丢掉会话,更避免 handle 永挂拖死编排串行链
+      console.error("[agent] query 启动/迭代中断/超时,降级返回已累积内容:", e)
       if (!out.trim()) out = AGENT_FALLBACK_TEXT
     } finally {
       if (timer) clearTimeout(timer)
