@@ -16,12 +16,6 @@ function repo(): Repo {
   return new Repo(sharedDb(process.env.DB_PATH ?? "./data/agent.db"))
 }
 
-const groupPolicySchema = z.object({
-  proactiveEnabled: z.boolean().optional(),
-  proactiveSilenceMs: z.number().optional(),
-  notifyAdminOnHandoff: z.boolean().optional(),
-})
-
 const chatRefSchema = z.object({
   channel: z.enum(["qq", "tg", "discord"]),
   chatId: z.string().min(1),
@@ -44,6 +38,12 @@ const scanMs = z.preprocess(safeInt(1000), z.number().int().min(1000))
 const durationMs = z.preprocess(safeInt(0), z.number().int().min(0))
 const countAtLeast = (min: number) =>
   z.preprocess(safeInt(min), z.number().int().min(min))
+
+export const groupPolicySchema = z.object({
+  proactiveEnabled: z.boolean().optional(),
+  proactiveSilenceMs: z.number().int().min(0).optional(),
+  notifyAdminOnHandoff: z.boolean().optional(),
+})
 
 const patchSchema = z.object({
   onebotWsUrl: z.string().optional(),

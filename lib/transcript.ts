@@ -137,7 +137,7 @@ export function parseTranscript(jsonl: string): TranscriptMsg[] {
 
 // sessionId → transcript 文件路径的进程内缓存:会话页每次打开/刷新都按
 // updatedAt 重拉 transcript,findTranscript 此前每请求递归遍历整棵 projects
-// 目录树。文件名只增不减,命中后永不失效;超上限整体清空兜底(防无界)。
+// 目录树。命中需校验路径仍存在,失效即逐出;超上限整体清空兜底(防无界)。
 const TRANSCRIPT_PATH_CACHE_MAX = 2000
 const g = globalThis as unknown as {
   __transcriptPaths?: Map<string, string>
@@ -150,7 +150,10 @@ export function findTranscript(
 ): string | null {
   const cacheKey = `${configDir}\u0000${sessionId}`
   const hit = pathCache().get(cacheKey)
-  if (hit) return hit
+  if (hit) {
+    if (existsSync(/* turbopackIgnore: true */ hit)) return hit
+    pathCache().delete(cacheKey)
+  }
   // configDir 为运行时配置(常在项目外)。fs 参数加 turbopackIgnore,避免 NFT 把整仓 trace 进来。
   const root = join(/* turbopackIgnore: true */ resolve(configDir), "projects")
   if (!existsSync(/* turbopackIgnore: true */ root)) return null

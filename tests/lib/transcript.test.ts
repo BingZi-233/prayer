@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest"
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { parseTranscript, findTranscript } from "@/lib/transcript"
+import { parseTranscript, findTranscript, readTranscript } from "@/lib/transcript"
 
 describe("parseTranscript", () => {
   it("文本与 tool_use 拆成独立条目", () => {
@@ -171,8 +171,18 @@ describe("findTranscript", () => {
     writeFileSync(join(proj, "cached-1.jsonl"), "")
     const first = findTranscript(dir, "cached-1")
     expect(first).toBe(join(proj, "cached-1.jsonl"))
-    // 目录树没了,第二次不再遍历 → 直接从缓存返回
-    rmSync(join(dir, "projects"), { recursive: true, force: true })
     expect(findTranscript(dir, "cached-1")).toBe(first)
+  })
+
+  it("缓存路径失效后重新扫描并返回空结果", () => {
+    const dir = mkdtempSync(join(tmpdir(), "cfg-stale-cache-"))
+    const proj = join(dir, "projects", "-x")
+    mkdirSync(proj, { recursive: true })
+    writeFileSync(join(proj, "stale-1.jsonl"), "")
+    expect(findTranscript(dir, "stale-1")).toBe(
+      join(proj, "stale-1.jsonl")
+    )
+    rmSync(join(proj, "stale-1.jsonl"))
+    expect(readTranscript(dir, "stale-1")).toEqual([])
   })
 })
