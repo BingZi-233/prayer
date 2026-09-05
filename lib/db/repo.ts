@@ -1,4 +1,5 @@
 import type Database from "better-sqlite3"
+import { KB_SEARCH_SQL } from "../tools/kb"
 
 export interface KbHit {
   id: number
@@ -1314,15 +1315,10 @@ export class Repo {
   // - promoted:知识已固化到正式文档(promoted/*.md),避免与正式 chunk 重复占 top-k
   // 无 meta / 非反思文档一律视为可检索(沉淀默认 approved)。
   searchKb(query: Float32Array, k: number): KbHit[] {
-    const rows = this.prep(
-      `SELECT c.id, c.content, c.source, v.distance
-         FROM kb_vec v
-         JOIN kb_chunks c ON c.id = v.chunk_id
-         LEFT JOIN reflection_meta m ON m.chunk_id = c.id
-         WHERE v.embedding MATCH ? AND k = ?
-           AND COALESCE(m.status, 'approved') NOT IN ('rejected', 'promoted')
-         ORDER BY v.distance`
-    ).all(Buffer.from(query.buffer), k) as KbHit[]
+    const rows = this.prep(KB_SEARCH_SQL).all(
+      Buffer.from(query.buffer),
+      k
+    ) as KbHit[]
     return rows
   }
 

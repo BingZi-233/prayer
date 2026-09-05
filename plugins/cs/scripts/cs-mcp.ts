@@ -55,7 +55,7 @@ async function main(): Promise<void> {
   const { embed } = await import(
     pathToFileURL(join(root, "lib/tools/embed.ts")).href
   )
-  const { runKbSearch, KB_TOOL_DESC } = await import(
+  const { runKbSearch, KB_TOOL_DESC, KB_SEARCH_SQL } = await import(
     pathToFileURL(join(root, "lib/tools/kb.ts")).href
   )
 
@@ -64,13 +64,9 @@ async function main(): Promise<void> {
   const db = new Database(dbPath, { readonly: true, fileMustExist: true })
   sqliteVec.load(db)
 
-  // 内联向量近邻查询(等价 lib/db/repo.ts 的 searchKb),以 repo-like 传给 runKbSearch
-  const stmt = db.prepare(
-    `SELECT c.id, c.content, c.source, v.distance
-     FROM kb_vec v JOIN kb_chunks c ON c.id = v.chunk_id
-     WHERE v.embedding MATCH ? AND k = ?
-     ORDER BY v.distance`
-  )
+  // 与 repo.searchKb 共用 KB_SEARCH_SQL(kb.ts 唯一事实源):此前内联副本
+  // 漏了 reflection_meta 过滤,管理员驳回的知识仍会经 kb_search 漏给用户
+  const stmt = db.prepare(KB_SEARCH_SQL)
   const repo = {
     searchKb: (query: Float32Array, k: number) =>
       stmt.all(Buffer.from(query.buffer), k),
@@ -103,7 +99,9 @@ async function main(): Promise<void> {
 }
 
 // 直接运行时启动 stdio server;被 import(测试)时不启动。
-if (import.meta.url === `file://${process.argv[1]}`) {
+// pathToFileURL 而非裸 `file://${argv[1]}` 拼接:路径含空格/需百分号编码字符,
+// 或入口经 symlink(argv[1] 非 realpath)时裸拼接永远不成立 → 进程无声退出。
+if (import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   main().catch((e) => {
     console.error(e)
     process.exit(1)

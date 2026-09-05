@@ -18,8 +18,8 @@
  */
 
 import { readFileSync } from "node:fs"
-import { dirname, join } from "node:path"
-import { fileURLToPath } from "node:url"
+import { dirname, join, resolve } from "node:path"
+import { fileURLToPath, pathToFileURL } from "node:url"
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod"
@@ -44,8 +44,15 @@ export interface Pricing {
   usable_group: Record<string, string>
 }
 
+// 外部 API 硬超时:undici 默认可挂 5 分钟,而 agent run 总超时才 180s——
+// 一次挂起的 packy 调用会把整条用户消息的处理拖死到 run 超时
+const FETCH_TIMEOUT_MS = 10_000
+
 async function fetchPricing(): Promise<Pricing> {
-  const res = await fetch(API, { headers: { "User-Agent": "packy-mcp" } })
+  const res = await fetch(API, {
+    headers: { "User-Agent": "packy-mcp" },
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+  })
   if (!res.ok) throw new Error(`HTTP ${res.status}`)
   return (await res.json()) as Pricing
 }
@@ -68,6 +75,7 @@ export interface Announcements {
 async function fetchAnnouncements(): Promise<Announcements> {
   const res = await fetch(ANNOUNCE_API, {
     headers: { "User-Agent": "packy-mcp" },
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
   })
   if (!res.ok) throw new Error(`HTTP ${res.status}`)
   return (await res.json()) as Announcements
@@ -349,7 +357,9 @@ async function main(): Promise<void> {
 }
 
 // 直接运行时启动 stdio server;被 import(测试)时不启动。
-if (import.meta.url === `file://${process.argv[1]}`) {
+// pathToFileURL 而非裸 `file://${argv[1]}` 拼接:路径含空格/需百分号编码字符,
+// 或入口经 symlink(argv[1] 非 realpath)时裸拼接永远不成立 → 进程无声退出。
+if (import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   main().catch((e) => {
     console.error(e)
     process.exit(1)

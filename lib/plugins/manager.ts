@@ -33,10 +33,20 @@ export class PluginManager {
         {
           env: { ...process.env, CLAUDE_CONFIG_DIR: resolve(this.configDir) },
           maxBuffer: 10 * 1024 * 1024,
+          // CLI 卡住(网络拉 marketplace 元数据/配置目录锁)时整个插件管理 API
+          // 不能无限期悬挂;30s 足够覆盖正常 CLI 操作
+          timeout: 30_000,
+          killSignal: "SIGKILL",
         },
         (err, stdout, stderr) => {
-          if (err) rej(new Error(stderr?.toString().trim() || err.message))
-          else res({ stdout: stdout.toString(), stderr: stderr.toString() })
+          if (err) {
+            const tail = stdout?.toString().slice(-500).trim()
+            const reason =
+              (err as NodeJS.ErrnoException).code === "ETIMEDOUT"
+                ? "超时(30s)被杀"
+                : stderr?.toString().trim() || err.message
+            rej(new Error(tail ? `${reason}\nstdout 尾部: ${tail}` : reason))
+          } else res({ stdout: stdout.toString(), stderr: stderr.toString() })
         }
       )
     })
@@ -44,7 +54,13 @@ export class PluginManager {
 
   async list(): Promise<PluginInfo[]> {
     const { stdout } = await this.run(["plugin", "list", "--json"])
-    return JSON.parse(stdout) as PluginInfo[]
+    try {
+      return JSON.parse(stdout) as PluginInfo[]
+    } catch {
+      throw new Error(
+        `plugin list 输出非 JSON(可能混入了 CLI 前景日志): ${stdout.slice(0, 200)}`
+      )
+    }
   }
 
   private async mutate(args: string[]): Promise<CliResult> {
