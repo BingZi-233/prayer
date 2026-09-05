@@ -686,30 +686,48 @@ export class Repo {
   // 生效 chat 中 topic 游标的最小值(忽略从未处理过的 0,避免恒卡 prune)。
   // 无任何 >0 游标 → MAX_SAFE_INTEGER(prune 不受 topic 侧约束)。
   // 接受 {channel, chatId}[] 或历史 number[](视为 qq 群号,Phase 0 兼容)。
+  // 全部 topic 游标(config key = topic_cursor:{channel}:{chatId}),一条 LIKE 查完
+  topicCursors(): { channel: string; chatId: string; cursor: number }[] {
+    const rows = this.prep(
+      "SELECT key, value FROM config WHERE key LIKE 'topic_cursor:%'"
+    ).all() as { key: string; value: string }[]
+    const out: { channel: string; chatId: string; cursor: number }[] = []
+    for (const r of rows) {
+      const rest = r.key.slice("topic_cursor:".length)
+      const parts = rest.split(":")
+      if (parts.length < 2) continue
+      out.push({
+        channel: parts[0],
+        chatId: parts.slice(1).join(":"),
+        cursor: Number(r.value),
+      })
+    }
+    return out
+  }
+
+  // 生效 chat 中 topic 游标的最小值(忽略从未处理过的 0,避免恒卡 prune)。
+  // 无任何 >0 游标 → MAX_SAFE_INTEGER(prune 不受 topic 侧约束)。
+  // 接受 {channel, chatId}[] 或历史 number[](视为 qq 群号,Phase 0 兼容)。
+  // 一条 LIKE 批量取全部游标后在 JS 过滤(此前每 chat 一次 config 查询)。
   minTopicCursor(enabled: ChatRef[] | number[] | string[]): number {
-    let min = Number.MAX_SAFE_INTEGER
+    const keys = new Set<string>()
     for (const g of enabled) {
-      let channel: string
-      let chatId: string
       if (typeof g === "number") {
-        channel = "qq"
-        chatId = String(g)
-      } else if (typeof g === "string") {
+        keys.add(`qq:${g}`)
+        continue
+      }
+      if (typeof g === "string") {
         // "qq:100" 或裸 "100"
         const m = /^([a-z]+):(.+)$/.exec(g)
-        if (m) {
-          channel = m[1]
-          chatId = m[2]
-        } else {
-          channel = "qq"
-          chatId = g
-        }
-      } else {
-        channel = g.channel
-        chatId = g.chatId
+        keys.add(m ? `${m[1]}:${m[2]}` : `qq:${g}`)
+        continue
       }
-      const c = this.topicCursor(channel, chatId)
-      if (c > 0 && c < min) min = c
+      keys.add(`${g.channel}:${g.chatId}`)
+    }
+    let min = Number.MAX_SAFE_INTEGER
+    for (const c of this.topicCursors()) {
+      if (!keys.has(`${c.channel}:${c.chatId}`)) continue
+      if (c.cursor > 0 && c.cursor < min) min = c.cursor
     }
     return min
   }

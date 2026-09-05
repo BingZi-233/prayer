@@ -137,7 +137,7 @@ export default function StatusPage() {
   // status/overview 来自全局 LiveProvider(单份轮询,本页不再重复打 /api/status、/api/overview);
   // usage 只在本页需要,走带 in-flight 闸门的 usePolling
   const { status: s, overview: ov, refresh: refreshLive } = useLive()
-  const { data: usage } = usePolling<Usage>("/api/usage")
+  const { data: usage } = usePolling<Usage>("/api/usage", 30_000)
   const [busy, setBusy] = useState(false)
 
   async function restart() {
