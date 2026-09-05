@@ -97,6 +97,14 @@ function migrate(db: Database.Database, dim: number): void {
     ensurePerfIndexes(db)
     ensureQuestionTopicUnique(db)
   }
+
+  // v7: seen_messages(created_at) 索引(数据保留 prune 按时间删;幂等)
+  if (userVersion(db) < 7) {
+    ensureSeenMessagesCreatedIndex(db)
+    setUserVersion(db, 7)
+  } else {
+    ensureSeenMessagesCreatedIndex(db)
+  }
 }
 
 /**
@@ -175,6 +183,16 @@ export function ensureQuestionTopicUnique(db: Database.Database): void {
   }
   db.exec(
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_qt_title ON question_topics(title)"
+  )
+}
+
+/**
+ * v7: seen_messages 按 created_at 的 prune 需要 seek 索引(此前只有主键)。
+ * 该表每条入站消息一行、永不清理,是库体积的主要构成之一。
+ */
+export function ensureSeenMessagesCreatedIndex(db: Database.Database): void {
+  db.exec(
+    "CREATE INDEX IF NOT EXISTS idx_seen_created ON seen_messages(created_at)"
   )
 }
 

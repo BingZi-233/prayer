@@ -419,6 +419,27 @@ export class Repo {
     this.prep("DELETE FROM group_messages WHERE created_at < ?").run(beforeTs)
   }
 
+  // ── 数据保留 prune(随反思循环节奏跑;v6 索引保证按 created_at seek)──
+  // resolution_events:每条消息 +1(含 ack),只服务「今日 0 点起」的看板计数
+  pruneResolutionEvents(beforeTs: number): void {
+    this.prep("DELETE FROM resolution_events WHERE created_at < ?").run(
+      beforeTs
+    )
+  }
+
+  // proactive_replies:主动回复历史页(近期插话列表/按群计数)。窗口外计数随之收敛,
+  // 该页是「近期活跃」视角,老数据无消费方
+  pruneProactiveReplies(beforeTs: number): void {
+    this.prep("DELETE FROM proactive_replies WHERE created_at < ?").run(
+      beforeTs
+    )
+  }
+
+  // seen_messages:入站消息去重(OneBot 重推发生在秒级),7 天绰绰有余;此前永不清理
+  pruneSeenMessages(beforeTs: number): void {
+    this.prep("DELETE FROM seen_messages WHERE created_at < ?").run(beforeTs)
+  }
+
   // 会话最后活动时间(主链路 @处理 / 兜底都会 setSessionId 刷新)。主动兜底压制②用:
   // 该值 > 问题 ts → 该用户已被主链路处理或已兜底过 → 不重复插话。
   sessionUpdatedAt(key: string): number | undefined {

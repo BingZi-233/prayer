@@ -112,6 +112,14 @@ export const DEFAULT_DUP_TOP_K = 5
 export const DEFAULT_DUP_MAX_DISTANCE = 0.45
 export const DEFAULT_KB_CONTEXT_K = 6
 
+// ── 数据保留窗口(消费方口径,见 scanOnce 尾部注释)──
+/** resolution_events:看板只按「今日 0 点起」计数,90 天余量足够 */
+export const RETENTION_RESOLUTION_MS = 90 * 24 * 3600_000
+/** proactive_replies:主动回复页是近期插话/计数视角 */
+export const RETENTION_PROACTIVE_MS = 90 * 24 * 3600_000
+/** seen_messages:入站去重,OneBot 重推发生在秒级 */
+export const RETENTION_SEEN_MS = 7 * 24 * 3600_000
+
 export type ReflectItem = {
   question: string
   answer: string
@@ -423,6 +431,13 @@ async function scanOnce(d: Resolved): Promise<void> {
       d.repo.minTopicCursor(d.enabledChats)
     )
   )
+
+  // 数据保留:三张「只增不减」表跟着本循环(5 分钟一轮)做时间窗清理。
+  // 窗口选择按消费方口径:resolution_events/proactive_replies 服务近期看板(90 天),
+  // seen_messages 纯秒级重推去重(7 天)。DELETE 走 v6/v7 时间索引,量级恒定。
+  d.repo.pruneResolutionEvents(now - RETENTION_RESOLUTION_MS)
+  d.repo.pruneProactiveReplies(now - RETENTION_PROACTIVE_MS)
+  d.repo.pruneSeenMessages(now - RETENTION_SEEN_MS)
 }
 
 // 供测试直接驱动一次扫描

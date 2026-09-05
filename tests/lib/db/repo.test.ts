@@ -877,8 +877,8 @@ describe("channel schema migration", () => {
     raw.close()
 
     const migrated = openDb(p, 3)
-    // v1→v2→…→v6 一路升完
-    expect(migrated.pragma("user_version", { simple: true }) as number).toBe(6)
+    // v1→v2→…→v7 一路升完
+    expect(migrated.pragma("user_version", { simple: true }) as number).toBe(7)
     // v4: group_messages 补 mentioned_bot 列,老数据默认 0
     const gmCols = (
       migrated.prepare("PRAGMA table_info(group_messages)").all() as {
@@ -925,7 +925,7 @@ describe("channel schema migration", () => {
     // 幂等:再 open 不炸
     migrated.close()
     const again = openDb(p, 3)
-    expect(again.pragma("user_version", { simple: true })).toBe(6)
+    expect(again.pragma("user_version", { simple: true })).toBe(7)
     again.close()
     rmSync(dir, { recursive: true, force: true })
   })
@@ -1008,7 +1008,7 @@ describe("v6 迁移:性能索引", () => {
     expect(names("question_topics")).toContain("idx_qt_title")
   })
 
-  it("磁盘库升级到 user_version >= 6 且幂等重开", () => {
+  it("磁盘库升级一路到最新 user_version 且幂等重开", () => {
     const dir = mkdtempSync(join(tmpdir(), "prayer-v6-"))
     const p = join(dir, "v5.db")
     const raw = new BetterSqlite3(p)
@@ -1032,10 +1032,11 @@ describe("v6 迁移:性能索引", () => {
     raw.close()
 
     const upgraded = openDb(p, 3)
-    expect(upgraded.pragma("user_version", { simple: true }) as number).toBe(6)
+    // v6(索引+唯一化)→ v7(seen_messages 索引)一路升完
+    expect(upgraded.pragma("user_version", { simple: true }) as number).toBe(7)
     upgraded.close()
     const again = openDb(p, 3)
-    expect(again.pragma("user_version", { simple: true })).toBe(6)
+    expect(again.pragma("user_version", { simple: true })).toBe(7)
     again.close()
     rmSync(dir, { recursive: true, force: true })
   })
@@ -1242,5 +1243,67 @@ describe("沉淀条目摘要与详情", () => {
     expect(tight.find((s) => s.id === id1)!.question).toHaveLength(3)
 
     expect(repo.reflectionEntryDetail(999999)).toBeNull()
+  })
+})
+
+describe("v7 数据保留 prune", () => {
+  it("openDb 后 seen_messages 有 created_at 索引", () => {
+    const names = (
+      db
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='seen_messages'"
+        )
+        .all() as { name: string }[]
+    ).map((r) => r.name)
+    expect(names).toContain("idx_seen_created")
+  })
+
+  it("三个 prune 只删窗口外行,窗口内保留", () => {
+    const now = 1_000_000_000_000
+    const old = now - 100 * 24 * 3600_000 // 100 天前
+    db.prepare(
+      "INSERT INTO resolution_events (kind, created_at) VALUES ('auto', ?), ('auto', ?)"
+    ).run(old, now)
+    db.prepare(
+      "INSERT INTO proactive_replies (channel, group_id, user_id, question, answer, created_at) VALUES ('qq','1','2','q','a', ?), ('qq','1','2','q2','a2', ?)"
+    ).run(old, now)
+    db.prepare(
+      "INSERT INTO seen_messages (dedupe_key, created_at) VALUES ('k-old', ?), ('k-new', ?)"
+    ).run(old, now)
+
+    repo.pruneResolutionEvents(now - 90 * 24 * 3600_000)
+    repo.pruneProactiveReplies(now - 90 * 24 * 3600_000)
+    repo.pruneSeenMessages(now - 7 * 24 * 3600_000)
+
+    expect(
+      (
+        db.prepare("SELECT COUNT(*) n FROM resolution_events").get() as {
+          n: number
+        }
+      ).n
+    ).toBe(1)
+    expect(
+      (
+        db.prepare("SELECT COUNT(*) n FROM proactive_replies").get() as {
+          n: number
+        }
+      ).n
+    ).toBe(1)
+    expect(
+      (
+        db.prepare("SELECT dedupe_key FROM seen_messages").all() as {
+          dedupe_key: string
+        }[]
+      ).map((r) => r.dedupe_key)
+    ).toEqual(["k-new"])
+  })
+})
+
+describe("反思循环数据保留窗口常量", () => {
+  it("消费方口径:resolution/proactive 90 天,seen 7 天", async () => {
+    const m = await import("@/lib/agent/reflection-poller")
+    expect(m.RETENTION_RESOLUTION_MS).toBe(90 * 24 * 3600_000)
+    expect(m.RETENTION_PROACTIVE_MS).toBe(90 * 24 * 3600_000)
+    expect(m.RETENTION_SEEN_MS).toBe(7 * 24 * 3600_000)
   })
 })
