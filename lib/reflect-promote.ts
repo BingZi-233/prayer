@@ -39,8 +39,8 @@ export async function applyPromote(
   opts: ApplyPromoteOpts
 ): Promise<PromoteResult> {
   const { repo, chunkId, embed } = opts
-  const entries = repo.reflectionEntries()
-  const entry = entries.find((e) => e.id === chunkId)
+  // 单条取行(替代全量 reflectionEntries 拉取后再 find)
+  const entry = repo.reflectionEntryDetail(chunkId)
   if (!entry) return { ok: false, reason: "条目不存在" }
   if (entry.status === "rejected")
     return { ok: false, reason: "已驳回,不可升格" }
@@ -66,11 +66,18 @@ export async function applyPromote(
   await mkdirFn(dirname(abs))
   await writeFileFn(abs, body)
 
-  // 正式文档入库:先清旧分块再写,保证幂等
-  repo.deleteKbDoc(rel)
-  repo.insertKbEntry(rel, body, rel, await embed(body))
-  // 原反思 chunk 物理删除,避免 list / 检索双份残留
-  repo.deleteKbChunk(chunkId)
+  // 向量先算好:embed 失败(超时等)时 DB 完全未动,条目仍在,可重试
+  const vec = await embed(body)
+
+  // 三个 DB 步骤同一事务:中途失败整体回滚,原反思条目保留。
+  // 此前是三次独立写且先删后插——崩溃窗口内正式文档会从 KB 消失到重新 ingest。
+  repo.transaction(() => {
+    // 正式文档入库:先清旧分块再写,保证幂等(同 chunk 重复升格覆盖旧文件)
+    repo.deleteKbDoc(rel)
+    repo.insertKbEntry(rel, body, rel, vec)
+    // 原反思 chunk 物理删除,避免 list / 检索双份残留
+    repo.deleteKbChunk(chunkId)
+  })
 
   return { ok: true, file: rel, content: entry.content }
 }
