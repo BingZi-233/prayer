@@ -145,6 +145,79 @@ export function resolveGroups(d: Pricing, model: string): string[] {
   ].sort()
 }
 
+const ISO_WEEKDAY: Record<string, number> = {
+  Mon: 1,
+  Tue: 2,
+  Wed: 3,
+  Thu: 4,
+  Fri: 5,
+  Sat: 6,
+  Sun: 7,
+}
+
+// 取目标时区下的 ISO 星期(1=周一)与自 00:00 起的分钟数。
+// 用 Intl 而非第三方时区库:Node 自带完整 ICU,零依赖。
+function zoned(
+  now: Date,
+  timeZone: string
+): { weekday: number; minutes: number } {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    weekday: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(now)
+  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? ""
+  return {
+    weekday: ISO_WEEKDAY[get("weekday")] ?? 0,
+    minutes: Number(get("hour")) * 60 + Number(get("minute")),
+  }
+}
+
+function toMinutes(hhmm: string): number {
+  const [h, m] = hhmm.split(":")
+  return Number(h) * 60 + Number(m)
+}
+
+// 命中则返回该窗口的结束时刻(如 "12:00")。窗口按左闭右开处理:
+// 12:00 整已不算在 09:00-12:00 内。
+function hitWindow(windows: string[], minutes: number): string | undefined {
+  for (const w of windows) {
+    const [from, to] = w.split("-")
+    if (!from || !to) continue
+    if (minutes >= toMinutes(from) && minutes < toMinutes(to)) return to
+  }
+  return undefined
+}
+
+// peak_active 语义无官方文档(实盘为 {})。策略:非空且含该模型时以它为
+// 权威,否则本地按 rules 算 —— 服务端将来给出权威值时自动接上。
+//
+// weekdays 起始值同样无文档。实盘规则为 [1,2,3,4,5],在 ISO(1=周一)与
+// Date.getDay()(0=周日)两种约定下都等于周一至周五,故当前不受影响。
+// 此处按 ISO 实现;将来出现含 0 / 6 / 7 的规则时需重新核实。
+function activePeak(
+  d: Pricing,
+  model: string,
+  now: Date
+): { factor: number; until?: string } | undefined {
+  const fromServer = d.peak_active?.[model]
+  // 显式校验 factor 而非 if (fromServer):peak_active 来自 as Pricing 强转的外部
+  // JSON,语义无官方文档。缺 factor 时算术有 ?? 1 兜着,但 peak.factor 会带着
+  // undefined 一路走到文案里输出「×undefined」—— 与 cache_ratio 那个 NaN 同型。
+  if (typeof fromServer?.factor === "number") return fromServer
+  if (!d.peak_pricing?.enabled) return undefined
+  for (const rule of d.peak_pricing.rules ?? []) {
+    if (!rule.enabled || !rule.models?.includes(model)) continue
+    const { weekday, minutes } = zoned(now, rule.timezone)
+    if (!rule.weekdays?.includes(weekday)) continue
+    const until = hitWindow(rule.windows ?? [], minutes)
+    if (until) return { factor: rule.factor, until }
+  }
+  return undefined
+}
+
 export function resolvePrice(
   d: Pricing,
   model: string,
@@ -184,17 +257,28 @@ export function resolvePrice(
     return { ...common, quotaType: 1, perCall: m.model_price * gr }
   }
   const base = opts.base ?? DEFAULT_BASE
-  const input = ratio * gr * base
+  const offPeakInput = ratio * gr * base
+  const offPeakOutput = offPeakInput * m.completion_ratio
+  const peakHit = activePeak(d, model, opts.now ?? new Date())
+  const input = offPeakInput * (peakHit?.factor ?? 1)
   return {
     ...common,
     quotaType: 0,
     base,
     input,
-    output: input * m.completion_ratio,
+    output: offPeakOutput * (peakHit?.factor ?? 1),
     cacheRead: m.cache_ratio === undefined ? undefined : input * m.cache_ratio,
     cacheWrite:
       m.cache_creation_ratio_5m === undefined
         ? undefined
         : input * m.cache_creation_ratio_5m,
+    peak: peakHit
+      ? {
+          factor: peakHit.factor,
+          until: peakHit.until,
+          offPeakInput,
+          offPeakOutput,
+        }
+      : undefined,
   }
 }

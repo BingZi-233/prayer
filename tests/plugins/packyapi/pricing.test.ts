@@ -4,12 +4,25 @@ import {
   resolvePrice,
   type MeteredPrice,
   type PerCallPrice,
+  type Pricing,
 } from "@/plugins/packyapi/scripts/pricing"
-import { P } from "./fixture"
+import { IN_PEAK_AM, IN_PEAK_PM, OFF_PEAK, P, WEEKEND } from "./fixture"
 
 // 判别联合收窄的小helper:让断言不必写 `as` 或 `!`
 function metered(model: string, group: string, base?: number): MeteredPrice {
   const p = resolvePrice(P, model, group, base === undefined ? {} : { base })
+  if (!p || p.quotaType !== 0) throw new Error(`${model}@${group} 不是按量计价`)
+  return p
+}
+
+// 与 metered() 同理,但接受任意 Pricing 变体(用于 {...P, peak_active: {...}} 这类构造)
+function meteredOf(
+  d: Pricing,
+  model: string,
+  group: string,
+  now?: Date
+): MeteredPrice {
+  const p = resolvePrice(d, model, group, now === undefined ? {} : { now })
   if (!p || p.quotaType !== 0) throw new Error(`${model}@${group} 不是按量计价`)
   return p
 }
@@ -187,5 +200,85 @@ describe("resolveGroups", () => {
 
   it("未知模型返回空数组", () => {
     expect(resolveGroups(P, "nope")).toEqual([])
+  })
+})
+
+describe("resolvePrice 高峰浮动价(peak_pricing)", () => {
+  // deepseek-v4-pro 平时价:组覆盖倍率 0.8 × gr 1 × base 2 = 1.6
+  //   output = 1.6 * completion_ratio 3 = 4.8
+  //   cacheRead = 1.6 * cache_ratio 0.0333 = 0.05328
+  it("上午窗口内:token 价整体 × factor,并保留平时价", () => {
+    const p = meteredOf(P, "deepseek-v4-pro", "deepseek-officially", IN_PEAK_AM)
+    expect(p.input).toBeCloseTo(3.2) // 1.6 × 2
+    expect(p.output).toBeCloseTo(9.6) // 4.8 × 2
+    expect(p.cacheRead).toBeCloseTo(0.10656, 5) // 0.05328 × 2
+    expect(p.peak?.factor).toBe(2)
+    expect(p.peak?.until).toBe("12:00")
+    expect(p.peak?.offPeakInput).toBeCloseTo(1.6)
+    expect(p.peak?.offPeakOutput).toBeCloseTo(4.8)
+    // 高峰与分组倍率覆盖同时生效,互不干扰
+    expect(p.ratioSource).toBe("group-override")
+  })
+
+  it("下午窗口内:命中第二个 window,until 为该窗口结束时刻", () => {
+    const p = meteredOf(P, "deepseek-v4-pro", "deepseek-officially", IN_PEAK_PM)
+    expect(p.input).toBeCloseTo(3.2)
+    expect(p.peak?.until).toBe("18:00")
+  })
+
+  it("工作日两窗口之间:不加价", () => {
+    const p = meteredOf(P, "deepseek-v4-pro", "deepseek-officially", OFF_PEAK)
+    expect(p.input).toBeCloseTo(1.6)
+    expect(p.peak).toBeUndefined()
+  })
+
+  it("窗口结束时刻整点已不算高峰(左闭右开)", () => {
+    // 2026-09-07T04:00:00Z = 周一 12:00 CST,正好是 09:00-12:00 的右端点
+    const noon = new Date("2026-09-07T04:00:00Z")
+    const p = meteredOf(P, "deepseek-v4-pro", "deepseek-officially", noon)
+    expect(p.peak).toBeUndefined()
+  })
+
+  it("周末即使落在时间窗口内也不加价(weekdays 不含)", () => {
+    const p = meteredOf(P, "deepseek-v4-pro", "deepseek-officially", WEEKEND)
+    expect(p.input).toBeCloseTo(1.6)
+    expect(p.peak).toBeUndefined()
+  })
+
+  it("规则未点名的模型不受影响", () => {
+    const p = meteredOf(P, "claude-opus-5", "cc", IN_PEAK_AM)
+    expect(p.input).toBeCloseTo(10)
+    expect(p.peak).toBeUndefined()
+  })
+
+  it("peak_pricing.enabled 为 false 时整体停用", () => {
+    const off = {
+      ...P,
+      peak_pricing: { ...P.peak_pricing!, enabled: false },
+    }
+    const p = meteredOf(
+      off,
+      "deepseek-v4-pro",
+      "deepseek-officially",
+      IN_PEAK_AM
+    )
+    expect(p.peak).toBeUndefined()
+  })
+
+  it("peak_active 含该模型时以其为权威,压过本地窗口计算", () => {
+    const active = {
+      ...P,
+      peak_active: { "deepseek-v4-pro": { factor: 3, until: "23:00" } },
+    }
+    // 周末本地算不出高峰,但服务端说在高峰 → 以服务端为准
+    const p = meteredOf(
+      active,
+      "deepseek-v4-pro",
+      "deepseek-officially",
+      WEEKEND
+    )
+    expect(p.input).toBeCloseTo(4.8) // 1.6 * 3
+    expect(p.peak?.factor).toBe(3)
+    expect(p.peak?.until).toBe("23:00")
   })
 })
