@@ -16,7 +16,10 @@
 
 这些是本仓库的硬约束,踩了会返工:
 
-1. **Prettier 无分号 + 双引号**(`semi:false`, `singleQuote:false`, `trailingComma:es5`, `printWidth:80`)。本计划里的代码块已按此风格写。每个 Task 提交前跑 `pnpm format`。
+1. **Prettier 无分号 + 双引号**(`semi:false`, `singleQuote:false`, `trailingComma:es5`, `printWidth:80`)。本计划里的代码块已按此风格写。
+   **格式化只跑你自己改的文件**:`pnpm prettier --write <你改的文件...>`,**不要跑 `pnpm format`** ——
+   它是 `prettier --write "**/*.{ts,tsx}"`,会顺手重排 `tests/lib/transcript.test.ts`
+   (仓库里唯一一处与本次无关的既存格式漂移),把无关改动混进你的提交。
 2. **测试集中在 `tests/`**,镜像源码结构,**不与源码同目录**。vitest 的 `include` 只认 `tests/**/*.test.ts`。
 3. **测试里用 `@/` 别名且不带扩展名**(如 `@/plugins/packyapi/scripts/pricing`),`@/*` 指向仓库根,没有 `src/`。
 4. **插件脚本内部的相对 import 必须带 `.ts`**(如 `import { resolvePrice } from "./pricing.ts"`)—— 插件由 Node 直接 strip-types 运行,不经打包器。`tsconfig.json` 已开 `allowImportingTsExtensions: true`,typecheck 不会报错。已在 Node v24.16.0 实测通过。
@@ -688,12 +691,13 @@ export type { Model, Pricing } from "./pricing.ts"
 - [ ] **Step 7: 全量验证**
 
 ```bash
-pnpm format && pnpm typecheck && pnpm vitest run tests/plugins/packyapi/
+pnpm prettier --write plugins/packyapi/scripts/pricing.ts plugins/packyapi/scripts/packy-mcp.ts tests/plugins/packyapi/*.ts
+pnpm typecheck && pnpm vitest run tests/plugins/packyapi/
 ```
 
 预期:typecheck 无输出(通过);两个测试文件全绿(旧的 `packy-mcp.test.ts` 也必须仍绿)。
 
-`pnpm format` 只提交你改动的文件 —— 仓库里有与本任务无关的既存格式漂移,别把它们一起提交。
+格式化用 `pnpm prettier --write` 点名你改的文件,别跑 `pnpm format`(见起步须知第 1 条)。
 
 - [ ] **Step 8: 用实盘数据自查修价方向**
 
@@ -1243,7 +1247,7 @@ pnpm vitest run tests/plugins/packyapi/
 - [ ] **Step 6: 提交**
 
 ```bash
-pnpm format
+pnpm prettier --write plugins/packyapi/scripts/*.ts tests/plugins/packyapi/*.ts
 git add plugins/packyapi/scripts/ tests/plugins/packyapi/
 git commit -m "$(cat <<'EOF'
 refactor(packyapi): 把格式化函数抽到 format.ts
@@ -1579,7 +1583,7 @@ pnpm vitest run tests/plugins/packyapi/
 - [ ] **Step 6: 提交**
 
 ```bash
-pnpm format
+pnpm prettier --write plugins/packyapi/scripts/*.ts tests/plugins/packyapi/*.ts
 git add plugins/packyapi/scripts/format.ts tests/plugins/packyapi/
 git commit -m "$(cat <<'EOF'
 feat(packyapi): price 输出接定价解析器,加行内标记与表尾脚注
@@ -1724,7 +1728,7 @@ pnpm vitest run tests/plugins/packyapi/
 - [ ] **Step 5: 提交**
 
 ```bash
-pnpm format
+pnpm prettier --write plugins/packyapi/scripts/*.ts tests/plugins/packyapi/*.ts
 git add plugins/packyapi/scripts/format.ts tests/plugins/packyapi/format.test.ts
 git commit -m "$(cat <<'EOF'
 feat(packyapi): models 支持按厂商过滤,端点过滤改走分组级覆盖
@@ -2100,7 +2104,8 @@ server.registerTool(
 - [ ] **Step 6: 全量验证**
 
 ```bash
-pnpm format && pnpm check
+pnpm prettier --write plugins/packyapi/scripts/*.ts tests/plugins/packyapi/*.ts
+pnpm check
 ```
 
 预期:typecheck 通过、lint 无新增错误、全部测试绿。
@@ -2528,7 +2533,7 @@ ls tests/plugins/packyapi/
 若前几步做了修补:
 
 ```bash
-pnpm format
+pnpm prettier --write plugins/packyapi/scripts/*.ts tests/plugins/packyapi/*.ts
 git add -A
 git commit -m "test(packyapi): 实盘冒烟后的收尾修补"
 ```
