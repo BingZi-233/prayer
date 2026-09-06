@@ -24,6 +24,12 @@
 6. 单测命令:`pnpm vitest run tests/plugins/packyapi/pricing.test.ts`;按名跑:`pnpm vitest run -t "名字"`。
 7. 三件套:`pnpm check`(= `typecheck` + `lint` + `test`)。无 CI,声称完成前必须手动跑。
 8. 提交用 Conventional Commits + 中文正文。分支已是 `feat/packyapi-upgrade`。
+9. **数组顺序断言只针对 fixture,不针对实盘。** 冻结的 fixture 字面量顺序可断言;从
+   `/api/pricing` 拿到的 `data[]` / `enable_groups[]` / `vendors[]` 一律不假设顺序 ——
+   面向用户的排序由我们自己保证(`resolveGroups` 有 `.sort()`,`formatPrice` 的排序有
+   组名 tie-break),而不是依赖上游返回的次序。
+10. **不要照抄计划里的数字而不算一遍。** 每个断言旁都写了算式(如 `2.5 * 0.5 * 2 = 2.5`),
+    对不上就以 fixture 的字面值为准并在报告里指出 —— 计划里的手算也可能错。
 
 ## 文件结构
 
@@ -45,27 +51,28 @@
 
 ---
 
-### Task 1: `pricing.ts` 骨架与 group-override 修价
+### Task 1: `pricing.ts` 骨架、group-override 修价与字段可选性
 
-这是本次升级的核心 bug 修复:`model_group_ratio` 提供分组级 `model_ratio` 覆盖,插件此前完全没读,导致 `glm-5.2` 在 `glm-sale` 组被高估 8 倍。
+这是本次升级的核心 bug 修复。`model_group_ratio` 提供分组级 `model_ratio` 覆盖,插件此前完全没读 —— 实盘 11 个 model×group 组合(8 个不同模型)受影响,其中 7 条被高估(最大 `glm-5.2`@`glm-sale` 高估 8 倍)、**4 条被低估**(如 `glm-5.3-flash`@`glm-sale` 报 $0.80 而实价 $1.00)。低估方向对客服场景更麻烦:客户按报价下单后发现实际扣费更高。
+
+同时修掉一个**已在线上输出的** `$NaN`:实盘 67 个模型里 10 个没有 `cache_ratio` 字段(其中 7 个是 `quota_type=0`,会真的算出 `NaN`),现有代码把该字段当必填直接做乘法。`gemini-slb` 组 7 行里 5 行的 cache 列今天就是 `$NaN`。
 
 **Files:**
 - Create: `plugins/packyapi/scripts/pricing.ts`
 - Create: `tests/plugins/packyapi/fixture.ts`
 - Create: `tests/plugins/packyapi/pricing.test.ts`
-- Modify: `plugins/packyapi/scripts/packy-mcp.ts:30-45`(删掉本地 `Model`/`Pricing` 定义,改为 import + re-export)
+- Modify: `plugins/packyapi/scripts/packy-mcp.ts`(删掉本地 `Model`/`Pricing` 定义改为 import + re-export;并给 `formatPrice` 里的 `cache_ratio` 加缺失守卫)
 
 - [ ] **Step 1: 建共享 fixture**
 
-创建 `tests/plugins/packyapi/fixture.ts`。这份数据抄自 2026-09-06 实盘 `/api/pricing` 的真实形状(模型名、倍率、字段组合都是真的,只是裁剪到 5 个模型):
+创建 `tests/plugins/packyapi/fixture.ts`:
 
 ```ts
-// 两个测试文件共享的 mock 数据。形状抄自 2026-09-06 实盘 /api/pricing,
-// 裁到 5 个模型但覆盖全部计价分支:分组倍率覆盖、高峰价、阶梯价、
-// 缓存写入价、按次计价区间、分组级端点覆盖、停用组。
+// 两个测试文件共享的 mock 数据。字段组合与数值取自 2026-09-06 实盘 /api/pricing,
+// 裁到 6 个模型,覆盖全部计价分支:分组倍率覆盖、高峰价、阶梯价、缓存写入价、
+// 缓存倍率缺失、按次计价区间、分组级端点覆盖、孤儿组、停用组。
 // 注意:vitest 的 include 只匹配 tests/**/*.test.ts,本文件不会被当作测试收集。
 import type { Pricing } from "@/plugins/packyapi/scripts/pricing"
-import type { Announcements } from "@/plugins/packyapi/scripts/format"
 
 export const P: Pricing = {
   data: [
@@ -93,12 +100,14 @@ export const P: Pricing = {
       supported_endpoint_types: ["anthropic", "openai"],
     },
     {
+      // 全局 2.25 会被 model_group_ratio 的 0.8 覆盖 —— 全局与覆盖值必须不同,
+      // 否则这个模型永远测不出覆盖是否真的生效。
       model_name: "deepseek-v4-pro",
       vendor_id: 42,
       quota_type: 0,
-      model_ratio: 0.8,
-      completion_ratio: 2,
-      cache_ratio: 0.1,
+      model_ratio: 2.25,
+      completion_ratio: 3,
+      cache_ratio: 0.0333,
       model_price: 0,
       enable_groups: ["deepseek-officially"],
       supported_endpoint_types: ["openai"],
@@ -107,21 +116,35 @@ export const P: Pricing = {
       model_name: "gpt-5.6-sol",
       vendor_id: 2,
       quota_type: 0,
-      model_ratio: 0.625,
-      completion_ratio: 8,
+      model_ratio: 2.5,
+      completion_ratio: 6,
       cache_ratio: 0.1,
+      cache_creation_ratio_5m: 1.25,
       model_price: 0,
-      enable_groups: ["codex"],
+      // hongjing 故意不在 group_ratio / inactive_groups 里 —— 实盘就有这种「孤儿组」
+      //(hongjing 6 个模型、test 2 个、default 1 个),倍率无处可查。
+      enable_groups: ["codex", "hongjing"],
       supported_endpoint_types: ["openai-response"],
       tiers: [{ threshold: 272000, ratio: 2, output_ratio: 1.5 }],
+    },
+    {
+      // 实盘没有 cache_ratio 字段 —— 覆盖 cacheRead 应为 undefined 而非 NaN 的分支。
+      // 实盘同类模型共 10 个(7 个按量 + 3 个按次)。
+      model_name: "gemini-3-pro-preview",
+      vendor_id: 4,
+      quota_type: 0,
+      model_ratio: 1,
+      completion_ratio: 6,
+      model_price: 0,
+      enable_groups: ["gemini-slb"],
+      supported_endpoint_types: ["gemini", "openai"],
     },
     {
       model_name: "gpt-image-2",
       vendor_id: 2,
       quota_type: 1,
-      model_ratio: 0,
-      completion_ratio: 0,
-      cache_ratio: 0,
+      model_ratio: 2.5,
+      completion_ratio: 6,
       model_price: 0.08,
       model_price_min: 0.00588,
       model_price_max: 0.71157,
@@ -137,22 +160,27 @@ export const P: Pricing = {
     "zai-officially": 1,
     "deepseek-officially": 1,
     codex: 0.5,
+    "gemini-slb": 3,
     image: 5,
     "legacy-off": 1,
   },
   usable_group: {
     cc: "claude code专用",
-    "cc-sale": "便宜的 claude code 分组",
-    "glm-sale": "便宜的glm分组,非逆向",
-    "zai-officially": "智谱 API官方版本",
+    // 前导空格与全角逗号是实盘原样。formatGroups 里那个 .trim() 靠这几条才有测试覆盖 ——
+    // 若抄成已 trim 的版本,删掉 .trim() 测试也不会红。
+    "cc-sale": " 便宜的 claude code 分组，可以养龙虾，缓存可能会有异常",
+    "glm-sale": " 便宜的glm分组，非逆向",
+    "zai-officially": " 智谱 API官方版本",
     "deepseek-officially": "deepseek官方渠道",
     codex: "codex专用",
+    "gemini-slb": "gemini企业版本",
     image: "官方稳定image 聚合",
     "legacy-off": "已停用的历史分组",
   },
   model_group_ratio: {
     "glm-sale": { "glm-5.2": 0.5 },
     "zai-officially": { "glm-5.2": 0.9 },
+    "deepseek-officially": { "deepseek-v4-pro": 0.8 },
   },
   model_group_endpoints: {
     // claude-opus-5 全局支持 anthropic+openai,但 cc-sale 组只开 anthropic
@@ -172,11 +200,16 @@ export const P: Pricing = {
     ],
   },
   peak_active: {},
+  // 实盘当前是 [],legacy-off 是为覆盖停用组分支合成的
   inactive_groups: ["legacy-off"],
   supported_endpoint: {
     anthropic: { path: "/v1/messages", method: "POST" },
     openai: { path: "/v1/chat/completions", method: "POST" },
     "openai-response": { path: "/v1/responses", method: "POST" },
+    gemini: {
+      path: "/v1beta/models/{model}:generateContent",
+      method: "POST",
+    },
     "image-generation": {
       path: "/v1/images/generations",
       method: "POST",
@@ -186,6 +219,7 @@ export const P: Pricing = {
   vendors: [
     { id: 1, name: "Anthropic" },
     { id: 2, name: "OpenAI" },
+    { id: 4, name: "Google" },
     { id: 6, name: "智谱" },
     { id: 42, name: "DeepSeek" },
   ],
@@ -224,7 +258,21 @@ export const A: Announcements = {
 }
 ```
 
-注意:这个文件 import 了 `format.ts` 的 `Announcements` 类型,而 `format.ts` 在 Task 4 才创建。**先只写到 `export const WEEKEND` 为止,并去掉顶部 `Announcements` 的 import**,Task 4 再把 `A` 与那行 import 补上。
+注意:末尾的 `A` 常量需要 `format.ts` 的 `Announcements` 类型,而 `format.ts` 在 Task 4 才创建。**本 Task 只写到 `export const WEEKEND` 为止,不要写 `A`**,Task 4 再把 `A` 与 `import type { Announcements } from "@/plugins/packyapi/scripts/format"` 一起补上。
+
+参考数值(按 `base=2`,后续 Task 的断言都建立在这组数上):
+
+| 模型 @ 组 | in | out | cacheRead | 备注 |
+|---|---|---|---|---|
+| `claude-opus-5` @ `cc` | 10 | 50 | 1 | cacheWrite 12.5 |
+| `claude-opus-5` @ `cc-sale` | 4 | 20 | 0.4 | 端点被组级覆盖为仅 anthropic |
+| `glm-5.2` @ `glm-sale` | 1 | 3.5 | 0.25 | 倍率覆盖 0.5(全局 4 会算成 8) |
+| `glm-5.2` @ `zai-officially` | 1.8 | 6.3 | 0.45 | 倍率覆盖 0.9 |
+| `deepseek-v4-pro` @ `deepseek-officially` | 1.6 | 4.8 | 0.05328 | 倍率覆盖 0.8;高峰 ×2 |
+| `gpt-5.6-sol` @ `codex` | 2.5 | 15 | 0.25 | cacheWrite 3.125;阶梯 in 5 / out 22.5 |
+| `gpt-5.6-sol` @ `hongjing` | 5 | 30 | 0.5 | 孤儿组,倍率按 1 估算 |
+| `gemini-3-pro-preview` @ `gemini-slb` | 6 | 36 | **无** | 无 cache_ratio 字段 |
+| `gpt-image-2` @ `image` | — | — | — | 按次 0.4/次,区间 0.0294~3.55785 |
 
 - [ ] **Step 2: 写失败的测试**
 
@@ -232,12 +280,24 @@ export const A: Announcements = {
 
 ```ts
 import { describe, expect, it } from "vitest"
-import { resolvePrice } from "@/plugins/packyapi/scripts/pricing"
+import {
+  resolveGroups,
+  resolvePrice,
+  type MeteredPrice,
+  type PerCallPrice,
+} from "@/plugins/packyapi/scripts/pricing"
 import { P } from "./fixture"
+
+// 判别联合收窄的小helper:让断言不必写 `as` 或 `!`
+function metered(model: string, group: string, base?: number): MeteredPrice {
+  const p = resolvePrice(P, model, group, base === undefined ? {} : { base })
+  if (!p || p.quotaType !== 0) throw new Error(`${model}@${group} 不是按量计价`)
+  return p
+}
 
 describe("resolvePrice 基础计价", () => {
   it("无覆盖时用全局 model_ratio:in = model_ratio*gr*base", () => {
-    const p = resolvePrice(P, "claude-opus-5", "cc")!
+    const p = metered("claude-opus-5", "cc")
     // 2.5 * 2 * 2 = 10
     expect(p.input).toBeCloseTo(10)
     expect(p.output).toBeCloseTo(50) // 10 * 5
@@ -246,28 +306,37 @@ describe("resolvePrice 基础计价", () => {
   })
 
   it("cache_creation_ratio_5m 存在时给出缓存写入价", () => {
-    const p = resolvePrice(P, "claude-opus-5", "cc")!
-    expect(p.cacheWrite).toBeCloseTo(12.5) // 10 * 1.25
+    expect(metered("claude-opus-5", "cc").cacheWrite).toBeCloseTo(12.5)
   })
 
   it("cache_creation_ratio_5m 缺失时 cacheWrite 为 undefined", () => {
-    const p = resolvePrice(P, "glm-5.2", "glm-sale")!
-    expect(p.cacheWrite).toBeUndefined()
+    expect(metered("glm-5.2", "glm-sale").cacheWrite).toBeUndefined()
+  })
+
+  it("cache_ratio 缺失时 cacheRead 为 undefined 而非 NaN", () => {
+    const p = metered("gemini-3-pro-preview", "gemini-slb")
+    expect(p.input).toBeCloseTo(6) // 1 * 3 * 2
+    expect(p.output).toBeCloseTo(36)
+    expect(p.cacheRead).toBeUndefined()
+    expect(p.cacheRead).not.toBeNaN()
   })
 
   it("base 可覆盖", () => {
-    const p = resolvePrice(P, "claude-opus-5", "cc", { base: 1 })!
-    expect(p.input).toBeCloseTo(5)
+    expect(metered("claude-opus-5", "cc", 1).input).toBeCloseTo(5)
   })
 
   it("模型不存在返回 undefined", () => {
     expect(resolvePrice(P, "nope", "cc")).toBeUndefined()
   })
+
+  it("data 为空数组时返回 undefined", () => {
+    expect(resolvePrice({ ...P, data: [] }, "claude-opus-5", "cc")).toBeUndefined()
+  })
 })
 
 describe("resolvePrice 分组倍率覆盖(model_group_ratio)", () => {
   it("组内专属倍率压过全局 model_ratio", () => {
-    const p = resolvePrice(P, "glm-5.2", "glm-sale")!
+    const p = metered("glm-5.2", "glm-sale")
     // 覆盖前会算成 4*1*2 = 8(升级前的错误报价),覆盖后 0.5*1*2 = 1
     expect(p.input).toBeCloseTo(1)
     expect(p.output).toBeCloseTo(3.5)
@@ -275,46 +344,103 @@ describe("resolvePrice 分组倍率覆盖(model_group_ratio)", () => {
   })
 
   it("不同组各自取自己的覆盖值", () => {
-    const p = resolvePrice(P, "glm-5.2", "zai-officially")!
+    const p = metered("glm-5.2", "zai-officially")
     expect(p.input).toBeCloseTo(1.8) // 0.9 * 1 * 2
     expect(p.ratioSource).toBe("group-override")
   })
 
   it("该组无覆盖条目时回落全局", () => {
-    const p = resolvePrice(P, "claude-opus-5", "cc-sale")!
+    const p = metered("claude-opus-5", "cc-sale")
     expect(p.input).toBeCloseTo(4) // 2.5 * 0.8 * 2
     expect(p.ratioSource).toBe("global")
+  })
+
+  it("覆盖值为 0 时保留 0,不因 falsy 回落全局", () => {
+    const zero = {
+      ...P,
+      model_group_ratio: { cc: { "claude-opus-5": 0 } },
+    }
+    const p = resolvePrice(zero, "claude-opus-5", "cc")
+    expect(p?.quotaType).toBe(0)
+    expect((p as MeteredPrice).input).toBe(0)
+    expect(p?.ratioSource).toBe("group-override")
+  })
+
+  it("覆盖值为 null 时回落全局,且 ratioSource 如实报 global", () => {
+    const nulled = {
+      ...P,
+      model_group_ratio: {
+        cc: { "claude-opus-5": null as unknown as number },
+      },
+    }
+    const p = resolvePrice(nulled, "claude-opus-5", "cc")
+    expect((p as MeteredPrice).input).toBeCloseTo(10)
+    expect(p?.ratioSource).toBe("global")
+  })
+})
+
+describe("resolvePrice 孤儿组与未知组(grSource)", () => {
+  it("group_ratio 有定义时 grSource 为 defined", () => {
+    expect(metered("gpt-5.6-sol", "codex").grSource).toBe("defined")
+  })
+
+  it("孤儿组(enable_groups 里有、group_ratio 里没有)倍率按 1 估算并标记", () => {
+    const p = metered("gpt-5.6-sol", "hongjing")
+    expect(p.input).toBeCloseTo(5) // 2.5 * 1 * 2
+    expect(p.grSource).toBe("fallback-1")
+  })
+
+  it("完全未知的组名同样标记为 fallback-1", () => {
+    expect(metered("glm-5.2", "no-such-group").grSource).toBe("fallback-1")
   })
 })
 
 describe("resolvePrice 按次计价(quota_type=1)", () => {
-  it("perCall = model_price * group_ratio,按量字段为空", () => {
-    const p = resolvePrice(P, "gpt-image-2", "image")!
-    expect(p.quotaType).toBe(1)
-    expect(p.perCall).toBeCloseTo(0.4) // 0.08 * 5
-    expect(p.input).toBeUndefined()
-    expect(p.output).toBeUndefined()
+  it("perCall = model_price * group_ratio,判别联合不暴露按量字段", () => {
+    const p = resolvePrice(P, "gpt-image-2", "image")
+    expect(p?.quotaType).toBe(1)
+    expect((p as PerCallPrice).perCall).toBeCloseTo(0.4) // 0.08 * 5
+    expect("input" in (p as object)).toBe(false)
   })
 })
 
 describe("resolvePrice 端点与厂商", () => {
   it("model_group_endpoints 覆盖优先于 supported_endpoint_types", () => {
-    expect(resolvePrice(P, "claude-opus-5", "cc")!.endpoints).toEqual([
+    expect(resolvePrice(P, "claude-opus-5", "cc")?.endpoints).toEqual([
       "anthropic",
       "openai",
     ])
-    expect(resolvePrice(P, "claude-opus-5", "cc-sale")!.endpoints).toEqual([
+    expect(resolvePrice(P, "claude-opus-5", "cc-sale")?.endpoints).toEqual([
       "anthropic",
     ])
   })
 
+  it("组级端点覆盖为空数组时保留空数组,不回落全局", () => {
+    const none = {
+      ...P,
+      model_group_endpoints: { cc: { "claude-opus-5": [] } },
+    }
+    expect(resolvePrice(none, "claude-opus-5", "cc")?.endpoints).toEqual([])
+  })
+
   it("vendor_id 映射到 vendors 名称", () => {
-    expect(resolvePrice(P, "glm-5.2", "glm-sale")!.vendor).toBe("智谱")
+    expect(resolvePrice(P, "glm-5.2", "glm-sale")?.vendor).toBe("智谱")
   })
 
   it("vendors 里查不到时 vendor 为 undefined", () => {
     const noVendors = { ...P, vendors: [] }
-    expect(resolvePrice(noVendors, "glm-5.2", "glm-sale")!.vendor).toBeUndefined()
+    expect(resolvePrice(noVendors, "glm-5.2", "glm-sale")?.vendor).toBeUndefined()
+  })
+})
+
+describe("resolveGroups", () => {
+  it("返回模型的 enable_groups,按名排序以保证输出确定", () => {
+    expect(resolveGroups(P, "glm-5.2")).toEqual(["glm-sale", "zai-officially"])
+    expect(resolveGroups(P, "gpt-5.6-sol")).toEqual(["codex", "hongjing"])
+  })
+
+  it("未知模型返回空数组", () => {
+    expect(resolveGroups(P, "nope")).toEqual([])
   })
 })
 ```
@@ -341,14 +467,18 @@ pnpm vitest run tests/plugins/packyapi/pricing.test.ts
  *
  * 计价顺序(顺序即正确性,勿调换):
  *   1. ratio = model_group_ratio[组][模型] ?? model_ratio   ← 分组级覆盖
- *   2. gr    = group_ratio[组] ?? 1
+ *   2. gr    = group_ratio[组] ?? 1(缺失即「孤儿组」,见 grSource)
  *   3. input = ratio * gr * base(base 默认 2,即 $0.002/1K)
  *      output = input * completion_ratio
- *      cacheRead  = input * cache_ratio
+ *      cacheRead  = input * cache_ratio(字段缺失则无此价)
  *      cacheWrite = input * cache_creation_ratio_5m(字段缺失则无此价)
  *   4. 高峰浮动:命中窗口则上述 token 价整体 × factor
  *   5. 阶梯价:以第 4 步之后的价为基准换算
- *   6. quota_type=1(按次):perCall = model_price * gr,按量字段全部为空
+ *   6. quota_type=1(按次):perCall = model_price * gr,不产出任何按量字段
+ *
+ * 外部 API 的字段可选性以 2026-09-06 实盘 67 个模型普查为准:
+ * cache_ratio 仅 57/67 存在,其余(model_ratio / completion_ratio / model_price /
+ * enable_groups / supported_endpoint_types / quota_type / vendor_id)均 67/67 存在。
  */
 
 export const DEFAULT_BASE = 2
@@ -364,10 +494,11 @@ export interface Model {
   quota_type: number
   model_ratio: number
   completion_ratio: number
-  cache_ratio: number
   model_price: number
   enable_groups: string[]
   supported_endpoint_types: string[]
+  /** 仅 57/67 个模型有 —— 缺失时不产出 cacheRead,而不是算出 NaN */
+  cache_ratio?: number
   vendor_id?: number
   cache_creation_ratio_5m?: number
   tiers?: Tier[]
@@ -424,29 +555,52 @@ export interface PeakState {
   offPeakOutput: number
 }
 
-export interface EffectivePrice {
+interface PriceCommon {
   model: string
   group: string
-  quotaType: number
-  base: number
-  /** quota_type=0(按量),单位 $/1M tokens */
-  input?: number
-  output?: number
-  cacheRead?: number
-  cacheWrite?: number
-  /** quota_type=1(按次) */
-  perCall?: number
-  perCallMin?: number
-  perCallMax?: number
+  /** 倍率取自全局 model_ratio 还是该组的 model_group_ratio 覆盖 */
   ratioSource: "global" | "group-override"
-  peak?: PeakState
-  tiers?: TierPrice[]
+  /**
+   * group_ratio 是否定义了该组。fallback-1 表示按 1 估算 —— 实盘存在「孤儿组」:
+   * 组出现在模型的 enable_groups 里,却不在 group_ratio / usable_group /
+   * inactive_groups 任何一处(2026-09-06 实测 hongjing 6 个模型、test 2 个、
+   * default 1 个)。这类组的真实倍率无处可查,报价只是估算,必须让上层能标注。
+   */
+  grSource: "defined" | "fallback-1"
   endpoints: string[]
   vendor?: string
 }
 
+/** quota_type=0(按量),价格单位 $/1M tokens */
+export interface MeteredPrice extends PriceCommon {
+  quotaType: 0
+  base: number
+  input: number
+  output: number
+  cacheRead?: number
+  cacheWrite?: number
+  peak?: PeakState
+  tiers?: TierPrice[]
+}
+
+/** quota_type=1(按次) */
+export interface PerCallPrice extends PriceCommon {
+  quotaType: 1
+  perCall: number
+  perCallMin?: number
+  perCallMax?: number
+}
+
+/**
+ * 判别联合而非「全可选字段 + quotaType: number」:后者允许
+ * { quotaType: 1, input: 5 } 这种非法状态,下游只能靠 p.input! 自律。
+ * 分成两支后 TypeScript 在 if (p.quotaType === 1) 里自动收窄,格式化层不再需要非空断言。
+ */
+export type EffectivePrice = MeteredPrice | PerCallPrice
+
+/** 模型可用的分组。排序以保证输出确定,不依赖外部 API 的数组顺序。 */
 export function resolveGroups(d: Pricing, model: string): string[] {
-  return d.data?.find((x) => x.model_name === model)?.enable_groups ?? []
+  return [...(d.data?.find((x) => x.model_name === model)?.enable_groups ?? [])].sort()
 }
 
 export function resolvePrice(
@@ -457,19 +611,18 @@ export function resolvePrice(
 ): EffectivePrice | undefined {
   const m = d.data?.find((x) => x.model_name === model)
   if (!m) return undefined
-  const base = opts.base ?? DEFAULT_BASE
-  const gr = d.group_ratio?.[group] ?? 1
+  const grDefined = d.group_ratio?.[group]
+  const gr = grDefined ?? 1
   const override = d.model_group_ratio?.[group]?.[model]
-  const ratio = override ?? m.model_ratio
-  const common = {
+  // typeof 检查而非 `override === undefined`:取值用 ?? 会让 null 回落到全局,
+  // 若判定只看 undefined 就会出现「声称用了组覆盖、实际用的全局值」的谎报。
+  const hasOverride = typeof override === "number"
+  const ratio = hasOverride ? override : m.model_ratio
+  const common: PriceCommon = {
     model,
     group,
-    quotaType: m.quota_type,
-    base,
-    ratioSource:
-      override === undefined
-        ? ("global" as const)
-        : ("group-override" as const),
+    ratioSource: hasOverride ? "group-override" : "global",
+    grSource: grDefined === undefined ? "fallback-1" : "defined",
     endpoints:
       d.model_group_endpoints?.[group]?.[model] ??
       m.supported_endpoint_types ??
@@ -477,14 +630,18 @@ export function resolvePrice(
     vendor: d.vendors?.find((v) => v.id === m.vendor_id)?.name,
   }
   if (m.quota_type === 1) {
-    return { ...common, perCall: m.model_price * gr }
+    return { ...common, quotaType: 1, perCall: m.model_price * gr }
   }
+  // 实盘 quota_type 只有 0 和 1。非 1 一律按按量处理,quotaType 归一化为 0。
+  const base = opts.base ?? DEFAULT_BASE
   const input = ratio * gr * base
   return {
     ...common,
+    quotaType: 0,
+    base,
     input,
     output: input * m.completion_ratio,
-    cacheRead: input * m.cache_ratio,
+    cacheRead: m.cache_ratio === undefined ? undefined : input * m.cache_ratio,
     cacheWrite:
       m.cache_creation_ratio_5m === undefined
         ? undefined
@@ -493,17 +650,20 @@ export function resolvePrice(
 }
 ```
 
+> `base` 只出现在按量那一支 —— 按次计价用不到它,判别联合顺带消除了「按次结果里挂着一个
+> 无意义的 base」这种状态。
+
 - [ ] **Step 5: 跑测试确认通过**
 
 ```bash
 pnpm vitest run tests/plugins/packyapi/pricing.test.ts
 ```
 
-预期:PASS,12 个用例全绿。
+预期:PASS,20 个用例全绿。
 
-- [ ] **Step 6: `packy-mcp.ts` 改用 `pricing.ts` 的类型**
+- [ ] **Step 6: `packy-mcp.ts` 改用 `pricing.ts` 的类型,并修掉线上的 `$NaN`**
 
-删掉 `plugins/packyapi/scripts/packy-mcp.ts` 里本地的 `Model` 与 `Pricing` 两个 interface(第 30-45 行),替换为再导出。在 import 区加:
+删掉 `plugins/packyapi/scripts/packy-mcp.ts` 里本地的 `Model` 与 `Pricing` 两个 interface,替换为再导出。在 import 区加:
 
 ```ts
 import type { Pricing } from "./pricing.ts"
@@ -511,7 +671,19 @@ import type { Pricing } from "./pricing.ts"
 export type { Model, Pricing } from "./pricing.ts"
 ```
 
-保留 `export const API` / `ANNOUNCE_API` 与其余代码不动。此时 `formatPrice` 等函数仍在 `packy-mcp.ts` 内,靠再导出的 `Pricing` 类型继续编译。
+`cache_ratio` 变为可选后,`tsc` 会精确报出两处必须加守卫的地方,其中一处是 `packy-mcp.ts` 里 `formatPrice` 的 cache 列。把那一行的裸乘法改成缺失时输出 `-`:
+
+```ts
+        const cache =
+          m.cache_ratio === undefined ? "-" : `$${(inp * m.cache_ratio).toFixed(2)}`
+```
+
+并在拼 `rows.push([...])` 时用这个 `cache` 变量替换原来的 `` `$${(inp * m.cache_ratio).toFixed(2)}` ``。
+
+> 这一步顺带消灭一个**已在线上输出**的缺陷:实盘 `gemini-slb` 组 7 行里 5 行的 cache 列当前是 `$NaN`。
+> `formatPrice` 会在 Task 5 被整体重写到 `resolvePrice` 之上,但在那之前它仍是线上行为,现在就要修。
+
+保留 `export const API` / `ANNOUNCE_API` 与其余代码不动。
 
 - [ ] **Step 7: 全量验证**
 
@@ -519,25 +691,67 @@ export type { Model, Pricing } from "./pricing.ts"
 pnpm format && pnpm typecheck && pnpm vitest run tests/plugins/packyapi/
 ```
 
-预期:typecheck 无输出(通过);两个测试文件全绿(旧的 `packy-mcp.test.ts` 也必须仍绿 —— 这一步没改任何行为)。
+预期:typecheck 无输出(通过);两个测试文件全绿(旧的 `packy-mcp.test.ts` 也必须仍绿)。
 
-- [ ] **Step 8: 提交**
+`pnpm format` 只提交你改动的文件 —— 仓库里有与本任务无关的既存格式漂移,别把它们一起提交。
+
+- [ ] **Step 8: 用实盘数据自查修价方向**
+
+```bash
+cat > /tmp/t1-check.mjs <<'SCRIPT'
+import { readFileSync } from "node:fs"
+const { resolvePrice } = await import(
+  "/Users/ziyou/projects/prayer/plugins/packyapi/scripts/pricing.ts"
+)
+const d = JSON.parse(readFileSync("/tmp/packy.json", "utf8"))
+let nan = 0
+for (const m of d.data)
+  for (const g of m.enable_groups) {
+    const p = resolvePrice(d, m.model_name, g)
+    for (const [k, v] of Object.entries(p ?? {}))
+      if (typeof v === "number" && Number.isNaN(v)) {
+        nan++
+        console.log("NaN:", m.model_name, g, k)
+      }
+  }
+console.log("NaN 总数:", nan, "(应为 0)")
+const glm = resolvePrice(d, "glm-5.2", "glm-sale")
+console.log("glm-5.2@glm-sale input:", glm.input, "(应为 1,线上当前是 8)")
+const gem = resolvePrice(d, "gemini-3-pro-preview", "gemini-slb")
+console.log("gemini cacheRead:", gem.cacheRead, "(应为 undefined)")
+console.log("孤儿组 grSource:", resolvePrice(d, "gpt-5.6-sol", "hongjing").grSource)
+SCRIPT
+curl -s --max-time 20 -H "User-Agent: packy-mcp" https://www.packyapi.ai/api/pricing -o /tmp/packy.json
+node /tmp/t1-check.mjs
+```
+
+预期:`NaN 总数: 0`、`input: 1`、`cacheRead: undefined`、`grSource: fallback-1`。
+把你看到的真实输出写进报告。
+
+- [ ] **Step 9: 提交**
 
 ```bash
 git add plugins/packyapi/scripts/pricing.ts plugins/packyapi/scripts/packy-mcp.ts tests/plugins/packyapi/
 git commit -m "$(cat <<'EOF'
-feat(packyapi): 抽出定价解析器并修正分组倍率覆盖导致的报价错误
+feat(packyapi): 抽出定价解析器,修正分组倍率覆盖与 cache_ratio 必填两处报价错误
 
-/api/pricing 的 model_group_ratio 提供分组级 model_ratio 覆盖,插件此前
-完全没读,直接用全局 model_ratio 计价。glm-5.2 全局 model_ratio=4,而
-glm-sale 组覆盖为 0.5,导致该组报价 $8/1M 而实价 $1/1M,高估 8 倍。
-影响 deepseek-officially、glm-sale、zai-officially 三个组共 11 个模型;
-cc 组不在覆盖表内,故 claude code 主链路报价一直是准的,问题因此长期
-未被发现。
+一、分组倍率覆盖。/api/pricing 的 model_group_ratio 提供分组级 model_ratio
+覆盖,插件此前完全没读。实盘 11 个 model×group 组合(8 个不同模型)受影响:
+7 条被高估(最大 glm-5.2@glm-sale 报 $8/1M 而实价 $1/1M),4 条被**低估**
+(如 glm-5.3-flash@glm-sale 报 $0.80 而实价 $1.00)。低估方向对客服场景更
+麻烦 —— 客户按报价下单后发现实际扣费更高。cc 组不在覆盖表内,故 claude
+code 主链路一直是准的,问题因此长期未被发现。
+
+二、cache_ratio 被当作必填。实盘 67 个模型里 10 个没有该字段(7 个按量),
+裸做乘法得到 NaN。gemini-slb 组 7 行里 5 行的 cache 列今天就在向用户输出
+$NaN。改为可选并在两处取值点加守卫。
 
 新增 pricing.ts 承载定价:纯函数 resolvePrice(模型 × 分组 × 时刻 → 实价),
-不触网不格式化,价格可直接断言。同时接入此前未读的 cache_creation_ratio_5m
-(缓存写入价)、model_group_endpoints(分组级端点覆盖)、vendors(厂商名)。
+不触网不格式化,价格可直接断言。EffectivePrice 用判别联合而非全可选字段,
+避免下游靠非空断言自律。另接入 cache_creation_ratio_5m(缓存写入价)、
+model_group_endpoints(分组级端点覆盖)、vendors(厂商名),并对实盘存在的
+「孤儿组」(组在 enable_groups 里却无 group_ratio 定义,如 hongjing 6 个模型)
+用 grSource 显式标记,不再静默按倍率 1 报出一个看似可信的假价。
 EOF
 )"
 ```
@@ -562,48 +776,64 @@ import { IN_PEAK_AM, IN_PEAK_PM, OFF_PEAK, P, WEEKEND } from "./fixture"
 
 再把这些 describe 块追加到文件末尾:
 
+同时在 Task 1 建好的 `metered()` helper 旁再加一个收窄 helper,供需要传自定义 `Pricing` 的用例使用:
+
+```ts
+// 与 metered() 同理,但接受任意 Pricing 变体(用于 {...P, peak_active: {...}} 这类构造)
+function meteredOf(d: Pricing, model: string, group: string, now?: Date): MeteredPrice {
+  const p = resolvePrice(d, model, group, now === undefined ? {} : { now })
+  if (!p || p.quotaType !== 0) throw new Error(`${model}@${group} 不是按量计价`)
+  return p
+}
+```
+
+`Pricing` 类型需一并加进顶部 import。再把这些 describe 块追加到文件末尾:
+
 ```ts
 describe("resolvePrice 高峰浮动价(peak_pricing)", () => {
+  // deepseek-v4-pro 平时价:组覆盖倍率 0.8 × gr 1 × base 2 = 1.6
+  //   output = 1.6 * completion_ratio 3 = 4.8
+  //   cacheRead = 1.6 * cache_ratio 0.0333 = 0.05328
   it("上午窗口内:token 价整体 × factor,并保留平时价", () => {
-    const p = resolvePrice(P, "deepseek-v4-pro", "deepseek-officially", {
-      now: IN_PEAK_AM,
-    })!
-    // 平时 0.8*1*2 = 1.6,高峰 ×2 = 3.2
-    expect(p.input).toBeCloseTo(3.2)
-    expect(p.output).toBeCloseTo(6.4)
-    expect(p.cacheRead).toBeCloseTo(0.32)
+    const p = meteredOf(P, "deepseek-v4-pro", "deepseek-officially", IN_PEAK_AM)
+    expect(p.input).toBeCloseTo(3.2) // 1.6 × 2
+    expect(p.output).toBeCloseTo(9.6) // 4.8 × 2
+    expect(p.cacheRead).toBeCloseTo(0.10656, 5) // 0.05328 × 2
     expect(p.peak?.factor).toBe(2)
     expect(p.peak?.until).toBe("12:00")
     expect(p.peak?.offPeakInput).toBeCloseTo(1.6)
-    expect(p.peak?.offPeakOutput).toBeCloseTo(3.2)
+    expect(p.peak?.offPeakOutput).toBeCloseTo(4.8)
+    // 高峰与分组倍率覆盖同时生效,互不干扰
+    expect(p.ratioSource).toBe("group-override")
   })
 
   it("下午窗口内:命中第二个 window,until 为该窗口结束时刻", () => {
-    const p = resolvePrice(P, "deepseek-v4-pro", "deepseek-officially", {
-      now: IN_PEAK_PM,
-    })!
+    const p = meteredOf(P, "deepseek-v4-pro", "deepseek-officially", IN_PEAK_PM)
     expect(p.input).toBeCloseTo(3.2)
     expect(p.peak?.until).toBe("18:00")
   })
 
   it("工作日两窗口之间:不加价", () => {
-    const p = resolvePrice(P, "deepseek-v4-pro", "deepseek-officially", {
-      now: OFF_PEAK,
-    })!
+    const p = meteredOf(P, "deepseek-v4-pro", "deepseek-officially", OFF_PEAK)
     expect(p.input).toBeCloseTo(1.6)
     expect(p.peak).toBeUndefined()
   })
 
+  it("窗口结束时刻整点已不算高峰(左闭右开)", () => {
+    // 2026-09-07T04:00:00Z = 周一 12:00 CST,正好是 09:00-12:00 的右端点
+    const noon = new Date("2026-09-07T04:00:00Z")
+    const p = meteredOf(P, "deepseek-v4-pro", "deepseek-officially", noon)
+    expect(p.peak).toBeUndefined()
+  })
+
   it("周末即使落在时间窗口内也不加价(weekdays 不含)", () => {
-    const p = resolvePrice(P, "deepseek-v4-pro", "deepseek-officially", {
-      now: WEEKEND,
-    })!
+    const p = meteredOf(P, "deepseek-v4-pro", "deepseek-officially", WEEKEND)
     expect(p.input).toBeCloseTo(1.6)
     expect(p.peak).toBeUndefined()
   })
 
   it("规则未点名的模型不受影响", () => {
-    const p = resolvePrice(P, "claude-opus-5", "cc", { now: IN_PEAK_AM })!
+    const p = meteredOf(P, "claude-opus-5", "cc", IN_PEAK_AM)
     expect(p.input).toBeCloseTo(10)
     expect(p.peak).toBeUndefined()
   })
@@ -613,9 +843,7 @@ describe("resolvePrice 高峰浮动价(peak_pricing)", () => {
       ...P,
       peak_pricing: { ...P.peak_pricing!, enabled: false },
     }
-    const p = resolvePrice(off, "deepseek-v4-pro", "deepseek-officially", {
-      now: IN_PEAK_AM,
-    })!
+    const p = meteredOf(off, "deepseek-v4-pro", "deepseek-officially", IN_PEAK_AM)
     expect(p.peak).toBeUndefined()
   })
 
@@ -625,9 +853,7 @@ describe("resolvePrice 高峰浮动价(peak_pricing)", () => {
       peak_active: { "deepseek-v4-pro": { factor: 3, until: "23:00" } },
     }
     // 周末本地算不出高峰,但服务端说在高峰 → 以服务端为准
-    const p = resolvePrice(active, "deepseek-v4-pro", "deepseek-officially", {
-      now: WEEKEND,
-    })!
+    const p = meteredOf(active, "deepseek-v4-pro", "deepseek-officially", WEEKEND)
     expect(p.input).toBeCloseTo(4.8) // 1.6 * 3
     expect(p.peak?.factor).toBe(3)
     expect(p.peak?.until).toBe("23:00")
@@ -721,15 +947,18 @@ function activePeak(
 把 Task 1 里 `resolvePrice` 末尾的 return 块整体替换为:
 
 ```ts
+  const base = opts.base ?? DEFAULT_BASE
   const offPeakInput = ratio * gr * base
   const offPeakOutput = offPeakInput * m.completion_ratio
   const peakHit = activePeak(d, model, opts.now ?? new Date())
   const input = offPeakInput * (peakHit?.factor ?? 1)
   return {
     ...common,
+    quotaType: 0,
+    base,
     input,
     output: offPeakOutput * (peakHit?.factor ?? 1),
-    cacheRead: input * m.cache_ratio,
+    cacheRead: m.cache_ratio === undefined ? undefined : input * m.cache_ratio,
     cacheWrite:
       m.cache_creation_ratio_5m === undefined
         ? undefined
@@ -751,9 +980,9 @@ function activePeak(
 pnpm vitest run tests/plugins/packyapi/pricing.test.ts
 ```
 
-预期:PASS,19 个用例全绿(Task 1 的 12 个 + 本 Task 的 7 个)。
+预期:PASS,28 个用例全绿(Task 1 的 20 个 + 本 Task 的 8 个)。
 
-顺带确认边界:`12:00` 整不算高峰(窗口左闭右开),周末即使落在时段内也被 `weekdays` 拦下。这两条已在实现前用 `Intl` 实测过。
+两处边界已在写计划前用 `Intl` 实测过,测试里各有一条对应用例:`12:00` 整不算高峰(窗口左闭右开),周末即使落在时段内也被 `weekdays` 拦下。
 
 - [ ] **Step 6: 提交**
 
@@ -788,17 +1017,27 @@ EOF
 
 追加到 `tests/plugins/packyapi/pricing.test.ts`:
 
+复用 Task 1/2 建好的 `metered()` / `meteredOf()` helper。按次计价的用例另加一个收窄 helper:
+
+```ts
+function perCall(d: Pricing, model: string, group: string): PerCallPrice {
+  const p = resolvePrice(d, model, group)
+  if (!p || p.quotaType !== 1) throw new Error(`${model}@${group} 不是按次计价`)
+  return p
+}
+```
+
 ```ts
 describe("resolvePrice 阶梯价(tiers)", () => {
   it("换算为绝对价,output_ratio 独立于 ratio", () => {
-    const p = resolvePrice(P, "gpt-5.6-sol", "codex")!
-    // 基准 in = 0.625*0.5*2 = 0.625,out = 0.625*8 = 5
-    expect(p.input).toBeCloseTo(0.625)
-    expect(p.output).toBeCloseTo(5)
+    const p = metered("gpt-5.6-sol", "codex")
+    // 基准 in = 2.5*0.5*2 = 2.5,out = 2.5*6 = 15
+    expect(p.input).toBeCloseTo(2.5)
+    expect(p.output).toBeCloseTo(15)
     expect(p.tiers).toHaveLength(1)
     expect(p.tiers![0].threshold).toBe(272000)
-    expect(p.tiers![0].input).toBeCloseTo(1.25) // 0.625 * 2
-    expect(p.tiers![0].output).toBeCloseTo(7.5) // 5 * 1.5
+    expect(p.tiers![0].input).toBeCloseTo(5) // 2.5 * 2
+    expect(p.tiers![0].output).toBeCloseTo(22.5) // 15 * 1.5
   })
 
   it("output_ratio 缺省时回落 ratio", () => {
@@ -810,19 +1049,19 @@ describe("resolvePrice 阶梯价(tiers)", () => {
           : m
       ),
     }
-    const p = resolvePrice(noOut, "gpt-5.6-sol", "codex")!
-    expect(p.tiers![0].input).toBeCloseTo(1.875) // 0.625 * 3
-    expect(p.tiers![0].output).toBeCloseTo(15) // 5 * 3
+    const p = meteredOf(noOut, "gpt-5.6-sol", "codex")
+    expect(p.tiers![0].input).toBeCloseTo(7.5) // 2.5 * 3
+    expect(p.tiers![0].output).toBeCloseTo(45) // 15 * 3
   })
 
   it("无 tiers 字段时为 undefined", () => {
-    expect(resolvePrice(P, "claude-opus-5", "cc")!.tiers).toBeUndefined()
+    expect(metered("claude-opus-5", "cc").tiers).toBeUndefined()
   })
 })
 
 describe("resolvePrice 按次计价区间", () => {
   it("min/max 与 perCall 同乘 group_ratio", () => {
-    const p = resolvePrice(P, "gpt-image-2", "image")!
+    const p = perCall(P, "gpt-image-2", "image")
     expect(p.perCall).toBeCloseTo(0.4) // 0.08 * 5
     expect(p.perCallMin).toBeCloseTo(0.0294) // 0.00588 * 5
     expect(p.perCallMax).toBeCloseTo(3.55785) // 0.71157 * 5
@@ -837,7 +1076,7 @@ describe("resolvePrice 按次计价区间", () => {
           : m
       ),
     }
-    const p = resolvePrice(noRange, "gpt-image-2", "image")!
+    const p = perCall(noRange, "gpt-image-2", "image")
     expect(p.perCall).toBeCloseTo(0.4)
     expect(p.perCallMin).toBeUndefined()
     expect(p.perCallMax).toBeUndefined()
@@ -861,6 +1100,7 @@ pnpm vitest run -t "阶梯价"
   if (m.quota_type === 1) {
     return {
       ...common,
+      quotaType: 1,
       perCall: m.model_price * gr,
       perCallMin:
         m.model_price_min === undefined ? undefined : m.model_price_min * gr,
@@ -891,7 +1131,7 @@ pnpm vitest run -t "阶梯价"
 pnpm vitest run tests/plugins/packyapi/pricing.test.ts
 ```
 
-预期:PASS,24 个用例全绿。
+预期:PASS,33 个用例全绿(Task 1 的 20 + Task 2 的 8 + 本 Task 的 5)。
 
 - [ ] **Step 5: 提交**
 
@@ -994,7 +1234,7 @@ import type { Pricing } from "@/plugins/packyapi/scripts/pricing"
 pnpm vitest run tests/plugins/packyapi/
 ```
 
-预期:PASS。`pricing.test.ts` 24 个 + `format.test.ts` 16 个,断言未改动而全绿 —— 这就是搬运没走样的证据。
+预期:PASS。`pricing.test.ts` 33 个 + `format.test.ts` 16 个,断言未改动而全绿 —— 这就是搬运没走样的证据。
 
 - [ ] **Step 5: 补齐 fixture 的公告部分**
 
@@ -1091,14 +1331,57 @@ describe("formatPrice 标记与脚注", () => {
   it("有阶梯价的行标 ‡,脚注给阈值与阶梯价", () => {
     const out = formatPrice(P, { group: "codex", now: OFF_PEAK })
     expect(out).toContain("gpt-5.6-sol‡")
+    expect(out).toContain("$2.50") // 基准 in
     expect(out).toContain("272000")
-    expect(out).toContain("$1.25")
+    expect(out).toContain("$5.00") // 阶梯 in
+    expect(out).toContain("$22.50") // 阶梯 out
+  })
+
+  it("孤儿组的行标 §,脚注说明倍率无定义、按 1 估算", () => {
+    const out = formatPrice(P, { group: "hongjing", now: OFF_PEAK })
+    expect(out).toContain("gpt-5.6-sol")
+    expect(out).toMatch(/gpt-5\.6-sol[†*‡§]*§/)
+    expect(out).toContain("$5.00") // 2.5 × 1(估算)× 2
+    expect(out).toContain("倍率无定义")
+  })
+
+  it("group_ratio 有定义的组不出 § 标记", () => {
+    const out = formatPrice(P, { group: "cc", now: OFF_PEAK })
+    expect(out).not.toContain("§")
+    expect(out).not.toContain("倍率无定义")
+  })
+
+  it("cache_ratio 缺失的模型 cache 列出 -,不出 NaN", () => {
+    const out = formatPrice(P, { group: "gemini-slb", now: OFF_PEAK })
+    expect(out).toContain("gemini-3-pro-preview")
+    expect(out).toContain("$6.00")
+    expect(out).toContain("$36.00")
+    expect(out).not.toContain("NaN")
   })
 
   it("无特殊计价的行不带任何标记", () => {
     const out = formatPrice(P, { group: "cc", now: OFF_PEAK })
     expect(out).toContain("claude-opus-5 ")
-    expect(out).not.toMatch(/claude-opus-5[†*‡]/)
+    expect(out).not.toMatch(/claude-opus-5[†*‡§]/)
+  })
+
+  it("同模型同倍率的多行按组名稳定排序,不依赖输入顺序", () => {
+    // glm-5.2 在 glm-sale 与 zai-officially 下 gr 均为 1 —— 主键与次键都打平,
+    // 若无第三级 tie-break,行序会由 API 返回的数组顺序决定
+    const out = formatPrice(P, { keyword: "glm-5.2", now: OFF_PEAK })
+    const reversed = formatPrice(
+      {
+        ...P,
+        data: P.data.map((m) =>
+          m.model_name === "glm-5.2"
+            ? { ...m, enable_groups: [...m.enable_groups].reverse() }
+            : m
+        ),
+      },
+      { keyword: "glm-5.2", now: OFF_PEAK }
+    )
+    expect(out).toBe(reversed)
+    expect(out.indexOf("glm-sale")).toBeLessThan(out.indexOf("zai-officially"))
   })
 })
 
@@ -1114,6 +1397,11 @@ describe("formatPrice 未知分组", () => {
     const out = formatPrice(P, { group: "legacy-off", now: OFF_PEAK })
     expect(out).toContain("无匹配")
     expect(out).not.toContain("可用分组")
+  })
+
+  it("孤儿组视为已知:模型声明了它,应出价而非报未知", () => {
+    const out = formatPrice(P, { group: "hongjing", now: OFF_PEAK })
+    expect(out).not.toContain("未知分组")
   })
 })
 ```
@@ -1142,22 +1430,28 @@ import {
 新增两个辅助函数,并整体替换 `formatPrice`:
 
 ```ts
-// 已知分组 = 在售组 ∪ 停用组。传了不认识的组名时给出候选,
-// 否则模型拿不到线索,会转去抓 HTML 页面(正是本插件要避免的)。
+// 一个组名「认识」的两种来源:group_ratio / inactive_groups 里有倍率定义,
+// 或至少被某个模型的 enable_groups 引用(实盘的「孤儿组」只满足后者)。
+// 两者皆无才算拼错,此时列出候选 —— 否则模型拿不到线索会转去抓 HTML 页面,
+// 正是本插件要避免的。
 function knownGroups(d: Pricing): string[] {
   return [
-    ...Object.keys(d.group_ratio ?? {}),
-    ...(d.inactive_groups ?? []),
-  ]
+    ...new Set([
+      ...Object.keys(d.group_ratio ?? {}),
+      ...(d.inactive_groups ?? []),
+      ...(d.data ?? []).flatMap((m) => m.enable_groups ?? []),
+    ]),
+  ].sort()
 }
 
-// 行内标记:† 分组倍率覆盖 / * 高峰中 / ‡ 有阶梯价。
+// 行内标记:† 分组倍率覆盖 / * 高峰中 / ‡ 有阶梯价 / § 孤儿组倍率按 1 估算。
 // 只标不解释,解释集中到表尾脚注 —— 常见问答的 token 不因此上涨。
 function marksOf(p: EffectivePrice): string {
   return [
     p.ratioSource === "group-override" ? "†" : "",
-    p.peak ? "*" : "",
-    p.tiers?.length ? "‡" : "",
+    p.quotaType === 0 && p.peak ? "*" : "",
+    p.quotaType === 0 && p.tiers?.length ? "‡" : "",
+    p.grSource === "fallback-1" ? "§" : "",
   ].join("")
 }
 
@@ -1168,6 +1462,12 @@ function notesOf(p: EffectivePrice, m: { model_ratio: number }): string[] {
       `† ${p.model} 在组 ${p.group} 有专属倍率(model_group_ratio),已覆盖全局 model_ratio ${m.model_ratio}`
     )
   }
+  if (p.grSource === "fallback-1") {
+    notes.push(
+      `§ 组 ${p.group} 在 group_ratio 里倍率无定义,上表按 1 估算 —— 实际计费可能不同,请以平台为准`
+    )
+  }
+  if (p.quotaType !== 0) return notes
   if (p.peak) {
     notes.push(
       `* ${p.model} 高峰中(×${p.peak.factor}${
@@ -1196,8 +1496,9 @@ export function formatPrice(
   const base = opts.base ?? DEFAULT_BASE
   const kw = (opts.keyword ?? "").toLowerCase()
   const now = opts.now ?? new Date()
-  if (groupArg && !knownGroups(d).includes(groupArg)) {
-    return `未知分组 ${groupArg}。可用分组:${knownGroups(d).sort().join("、")}`
+  const known = knownGroups(d)
+  if (groupArg && !known.includes(groupArg)) {
+    return `未知分组 ${groupArg}。可用分组:${known.join("、")}`
   }
   const rows: string[][] = []
   const notes: string[] = []
@@ -1218,14 +1519,16 @@ export function formatPrice(
       const name = `${m.model_name}${marksOf(p)}`
       const ep = p.endpoints.join(",")
       if (p.quotaType === 1) {
-        rows.push([name, g, `$${p.perCall!.toFixed(4)}/次`, "-", "-", ep])
+        // 判别联合已收窄,perCall 在这一支是必填,无需非空断言
+        rows.push([name, g, `$${p.perCall.toFixed(4)}/次`, "-", "-", ep])
       } else {
         rows.push([
           name,
           g,
-          `$${p.input!.toFixed(2)}`,
-          `$${p.output!.toFixed(2)}`,
-          `$${p.cacheRead!.toFixed(2)}`,
+          `$${p.input.toFixed(2)}`,
+          `$${p.output.toFixed(2)}`,
+          // cache_ratio 实盘 10/67 缺失,缺失时出 - 而不是 $NaN
+          p.cacheRead === undefined ? "-" : `$${p.cacheRead.toFixed(2)}`,
           ep,
         ])
       }
@@ -1244,8 +1547,13 @@ export function formatPrice(
   out.push(
     `${pad("model", 32)} ${pad("group", 18)} ${padStart("in", 8)} ${padStart("out", 9)} ${padStart("cache", 8)}  endpoints`
   )
+  // 第三级 tie-break 按组名:前两级(模型名、组倍率)在同模型多组时会同时打平,
+  // 没有它行序就落到 d.data / enable_groups 的原始数组顺序上,输出不确定。
   const sorted = rows.sort(
-    (a, b) => a[0].localeCompare(b[0]) || grValue(d, a[1]) - grValue(d, b[1])
+    (a, b) =>
+      a[0].localeCompare(b[0]) ||
+      grValue(d, a[1]) - grValue(d, b[1]) ||
+      a[1].localeCompare(b[1])
   )
   for (const r of sorted) {
     out.push(
@@ -1266,7 +1574,7 @@ export function formatPrice(
 pnpm vitest run tests/plugins/packyapi/
 ```
 
-预期:PASS,`pricing.test.ts` 24 个 + `format.test.ts` 23 个全绿。
+预期:PASS,`pricing.test.ts` 33 个 + `format.test.ts` 28 个全绿(原有 16 + 本 Task 新增 12)。
 
 - [ ] **Step 6: 提交**
 
@@ -1276,16 +1584,21 @@ git add plugins/packyapi/scripts/format.ts tests/plugins/packyapi/
 git commit -m "$(cat <<'EOF'
 feat(packyapi): price 输出接定价解析器,加行内标记与表尾脚注
 
-formatPrice 改为逐行调 resolvePrice,于是分组倍率覆盖、高峰浮动、阶梯价
-三项修正同时体现在 price 输出上。glm-5.2 在 glm-sale 组从 $8.00 变为
-正确的 $1.00。
+formatPrice 改为逐行调 resolvePrice,于是分组倍率覆盖、高峰浮动、阶梯价、
+cache_ratio 缺失四项修正同时体现在 price 输出上。glm-5.2 在 glm-sale 组
+从 $8.00 变为正确的 $1.00;gemini-slb 组的 $NaN 变为 -。
 
 保持默认精简:表格列数不变,命中特殊计价的行只在模型名后缀 †(倍率覆盖)
-/ *(高峰中)/ ‡(有阶梯),解释集中到表尾脚注去重后输出。常见问答的
-token 不因此上涨。
+/ *(高峰中)/ ‡(有阶梯)/ §(孤儿组倍率按 1 估算),解释集中到表尾脚注
+去重后输出。常见问答的 token 不因此上涨。
 
-另修:传入不认识的分组名时列出可用分组,此前只回「无匹配」,模型拿不到
-线索会转去抓 HTML 页面 —— 正是本插件要避免的。
+另两处修正:
+
+- 传入不认识的分组名时列出可用分组。此前只回「无匹配」,模型拿不到线索会
+  转去抓 HTML 页面 —— 正是本插件要避免的。判定「认识」时把仅被 enable_groups
+  引用的孤儿组也算进去,否则 hongjing 这类组会被误报为拼错。
+- 排序补第三级 tie-break(组名)。前两级在同模型多组且倍率相同时会同时打平
+  (实盘 glm 系三个模型正是如此),行序会落到 API 返回的数组顺序上。
 EOF
 )"
 ```
@@ -1406,7 +1719,7 @@ export function formatGroups(d: Pricing): string {
 pnpm vitest run tests/plugins/packyapi/
 ```
 
-预期:PASS,`format.test.ts` 27 个用例全绿。
+预期:PASS,`format.test.ts` 32 个用例全绿。
 
 - [ ] **Step 5: 提交**
 
@@ -1497,8 +1810,24 @@ describe("formatDetail", () => {
   it("阶梯价逐行列出", () => {
     const out = formatDetail(P, { model: "gpt-5.6-sol", now: OFF_PEAK })
     expect(out).toContain("阶梯 >272000")
-    expect(out).toContain("$1.25")
-    expect(out).toContain("$7.50")
+    expect(out).toContain("$5.00") // 阶梯 in:2.5 × 2
+    expect(out).toContain("$22.50") // 阶梯 out:15 × 1.5
+  })
+
+  it("无 cache_ratio 时缓存读标注「无」而非 NaN", () => {
+    const out = formatDetail(P, {
+      model: "gemini-3-pro-preview",
+      now: OFF_PEAK,
+    })
+    expect(out).toContain("缓存读 无")
+    expect(out).not.toContain("NaN")
+  })
+
+  it("孤儿组标注倍率无定义,并照样出该组的估算价", () => {
+    const out = formatDetail(P, { model: "gpt-5.6-sol", now: OFF_PEAK })
+    expect(out).toContain("## 组 hongjing")
+    expect(out).toContain("倍率无定义")
+    expect(out).toContain("$5.00")
   })
 
   it("按次模型出单价与区间", () => {
@@ -1529,7 +1858,7 @@ pnpm vitest run -t "formatDetail"
 
 - [ ] **Step 3: 实现 `formatDetail`**
 
-追加到 `format.ts`:
+`formatDetail` 要用 `resolveGroups`,把它加进 `format.ts` 顶部那组 `./pricing.ts` 的具名导入里。然后追加:
 
 ```ts
 function endpointPath(d: Pricing, ep: string): string {
@@ -1555,7 +1884,8 @@ export function formatDetail(
   }
   const base = opts.base ?? DEFAULT_BASE
   const now = opts.now ?? new Date()
-  const groups = opts.group ? [opts.group] : (m.enable_groups ?? [])
+  // 不给 group 时遍历全部可用组;排序以保证输出确定,不依赖外部 API 的数组顺序
+  const groups = opts.group ? [opts.group] : resolveGroups(d, m.model_name)
   const vendor = d.vendors?.find((v) => v.id === m.vendor_id)?.name ?? "未知"
   const out: string[] = [
     `# ${m.model_name}  厂商 ${vendor}  计价 ${
@@ -1571,8 +1901,11 @@ export function formatDetail(
         d.inactive_groups?.includes(g) ? " [停用]" : ""
       }`
     )
+    if (p.grSource === "fallback-1") {
+      out.push(`注意:组 ${g} 在 group_ratio 里倍率无定义,下列价格按 1 估算`)
+    }
     if (p.quotaType === 1) {
-      out.push(`按次 $${p.perCall!.toFixed(4)}/次`)
+      out.push(`按次 $${p.perCall.toFixed(4)}/次`)
       if (p.perCallMin !== undefined && p.perCallMax !== undefined) {
         out.push(
           `区间 $${p.perCallMin.toFixed(4)} ~ $${p.perCallMax.toFixed(4)}/次`
@@ -1584,7 +1917,9 @@ export function formatDetail(
       }
     } else {
       out.push(
-        `输入 $${p.input!.toFixed(2)}  输出 $${p.output!.toFixed(2)}  缓存读 $${p.cacheRead!.toFixed(2)}  缓存写 ${
+        `输入 $${p.input.toFixed(2)}  输出 $${p.output.toFixed(2)}  缓存读 ${
+          p.cacheRead === undefined ? "无" : `$${p.cacheRead.toFixed(2)}`
+        }  缓存写 ${
           p.cacheWrite === undefined ? "无" : `$${p.cacheWrite.toFixed(2)}`
         }  (单位 $/1M tokens)`
       )
@@ -1620,7 +1955,7 @@ export function formatDetail(
 pnpm vitest run tests/plugins/packyapi/format.test.ts
 ```
 
-预期:PASS,37 个用例全绿。
+预期:PASS,`format.test.ts` 44 个用例全绿(Task 6 后的 32 + 本 Task 新增 12)。
 
 - [ ] **Step 5: `packy-mcp.ts` 接线新 action 与参数**
 
@@ -1839,7 +2174,7 @@ EOF
 | `quota_type` | 0=按量(token),1=按次(固定价) |
 | `model_ratio` | 全局输入倍率;**可被 `model_group_ratio` 按组覆盖** |
 | `completion_ratio` | 输出/输入 倍数 |
-| `cache_ratio` | 缓存**读取**/输入 倍数 |
+| `cache_ratio` | 缓存**读取**/输入 倍数。**仅 57/67 个模型有** —— 缺失时不存在缓存读价,不要当 0 或直接做乘法(会得到 NaN) |
 | `cache_creation_ratio_5m` | 缓存**写入**/输入 倍数(仅部分模型有,claude 系为 1.25) |
 | `tiers` | 长上下文阶梯价 `[{threshold, ratio, output_ratio?}]`,超过 `threshold` tokens 后倍率变化;`output_ratio` 缺省则回落 `ratio` |
 | `model_price` | 按次单价(`quota_type=1` 时用) |
@@ -1870,10 +2205,16 @@ EOF
    (`input × ratio`,`output × (output_ratio ?? ratio)`)。
 6. 按次(`quota_type=1`):`perCall = model_price * gr`,`min`/`max` 同乘 `gr`。
 
-## 分组倍率
+## 分组倍率与「孤儿组」
 
-**不要在此处静态记录** —— 分组会增删、倍率会变,官方文档页 `docs/token/2-group.html`
+**不要在此处静态记录倍率** —— 分组会增删、倍率会变,官方文档页 `docs/token/2-group.html`
 本身也滞后于 API。实时值一律用 `packy` 工具的 `action=groups`。
+
+另需注意:`data[].enable_groups` 引用的组名 **多于** `group_ratio` 定义的组。
+2026-09-06 实测 `enable_groups` 出现 21 个组,而 `group_ratio` / `usable_group` 各只有 18 个 ——
+`hongjing`(6 个模型)、`test`(2 个)、`default`(1 个)三个组倍率无处可查。
+这类「孤儿组」的报价只能按倍率 1 估算,`packy` 的 `price` / `detail` 会用 `§` 标记并加脚注说明。
+不要把这类估算价当作平台的正式报价。
 ```
 
 - [ ] **Step 2: 重建 `docs-map.md`**
@@ -2110,9 +2451,46 @@ console.log(formatDetail(d, { model: "deepseek-v4-pro" }))
 '
 ```
 
+再加一段全量扫描,确认整个实盘数据集上没有 `NaN` 漏网:
+
+```bash
+cat > /tmp/t9-scan.mjs <<'SCRIPT'
+import { readFileSync } from "node:fs"
+const { formatPrice, formatDetail } = await import(
+  "/Users/ziyou/projects/prayer/plugins/packyapi/scripts/format.ts"
+)
+const d = JSON.parse(readFileSync("/tmp/packy.json", "utf8"))
+const groups = [...new Set(d.data.flatMap((m) => m.enable_groups))]
+let bad = 0
+for (const g of groups) {
+  const out = formatPrice(d, { group: g })
+  if (out.includes("NaN")) {
+    bad++
+    console.log("NaN in group:", g)
+  }
+}
+for (const m of d.data) {
+  if (formatDetail(d, { model: m.model_name }).includes("NaN")) {
+    bad++
+    console.log("NaN in detail:", m.model_name)
+  }
+}
+console.log(`扫描 ${groups.length} 个组 + ${d.data.length} 个模型 detail,含 NaN 的:${bad}(应为 0)`)
+console.log("\n=== gemini-slb 组(升级前 7 行里 5 行是 $NaN)===")
+console.log(formatPrice(d, { group: "gemini-slb" }))
+console.log("\n=== 孤儿组 hongjing ===")
+console.log(formatPrice(d, { group: "hongjing" }))
+SCRIPT
+node /tmp/t9-scan.mjs
+```
+
 预期:
 - `glm-5.2` 在 `glm-sale` 组一行为 `glm-5.2†` 且 in 为 `$1.00`(不是 `$8.00`);`zai-officially` 组为 `$1.80`;脚注出现 `model_group_ratio`。
-- `deepseek-v4-pro` 的 detail 在工作日 09:00-12:00 或 14:00-18:00(北京时间)运行时出「高峰中 ×2」行与平时价 `$1.60`;其它时段只出 `$1.60` 而无高峰行。**两种结果都算通过** —— 记下运行时刻与看到的分支。
+- 全量扫描 `含 NaN 的:0`;`gemini-slb` 组的 cache 列是 `-` 而非 `$NaN`。
+- `hongjing` 组每行带 `§`,脚注出现「倍率无定义」,且不报「未知分组」。
+- `deepseek-v4-pro` 的 detail 在工作日 09:00-12:00 或 14:00-18:00(北京时间)运行时出「高峰中 ×2」行与平时价;其它时段无高峰行。**两种结果都算通过** —— 记下运行时刻与看到的分支。
+
+把你看到的真实输出写进报告,尤其是那个 `含 NaN 的:N` 的实际数字。
 
 - [ ] **Step 3: stdio 冒烟,确认 MCP server 起得来且 detail 工具已注册**
 
@@ -2134,7 +2512,7 @@ pnpm check
 
 预期:typecheck 通过;lint 无**新增**错误(存量告警与本次改动无关,逐条确认报错文件不在 `plugins/packyapi/**` 与 `tests/plugins/packyapi/**`);全部测试绿。
 
-记下最终测试数:`pricing.test.ts` 24 个 + `format.test.ts` 37 个 = 61 个,加上仓库其余用例。
+记下最终测试数:`pricing.test.ts` 33 个 + `format.test.ts` 44 个 = 77 个,加上仓库其余用例。
 
 - [ ] **Step 5: 确认没有遗留文件**
 
@@ -2163,8 +2541,15 @@ git commit -m "test(packyapi): 实盘冒烟后的收尾修补"
 
 - [ ] `pnpm check` 全绿,`plugins/packyapi/**` 与 `tests/plugins/packyapi/**` 无新增 lint 报错
 - [ ] `glm-5.2` 在 `glm-sale` 组实盘报 `$1.00/1M`(升级前 `$8.00`)
+- [ ] 实盘全量扫描(21 个组的 `price` + 67 个模型的 `detail`)输出中 **`NaN` 出现 0 次**;`gemini-slb` 组 cache 列为 `-`
+- [ ] 孤儿组(`hongjing` / `test` / `default`)报价带 `§` 标记与「倍率无定义」脚注,且不被误报为「未知分组」
 - [ ] `deepseek-v4-pro` 在高峰窗口内报价为平时价 2 倍并带脚注,窗口外不加价
 - [ ] `packy-mcp.ts` 能被 Node 直跑,`tools/list` 返回的 server version 为 `1.3.0`,action enum 含 `detail`
 - [ ] `price` 表格列数与升级前一致(默认精简未被破坏)
-- [ ] `pricing-api.md` 内不再有静态分组倍率表
+- [ ] `pricing-api.md` 内不再有静态分组倍率表,且标注了 `cache_ratio` 的可选性与孤儿组
 - [ ] `docs-map.md` 内无 `cli/4-gemini.html` 与 `ccswitch/4-gemini.html`
+
+## 明确不做(记录在案,避免被当成遗漏)
+
+- **不在 API 边界做 schema 校验。** `packy-mcp.ts` 的 `(await res.json()) as Pricing` 是无校验强转,理想解法是用仓库已有的 `zod` 在边界校验一次,而不是在下游到处补 `?.`。但这会把一个 67 模型、12 个顶层字段的外部载荷全部建模,范围远超本次「修报价 + 补字段 + 刷文档」。本次改为:把实测得到的字段可选性如实写进 `Model` / `Pricing` 类型(见 Task 1),让 `tsc` 在下游强制处理缺失分支 —— 这已经能挡住本次发现的 `NaN` 一类问题。校验留作独立任务。
+- **不接 `owner_by`。** 实盘 67/67 存在但值全为空字符串,`formatRaw` 走 `JSON.stringify` 原样输出,不影响任何断言。
