@@ -251,7 +251,9 @@ describe("resolvePrice 高峰浮动价(peak_pricing)", () => {
     expect(p.peak).toBeUndefined()
   })
 
-  it("peak_pricing.enabled 为 false 时整体停用", () => {
+  // 注意不是「整体停用」:activePeak 先看 peak_active 再看 enabled,
+  // 所以服务端下发的 peak_active 会压过 enabled: false(这是有意的策略)。
+  it("peak_pricing.enabled 为 false 时本地规则停用", () => {
     const off = {
       ...P,
       peak_pricing: { ...P.peak_pricing!, enabled: false },
@@ -280,5 +282,158 @@ describe("resolvePrice 高峰浮动价(peak_pricing)", () => {
     expect(p.input).toBeCloseTo(4.8) // 1.6 * 3
     expect(p.peak?.factor).toBe(3)
     expect(p.peak?.until).toBe("23:00")
+  })
+
+  // peak_active 来自外部 JSON 且语义无文档。这两条守住 typeof 校验 ——
+  // 若有人把它改回 `if (fromServer)`,peak.factor 会带 undefined 走到文案里
+  // 输出「×undefined」,而这两条测试会红。
+  it("peak_active 条目缺 factor 时忽略它,回落本地规则", () => {
+    const broken = {
+      ...P,
+      peak_active: { "deepseek-v4-pro": {} as { factor: number } },
+    }
+    // 周末:本地规则也算不出高峰 → 完全无高峰
+    expect(
+      meteredOf(broken, "deepseek-v4-pro", "deepseek-officially", WEEKEND).peak
+    ).toBeUndefined()
+    // 高峰时刻:回落到本地规则的 ×2
+    const p = meteredOf(
+      broken,
+      "deepseek-v4-pro",
+      "deepseek-officially",
+      IN_PEAK_AM
+    )
+    expect(p.peak?.factor).toBe(2)
+    expect(p.peak?.until).toBe("12:00")
+  })
+
+  it("peak_active 的 factor 是字符串时同样被拒", () => {
+    const strFactor = {
+      ...P,
+      peak_active: {
+        "deepseek-v4-pro": { factor: "3" as unknown as number },
+      },
+    }
+    expect(
+      meteredOf(strFactor, "deepseek-v4-pro", "deepseek-officially", WEEKEND)
+        .peak
+    ).toBeUndefined()
+  })
+
+  it("单条规则 enabled 为 false 时该规则不生效", () => {
+    const off = {
+      ...P,
+      peak_pricing: {
+        enabled: true,
+        rules: [{ ...P.peak_pricing!.rules[0], enabled: false }],
+      },
+    }
+    expect(
+      meteredOf(off, "deepseek-v4-pro", "deepseek-officially", IN_PEAK_AM).peak
+    ).toBeUndefined()
+  })
+
+  it("多条规则:跳过不匹配的,命中后面匹配的", () => {
+    const multi = {
+      ...P,
+      peak_pricing: {
+        enabled: true,
+        rules: [
+          { ...P.peak_pricing!.rules[0], models: ["别的模型"] },
+          P.peak_pricing!.rules[0],
+        ],
+      },
+    }
+    const p = meteredOf(
+      multi,
+      "deepseek-v4-pro",
+      "deepseek-officially",
+      IN_PEAK_AM
+    )
+    expect(p.peak?.factor).toBe(2)
+  })
+
+  it("cacheWrite 同样随高峰浮动", () => {
+    // fixture 里带 cache_creation_ratio_5m 的模型(claude-opus-5 / gpt-5.6-sol)
+    // 与高峰规则点名的模型(deepseek-v4-pro)不相交 —— 实盘也是如此,
+    // deepseek 系没有这个字段。故用 peak_active 绕过窗口计算来验证。
+    const active = {
+      ...P,
+      peak_active: { "claude-opus-5": { factor: 2 } },
+    }
+    const off = meteredOf(P, "claude-opus-5", "cc", OFF_PEAK)
+    const on = meteredOf(active, "claude-opus-5", "cc", OFF_PEAK)
+    expect(off.cacheWrite).toBeCloseTo(12.5) // 10 * 1.25
+    expect(on.cacheWrite).toBeCloseTo(25) // (10*2) * 1.25
+  })
+})
+
+describe("resolvePrice 高峰窗口的边界与畸形输入", () => {
+  it("跨零点窗口(22:00-02:00)在零点两侧都命中", () => {
+    const cross = {
+      ...P,
+      peak_pricing: {
+        enabled: true,
+        rules: [
+          {
+            ...P.peak_pricing!.rules[0],
+            windows: ["22:00-02:00"],
+            weekdays: [1, 2, 3, 4, 5, 6, 7],
+          },
+        ],
+      },
+    }
+    const cst = (day: number, hour: number) =>
+      new Date(Date.UTC(2026, 8, day, hour - 8, 0, 0)) // CST = UTC+8,无 DST
+    const at = (day: number, hour: number) =>
+      meteredOf(cross, "deepseek-v4-pro", "deepseek-officially", cst(day, hour))
+    expect(at(7, 21).peak).toBeUndefined() // 21:00 窗口外
+    expect(at(7, 22).peak?.factor).toBe(2) // 22:00 窗口起点(左闭)
+    expect(at(7, 23).peak?.factor).toBe(2) // 23:00 零点前
+    expect(at(8, 0).peak?.factor).toBe(2) // 次日 00:00 零点后
+    expect(at(8, 1).peak?.factor).toBe(2) // 次日 01:00
+    expect(at(8, 2).peak).toBeUndefined() // 次日 02:00 窗口终点(右开)
+  })
+
+  it("非法时区不抛异常,当作不命中", () => {
+    const badTz = {
+      ...P,
+      peak_pricing: {
+        enabled: true,
+        rules: [{ ...P.peak_pricing!.rules[0], timezone: "Not/AZone" }],
+      },
+    }
+    // 不兜住的话 Intl.DateTimeFormat 抛 RangeError,而 activePeak 在每个按量
+    // 模型上都被调用 —— 一个模型的坏规则会让整张价格表挂掉
+    expect(() =>
+      resolvePrice(badTz, "deepseek-v4-pro", "deepseek-officially", {
+        now: IN_PEAK_AM,
+      })
+    ).not.toThrow()
+    expect(
+      meteredOf(badTz, "deepseek-v4-pro", "deepseek-officially", IN_PEAK_AM)
+        .peak
+    ).toBeUndefined()
+  })
+
+  it("畸形窗口一律不命中,不静默挪动时段", () => {
+    const mk = (windows: string[]) => ({
+      ...P,
+      peak_pricing: {
+        enabled: true,
+        rules: [{ ...P.peak_pricing!.rules[0], windows }],
+      },
+    })
+    for (const w of [["abc-def"], ["09:00"], [""], ["9-12"], ["09:60-12:00"]]) {
+      expect(
+        meteredOf(mk(w), "deepseek-v4-pro", "deepseek-officially", IN_PEAK_AM)
+          .peak
+      ).toBeUndefined()
+    }
+  })
+
+  it("命中时带出规则时区,供文案消除「至 12:00」的歧义", () => {
+    const p = meteredOf(P, "deepseek-v4-pro", "deepseek-officially", IN_PEAK_AM)
+    expect(p.peak?.timezone).toBe("Asia/Shanghai")
   })
 })
