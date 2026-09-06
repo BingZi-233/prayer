@@ -1,6 +1,6 @@
-// 两个测试文件共享的 mock 数据。形状抄自 2026-09-06 实盘 /api/pricing,
-// 裁到 5 个模型但覆盖全部计价分支:分组倍率覆盖、高峰价、阶梯价、
-// 缓存写入价、按次计价区间、分组级端点覆盖、停用组。
+// 两个测试文件共享的 mock 数据。字段组合与数值取自 2026-09-06 实盘 /api/pricing,
+// 裁到 6 个模型,覆盖全部计价分支:分组倍率覆盖、高峰价、阶梯价、缓存写入价、
+// 缓存倍率缺失、按次计价区间、分组级端点覆盖、孤儿组、停用组。
 // 注意:vitest 的 include 只匹配 tests/**/*.test.ts,本文件不会被当作测试收集。
 import type { Pricing } from "@/plugins/packyapi/scripts/pricing"
 
@@ -30,12 +30,14 @@ export const P: Pricing = {
       supported_endpoint_types: ["anthropic", "openai"],
     },
     {
+      // 全局 2.25 会被 model_group_ratio 的 0.8 覆盖 —— 全局与覆盖值必须不同,
+      // 否则这个模型永远测不出覆盖是否真的生效。
       model_name: "deepseek-v4-pro",
       vendor_id: 42,
       quota_type: 0,
-      model_ratio: 0.8,
-      completion_ratio: 2,
-      cache_ratio: 0.1,
+      model_ratio: 2.25,
+      completion_ratio: 3,
+      cache_ratio: 0.0333,
       model_price: 0,
       enable_groups: ["deepseek-officially"],
       supported_endpoint_types: ["openai"],
@@ -44,21 +46,35 @@ export const P: Pricing = {
       model_name: "gpt-5.6-sol",
       vendor_id: 2,
       quota_type: 0,
-      model_ratio: 0.625,
-      completion_ratio: 8,
+      model_ratio: 2.5,
+      completion_ratio: 6,
       cache_ratio: 0.1,
+      cache_creation_ratio_5m: 1.25,
       model_price: 0,
-      enable_groups: ["codex"],
+      // hongjing 故意不在 group_ratio / inactive_groups 里 —— 实盘就有这种「孤儿组」
+      //(hongjing 6 个模型、test 2 个、default 1 个),倍率无处可查。
+      enable_groups: ["codex", "hongjing"],
       supported_endpoint_types: ["openai-response"],
       tiers: [{ threshold: 272000, ratio: 2, output_ratio: 1.5 }],
+    },
+    {
+      // 实盘没有 cache_ratio 字段 —— 覆盖 cacheRead 应为 undefined 而非 NaN 的分支。
+      // 实盘同类模型共 10 个(7 个按量 + 3 个按次)。
+      model_name: "gemini-3-pro-preview",
+      vendor_id: 4,
+      quota_type: 0,
+      model_ratio: 1,
+      completion_ratio: 6,
+      model_price: 0,
+      enable_groups: ["gemini-slb"],
+      supported_endpoint_types: ["gemini", "openai"],
     },
     {
       model_name: "gpt-image-2",
       vendor_id: 2,
       quota_type: 1,
-      model_ratio: 0,
-      completion_ratio: 0,
-      cache_ratio: 0,
+      model_ratio: 2.5,
+      completion_ratio: 6,
       model_price: 0.08,
       model_price_min: 0.00588,
       model_price_max: 0.71157,
@@ -74,22 +90,27 @@ export const P: Pricing = {
     "zai-officially": 1,
     "deepseek-officially": 1,
     codex: 0.5,
+    "gemini-slb": 3,
     image: 5,
     "legacy-off": 1,
   },
   usable_group: {
     cc: "claude code专用",
-    "cc-sale": "便宜的 claude code 分组",
-    "glm-sale": "便宜的glm分组,非逆向",
-    "zai-officially": "智谱 API官方版本",
+    // 前导空格与全角逗号是实盘原样。formatGroups 里那个 .trim() 靠这几条才有测试覆盖 ——
+    // 若抄成已 trim 的版本,删掉 .trim() 测试也不会红。
+    "cc-sale": " 便宜的 claude code 分组，可以养龙虾，缓存可能会有异常",
+    "glm-sale": " 便宜的glm分组，非逆向",
+    "zai-officially": " 智谱 API官方版本",
     "deepseek-officially": "deepseek官方渠道",
     codex: "codex专用",
+    "gemini-slb": "gemini企业版本",
     image: "官方稳定image 聚合",
     "legacy-off": "已停用的历史分组",
   },
   model_group_ratio: {
     "glm-sale": { "glm-5.2": 0.5 },
     "zai-officially": { "glm-5.2": 0.9 },
+    "deepseek-officially": { "deepseek-v4-pro": 0.8 },
   },
   model_group_endpoints: {
     // claude-opus-5 全局支持 anthropic+openai,但 cc-sale 组只开 anthropic
@@ -109,11 +130,16 @@ export const P: Pricing = {
     ],
   },
   peak_active: {},
+  // 实盘当前是 [],legacy-off 是为覆盖停用组分支合成的
   inactive_groups: ["legacy-off"],
   supported_endpoint: {
     anthropic: { path: "/v1/messages", method: "POST" },
     openai: { path: "/v1/chat/completions", method: "POST" },
     "openai-response": { path: "/v1/responses", method: "POST" },
+    gemini: {
+      path: "/v1beta/models/{model}:generateContent",
+      method: "POST",
+    },
     "image-generation": {
       path: "/v1/images/generations",
       method: "POST",
@@ -123,6 +149,7 @@ export const P: Pricing = {
   vendors: [
     { id: 1, name: "Anthropic" },
     { id: 2, name: "OpenAI" },
+    { id: 4, name: "Google" },
     { id: 6, name: "智谱" },
     { id: 42, name: "DeepSeek" },
   ],

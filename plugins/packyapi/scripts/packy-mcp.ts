@@ -115,12 +115,16 @@ export function formatPrice(
         ])
       } else {
         const inp = m.model_ratio * gr * base
+        const cache =
+          m.cache_ratio === undefined
+            ? "-"
+            : `$${(inp * m.cache_ratio).toFixed(2)}`
         rows.push([
           m.model_name,
           g,
           `$${inp.toFixed(2)}`,
           `$${(inp * m.completion_ratio).toFixed(2)}`,
-          `$${(inp * m.cache_ratio).toFixed(2)}`,
+          cache,
           ep,
         ])
       }
