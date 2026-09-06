@@ -1423,7 +1423,21 @@ EOF
 
 - [ ] **Step 1: 建 `format.ts`,搬入现有格式化代码**
 
-创建 `plugins/packyapi/scripts/format.ts`。把 `packy-mcp.ts` 第 60-234 行的这些内容**原样**搬过来:`Announcement` / `Announcements` 两个 interface、`grValue` / `pad` / `padStart` 三个辅助函数、`formatPrice` / `formatModels` / `formatGroups` / `formatRaw` / `formatAnnouncements` 五个格式化函数。文件头写:
+创建 `plugins/packyapi/scripts/format.ts`。把 `packy-mcp.ts` 里下面这些**按符号名**原样搬过来
+(不要按行号找 —— Task 1 改过这个文件,行号已变):
+
+- `Announcement` / `Announcements` 两个 interface
+- `grValue` / `pad` / `padStart` 三个辅助函数
+- `formatPrice` / `formatModels` / `formatGroups` / `formatRaw` / `formatAnnouncements` 五个格式化函数
+
+**注意 `formatPrice` 里已有 Task 1 加的 `cache_ratio` 缺失守卫**(`const cache = m.cache_ratio === undefined ? "-" : ...`),
+连它一起搬,别搬成守卫之前的旧版本。
+
+`packy-mcp.ts` 里要留下的:`API` / `ANNOUNCE_API` / `FETCH_TIMEOUT_MS` 两个常量与超时值、
+`fetchPricing` / `fetchAnnouncements` 两个 fetch、`pluginVersion`、MCP server 注册与 `main()`、
+以及 Task 1 加的类型再导出。
+
+文件头写:
 
 ```ts
 /**
@@ -1492,7 +1506,10 @@ import type { Pricing } from "@/plugins/packyapi/scripts/pricing"
 pnpm vitest run tests/plugins/packyapi/
 ```
 
-预期:PASS。`pricing.test.ts` 48 个 + `format.test.ts` 16 个,断言未改动而全绿 —— 这就是搬运没走样的证据。
+预期:PASS。`pricing.test.ts` 48 个 + `format.test.ts` 16 个 = 64 个,断言未改动而全绿 —— 这就是搬运没走样的证据。
+
+如果 `format.test.ts` 有任何一条断言需要改动才能通过,说明搬运走样了(最可能是漏搬了 Task 1 的
+`cache_ratio` 守卫,或手改了格式化逻辑)。停下来报告,不要改断言让它变绿。
 
 - [ ] **Step 5: 补齐 fixture 的公告部分**
 
