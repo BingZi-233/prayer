@@ -6,15 +6,9 @@ import {
   type PerCallPrice,
   type Pricing,
 } from "@/plugins/packyapi/scripts/pricing"
-// 判别联合收窄的小 helper,按次计价专用
-function perCall(d: Pricing, model: string, group: string): PerCallPrice {
-  const p = resolvePrice(d, model, group)
-  if (!p || p.quotaType !== 1) throw new Error(`${model}@${group} 不是按次计价`)
-  return p
-}
 import { IN_PEAK_AM, IN_PEAK_PM, OFF_PEAK, P, WEEKEND } from "./fixture"
 
-// 判别联合收窄的小helper:让断言不必写 `as` 或 `!`
+// 判别联合收窄的小 helper:让断言不必写 `as` 或 `!`
 function metered(model: string, group: string, base?: number): MeteredPrice {
   const p = resolvePrice(P, model, group, base === undefined ? {} : { base })
   if (!p || p.quotaType !== 0) throw new Error(`${model}@${group} 不是按量计价`)
@@ -30,6 +24,13 @@ function meteredOf(
 ): MeteredPrice {
   const p = resolvePrice(d, model, group, now === undefined ? {} : { now })
   if (!p || p.quotaType !== 0) throw new Error(`${model}@${group} 不是按量计价`)
+  return p
+}
+
+// 同上,按次计价专用
+function perCall(d: Pricing, model: string, group: string): PerCallPrice {
+  const p = resolvePrice(d, model, group)
+  if (!p || p.quotaType !== 1) throw new Error(`${model}@${group} 不是按次计价`)
   return p
 }
 
