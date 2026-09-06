@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import {
   formatAnnouncements,
+  formatDetail,
   formatGroups,
   formatModels,
   formatPrice,
@@ -276,5 +277,113 @@ describe("formatAnnouncements", () => {
 
   it("无匹配返回提示", () => {
     expect(formatAnnouncements(A, { keyword: "nope" })).toContain("无公告")
+  })
+})
+
+describe("formatDetail", () => {
+  it("缺 model 参数给出指引", () => {
+    expect(formatDetail(P)).toContain("需 model 参数")
+  })
+
+  it("未找到时给相近候选", () => {
+    const out = formatDetail(P, { model: "opus" })
+    expect(out).toContain("未找到模型")
+    expect(out).toContain("claude-opus-5")
+  })
+
+  it("默认遍历该模型全部可用分组,含厂商与端点路径", () => {
+    const out = formatDetail(P, { model: "claude-opus-5", now: OFF_PEAK })
+    expect(out).toContain("Anthropic")
+    expect(out).toContain("## 组 cc")
+    expect(out).toContain("## 组 cc-sale")
+    expect(out).toContain("$10.00")
+    expect(out).toContain("$12.50") // 缓存写入 10 * 1.25
+    expect(out).toContain("/v1/messages")
+  })
+
+  it("group 锁定单组", () => {
+    const out = formatDetail(P, {
+      model: "claude-opus-5",
+      group: "cc",
+      now: OFF_PEAK,
+    })
+    expect(out).toContain("## 组 cc")
+    expect(out).not.toContain("## 组 cc-sale")
+  })
+
+  it("无缓存写入价时显式标注「无」", () => {
+    const out = formatDetail(P, { model: "glm-5.2", now: OFF_PEAK })
+    expect(out).toContain("缓存写 无")
+  })
+
+  it("倍率覆盖时说明来源与被覆盖的全局值", () => {
+    const out = formatDetail(P, { model: "glm-5.2", now: OFF_PEAK })
+    expect(out).toContain("model_group_ratio")
+    expect(out).toContain("4") // 被覆盖的全局 model_ratio
+  })
+
+  it("高峰中出高峰行与平时价", () => {
+    const out = formatDetail(P, {
+      model: "deepseek-v4-pro",
+      now: IN_PEAK_AM,
+    })
+    expect(out).toContain("高峰中 ×2")
+    expect(out).toContain("至 12:00")
+    expect(out).toContain("$1.60")
+  })
+
+  it("阶梯价逐行列出", () => {
+    const out = formatDetail(P, { model: "gpt-5.6-sol", now: OFF_PEAK })
+    // 实现输出「阶梯 输入超 272000 tokens:…」,而非 "阶梯 >272000" ——
+    // 与既有脚注文案(notesOf 的「单次请求输入超 X tokens」)保持同一措辞。
+    expect(out).toContain("阶梯 输入超 272000 tokens")
+    expect(out).toContain("$5.00") // 阶梯 in:2.5 × 2
+    expect(out).toContain("$22.50") // 阶梯 out:15 × 1.5
+  })
+
+  it("无 cache_ratio 时缓存读标注「无」而非 NaN", () => {
+    const out = formatDetail(P, {
+      model: "gemini-3-pro-preview",
+      now: OFF_PEAK,
+    })
+    expect(out).toContain("缓存读 无")
+    expect(out).not.toContain("NaN")
+  })
+
+  it("模型不提供的组给出明确提示与可用分组,而非静默空壳", () => {
+    const out = formatDetail(P, {
+      model: "glm-5.2",
+      group: "cc",
+      now: OFF_PEAK,
+    })
+    expect(out).toContain("不在该组提供")
+    expect(out).toContain("glm-sale")
+    // 不能出现拿 cc 倍率硬算的假价
+    expect(out).not.toContain("$16.00")
+  })
+
+  it("孤儿组标注倍率无定义,并照样出该组的估算价", () => {
+    const out = formatDetail(P, { model: "gpt-5.6-sol", now: OFF_PEAK })
+    expect(out).toContain("## 组 hongjing")
+    expect(out).toContain("倍率无定义")
+    expect(out).toContain("$5.00")
+  })
+
+  it("按次模型出单价与区间", () => {
+    const out = formatDetail(P, { model: "gpt-image-2", now: OFF_PEAK })
+    // 实现给标称价贴了「标称」标签(见 formatDetail 内注释:三个数各自贴标签,
+    // 避免用户把 model_price 当成最低价或典型价),故不是裸的 "按次 $0.4000/次"。
+    expect(out).toContain("按次 标称 $0.4000/次")
+    expect(out).toContain("$0.0294")
+    expect(out).toContain("$3.5579")
+  })
+
+  it("有 image_ratio 时原样带出,无则不出该行", () => {
+    expect(formatDetail(P, { model: "gpt-image-2", now: OFF_PEAK })).toContain(
+      "image_ratio 1.6"
+    )
+    expect(
+      formatDetail(P, { model: "claude-opus-5", now: OFF_PEAK })
+    ).not.toContain("image_ratio")
   })
 })

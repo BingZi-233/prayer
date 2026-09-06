@@ -25,6 +25,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod"
 import {
   formatAnnouncements,
+  formatDetail,
   formatGroups,
   formatModels,
   formatPrice,
@@ -35,13 +36,6 @@ import type { Pricing } from "./pricing.ts"
 
 export type { Model, Pricing } from "./pricing.ts"
 export type { Announcement, Announcements } from "./format.ts"
-export {
-  formatAnnouncements,
-  formatGroups,
-  formatModels,
-  formatPrice,
-  formatRaw,
-} from "./format.ts"
 
 export const API = "https://www.packyapi.ai/api/pricing"
 export const ANNOUNCE_API = "https://www.packyapi.ai/api/announcements"
@@ -90,12 +84,12 @@ server.registerTool(
   {
     title: "PackyAPI 价格/模型查询",
     description:
-      "查询 PackyAPI(Claude/OpenAI/Gemini 兼容的 AI API 中转平台)的模型价格、可用模型 ID、分组倍率与单模型原始数据。底层读公开 JSON /api/pricing,本地计价,输出极简结构化文本 —— 比抓 HTML 页面省 token 且精确。按 action 分四种查询,配合可选参数过滤。价格单位 $/1M tokens。",
+      "查询 PackyAPI(Claude/OpenAI/Gemini 兼容的 AI API 中转平台)的模型价格、可用模型 ID、分组倍率、单模型完整计价与平台公告。底层读公开 JSON /api/pricing,本地计价,输出极简结构化文本 —— 比抓 HTML 页面省 token 且精确。计价已计入分组级倍率覆盖(model_group_ratio)与高峰浮动价(peak_pricing),价格单位 $/1M tokens。要单模型的完整计价(缓存写入价、长上下文阶梯价、端点路径、厂商)用 action=detail。",
     inputSchema: {
       action: z
-        .enum(["price", "models", "groups", "raw", "announcements"])
+        .enum(["price", "models", "groups", "raw", "announcements", "detail"])
         .describe(
-          "查询类型:price=计价($/1M tokens,含 input/output/cache) / models=列可用模型 ID / groups=列全部分组倍率与说明 / raw=单模型完整原始 JSON / announcements=平台公告(上新、变更、通知)"
+          "查询类型:price=计价表($/1M tokens,含 input/output/cache) / models=列可用模型 ID / groups=列全部分组倍率与说明 / raw=单模型完整原始 JSON / announcements=平台公告(上新、变更、通知) / detail=单模型全量计价(各分组实价 + 缓存写入 + 阶梯价 + 高峰状态 + 端点路径 + 厂商)"
         ),
       keyword: z
         .string()
@@ -107,22 +101,30 @@ server.registerTool(
         .string()
         .optional()
         .describe(
-          "仅 price/models:锁定单个分组(如 cc、cc-sale),用 action=groups 可查全部分组名"
+          "price/models/detail:锁定单个分组(如 cc、codex),用 action=groups 可查全部分组名"
         ),
       endpoint: z
         .string()
         .optional()
-        .describe("仅 models:按端点类型过滤,取值 anthropic / openai / gemini"),
+        .describe(
+          "仅 models:按端点类型过滤,取值 anthropic / openai / openai-response / gemini / image-generation"
+        ),
+      vendor: z
+        .string()
+        .optional()
+        .describe(
+          "仅 models:按厂商名子串过滤(不区分大小写),如 Anthropic / OpenAI / DeepSeek"
+        ),
       base: z
         .number()
         .optional()
         .describe(
-          "仅 price:计价 base 系数,默认 2(即 $0.002/1K);input$ = model_ratio×group_ratio×base"
+          "price/detail:计价 base 系数,默认 2(即 $0.002/1K);input$ = 倍率×group_ratio×base"
         ),
       model: z
         .string()
         .optional()
-        .describe("仅 raw:精确模型 ID(必填,须与 models 列出的完全一致)"),
+        .describe("raw/detail:精确模型 ID(必填,须与 models 列出的完全一致)"),
       limit: z
         .number()
         .optional()
@@ -131,7 +133,7 @@ server.registerTool(
         ),
     },
   },
-  async ({ action, keyword, group, endpoint, base, model, limit }) => {
+  async ({ action, keyword, group, endpoint, vendor, base, model, limit }) => {
     // announcements 走独立 API,不读 pricing
     if (action === "announcements") {
       try {
@@ -161,26 +163,52 @@ server.registerTool(
         ],
       }
     }
+    // 格式化整体包 try/catch:resolvePrice 会对每个按量模型调 activePeak,
+    // 而 rule.timezone 等字段来自无校验的外部 JSON。单个模型的坏数据不该让
+    // 整次工具调用以未捕获异常收场。
     let text: string
-    switch (action) {
-      case "price":
-        text = formatPrice(d, { keyword, group, base })
-        break
-      case "models":
-        text = formatModels(d, { group, endpoint })
-        break
-      case "groups":
-        text = formatGroups(d)
-        break
-      case "raw":
-        if (!model) {
-          return {
-            isError: true,
-            content: [{ type: "text", text: "raw 需 model 参数" }],
+    try {
+      switch (action) {
+        case "price":
+          text = formatPrice(d, { keyword, group, base })
+          break
+        case "models":
+          text = formatModels(d, { group, endpoint, vendor })
+          break
+        case "groups":
+          text = formatGroups(d)
+          break
+        case "detail":
+          if (!model) {
+            return {
+              isError: true,
+              content: [
+                {
+                  type: "text",
+                  text: "detail 需 model 参数;用 action=models 查确切模型 ID",
+                },
+              ],
+            }
           }
-        }
-        text = formatRaw(d, model)
-        break
+          text = formatDetail(d, { model, group, base })
+          break
+        case "raw":
+          if (!model) {
+            return {
+              isError: true,
+              content: [{ type: "text", text: "raw 需 model 参数" }],
+            }
+          }
+          text = formatRaw(d, model)
+          break
+      }
+    } catch (e) {
+      return {
+        isError: true,
+        content: [
+          { type: "text", text: `格式化失败: ${(e as Error).message}` },
+        ],
+      }
     }
     return { content: [{ type: "text", text }] }
   }

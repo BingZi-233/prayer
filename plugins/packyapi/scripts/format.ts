@@ -8,6 +8,7 @@
  */
 import {
   DEFAULT_BASE,
+  resolveGroups,
   resolvePrice,
   type EffectivePrice,
   type Pricing,
@@ -321,6 +322,120 @@ export function formatAnnouncements(
     out.push("")
     out.push(`[${a.id}] ${a.title}  (${a.category}${date ? `, ${date}` : ""})`)
     out.push((a.content ?? "").trim())
+  }
+  return out.join("\n")
+}
+
+function endpointPath(d: Pricing, ep: string): string {
+  const s = d.supported_endpoint?.[ep]
+  return s ? `(${s.method} ${s.path})` : ""
+}
+
+/**
+ * 「按需展开」的落点。price 表要保持精简,但缓存写入价、长上下文阶梯、
+ * 高峰状态、端点路径、厂商这些信息又确实要能查到 —— 拆到这里,给单个
+ * model 出该模型在各可用分组下的完整计价。
+ */
+export function formatDetail(
+  d: Pricing,
+  opts: { model?: string; group?: string; base?: number; now?: Date } = {}
+): string {
+  const want = opts.model
+  if (!want) return "detail 需 model 参数;用 action=models 查确切模型 ID"
+  const m = d.data?.find((x) => x.model_name === want)
+  if (!m) {
+    const near = (d.data ?? [])
+      .map((x) => x.model_name)
+      .filter((n) => n.toLowerCase().includes(want.toLowerCase()))
+      .slice(0, 8)
+    return near.length
+      ? `未找到模型: ${want};相近候选:${near.join("、")}`
+      : `未找到模型: ${want};用 action=models 查全部 ID`
+  }
+  const base = opts.base ?? DEFAULT_BASE
+  const now = opts.now ?? new Date()
+  // 不给 group 时遍历全部可用组;排序以保证输出确定,不依赖外部 API 的数组顺序
+  const groups = opts.group ? [opts.group] : resolveGroups(d, m.model_name)
+  const vendor = d.vendors?.find((v) => v.id === m.vendor_id)?.name ?? "未知"
+  const out: string[] = [
+    `# ${m.model_name}  厂商 ${vendor}  计价 ${
+      m.quota_type === 1 ? "按次" : "按量"
+    }  base ${base}`,
+  ]
+  for (const g of groups) {
+    const p = resolvePrice(d, m.model_name, g, { base, now })
+    // resolvePrice 对「该模型不在这个组里」返回 undefined(见 Task 1)。
+    // 这里不能静默跳过 —— 用户点名问了这个组,得告诉他该模型不提供,
+    // 并给出它真实可用的组,否则只会看到一个没有任何组的空壳输出。
+    if (!p) {
+      out.push("")
+      out.push(
+        `## 组 ${g}:${m.model_name} 不在该组提供。可用分组:${resolveGroups(d, m.model_name).join("、")}`
+      )
+      continue
+    }
+    out.push("")
+    out.push(
+      `## 组 ${g}(倍率 x${grValue(d, g)})${
+        d.inactive_groups?.includes(g) ? " [停用]" : ""
+      }`
+    )
+    if (p.grSource === "fallback-1") {
+      out.push(`注意:组 ${g} 在 group_ratio 里倍率无定义,下列价格按 1 估算`)
+    }
+    if (p.quotaType === 1) {
+      // 三个数各自贴标签:model_price 是平台默认档的标称价,既不是最低价也不是
+      // 典型价 —— 实测 gpt-image-2 的 perCall 是 min 的 13.6 倍却只占 max 的 11%。
+      // 不贴标签的话用户会按 perCall 做预算,而实际可能接近 9 倍(报低了,
+      // 对客服场景比报高更麻烦)。
+      out.push(`按次 标称 $${p.perCall.toFixed(4)}/次(平台默认档)`)
+      if (p.perCallMin !== undefined && p.perCallMax !== undefined) {
+        out.push(
+          `     实际 $${p.perCallMin.toFixed(4)} ~ $${p.perCallMax.toFixed(4)}/次,随请求参数(图片尺寸/质量等)浮动 —— 以平台结算为准`
+        )
+      }
+      // image_ratio 的确切语义无官方文档,原样带出而不臆造公式
+      if (m.image_ratio !== undefined) {
+        out.push(`image_ratio ${m.image_ratio}(图片计价倍率,语义见官方文档)`)
+      }
+    } else {
+      out.push(
+        `输入 $${p.input.toFixed(2)}  输出 $${p.output.toFixed(2)}  缓存读 ${
+          p.cacheRead === undefined ? "无" : `$${p.cacheRead.toFixed(2)}`
+        }  缓存写 ${
+          p.cacheWrite === undefined ? "无" : `$${p.cacheWrite.toFixed(2)}`
+        }  (单位 $/1M tokens)`
+      )
+      // peak/tiers 只存在于 MeteredPrice 分支 —— EffectivePrice 是判别联合,
+      // PerCallPrice 上完全没有这两个字段,挪出这个 else 块在联合类型上访问
+      // 会被 tsc 拒绝(TS2339),故放在窄化后的这里而非 if/else 外层。
+      if (p.peak) {
+        out.push(
+          `高峰中 ×${p.peak.factor}${
+            p.peak.until
+              ? `,至 ${p.peak.until}${tzSuffix(p.peak.timezone)}`
+              : ""
+          };平时 in $${p.peak.offPeakInput.toFixed(2)} / out $${p.peak.offPeakOutput.toFixed(2)}`
+        )
+      }
+      // 同 Task 5 的脚注:整段重定价,口径是单次请求的输入 token 数
+      for (const t of p.tiers ?? []) {
+        out.push(
+          `阶梯 输入超 ${t.threshold} tokens:整个请求按 in $${t.input.toFixed(2)} / out $${t.output.toFixed(2)}`
+        )
+      }
+      if ((p.tiers?.length ?? 0) > 1) {
+        out.push("(多档只取命中的最高一档,不累加;阈值处价格跳变)")
+      }
+    }
+    if (p.ratioSource === "group-override") {
+      out.push(
+        `倍率来源 model_group_ratio(该组专属),已覆盖全局 model_ratio ${m.model_ratio}`
+      )
+    }
+    out.push(
+      `端点 ${p.endpoints.map((e) => `${e}${endpointPath(d, e)}`).join("  ")}`
+    )
   }
   return out.join("\n")
 }
