@@ -2511,7 +2511,7 @@ pnpm check
 
 > 注:`pnpm lint` 在本仓库有**存量**告警(与本次改动无关)。只需确认没有新增来自 `plugins/packyapi/**` 或 `tests/plugins/packyapi/**` 的报错。
 
-- [ ] **Step 7: 提交**
+- [ ] **Step 8: 提交**
 
 ```bash
 git add plugins/packyapi/scripts/ tests/plugins/packyapi/
@@ -2770,7 +2770,42 @@ OpenAI 协议场景(Codex 等)base_url 末尾需带 `/v1`,即 `https://cf.api.fa
 | `announcements` | `limit?` `keyword?` | 平台公告 |
 ```
 
-- [ ] **Step 5: 提版本**
+- [ ] **Step 5: 修 `packy-mcp.ts` 的头注释**
+
+该文件头部的文档注释自本次升级前就没更新过,现在有两处错:action 表只列了
+`price`/`models`/`groups`/`raw`(缺 `announcements`,更缺本次新增的 `detail`
+与 `models` 的 `vendor` 参数);**计价公式那段整段已失效** —— 它写的还是
+「`input = model_ratio * group_ratio * base`」这套,完全不含本次接入的分组倍率
+覆盖、高峰浮动、长上下文阶梯,而且把 `cache_ratio` 当必填。
+
+计价细节现在的唯一真源是 `pricing.ts` 的文件头注释(那里写全了四层叠加与
+每条假设的依据)。**不要在这里再抄一份** —— 两处副本必然再次漂移,这正是本次
+`pricing-api.md` 删掉分组倍率表的同一个理由。改为:
+
+```ts
+#!/usr/bin/env node
+/**
+ * PackyAPI MCP server —— 单工具 `packy`,走公开 JSON API 本地计价/过滤,输出极简结构化文本。
+ * stdio transport。TypeScript 由 Node(v22.6+/24)原生 strip 运行。
+ * SDK(@modelcontextprotocol/sdk)从 repo 根 node_modules 解析(本 plugin 在 prayer repo 内)。
+ *
+ * 本文件只做三件事:HTTP fetch、MCP server 装配、action 分派。
+ * 计价在 pricing.ts(纯函数 resolvePrice),输出在 format.ts。
+ *
+ * 工具 packy(action + 可选参数):
+ *   action=price   [keyword] [group] [base]        计价表 $/1M tokens
+ *   action=detail  model [group] [base]            单模型全量计价
+ *   action=models  [group] [endpoint] [vendor]     列可用模型 ID
+ *   action=groups                                  分组倍率与说明
+ *   action=raw     model                           单模型原始 JSON
+ *   action=announcements [limit] [keyword]         平台公告
+ *
+ * 计价规则(四层叠加:分组倍率覆盖 → 高峰浮动 → 阶梯价 → 按次区间)见
+ * pricing.ts 的文件头注释 —— 那里是唯一真源,含每条假设的依据。此处不再抄一份。
+ */
+```
+
+- [ ] **Step 6: 提版本**
 
 `plugins/packyapi/.claude-plugin/plugin.json`:
 
@@ -2792,7 +2827,7 @@ OpenAI 协议场景(Codex 等)base_url 末尾需带 `/v1`,即 `https://cf.api.fa
 
 MCP server 的 `version` 由 `pluginVersion()` 读这个文件得来,不用手改。
 
-- [ ] **Step 6: 核对文档里没有被写成本机绝对路径的 URL**
+- [ ] **Step 7: 核对文档里没有被写成本机绝对路径的 URL**
 
 `~/docs/...` 这类以波浪号开头的相对写法在某些工具链里会被展开成 `/Users/<你>/...`。落盘后确认文档里没有本机路径,且 Claude Code 那行是 `/docs/cli/2-claude.html`:
 
@@ -2803,7 +2838,7 @@ grep -n '2-claude' plugins/packyapi/skills/packyapi/references/docs-map.md
 
 预期:第一条命令**无输出**;第二条输出两行 —— CLI 配置表的 `` `/docs/cli/2-claude.html` `` 与 CC-Switch 段的 `` `/2-claude.html` ``。
 
-- [ ] **Step 7: 提交**
+- [ ] **Step 8: 提交**
 
 ```bash
 git add plugins/packyapi/
