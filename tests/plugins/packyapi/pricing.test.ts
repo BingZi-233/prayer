@@ -6,6 +6,12 @@ import {
   type PerCallPrice,
   type Pricing,
 } from "@/plugins/packyapi/scripts/pricing"
+// 判别联合收窄的小 helper,按次计价专用
+function perCall(d: Pricing, model: string, group: string): PerCallPrice {
+  const p = resolvePrice(d, model, group)
+  if (!p || p.quotaType !== 1) throw new Error(`${model}@${group} 不是按次计价`)
+  return p
+}
 import { IN_PEAK_AM, IN_PEAK_PM, OFF_PEAK, P, WEEKEND } from "./fixture"
 
 // 判别联合收窄的小helper:让断言不必写 `as` 或 `!`
@@ -435,5 +441,76 @@ describe("resolvePrice 高峰窗口的边界与畸形输入", () => {
   it("命中时带出规则时区,供文案消除「至 12:00」的歧义", () => {
     const p = meteredOf(P, "deepseek-v4-pro", "deepseek-officially", IN_PEAK_AM)
     expect(p.peak?.timezone).toBe("Asia/Shanghai")
+  })
+})
+
+describe("resolvePrice 阶梯价(tiers)", () => {
+  it("换算为绝对价,output_ratio 独立于 ratio", () => {
+    const p = metered("gpt-5.6-sol", "codex")
+    // 基准 in = 2.5*0.5*2 = 2.5,out = 2.5*6 = 15
+    expect(p.input).toBeCloseTo(2.5)
+    expect(p.output).toBeCloseTo(15)
+    expect(p.tiers).toHaveLength(1)
+    expect(p.tiers![0].threshold).toBe(272000)
+    expect(p.tiers![0].input).toBeCloseTo(5) // 2.5 * 2
+    expect(p.tiers![0].output).toBeCloseTo(22.5) // 15 * 1.5
+  })
+
+  it("output_ratio 缺省时回落 ratio", () => {
+    const noOut = {
+      ...P,
+      data: P.data.map((m) =>
+        m.model_name === "gpt-5.6-sol"
+          ? { ...m, tiers: [{ threshold: 100000, ratio: 3 }] }
+          : m
+      ),
+    }
+    const p = meteredOf(noOut, "gpt-5.6-sol", "codex")
+    expect(p.tiers![0].input).toBeCloseTo(7.5) // 2.5 * 3
+    expect(p.tiers![0].output).toBeCloseTo(45) // 15 * 3
+  })
+
+  it("无 tiers 字段时为 undefined", () => {
+    expect(metered("claude-opus-5", "cc").tiers).toBeUndefined()
+  })
+
+  it("命中高峰时阶梯以高峰之后的价为基准,input/output 两腿口径一致", () => {
+    // fixture 里没有「高峰规则 + tiers」同时命中的模型(peak_pricing 只点名
+    // deepseek-v4-pro,它没有 tiers)。用 peak_active 强行给 gpt-5.6-sol 造一个
+    // 高峰,验证阶梯换算用的是高峰后的 input/output,而不是高峰前的平时价。
+    const withPeak = {
+      ...P,
+      peak_active: { "gpt-5.6-sol": { factor: 2 } },
+    }
+    const p = meteredOf(withPeak, "gpt-5.6-sol", "codex")
+    // 平时 input=2.5/output=15,高峰 ×2 → input=5/output=30
+    expect(p.input).toBeCloseTo(5)
+    expect(p.output).toBeCloseTo(30)
+    expect(p.tiers![0].input).toBeCloseTo(10) // 高峰后 input 5 * ratio 2
+    expect(p.tiers![0].output).toBeCloseTo(45) // 高峰后 output 30 * output_ratio 1.5
+  })
+})
+
+describe("resolvePrice 按次计价区间", () => {
+  it("min/max 与 perCall 同乘 group_ratio", () => {
+    const p = perCall(P, "gpt-image-2", "image")
+    expect(p.perCall).toBeCloseTo(0.4) // 0.08 * 5
+    expect(p.perCallMin).toBeCloseTo(0.0294) // 0.00588 * 5
+    expect(p.perCallMax).toBeCloseTo(3.55785) // 0.71157 * 5
+  })
+
+  it("无区间字段的按次模型 min/max 为 undefined", () => {
+    const noRange = {
+      ...P,
+      data: P.data.map((m) =>
+        m.model_name === "gpt-image-2"
+          ? { ...m, model_price_min: undefined, model_price_max: undefined }
+          : m
+      ),
+    }
+    const p = perCall(noRange, "gpt-image-2", "image")
+    expect(p.perCall).toBeCloseTo(0.4)
+    expect(p.perCallMin).toBeUndefined()
+    expect(p.perCallMax).toBeUndefined()
   })
 })

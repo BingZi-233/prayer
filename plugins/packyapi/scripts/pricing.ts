@@ -14,9 +14,11 @@
  *      cacheWrite = input * cache_creation_ratio_5m(字段缺失则无此价)
  *   4. 高峰浮动:命中窗口则上述 token 价整体 × factor(含 cacheRead/cacheWrite ——
  *      缓存价同步参与高峰浮动是我方推断,无官方文档,实盘暂无样本可验证)
- *   5. 阶梯价:以第 4 步之后的价为基准换算
- *   6. quota_type=1(按次):perCall = model_price * gr,不产出任何按量字段,
- *      高峰浮动不作用于按次计价(peak_pricing 的 rules 目前只点名按量模型)
+ *   5. 阶梯价:以第 4 步之后的价为基准换算(input/output 各自乘 tiers 里的
+ *      ratio/output_ratio,output_ratio 缺省则回落 ratio)
+ *   6. quota_type=1(按次):perCall = model_price * gr,perCallMin/Max 同乘 gr
+ *     (字段缺失则无此价),不产出任何按量字段;高峰浮动不作用于按次计价
+ *     (peak_pricing 的 rules 目前只点名按量模型)
  *
  * 外部 API 的字段可选性以 2026-09-06 实盘 67 个模型普查为准:
  * cache_ratio 仅 57/67 存在,其余(model_ratio / completion_ratio / model_price /
@@ -292,7 +294,15 @@ export function resolvePrice(
     vendor: d.vendors?.find((v) => v.id === m.vendor_id)?.name,
   }
   if (m.quota_type === 1) {
-    return { ...common, quotaType: 1, perCall: m.model_price * gr }
+    return {
+      ...common,
+      quotaType: 1,
+      perCall: m.model_price * gr,
+      perCallMin:
+        m.model_price_min === undefined ? undefined : m.model_price_min * gr,
+      perCallMax:
+        m.model_price_max === undefined ? undefined : m.model_price_max * gr,
+    }
   }
   const base = opts.base ?? DEFAULT_BASE
   const offPeakInput = ratio * gr * base
@@ -325,6 +335,16 @@ export function resolvePrice(
           offPeakInput,
           offPeakOutput,
         }
+      : undefined,
+    // 阶梯以 input/output(已过高峰浮动)为基准换算,input/output 两腿分开
+    // 乘各自的 ratio/output_ratio,回落语义与顶层 output 的 completion_ratio
+    // 一致。output_ratio 缺省时回落 ratio。
+    tiers: m.tiers?.length
+      ? m.tiers.map((t) => ({
+          threshold: t.threshold,
+          input: input * t.ratio,
+          output: output * (t.output_ratio ?? t.ratio),
+        }))
       : undefined,
   }
 }
