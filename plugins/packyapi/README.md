@@ -9,10 +9,12 @@
 
 | action | 参数 | 作用 |
 |---|---|---|
-| `price` | `keyword?` `group?` `base?` | 计价($/1M tokens) |
-| `models` | `endpoint?` `group?` | 列可用模型 ID |
+| `price` | `keyword?` `group?` `base?` | 计价($/1M tokens),含分组倍率覆盖与高峰浮动价 |
+| `detail` | `model` `group?` `base?` | 单模型全量计价(缓存读/写、阶梯价、高峰、端点、厂商) |
+| `models` | `group?` `endpoint?` `vendor?` | 列可用模型 ID |
 | `groups` | — | 分组倍率与说明 |
 | `raw` | `model` | 单模型原始 JSON |
+| `announcements` | `limit?` `keyword?` | 平台公告 |
 
 启用后 Claude 直接调用工具,无需手动跑命令。
 

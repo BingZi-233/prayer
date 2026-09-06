@@ -4,17 +4,19 @@
  * stdio transport。TypeScript 由 Node(v22.6+/24)原生 strip 运行。
  * SDK(@modelcontextprotocol/sdk)从 repo 根 node_modules 解析(本 plugin 在 prayer repo 内)。
  *
- * 工具 packy(action + 可选参数):
- *   action=price  [keyword] [group] [base]   计价 $/1M tokens
- *   action=models [endpoint] [group]         列可用模型 ID
- *   action=groups                            分组倍率与说明
- *   action=raw    model                       单模型原始 JSON
+ * 本文件只做三件事:HTTP fetch、MCP server 装配、action 分派。
+ * 计价在 pricing.ts(纯函数 resolvePrice),输出在 format.ts。
  *
- * 计价公式(new-api,quota_type=0 按量):
- *   input  $/1M = model_ratio * group_ratio * base   (base 默认 2,即 $0.002/1K)
- *   output $/1M = input * completion_ratio
- *   cache  $/1M = input * cache_ratio
- * quota_type=1(按次):  price/次 = model_price * group_ratio
+ * 工具 packy(action + 可选参数):
+ *   action=price   [keyword] [group] [base]        计价表 $/1M tokens
+ *   action=detail  model [group] [base]            单模型全量计价
+ *   action=models  [group] [endpoint] [vendor]     列可用模型 ID
+ *   action=groups                                  分组倍率与说明
+ *   action=raw     model                           单模型原始 JSON
+ *   action=announcements [limit] [keyword]         平台公告
+ *
+ * 计价规则(四层叠加:分组倍率覆盖 → 高峰浮动 → 阶梯价 → 按次区间)见
+ * pricing.ts 的文件头注释 —— 那里是唯一真源,含每条假设的依据。此处不再抄一份。
  */
 
 import { readFileSync, realpathSync } from "node:fs"
