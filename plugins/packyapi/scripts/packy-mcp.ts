@@ -23,26 +23,12 @@ import { fileURLToPath, pathToFileURL } from "node:url"
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod"
+import type { Pricing } from "./pricing.ts"
+
+export type { Model, Pricing } from "./pricing.ts"
 
 export const API = "https://www.packyapi.ai/api/pricing"
 export const ANNOUNCE_API = "https://www.packyapi.ai/api/announcements"
-
-export interface Model {
-  model_name: string
-  quota_type: number
-  model_ratio: number
-  completion_ratio: number
-  cache_ratio: number
-  model_price: number
-  enable_groups: string[]
-  supported_endpoint_types: string[]
-}
-
-export interface Pricing {
-  data: Model[]
-  group_ratio: Record<string, number>
-  usable_group: Record<string, string>
-}
 
 // 外部 API 硬超时:undici 默认可挂 5 分钟,而 agent run 总超时才 180s——
 // 一次挂起的 packy 调用会把整条用户消息的处理拖死到 run 超时
