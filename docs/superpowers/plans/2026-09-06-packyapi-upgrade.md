@@ -31,6 +31,10 @@
    `/api/pricing` 拿到的 `data[]` / `enable_groups[]` / `vendors[]` 一律不假设顺序 ——
    面向用户的排序由我们自己保证(`resolveGroups` 有 `.sort()`,`formatPrice` 的排序有
    组名 tie-break),而不是依赖上游返回的次序。
+   实测依据:连抓 7 次(间隔 1 秒)拿到 2 个不同响应体,把所有数组规范化排序后归一 ——
+   即差异纯粹是顺序,数值零差异。**只抓 3 次很可能全同,不足以判定稳定。**
+   例外:`supported_endpoint_types` 实测 0/67 不一致(九份快照),且 `anthropic,openai`
+   这样的原始次序比字母序更符合阅读习惯,故 `endpoints` **有意原样透传不排序**。
 10. **不要照抄计划里的数字而不算一遍。** 每个断言旁都写了算式(如 `2.5 * 0.5 * 2 = 2.5`),
     对不上就以 fixture 的字面值为准并在报告里指出 —— 计划里的手算也可能错。
 
@@ -393,8 +397,32 @@ describe("resolvePrice 孤儿组与未知组(grSource)", () => {
     expect(p.grSource).toBe("fallback-1")
   })
 
-  it("完全未知的组名同样标记为 fallback-1", () => {
-    expect(metered("glm-5.2", "no-such-group").grSource).toBe("fallback-1")
+})
+
+describe("resolvePrice 只为模型真实可用的组出价", () => {
+  it("模型不在该组时返回 undefined,即使该组倍率有定义", () => {
+    // glm-5.2 的 enable_groups 不含 cc。若不校验配对,会拿 cc 的倍率 2 乘全局
+    // model_ratio 4 算出 16,而该模型在真实可用组 glm-sale 下只要 1
+    expect(resolvePrice(P, "glm-5.2", "cc")).toBeUndefined()
+    expect(metered("glm-5.2", "glm-sale").input).toBeCloseTo(1)
+  })
+
+  it("完全不存在的组名返回 undefined", () => {
+    expect(resolvePrice(P, "glm-5.2", "no-such-group")).toBeUndefined()
+  })
+
+  it("孤儿组是模型真实声明的,照常出价", () => {
+    expect(metered("gpt-5.6-sol", "hongjing").input).toBeCloseTo(5)
+  })
+
+  it("quota_type 不是 0 或 1 时不出价", () => {
+    const weird = {
+      ...P,
+      data: P.data.map((m) =>
+        m.model_name === "claude-opus-5" ? { ...m, quota_type: 2 } : m
+      ),
+    }
+    expect(resolvePrice(weird, "claude-opus-5", "cc")).toBeUndefined()
   })
 })
 
@@ -614,6 +642,15 @@ export function resolvePrice(
 ): EffectivePrice | undefined {
   const m = d.data?.find((x) => x.model_name === model)
   if (!m) return undefined
+  // 该模型不在这个组里就不出价。resolvePrice 是唯一的计价入口,而 group 是 MCP
+  // 工具的用户可控入参 —— 不校验配对的话,「glm-5.2 在 cc 组多少钱」会拿 cc 的
+  // 倍率 2 乘全局 model_ratio 4 算出 $16.00/1M(该模型真实可用组 glm-sale 的价
+  // 是 $1.00),而且 grSource 会是 "defined",输出里看不出任何异常。
+  // 2026-09-06 实测这样的假报价组合有 1306 个,其中 1114 个完全无标记。
+  if (!m.enable_groups?.includes(group)) return undefined
+  // 实盘 quota_type 只有 0(按量,64 个)与 1(按次,3 个)。平台若新增第三种计费
+  // 模式,宁可不出价 —— 拿 model_ratio 硬算出一个按 token 的价报出去比不报更糟。
+  if (m.quota_type !== 0 && m.quota_type !== 1) return undefined
   const grDefined = d.group_ratio?.[group]
   const gr = grDefined ?? 1
   const override = d.model_group_ratio?.[group]?.[model]
@@ -635,7 +672,6 @@ export function resolvePrice(
   if (m.quota_type === 1) {
     return { ...common, quotaType: 1, perCall: m.model_price * gr }
   }
-  // 实盘 quota_type 只有 0 和 1。非 1 一律按按量处理,quotaType 归一化为 0。
   const base = opts.base ?? DEFAULT_BASE
   const input = ratio * gr * base
   return {
@@ -662,7 +698,7 @@ export function resolvePrice(
 pnpm vitest run tests/plugins/packyapi/pricing.test.ts
 ```
 
-预期:PASS,22 个用例全绿。
+预期:PASS,25 个用例全绿。
 
 - [ ] **Step 6: `packy-mcp.ts` 改用 `pricing.ts` 的类型,并修掉线上的 `$NaN`**
 
@@ -933,7 +969,10 @@ function activePeak(
   now: Date
 ): { factor: number; until?: string } | undefined {
   const fromServer = d.peak_active?.[model]
-  if (fromServer) return fromServer
+  // 显式校验 factor 而非 if (fromServer):peak_active 来自 as Pricing 强转的外部
+  // JSON,语义无官方文档。缺 factor 时算术有 ?? 1 兜着,但 peak.factor 会带着
+  // undefined 一路走到文案里输出「×undefined」—— 与 cache_ratio 那个 NaN 同型。
+  if (typeof fromServer?.factor === "number") return fromServer
   if (!d.peak_pricing?.enabled) return undefined
   for (const rule of d.peak_pricing.rules ?? []) {
     if (!rule.enabled || !rule.models?.includes(model)) continue
@@ -984,7 +1023,7 @@ function activePeak(
 pnpm vitest run tests/plugins/packyapi/pricing.test.ts
 ```
 
-预期:PASS,30 个用例全绿(Task 1 的 22 个 + 本 Task 的 8 个)。
+预期:PASS,33 个用例全绿(Task 1 的 25 个 + 本 Task 的 8 个)。
 
 两处边界已在写计划前用 `Intl` 实测过,测试里各有一条对应用例:`12:00` 整不算高峰(窗口左闭右开),周末即使落在时段内也被 `weekdays` 拦下。
 
@@ -1135,7 +1174,7 @@ pnpm vitest run -t "阶梯价"
 pnpm vitest run tests/plugins/packyapi/pricing.test.ts
 ```
 
-预期:PASS,35 个用例全绿(Task 1 的 22 + Task 2 的 8 + 本 Task 的 5)。
+预期:PASS,38 个用例全绿(Task 1 的 25 + Task 2 的 8 + 本 Task 的 5)。
 
 - [ ] **Step 5: 提交**
 
@@ -1238,7 +1277,7 @@ import type { Pricing } from "@/plugins/packyapi/scripts/pricing"
 pnpm vitest run tests/plugins/packyapi/
 ```
 
-预期:PASS。`pricing.test.ts` 35 个 + `format.test.ts` 16 个,断言未改动而全绿 —— 这就是搬运没走样的证据。
+预期:PASS。`pricing.test.ts` 38 个 + `format.test.ts` 16 个,断言未改动而全绿 —— 这就是搬运没走样的证据。
 
 - [ ] **Step 5: 补齐 fixture 的公告部分**
 
@@ -1578,7 +1617,7 @@ export function formatPrice(
 pnpm vitest run tests/plugins/packyapi/
 ```
 
-预期:PASS,`pricing.test.ts` 35 个 + `format.test.ts` 28 个全绿(原有 16 + 本 Task 新增 12)。
+预期:PASS,`pricing.test.ts` 38 个 + `format.test.ts` 28 个全绿(原有 16 + 本 Task 新增 12)。
 
 - [ ] **Step 6: 提交**
 
@@ -1827,6 +1866,18 @@ describe("formatDetail", () => {
     expect(out).not.toContain("NaN")
   })
 
+  it("模型不提供的组给出明确提示与可用分组,而非静默空壳", () => {
+    const out = formatDetail(P, {
+      model: "glm-5.2",
+      group: "cc",
+      now: OFF_PEAK,
+    })
+    expect(out).toContain("不在该组提供")
+    expect(out).toContain("glm-sale")
+    // 不能出现拿 cc 倍率硬算的假价
+    expect(out).not.toContain("$16.00")
+  })
+
   it("孤儿组标注倍率无定义,并照样出该组的估算价", () => {
     const out = formatDetail(P, { model: "gpt-5.6-sol", now: OFF_PEAK })
     expect(out).toContain("## 组 hongjing")
@@ -1898,7 +1949,16 @@ export function formatDetail(
   ]
   for (const g of groups) {
     const p = resolvePrice(d, m.model_name, g, { base, now })
-    if (!p) continue
+    // resolvePrice 对「该模型不在这个组里」返回 undefined(见 Task 1)。
+    // 这里不能静默跳过 —— 用户点名问了这个组,得告诉他该模型不提供,
+    // 并给出它真实可用的组,否则只会看到一个没有任何组的空壳输出。
+    if (!p) {
+      out.push("")
+      out.push(
+        `## 组 ${g}:${m.model_name} 不在该组提供。可用分组:${resolveGroups(d, m.model_name).join("、")}`
+      )
+      continue
+    }
     out.push("")
     out.push(
       `## 组 ${g}(倍率 x${grValue(d, g)})${
@@ -1959,7 +2019,7 @@ export function formatDetail(
 pnpm vitest run tests/plugins/packyapi/format.test.ts
 ```
 
-预期:PASS,`format.test.ts` 44 个用例全绿(Task 6 后的 32 + 本 Task 新增 12)。
+预期:PASS,`format.test.ts` 45 个用例全绿(Task 6 后的 32 + 本 Task 新增 13)。
 
 - [ ] **Step 5: `packy-mcp.ts` 接线新 action 与参数**
 
@@ -2517,7 +2577,7 @@ pnpm check
 
 预期:typecheck 通过;lint 无**新增**错误(存量告警与本次改动无关,逐条确认报错文件不在 `plugins/packyapi/**` 与 `tests/plugins/packyapi/**`);全部测试绿。
 
-记下最终测试数:`pricing.test.ts` 35 个 + `format.test.ts` 44 个 = 79 个,加上仓库其余用例。
+记下最终测试数:`pricing.test.ts` 38 个 + `format.test.ts` 45 个 = 83 个,加上仓库其余用例。
 
 - [ ] **Step 5: 确认没有遗留文件**
 
@@ -2548,6 +2608,7 @@ git commit -m "test(packyapi): 实盘冒烟后的收尾修补"
 - [ ] `glm-5.2` 在 `glm-sale` 组实盘报 `$1.00/1M`(升级前 `$8.00`)
 - [ ] 实盘全量扫描(21 个组的 `price` + 67 个模型的 `detail`)输出中 **`NaN` 出现 0 次**;`gemini-slb` 组 cache 列为 `-`
 - [ ] 孤儿组(`hongjing` / `test` / `default`)报价带 `§` 标记与「倍率无定义」脚注,且不被误报为「未知分组」
+- [ ] `packy(action=detail, model=glm-5.2, group=cc)` 这类「模型不在该组」的查询不出价,而是提示可用分组(实盘该类组合 1306 个)
 - [ ] `deepseek-v4-pro` 在高峰窗口内报价为平时价 2 倍并带脚注,窗口外不加价
 - [ ] `packy-mcp.ts` 能被 Node 直跑,`tools/list` 返回的 server version 为 `1.3.0`,action enum 含 `detail`
 - [ ] `price` 表格列数与升级前一致(默认精简未被破坏)
