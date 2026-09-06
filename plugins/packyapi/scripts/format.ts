@@ -93,10 +93,19 @@ function notesOf(p: EffectivePrice, m: { model_ratio: number }): string[] {
       });平时 in $${p.peak.offPeakInput.toFixed(2)} / out $${p.peak.offPeakOutput.toFixed(2)}`
     )
   }
-  for (const t of p.tiers ?? []) {
+  // 阶梯是「整段重定价」而非「仅超出部分加价」—— 单次请求的**输入** token 超过
+  // threshold 时,整个请求按该档单价结算,阈值处价格跳变(271999 与 272001 差一倍)。
+  // 依据:实盘 5 个 gpt-5.x 的 {272000, 2, 1.5} 与 OpenAI 公开规则逐字吻合;
+  // grok-4.5 的 200000/2x 与 Grok 公开规则一致;阿里云对 qwen 系明写「该请求的
+  // 所有 Token 均按对应阶梯的单价结算」。「阶梯」二字最易被误读成累进,故写全。
+  const tiers = p.tiers ?? []
+  for (const t of tiers) {
     notes.push(
-      `‡ ${p.model} 长上下文阶梯:>${t.threshold} tokens 时 in $${t.input.toFixed(2)} / out $${t.output.toFixed(2)}`
+      `‡ ${p.model} 长上下文:单次请求输入超 ${t.threshold} tokens 时整个请求按 in $${t.input.toFixed(2)} / out $${t.output.toFixed(2)} 计价(非仅超出部分)`
     )
+  }
+  if (tiers.length > 1) {
+    notes.push(`‡ ${p.model} 多档只取命中的最高一档,不累加`)
   }
   return notes
 }
