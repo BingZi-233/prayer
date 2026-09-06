@@ -110,9 +110,32 @@ describe("resolvePrice 孤儿组与未知组(grSource)", () => {
     expect(p.input).toBeCloseTo(5) // 2.5 * 1 * 2
     expect(p.grSource).toBe("fallback-1")
   })
+})
 
-  it("完全未知的组名同样标记为 fallback-1", () => {
-    expect(metered("glm-5.2", "no-such-group").grSource).toBe("fallback-1")
+describe("resolvePrice 只为模型真实可用的组出价", () => {
+  it("模型不在该组时返回 undefined,即使该组倍率有定义", () => {
+    // glm-5.2 的 enable_groups 不含 cc。若不校验配对,会拿 cc 的倍率 2 乘全局
+    // model_ratio 4 算出 16,而该模型在真实可用组 glm-sale 下只要 1
+    expect(resolvePrice(P, "glm-5.2", "cc")).toBeUndefined()
+    expect(metered("glm-5.2", "glm-sale").input).toBeCloseTo(1)
+  })
+
+  it("完全不存在的组名返回 undefined", () => {
+    expect(resolvePrice(P, "glm-5.2", "no-such-group")).toBeUndefined()
+  })
+
+  it("孤儿组是模型真实声明的,照常出价", () => {
+    expect(metered("gpt-5.6-sol", "hongjing").input).toBeCloseTo(5)
+  })
+
+  it("quota_type 不是 0 或 1 时不出价", () => {
+    const weird = {
+      ...P,
+      data: P.data.map((m) =>
+        m.model_name === "claude-opus-5" ? { ...m, quota_type: 2 } : m
+      ),
+    }
+    expect(resolvePrice(weird, "claude-opus-5", "cc")).toBeUndefined()
   })
 })
 

@@ -153,6 +153,15 @@ export function resolvePrice(
 ): EffectivePrice | undefined {
   const m = d.data?.find((x) => x.model_name === model)
   if (!m) return undefined
+  // 该模型不在这个组里就不出价。resolvePrice 是唯一的计价入口,而 group 是 MCP
+  // 工具的用户可控入参 —— 不校验配对的话,「glm-5.2 在 cc 组多少钱」会拿 cc 的
+  // 倍率 2 乘全局 model_ratio 4 算出 $16.00/1M(该模型真实可用组 glm-sale 的价
+  // 是 $1.00),而且 grSource 会是 "defined",输出里看不出任何异常。
+  // 2026-09-06 实测这样的假报价组合有 1306 个,其中 1114 个完全无标记。
+  if (!m.enable_groups?.includes(group)) return undefined
+  // 实盘 quota_type 只有 0(按量,64 个)与 1(按次,3 个)。平台若新增第三种计费
+  // 模式,宁可不出价 —— 拿 model_ratio 硬算出一个按 token 的价报出去比不报更糟。
+  if (m.quota_type !== 0 && m.quota_type !== 1) return undefined
   const grDefined = d.group_ratio?.[group]
   const gr = grDefined ?? 1
   const override = d.model_group_ratio?.[group]?.[model]
@@ -174,7 +183,6 @@ export function resolvePrice(
   if (m.quota_type === 1) {
     return { ...common, quotaType: 1, perCall: m.model_price * gr }
   }
-  // 实盘 quota_type 只有 0 和 1。非 1 一律按按量处理,quotaType 归一化为 0。
   const base = opts.base ?? DEFAULT_BASE
   const input = ratio * gr * base
   return {
