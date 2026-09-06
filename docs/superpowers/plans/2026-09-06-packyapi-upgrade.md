@@ -2963,7 +2963,9 @@ pnpm check
 - [ ] **Step 5: 确认没有遗留文件**
 
 ```bash
-git status --short
+# 用 command git 绕开 shell 代理:本会话中有实现者报告过代理版 git status
+# 显示「clean」而 git diff 有真实差异
+command git status --porcelain=v1
 ls tests/plugins/packyapi/
 ```
 
