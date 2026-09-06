@@ -166,6 +166,19 @@ describe("resolvePrice 按次计价(quota_type=1)", () => {
     expect((p as PerCallPrice).perCall).toBeCloseTo(0.4) // 0.08 * 5
     expect("input" in (p as object)).toBe(false)
   })
+
+  it("按次模型即便有倍率覆盖也报 global —— 覆盖值不参与按次价格", () => {
+    const rigged = {
+      ...P,
+      model_group_ratio: { image: { "gpt-image-2": 0.5 } },
+    }
+    const p = perCall(rigged, "gpt-image-2", "image")
+    // 覆盖值 0.5 完全没参与:仍是 model_price 0.08 × gr 5
+    expect(p.perCall).toBeCloseTo(0.4)
+    // 若报 group-override,formatPrice 的 † 脚注会声称「已覆盖全局 model_ratio」,
+    // 而那句话描述的是一件不影响本行价格的事
+    expect(p.ratioSource).toBe("global")
+  })
 })
 
 describe("resolvePrice 端点与厂商", () => {

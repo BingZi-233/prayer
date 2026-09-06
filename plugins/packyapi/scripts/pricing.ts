@@ -103,7 +103,11 @@ export interface PeakState {
 interface PriceCommon {
   model: string
   group: string
-  /** 倍率取自全局 model_ratio 还是该组的 model_group_ratio 覆盖 */
+  /**
+   * 倍率取自全局 model_ratio 还是该组的 model_group_ratio 覆盖。
+   * 按次计价(quota_type=1)不使用 model_ratio,故一律为 "global" ——
+   * 即便该组有覆盖条目,它也不参与按次价格。
+   */
   ratioSource: "global" | "group-override"
   /**
    * group_ratio 是否定义了该组。fallback-1 表示按 1 估算 —— 实盘存在「孤儿组」:
@@ -294,8 +298,14 @@ export function resolvePrice(
     vendor: d.vendors?.find((v) => v.id === m.vendor_id)?.name,
   }
   if (m.quota_type === 1) {
+    // 按次计价只用 model_price × gr,完全不碰 model_ratio —— 所以即便该组在
+    // model_group_ratio 里给了覆盖值,它对价格也毫无作用。这里如实报 "global",
+    // 否则 formatPrice 的 † 标记会声称「已覆盖全局 model_ratio X」,而那句话
+    // 描述的是一件不影响本行价格的事。实盘目前 0 个按次模型带覆盖,
+    // 但 model_group_ratio 是外部字段。
     return {
       ...common,
+      ratioSource: "global",
       quotaType: 1,
       perCall: m.model_price * gr,
       perCallMin:
