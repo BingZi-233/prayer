@@ -1241,7 +1241,7 @@ EOF
 
 ### Task 3: 阶梯价(tiers)与按次计价区间
 
-`tiers` 实盘覆盖 17/67 个模型(长上下文超阈值后倍率变化),`model_price_min`/`max` 覆盖 2 个图片模型。
+`tiers` 实盘覆盖 17/67 个模型(长上下文超阈值后倍率变化)。实盘按次计价模型共 3 个,其中 2 个(`gpt-image-2`、`grok-imagine-image-2.0`)带 `model_price_min`/`max` 区间,`omni-moderation-latest` 无。
 
 **Files:**
 - Modify: `plugins/packyapi/scripts/pricing.ts`
@@ -1290,6 +1290,24 @@ describe("resolvePrice 阶梯价(tiers)", () => {
 
   it("无 tiers 字段时为 undefined", () => {
     expect(metered("claude-opus-5", "cc").tiers).toBeUndefined()
+  })
+
+  it("高峰与阶梯叠加时,input/output 两腿以同一个高峰后基准换算", () => {
+    // 实盘没有同时命中高峰规则与 tiers 的模型(高峰只点名 3 个 deepseek,均无
+    // tiers),但代码路径存在。用 peak_active 给 gpt-5.6-sol 强行造一个高峰。
+    const both = {
+      ...P,
+      peak_active: { "gpt-5.6-sol": { factor: 2 } },
+    }
+    const off = metered("gpt-5.6-sol", "codex")
+    const on = meteredOf(both, "gpt-5.6-sol", "codex")
+    expect(off.input).toBeCloseTo(2.5)
+    expect(off.output).toBeCloseTo(15)
+    expect(on.input).toBeCloseTo(5) // 2.5 × 2
+    expect(on.output).toBeCloseTo(30) // 15 × 2
+    // 阶梯以高峰后价为基准:两腿都乘了同一个 factor,不会一腿平时一腿高峰
+    expect(on.tiers![0].input).toBeCloseTo(10) // 5 × 2
+    expect(on.tiers![0].output).toBeCloseTo(45) // 30 × 1.5
   })
 })
 
@@ -1351,13 +1369,19 @@ pnpm vitest run -t "阶梯价"
       ? m.tiers.map((t) => ({
           threshold: t.threshold,
           input: input * t.ratio,
-          output:
-            offPeakOutput * (peakHit?.factor ?? 1) * (t.output_ratio ?? t.ratio),
+          output: output * (t.output_ratio ?? t.ratio),
         }))
       : undefined,
 ```
 
-> 阶梯以第 4 步(高峰之后)的价为基准 —— spec 已记录该次序为无官方文档的假设。实盘 `peak_pricing` 只覆盖 deepseek 三模型,而这三个模型均无 `tiers`,当前两者不重叠。
+> 直接复用 Task 2 提取的局部变量 `input` / `output`(它们已是高峰后的价),不要重新写
+> `offPeakOutput * (peakHit?.factor ?? 1)` —— Task 2 提取这两个变量的注释里就写明了
+> 「免得 Task 3 的 tiers 再写一遍,将来改高峰口径要改两处」。两种写法数值等价,但重写
+> 一遍等于把同一个口径散到两处。
+>
+> 阶梯以第 4 步(高峰之后)的价为基准 —— spec 已记录该次序为无官方文档的假设。实盘
+> `peak_pricing` 只覆盖 deepseek 三模型,而这三个模型均无 `tiers`,当前两者不重叠;
+> 但代码路径存在,故测试用 `peak_active` 人工构造一个同时命中的用例(见 Step 1)。
 
 - [ ] **Step 4: 跑测试确认通过**
 
@@ -1365,7 +1389,7 @@ pnpm vitest run -t "阶梯价"
 pnpm vitest run tests/plugins/packyapi/pricing.test.ts
 ```
 
-预期:PASS,47 个用例全绿(Task 1 的 25 + Task 2 的 17 + 本 Task 的 5)。
+预期:PASS,48 个用例全绿(Task 1 的 25 + Task 2 的 17 + 本 Task 的 6)。
 
 - [ ] **Step 5: 提交**
 
@@ -1468,7 +1492,7 @@ import type { Pricing } from "@/plugins/packyapi/scripts/pricing"
 pnpm vitest run tests/plugins/packyapi/
 ```
 
-预期:PASS。`pricing.test.ts` 47 个 + `format.test.ts` 16 个,断言未改动而全绿 —— 这就是搬运没走样的证据。
+预期:PASS。`pricing.test.ts` 48 个 + `format.test.ts` 16 个,断言未改动而全绿 —— 这就是搬运没走样的证据。
 
 - [ ] **Step 5: 补齐 fixture 的公告部分**
 
@@ -1814,7 +1838,7 @@ export function formatPrice(
 pnpm vitest run tests/plugins/packyapi/
 ```
 
-预期:PASS,`pricing.test.ts` 47 个 + `format.test.ts` 28 个全绿(原有 16 + 本 Task 新增 12)。
+预期:PASS,`pricing.test.ts` 48 个 + `format.test.ts` 28 个全绿(原有 16 + 本 Task 新增 12)。
 
 - [ ] **Step 6: 提交**
 
@@ -2786,7 +2810,7 @@ pnpm check
 
 预期:typecheck 通过;lint 无**新增**错误(存量告警与本次改动无关,逐条确认报错文件不在 `plugins/packyapi/**` 与 `tests/plugins/packyapi/**`);全部测试绿。
 
-记下最终测试数:`pricing.test.ts` 47 个 + `format.test.ts` 45 个 = 92 个,加上仓库其余用例。
+记下最终测试数:`pricing.test.ts` 48 个 + `format.test.ts` 45 个 = 93 个,加上仓库其余用例。
 
 - [ ] **Step 5: 确认没有遗留文件**
 
