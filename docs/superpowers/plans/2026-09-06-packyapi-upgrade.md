@@ -1092,8 +1092,8 @@ function zoned(now: Date, timeZone: string): { weekday: number; minutes: number 
     // rule.timezone 是外部字段且无校验,非法值(如 "Not/AZone"、"")会让
     // Intl.DateTimeFormat 抛 RangeError。activePeak 在每个按量模型上都被调用,
     // 不兜住的话一个模型的坏规则会让整张价格表抛异常 —— 连不相关的查询一起挂。
-    // 这里 fail-closed:当作不命中。weekday 0 匹配不上任何 weekdays,
-    // minutes NaN 也让 hitWindow 的比较恒假,双重保险。
+    // 这里 fail-closed:当作不命中。weekday 0 匹配不上任何 weekdays(rule.weekdays
+    // 用 1-7),minutes NaN 也会被 hitWindow 的显式 NaN 判空拦掉 —— 双重保险。
     return { weekday: 0, minutes: NaN }
   }
   const get = (t: string) => parts.find((p) => p.type === t)?.value ?? ""
@@ -1128,8 +1128,13 @@ function hitWindow(windows: string[], minutes: number): string | undefined {
     if (!from || !to) continue
     const f = toMinutes(from)
     const t = toMinutes(to)
-    // NaN 参与的比较恒假,所以畸形窗口自动落到「不命中」
-    const hit = f <= t ? minutes >= f && minutes < t : minutes >= f || minutes < t
+    // 必须显式判空,不能指望 `f <= t` 自然落空:当 f/t 恰好一个 NaN 一个合法值
+    // 时(如 "09:60-12:00" → f=NaN, t=720),`f <= t` 为 false 会把它误判成
+    // 跨零点窗口,而 else 分支的 `minutes < t` 单独成立时仍会算出 hit=true
+    // ——「畸形窗口一律不命中」的承诺就破了。两侧必须都合法才继续判定。
+    if (Number.isNaN(f) || Number.isNaN(t)) continue
+    const hit =
+      f <= t ? minutes >= f && minutes < t : minutes >= f || minutes < t
     if (hit) return to
   }
   return undefined
