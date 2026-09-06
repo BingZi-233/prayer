@@ -503,9 +503,14 @@ pnpm vitest run tests/plugins/packyapi/pricing.test.ts
  *      output = input * completion_ratio
  *      cacheRead  = input * cache_ratio(字段缺失则无此价)
  *      cacheWrite = input * cache_creation_ratio_5m(字段缺失则无此价)
- *   4. 高峰浮动:命中窗口则上述 token 价整体 × factor
+ *   4. 高峰浮动:命中窗口则上述 token 价整体 × factor —— **含 cacheRead / cacheWrite**。
+ *      缓存价是否随高峰浮动无官方文档;此处按「缓存价是 input 的倍数,input 浮动则
+ *      同步浮动」处理。这是我方推断,Task 8 的文档需向用户声明。
  *   5. 阶梯价:以第 4 步之后的价为基准换算
- *   6. quota_type=1(按次):perCall = model_price * gr,不产出任何按量字段
+ *   6. quota_type=1(按次):perCall = model_price * gr,不产出任何按量字段,
+ *      **且不参与高峰浮动**(activePeak 只在按量分支调用)。实盘高峰规则只点名 3 个
+ *      按量模型,但 rules[].models 是外部字段 —— 平台把按次模型放进高峰规则时,
+ *      perCall 会静默不浮动。
  *
  * 外部 API 的字段可选性以 2026-09-06 实盘 67 个模型普查为准:
  * cache_ratio 仅 57/67 存在,其余(model_ratio / completion_ratio / model_price /
@@ -581,7 +586,10 @@ export interface TierPrice {
 
 export interface PeakState {
   factor: number
+  /** 当前窗口结束时刻 "HH:MM"。跨零点窗口时指次日该时刻。 */
   until?: string
+  /** 规则时区。仅当不是 Asia/Shanghai 时才需要在文案里点出,避免「至 12:00」产生歧义。 */
+  timezone?: string
   offPeakInput: number
   offPeakOutput: number
 }
@@ -876,7 +884,9 @@ describe("resolvePrice 高峰浮动价(peak_pricing)", () => {
     expect(p.peak).toBeUndefined()
   })
 
-  it("peak_pricing.enabled 为 false 时整体停用", () => {
+  // 注意不是「整体停用」:activePeak 先看 peak_active 再看 enabled,
+  // 所以服务端下发的 peak_active 会压过 enabled: false(这是有意的策略)。
+  it("peak_pricing.enabled 为 false 时本地规则停用", () => {
     const off = {
       ...P,
       peak_pricing: { ...P.peak_pricing!, enabled: false },
@@ -895,6 +905,146 @@ describe("resolvePrice 高峰浮动价(peak_pricing)", () => {
     expect(p.input).toBeCloseTo(4.8) // 1.6 * 3
     expect(p.peak?.factor).toBe(3)
     expect(p.peak?.until).toBe("23:00")
+  })
+
+  // peak_active 来自外部 JSON 且语义无文档。这两条守住 typeof 校验 ——
+  // 若有人把它改回 `if (fromServer)`,peak.factor 会带 undefined 走到文案里
+  // 输出「×undefined」,而这两条测试会红。
+  it("peak_active 条目缺 factor 时忽略它,回落本地规则", () => {
+    const broken = {
+      ...P,
+      peak_active: { "deepseek-v4-pro": {} as { factor: number } },
+    }
+    // 周末:本地规则也算不出高峰 → 完全无高峰
+    expect(
+      meteredOf(broken, "deepseek-v4-pro", "deepseek-officially", WEEKEND).peak
+    ).toBeUndefined()
+    // 高峰时刻:回落到本地规则的 ×2
+    const p = meteredOf(broken, "deepseek-v4-pro", "deepseek-officially", IN_PEAK_AM)
+    expect(p.peak?.factor).toBe(2)
+    expect(p.peak?.until).toBe("12:00")
+  })
+
+  it("peak_active 的 factor 是字符串时同样被拒", () => {
+    const strFactor = {
+      ...P,
+      peak_active: {
+        "deepseek-v4-pro": { factor: "3" as unknown as number },
+      },
+    }
+    expect(
+      meteredOf(strFactor, "deepseek-v4-pro", "deepseek-officially", WEEKEND).peak
+    ).toBeUndefined()
+  })
+
+  it("单条规则 enabled 为 false 时该规则不生效", () => {
+    const off = {
+      ...P,
+      peak_pricing: {
+        enabled: true,
+        rules: [{ ...P.peak_pricing!.rules[0], enabled: false }],
+      },
+    }
+    expect(
+      meteredOf(off, "deepseek-v4-pro", "deepseek-officially", IN_PEAK_AM).peak
+    ).toBeUndefined()
+  })
+
+  it("多条规则:跳过不匹配的,命中后面匹配的", () => {
+    const multi = {
+      ...P,
+      peak_pricing: {
+        enabled: true,
+        rules: [
+          { ...P.peak_pricing!.rules[0], models: ["别的模型"] },
+          P.peak_pricing!.rules[0],
+        ],
+      },
+    }
+    const p = meteredOf(multi, "deepseek-v4-pro", "deepseek-officially", IN_PEAK_AM)
+    expect(p.peak?.factor).toBe(2)
+  })
+
+  it("cacheWrite 同样随高峰浮动", () => {
+    // fixture 里带 cache_creation_ratio_5m 的模型(claude-opus-5 / gpt-5.6-sol)
+    // 与高峰规则点名的模型(deepseek-v4-pro)不相交 —— 实盘也是如此,
+    // deepseek 系没有这个字段。故用 peak_active 绕过窗口计算来验证。
+    const active = {
+      ...P,
+      peak_active: { "claude-opus-5": { factor: 2 } },
+    }
+    const off = meteredOf(P, "claude-opus-5", "cc", OFF_PEAK)
+    const on = meteredOf(active, "claude-opus-5", "cc", OFF_PEAK)
+    expect(off.cacheWrite).toBeCloseTo(12.5) // 10 * 1.25
+    expect(on.cacheWrite).toBeCloseTo(25) // (10*2) * 1.25
+  })
+})
+
+describe("resolvePrice 高峰窗口的边界与畸形输入", () => {
+  it("跨零点窗口(22:00-02:00)在零点两侧都命中", () => {
+    const cross = {
+      ...P,
+      peak_pricing: {
+        enabled: true,
+        rules: [
+          {
+            ...P.peak_pricing!.rules[0],
+            windows: ["22:00-02:00"],
+            weekdays: [1, 2, 3, 4, 5, 6, 7],
+          },
+        ],
+      },
+    }
+    const cst = (day: number, hour: number) =>
+      new Date(Date.UTC(2026, 8, day, hour - 8, 0, 0)) // CST = UTC+8,无 DST
+    const at = (day: number, hour: number) =>
+      meteredOf(cross, "deepseek-v4-pro", "deepseek-officially", cst(day, hour))
+    expect(at(7, 21).peak).toBeUndefined() // 21:00 窗口外
+    expect(at(7, 22).peak?.factor).toBe(2) // 22:00 窗口起点(左闭)
+    expect(at(7, 23).peak?.factor).toBe(2) // 23:00 零点前
+    expect(at(8, 0).peak?.factor).toBe(2) // 次日 00:00 零点后
+    expect(at(8, 1).peak?.factor).toBe(2) // 次日 01:00
+    expect(at(8, 2).peak).toBeUndefined() // 次日 02:00 窗口终点(右开)
+  })
+
+  it("非法时区不抛异常,当作不命中", () => {
+    const badTz = {
+      ...P,
+      peak_pricing: {
+        enabled: true,
+        rules: [{ ...P.peak_pricing!.rules[0], timezone: "Not/AZone" }],
+      },
+    }
+    // 不兜住的话 Intl.DateTimeFormat 抛 RangeError,而 activePeak 在每个按量
+    // 模型上都被调用 —— 一个模型的坏规则会让整张价格表挂掉
+    expect(() =>
+      resolvePrice(badTz, "deepseek-v4-pro", "deepseek-officially", {
+        now: IN_PEAK_AM,
+      })
+    ).not.toThrow()
+    expect(
+      meteredOf(badTz, "deepseek-v4-pro", "deepseek-officially", IN_PEAK_AM).peak
+    ).toBeUndefined()
+  })
+
+  it("畸形窗口一律不命中,不静默挪动时段", () => {
+    const mk = (windows: string[]) => ({
+      ...P,
+      peak_pricing: {
+        enabled: true,
+        rules: [{ ...P.peak_pricing!.rules[0], windows }],
+      },
+    })
+    for (const w of [["abc-def"], ["09:00"], [""], ["9-12"], ["09:60-12:00"]]) {
+      expect(
+        meteredOf(mk(w), "deepseek-v4-pro", "deepseek-officially", IN_PEAK_AM).peak
+      ).toBeUndefined()
+    }
+  })
+
+  it("命中时带出规则时区,供文案消除「至 12:00」的歧义", () => {
+    const p = meteredOf(P, "deepseek-v4-pro", "deepseek-officially", IN_PEAK_AM)
+    expect(p.peak?.timezone).toBe("Asia/Shanghai")
   })
 })
 ```
@@ -924,14 +1074,28 @@ const ISO_WEEKDAY: Record<string, number> = {
 
 // 取目标时区下的 ISO 星期(1=周一)与自 00:00 起的分钟数。
 // 用 Intl 而非第三方时区库:Node 自带完整 ICU,零依赖。
+// 取的是目标时区的**当地挂钟时间**,窗口比较也在挂钟域 —— 所以「当地 09:00-12:00」
+// 这个语义在 DST 前后都成立(spring-forward 当天当地 02:00 不存在,fall-back 当天
+// 当地 01:00 出现两次且两次都算高峰,这正是「营业时段」该有的行为)。用 UTC 偏移
+// 量硬算才会错。
 function zoned(now: Date, timeZone: string): { weekday: number; minutes: number } {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone,
-    weekday: "short",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  }).formatToParts(now)
+  let parts: Intl.DateTimeFormatPart[]
+  try {
+    parts = new Intl.DateTimeFormat("en-US", {
+      timeZone,
+      weekday: "short",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    }).formatToParts(now)
+  } catch {
+    // rule.timezone 是外部字段且无校验,非法值(如 "Not/AZone"、"")会让
+    // Intl.DateTimeFormat 抛 RangeError。activePeak 在每个按量模型上都被调用,
+    // 不兜住的话一个模型的坏规则会让整张价格表抛异常 —— 连不相关的查询一起挂。
+    // 这里 fail-closed:当作不命中。weekday 0 匹配不上任何 weekdays,
+    // minutes NaN 也让 hitWindow 的比较恒假,双重保险。
+    return { weekday: 0, minutes: NaN }
+  }
   const get = (t: string) => parts.find((p) => p.type === t)?.value ?? ""
   return {
     weekday: ISO_WEEKDAY[get("weekday")] ?? 0,
@@ -939,18 +1103,34 @@ function zoned(now: Date, timeZone: string): { weekday: number; minutes: number 
   }
 }
 
+// 越界的时分返回 NaN,让下游比较恒假(fail-closed)。不校验的话 "09:60" 会被
+// 算成 600 分钟 = 10:00,把窗口悄悄挪后一小时且不报错。
 function toMinutes(hhmm: string): number {
   const [h, m] = hhmm.split(":")
-  return Number(h) * 60 + Number(m)
+  const hh = Number(h)
+  const mm = Number(m)
+  if (!Number.isInteger(hh) || !Number.isInteger(mm)) return NaN
+  if (hh < 0 || hh > 23 || mm < 0 || mm > 59) return NaN
+  return hh * 60 + mm
 }
 
-// 命中则返回该窗口的结束时刻(如 "12:00")。窗口按左闭右开处理:
-// 12:00 整已不算在 09:00-12:00 内。
+// 命中则返回该窗口的结束时刻(如 "12:00")。
+//
+// 窗口左闭右开:12:00 整已不算在 09:00-12:00 内。
+//
+// 支持跨零点窗口(如 "22:00-02:00",夜间优惠/夜间高峰的自然写法):此时 from > to,
+// 命中条件变成「>= from 或 < to」。不支持的话 `minutes >= 1320 && minutes < 120`
+// 恒为 false —— 全时段都不命中,而且不报错不告警,等于静默按平时价报出错价。
+// windows 是外部字段,平台随时可能这么写。
 function hitWindow(windows: string[], minutes: number): string | undefined {
   for (const w of windows) {
     const [from, to] = w.split("-")
     if (!from || !to) continue
-    if (minutes >= toMinutes(from) && minutes < toMinutes(to)) return to
+    const f = toMinutes(from)
+    const t = toMinutes(to)
+    // NaN 参与的比较恒假,所以畸形窗口自动落到「不命中」
+    const hit = f <= t ? minutes >= f && minutes < t : minutes >= f || minutes < t
+    if (hit) return to
   }
   return undefined
 }
@@ -965,7 +1145,7 @@ function activePeak(
   d: Pricing,
   model: string,
   now: Date
-): { factor: number; until?: string } | undefined {
+): { factor: number; until?: string; timezone?: string } | undefined {
   const fromServer = d.peak_active?.[model]
   // 显式校验 factor 而非 if (fromServer):peak_active 来自 as Pricing 强转的外部
   // JSON,语义无官方文档。缺 factor 时算术有 ?? 1 兜着,但 peak.factor 会带着
@@ -977,7 +1157,7 @@ function activePeak(
     const { weekday, minutes } = zoned(now, rule.timezone)
     if (!rule.weekdays?.includes(weekday)) continue
     const until = hitWindow(rule.windows ?? [], minutes)
-    if (until) return { factor: rule.factor, until }
+    if (until) return { factor: rule.factor, until, timezone: rule.timezone }
   }
   return undefined
 }
@@ -992,13 +1172,20 @@ function activePeak(
   const offPeakInput = ratio * gr * base
   const offPeakOutput = offPeakInput * m.completion_ratio
   const peakHit = activePeak(d, model, opts.now ?? new Date())
-  const input = offPeakInput * (peakHit?.factor ?? 1)
+  // 先算平时价,最后统一乘 factor —— input/output 提成局部变量共用,
+  // 免得 Task 3 的 tiers 再写一遍 `offPeakOutput * (peakHit?.factor ?? 1)`,
+  // 将来改高峰口径要改两处。
+  const factor = peakHit?.factor ?? 1
+  const input = offPeakInput * factor
+  const output = offPeakOutput * factor
   return {
     ...common,
     quotaType: 0,
     base,
     input,
-    output: offPeakOutput * (peakHit?.factor ?? 1),
+    output,
+    // cacheRead / cacheWrite 用高峰后的 input —— 即缓存价同步参与高峰浮动。
+    // 该假设无官方文档,理由见文件头计价顺序第 4 条。
     cacheRead: m.cache_ratio === undefined ? undefined : input * m.cache_ratio,
     cacheWrite:
       m.cache_creation_ratio_5m === undefined
@@ -1008,6 +1195,7 @@ function activePeak(
       ? {
           factor: peakHit.factor,
           until: peakHit.until,
+          timezone: peakHit.timezone,
           offPeakInput,
           offPeakOutput,
         }
@@ -1021,7 +1209,7 @@ function activePeak(
 pnpm vitest run tests/plugins/packyapi/pricing.test.ts
 ```
 
-预期:PASS,33 个用例全绿(Task 1 的 25 个 + 本 Task 的 8 个)。
+预期:PASS,42 个用例全绿(Task 1 的 25 个 + 本 Task 的 17 个)。
 
 两处边界已在写计划前用 `Intl` 实测过,测试里各有一条对应用例:`12:00` 整不算高峰(窗口左闭右开),周末即使落在时段内也被 `weekdays` 拦下。
 
@@ -1172,7 +1360,7 @@ pnpm vitest run -t "阶梯价"
 pnpm vitest run tests/plugins/packyapi/pricing.test.ts
 ```
 
-预期:PASS,38 个用例全绿(Task 1 的 25 + Task 2 的 8 + 本 Task 的 5)。
+预期:PASS,47 个用例全绿(Task 1 的 25 + Task 2 的 17 + 本 Task 的 5)。
 
 - [ ] **Step 5: 提交**
 
@@ -1275,7 +1463,7 @@ import type { Pricing } from "@/plugins/packyapi/scripts/pricing"
 pnpm vitest run tests/plugins/packyapi/
 ```
 
-预期:PASS。`pricing.test.ts` 38 个 + `format.test.ts` 16 个,断言未改动而全绿 —— 这就是搬运没走样的证据。
+预期:PASS。`pricing.test.ts` 47 个 + `format.test.ts` 16 个,断言未改动而全绿 —— 这就是搬运没走样的证据。
 
 - [ ] **Step 5: 补齐 fixture 的公告部分**
 
@@ -1485,6 +1673,12 @@ function knownGroups(d: Pricing): string[] {
   ].sort()
 }
 
+// 「至 12:00」只在规则时区是 Asia/Shanghai 时无歧义。timezone 是外部字段,
+// 非 Asia/Shanghai 时点出来 —— 常见情形下输出长度不变,不破坏默认精简。
+function tzSuffix(tz?: string): string {
+  return !tz || tz === "Asia/Shanghai" ? "" : ` ${tz}`
+}
+
 // 行内标记:† 分组倍率覆盖 / * 高峰中 / ‡ 有阶梯价 / § 孤儿组倍率按 1 估算。
 // 只标不解释,解释集中到表尾脚注 —— 常见问答的 token 不因此上涨。
 function marksOf(p: EffectivePrice): string {
@@ -1512,7 +1706,7 @@ function notesOf(p: EffectivePrice, m: { model_ratio: number }): string[] {
   if (p.peak) {
     notes.push(
       `* ${p.model} 高峰中(×${p.peak.factor}${
-        p.peak.until ? `,至 ${p.peak.until}` : ""
+        p.peak.until ? `,至 ${p.peak.until}${tzSuffix(p.peak.timezone)}` : ""
       });平时 in $${p.peak.offPeakInput.toFixed(2)} / out $${p.peak.offPeakOutput.toFixed(2)}`
     )
   }
@@ -1615,7 +1809,7 @@ export function formatPrice(
 pnpm vitest run tests/plugins/packyapi/
 ```
 
-预期:PASS,`pricing.test.ts` 38 个 + `format.test.ts` 28 个全绿(原有 16 + 本 Task 新增 12)。
+预期:PASS,`pricing.test.ts` 47 个 + `format.test.ts` 28 个全绿(原有 16 + 本 Task 新增 12)。
 
 - [ ] **Step 6: 提交**
 
@@ -1994,7 +2188,7 @@ export function formatDetail(
     if (p.peak) {
       out.push(
         `高峰中 ×${p.peak.factor}${
-          p.peak.until ? `,至 ${p.peak.until}` : ""
+          p.peak.until ? `,至 ${p.peak.until}${tzSuffix(p.peak.timezone)}` : ""
         };平时 in $${p.peak.offPeakInput.toFixed(2)} / out $${p.peak.offPeakOutput.toFixed(2)}`
       )
     }
@@ -2117,7 +2311,11 @@ server.registerTool(
         ],
       }
     }
+    // 格式化整体包 try/catch:resolvePrice 会对每个按量模型调 activePeak,
+    // 而 rule.timezone 等字段来自无校验的外部 JSON。单个模型的坏数据不该让
+    // 整次工具调用以未捕获异常收场。
     let text: string
+    try {
     switch (action) {
       case "price":
         text = formatPrice(d, { keyword, group, base })
@@ -2151,6 +2349,14 @@ server.registerTool(
         }
         text = formatRaw(d, model)
         break
+    }
+    } catch (e) {
+      return {
+        isError: true,
+        content: [
+          { type: "text", text: `格式化失败: ${(e as Error).message}` },
+        ],
+      }
     }
     return { content: [{ type: "text", text }] }
   }
@@ -2575,7 +2781,7 @@ pnpm check
 
 预期:typecheck 通过;lint 无**新增**错误(存量告警与本次改动无关,逐条确认报错文件不在 `plugins/packyapi/**` 与 `tests/plugins/packyapi/**`);全部测试绿。
 
-记下最终测试数:`pricing.test.ts` 38 个 + `format.test.ts` 45 个 = 83 个,加上仓库其余用例。
+记下最终测试数:`pricing.test.ts` 47 个 + `format.test.ts` 45 个 = 92 个,加上仓库其余用例。
 
 - [ ] **Step 5: 确认没有遗留文件**
 
