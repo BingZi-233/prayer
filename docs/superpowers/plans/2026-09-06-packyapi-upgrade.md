@@ -2081,7 +2081,7 @@ export function formatGroups(d: Pricing): string {
 pnpm vitest run tests/plugins/packyapi/
 ```
 
-预期:PASS,`format.test.ts` 32 个用例全绿。
+预期:PASS,`format.test.ts` 33 个用例全绿(Task 5 后的 29 + 本 Task 新增 4)。
 
 - [ ] **Step 5: 提交**
 
@@ -2346,7 +2346,7 @@ export function formatDetail(
 pnpm vitest run tests/plugins/packyapi/format.test.ts
 ```
 
-预期:PASS,`format.test.ts` 45 个用例全绿(Task 6 后的 32 + 本 Task 新增 13)。
+预期:PASS,`format.test.ts` 46 个用例全绿(Task 6 后的 33 + 本 Task 新增 13)。
 
 - [ ] **Step 5: `packy-mcp.ts` 接线新 action 与参数**
 
@@ -2958,7 +2958,7 @@ pnpm check
 
 预期:typecheck 通过;lint 无**新增**错误(存量告警与本次改动无关,逐条确认报错文件不在 `plugins/packyapi/**` 与 `tests/plugins/packyapi/**`);全部测试绿。
 
-记下最终测试数:`pricing.test.ts` 50 个 + `format.test.ts` 45 个 = 95 个,加上仓库其余用例。
+记下最终测试数:`pricing.test.ts` 50 个 + `format.test.ts` 46 个 = 96 个(全仓 812)。
 
 - [ ] **Step 5: 确认没有遗留文件**
 
@@ -2993,6 +2993,9 @@ git commit -m "test(packyapi): 实盘冒烟后的收尾修补"
 - [ ] 孤儿组(`hongjing` / `test` / `default`)报价带 `§` 标记与「倍率无定义」脚注,且不被误报为「未知分组」
 - [ ] `packy(action=detail, model=glm-5.2, group=cc)` 这类「模型不在该组」的查询不出价,而是提示可用分组(实盘该类组合 1306 个)
 - [ ] `deepseek-v4-pro` 在高峰窗口内报价为平时价 2 倍并带脚注,窗口外不加价
+  > 别等到工作日 09-12/14-18 才验:`formatPrice` 与 `formatDetail` 都收 `now`,
+  > 注入 `new Date(Date.UTC(2026, 8, 7, 10 - 8, 0, 0))`(周一 10:00 CST)即可当场
+  > 触发窗口内分支,`13 - 8` 触发窗口外。两个分支都要跑到才算这条通过。
 - [ ] `packy-mcp.ts` 能被 Node 直跑,`tools/list` 返回的 server version 为 `1.3.0`,action enum 含 `detail`
 - [ ] `price` 表格列数与升级前一致(默认精简未被破坏)
 - [ ] `pricing-api.md` 内不再有静态分组倍率表,且标注了 `cache_ratio` 的可选性与孤儿组
