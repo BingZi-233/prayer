@@ -433,6 +433,19 @@ describe("resolvePrice 按次计价(quota_type=1)", () => {
     expect((p as PerCallPrice).perCall).toBeCloseTo(0.4) // 0.08 * 5
     expect("input" in (p as object)).toBe(false)
   })
+
+  it("按次模型即便有倍率覆盖也报 global —— 覆盖值不参与按次价格", () => {
+    const rigged = {
+      ...P,
+      model_group_ratio: { image: { "gpt-image-2": 0.5 } },
+    }
+    const p = perCall(rigged, "gpt-image-2", "image")
+    // 覆盖值 0.5 完全没参与:仍是 model_price 0.08 × gr 5
+    expect(p.perCall).toBeCloseTo(0.4)
+    // 若报 group-override,Task 5 的 † 脚注会声称「已覆盖全局 model_ratio」,
+    // 而那句话描述的是一件不影响本行价格的事
+    expect(p.ratioSource).toBe("global")
+  })
 })
 
 describe("resolvePrice 端点与厂商", () => {
@@ -597,7 +610,11 @@ export interface PeakState {
 interface PriceCommon {
   model: string
   group: string
-  /** 倍率取自全局 model_ratio 还是该组的 model_group_ratio 覆盖 */
+  /**
+   * 倍率取自全局 model_ratio 还是该组的 model_group_ratio 覆盖。
+   * 按次计价(quota_type=1)不使用 model_ratio,故一律为 "global" ——
+   * 即便该组有覆盖条目,它也不参与按次价格。
+   */
   ratioSource: "global" | "group-override"
   /**
    * group_ratio 是否定义了该组。fallback-1 表示按 1 估算 —— 实盘存在「孤儿组」:
@@ -683,7 +700,17 @@ export function resolvePrice(
     vendor: d.vendors?.find((v) => v.id === m.vendor_id)?.name,
   }
   if (m.quota_type === 1) {
-    return { ...common, quotaType: 1, perCall: m.model_price * gr }
+    // 按次计价只用 model_price × gr,完全不碰 model_ratio —— 所以即便该组在
+    // model_group_ratio 里给了覆盖值,它对价格也毫无作用。这里如实报 "global",
+    // 否则 Task 5 的 † 标记会声称「已覆盖全局 model_ratio X」,而那句话
+    // 描述的是一件不影响本行价格的事。实盘目前 0 个按次模型带覆盖,
+    // 但 model_group_ratio 是外部字段。
+    return {
+      ...common,
+      ratioSource: "global",
+      quotaType: 1,
+      perCall: m.model_price * gr,
+    }
   }
   const base = opts.base ?? DEFAULT_BASE
   const input = ratio * gr * base
@@ -711,7 +738,7 @@ export function resolvePrice(
 pnpm vitest run tests/plugins/packyapi/pricing.test.ts
 ```
 
-预期:PASS,25 个用例全绿。
+预期:PASS,26 个用例全绿。
 
 - [ ] **Step 6: `packy-mcp.ts` 改用 `pricing.ts` 的类型,并修掉线上的 `$NaN`**
 
@@ -1223,7 +1250,7 @@ function activePeak(
 pnpm vitest run tests/plugins/packyapi/pricing.test.ts
 ```
 
-预期:PASS,42 个用例全绿(Task 1 的 25 个 + 本 Task 的 17 个)。
+预期:PASS,43 个用例全绿(Task 1 的 26 个 + 本 Task 的 17 个)。
 
 两处边界已在写计划前用 `Intl` 实测过,测试里各有一条对应用例:`12:00` 整不算高峰(窗口左闭右开),周末即使落在时段内也被 `weekdays` 拦下。
 
@@ -1421,7 +1448,7 @@ pnpm vitest run -t "阶梯价"
 pnpm vitest run tests/plugins/packyapi/pricing.test.ts
 ```
 
-预期:PASS,49 个用例全绿(Task 1 的 25 + Task 2 的 17 + 本 Task 的 7)。
+预期:PASS,50 个用例全绿(Task 1 的 26 + Task 2 的 17 + 本 Task 的 7)。
 
 - [ ] **Step 5: 提交**
 
@@ -1538,7 +1565,7 @@ import type { Pricing } from "@/plugins/packyapi/scripts/pricing"
 pnpm vitest run tests/plugins/packyapi/
 ```
 
-预期:PASS。`pricing.test.ts` 49 个 + `format.test.ts` 16 个 = 65 个,断言未改动而全绿 —— 这就是搬运没走样的证据。
+预期:PASS。`pricing.test.ts` 50 个 + `format.test.ts` 16 个 = 66 个,断言未改动而全绿 —— 这就是搬运没走样的证据。
 
 如果 `format.test.ts` 有任何一条断言需要改动才能通过,说明搬运走样了(最可能是漏搬了 Task 1 的
 `cache_ratio` 守卫,或手改了格式化逻辑)。停下来报告,不要改断言让它变绿。
@@ -1595,6 +1622,8 @@ import { A, IN_PEAK_AM, OFF_PEAK, P } from "./fixture"
 - `formatPrice` 的 `claude-opus-4-8` 全部改为 `claude-opus-5`,价格数值不变(`$10.00 / $50.00 / $1.00`、`cc-sale` 的 `$4.00`、`base:1` 的 `$5.00`)。
 - 按次那条改为 `formatPrice(P, { keyword: "gpt-image", group: "image", now: OFF_PEAK })`,期望 `$0.4000/次`。
 - `formatModels` 的 `gpt-image-1` 改为 `gpt-image-2`;「组过滤:cc-sale 仅 opus」改为断言 `formatModels(P, { group: "cc-sale" })` 含 `claude-opus-5` 且不含 `glm-5.2`。
+- **`formatModels` 的「默认 cc 组列全部」要重写**:旧 fixture `D` 里按次模型 `gpt-image-1` 在 `cc` 组,而共享 fixture `P` 的 `gpt-image-2` 只在 `image` 组。改为断言含 `claude-opus-5` 且计数为「1 个模型」。
+- **`formatGroups` 的说明文案断言要改**:旧 `D` 是 `"claude code 专用"`(带空格),共享 fixture `P` 是 `"claude code专用"`(无空格,照实盘原文)。
 - `formatRaw` 的 `claude-opus-4-8` 改为 `claude-opus-5`。
 - 所有调用 `formatPrice` 的既有用例都补上 `now: OFF_PEAK`,免得测试结果随真实时钟漂移。
 
@@ -1618,7 +1647,9 @@ describe("formatPrice 标记与脚注", () => {
       group: "deepseek-officially",
       now: IN_PEAK_AM,
     })
-    expect(out).toContain("deepseek-v4-pro*")
+    // 注意是 †* 而不是裸 * —— deepseek-v4-pro 在这个组同时有倍率覆盖
+    //(全局 2.25 → 覆盖 0.8),marksOf 按 † * ‡ § 固定顺序拼接
+    expect(out).toContain("deepseek-v4-pro†*")
     expect(out).toContain("$3.20")
     expect(out).toContain("×2")
     expect(out).toContain("12:00")
@@ -1687,8 +1718,13 @@ describe("formatPrice 标记与脚注", () => {
       },
       { keyword: "glm-5.2", now: OFF_PEAK }
     )
+    // 整段比较(含表尾脚注),不只比表格 —— 脚注是在构建行的同一个循环里按
+    // enable_groups 顺序 push 的,只排 rows 不排 notes 就会在这里漏过
     expect(out).toBe(reversed)
     expect(out.indexOf("glm-sale")).toBeLessThan(out.indexOf("zai-officially"))
+    // 脚注区(空行之后)也必须按序
+    const notesOf = (s: string) => s.split("\n\n")[1] ?? ""
+    expect(notesOf(out)).toBe(notesOf(reversed))
   })
 })
 
@@ -1884,7 +1920,11 @@ export function formatPrice(
   }
   if (notes.length) {
     out.push("")
-    out.push(...[...new Set(notes)])
+    // 去重后还要排序:notes 是在构建 rows 的同一个循环里按 enable_groups 顺序
+    // push 的,而只有 rows 在后面被排序(带组名 tie-break)。不排 notes 的话,
+    // 反转 enable_groups 会让表格行序不变但脚注顺序翻转 —— 恰好绕过下面那条
+    // 「同模型同倍率的多行按组名稳定排序」用例(它只查表格)。
+    out.push(...[...new Set(notes)].sort())
   }
   return out.join("\n")
 }
@@ -1896,7 +1936,7 @@ export function formatPrice(
 pnpm vitest run tests/plugins/packyapi/
 ```
 
-预期:PASS,`pricing.test.ts` 49 个 + `format.test.ts` 28 个全绿(原有 16 + 本 Task 新增 12)。
+预期:PASS,`pricing.test.ts` 50 个 + `format.test.ts` 28 个全绿(原有 16 + 本 Task 新增 12)。
 
 - [ ] **Step 6: 提交**
 
@@ -2883,7 +2923,7 @@ pnpm check
 
 预期:typecheck 通过;lint 无**新增**错误(存量告警与本次改动无关,逐条确认报错文件不在 `plugins/packyapi/**` 与 `tests/plugins/packyapi/**`);全部测试绿。
 
-记下最终测试数:`pricing.test.ts` 49 个 + `format.test.ts` 45 个 = 94 个,加上仓库其余用例。
+记下最终测试数:`pricing.test.ts` 50 个 + `format.test.ts` 45 个 = 95 个,加上仓库其余用例。
 
 - [ ] **Step 5: 确认没有遗留文件**
 
