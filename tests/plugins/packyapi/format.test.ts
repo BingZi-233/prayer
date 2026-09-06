@@ -6,8 +6,8 @@ import {
   formatPrice,
   formatRaw,
   type Announcements,
-  type Pricing,
-} from "@/plugins/packyapi/scripts/packy-mcp"
+} from "@/plugins/packyapi/scripts/format"
+import type { Pricing } from "@/plugins/packyapi/scripts/pricing"
 
 // 最小 mock:覆盖按量(quota_type=0)、按次(quota_type=1)、多分组、多端点。
 const D: Pricing = {

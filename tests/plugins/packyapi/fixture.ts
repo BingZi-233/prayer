@@ -2,6 +2,7 @@
 // 裁到 6 个模型,覆盖全部计价分支:分组倍率覆盖、高峰价、阶梯价、缓存写入价、
 // 缓存倍率缺失、按次计价区间、分组级端点覆盖、孤儿组、停用组。
 // 注意:vitest 的 include 只匹配 tests/**/*.test.ts,本文件不会被当作测试收集。
+import type { Announcements } from "@/plugins/packyapi/scripts/format"
 import type { Pricing } from "@/plugins/packyapi/scripts/pricing"
 
 export const P: Pricing = {
@@ -161,3 +162,28 @@ export const IN_PEAK_AM = new Date("2026-09-07T02:00:00Z") // 周一 10:00 CST,�
 export const OFF_PEAK = new Date("2026-09-07T05:00:00Z") // 周一 13:00 CST,两窗口之间
 export const IN_PEAK_PM = new Date("2026-09-07T07:00:00Z") // 周一 15:00 CST,落在 14:00-18:00
 export const WEEKEND = new Date("2026-09-12T02:00:00Z") // 周六 10:00 CST,weekdays 不含
+
+export const A: Announcements = {
+  data: [
+    {
+      id: 1,
+      category: "model",
+      type: "default",
+      title: "老公告",
+      title_en: "old",
+      content: "旧内容 opus",
+      content_en: "old",
+      publishDate: "2026-06-01T00:00:00.000Z",
+    },
+    {
+      id: 2,
+      category: "group",
+      type: "default",
+      title: "新公告",
+      title_en: "new",
+      content: "新内容 sale",
+      content_en: "new",
+      publishDate: "2026-07-08T00:00:00.000Z",
+    },
+  ],
+}
