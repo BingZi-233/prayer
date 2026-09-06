@@ -118,6 +118,26 @@ describe("formatPrice 标记与脚注", () => {
     expect(out).not.toMatch(/claude-opus-5[†*‡§]/)
   })
 
+  it("多档阶梯脚注按 threshold 数值升序,不是字符串字典序", () => {
+    const multi = {
+      ...P,
+      data: P.data.map((m) =>
+        m.model_name === "gpt-5.6-sol"
+          ? {
+              ...m,
+              tiers: [
+                { threshold: 32000, ratio: 2 },
+                { threshold: 128000, ratio: 4 },
+              ],
+            }
+          : m
+      ),
+    }
+    const out = formatPrice(multi, { group: "codex", now: OFF_PEAK })
+    // 字典序会把 128000 排到 32000 前面
+    expect(out.indexOf("超 32000")).toBeLessThan(out.indexOf("超 128000"))
+  })
+
   it("同模型同倍率的多行按组名稳定排序,不依赖输入顺序", () => {
     // glm-5.2 在 glm-sale 与 zai-officially 下 gr 均为 1 —— 主键与次键都打平,
     // 若无第三级 tie-break,行序会由 API 返回的数组顺序决定
@@ -188,6 +208,36 @@ describe("formatGroups", () => {
     expect(ccSaleIdx).toBeGreaterThan(-1)
     expect(ccSaleIdx).toBeLessThan(ccIdx) // 0.8 在 2 之前
     expect(out).toContain("claude code专用")
+  })
+})
+
+describe("formatModels 厂商与端点", () => {
+  it("vendor 过滤,不区分大小写", () => {
+    const out = formatModels(P, { group: "image", vendor: "openai" })
+    expect(out).toContain("gpt-image-2")
+    expect(out).not.toContain("glm-5.2")
+  })
+
+  it("vendor 无匹配时给出可用厂商名", () => {
+    const out = formatModels(P, { group: "cc", vendor: "nope" })
+    expect(out).toContain("Anthropic")
+  })
+
+  it("endpoint 过滤走分组级覆盖:cc-sale 下 opus 只开 anthropic", () => {
+    expect(formatModels(P, { group: "cc", endpoint: "openai" })).toContain(
+      "claude-opus-5"
+    )
+    expect(
+      formatModels(P, { group: "cc-sale", endpoint: "openai" })
+    ).not.toContain("claude-opus-5")
+  })
+})
+
+describe("formatGroups 停用标记", () => {
+  it("inactive_groups 内的组标 [停用]", () => {
+    const out = formatGroups(P)
+    expect(out).toMatch(/legacy-off\s+x1\s+\[停用\]/)
+    expect(out).not.toMatch(/\ncc\s+x2\s+\[停用\]/)
   })
 })
 

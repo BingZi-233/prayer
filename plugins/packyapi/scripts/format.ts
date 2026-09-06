@@ -73,39 +73,72 @@ function marksOf(p: EffectivePrice): string {
   ].join("")
 }
 
-function notesOf(p: EffectivePrice, m: { model_ratio: number }): string[] {
-  const notes: string[] = []
+/**
+ * 一条脚注 + 它的稳定排序键。
+ *
+ * 为什么带键而不直接对文本排序:脚注是在构建表格行的同一个循环里按
+ * enable_groups 顺序产出的,而该顺序不保证稳定(实盘 18/67 个模型会抖),
+ * 所以必须排序才能让输出确定。但按整串文本排字典序是错的 —— 阶梯脚注里的
+ * threshold 会被当字符串比,"128000" 排到 "32000" 前面,把 resolvePrice 刚按
+ * 数值升序排好的档位又打乱(实盘 5 个多档模型里 3 个中招)。
+ *
+ * 故显式给键:模型名 → 分组名 → 类型序(† * ‡ §)→ 组内序号。
+ * 阶梯的序号取它在已升序的 tiers 数组里的下标,于是数值序被保住。
+ */
+interface Note {
+  key: string
+  text: string
+}
+
+// 分隔符用 "\x1f"(可打印范围外但非 NUL),保证「上一级键相同才比下一级」。
+// 序号补零到 3 位,免得 10 排到 2 前面。
+function noteKey(model: string, group: string, rank: number, seq = 0): string {
+  return [model, group, rank, String(seq).padStart(3, "0")].join("\x1f")
+}
+
+function notesOf(p: EffectivePrice, m: { model_ratio: number }): Note[] {
+  const notes: Note[] = []
+  const k = (rank: number, seq = 0) => noteKey(p.model, p.group, rank, seq)
   if (p.ratioSource === "group-override") {
-    notes.push(
-      `† ${p.model} 在组 ${p.group} 有专属倍率(model_group_ratio),已覆盖全局 model_ratio ${m.model_ratio}`
-    )
+    notes.push({
+      key: k(0),
+      text: `† ${p.model} 在组 ${p.group} 有专属倍率(model_group_ratio),已覆盖全局 model_ratio ${m.model_ratio}`,
+    })
   }
   if (p.grSource === "fallback-1") {
-    notes.push(
-      `§ 组 ${p.group} 在 group_ratio 里倍率无定义,上表按 1 估算 —— 实际计费可能不同,请以平台为准`
-    )
+    notes.push({
+      key: k(3),
+      text: `§ 组 ${p.group} 在 group_ratio 里倍率无定义,上表按 1 估算 —— 实际计费可能不同,请以平台为准`,
+    })
   }
   if (p.quotaType !== 0) return notes
   if (p.peak) {
-    notes.push(
-      `* ${p.model} 高峰中(×${p.peak.factor}${
+    notes.push({
+      key: k(1),
+      text: `* ${p.model} 高峰中(×${p.peak.factor}${
         p.peak.until ? `,至 ${p.peak.until}${tzSuffix(p.peak.timezone)}` : ""
-      });平时 in $${p.peak.offPeakInput.toFixed(2)} / out $${p.peak.offPeakOutput.toFixed(2)}`
-    )
+      });平时 in $${p.peak.offPeakInput.toFixed(2)} / out $${p.peak.offPeakOutput.toFixed(2)}`,
+    })
   }
   // 阶梯是「整段重定价」而非「仅超出部分加价」—— 单次请求的**输入** token 超过
   // threshold 时,整个请求按该档单价结算,阈值处价格跳变(271999 与 272001 差一倍)。
   // 依据:实盘 5 个 gpt-5.x 的 {272000, 2, 1.5} 与 OpenAI 公开规则逐字吻合;
   // grok-4.5 的 200000/2x 与 Grok 公开规则一致;阿里云对 qwen 系明写「该请求的
   // 所有 Token 均按对应阶梯的单价结算」。「阶梯」二字最易被误读成累进,故写全。
+  // tiers 已由 resolvePrice 按 threshold 升序,seq 用下标把这个顺序带进排序键。
   const tiers = p.tiers ?? []
-  for (const t of tiers) {
-    notes.push(
-      `‡ ${p.model} 长上下文:单次请求输入超 ${t.threshold} tokens 时整个请求按 in $${t.input.toFixed(2)} / out $${t.output.toFixed(2)} 计价(非仅超出部分)`
-    )
-  }
+  tiers.forEach((t, i) => {
+    notes.push({
+      key: k(2, i),
+      text: `‡ ${p.model} 长上下文:单次请求输入超 ${t.threshold} tokens 时整个请求按 in $${t.input.toFixed(2)} / out $${t.output.toFixed(2)} 计价(非仅超出部分)`,
+    })
+  })
   if (tiers.length > 1) {
-    notes.push(`‡ ${p.model} 多档只取命中的最高一档,不累加`)
+    // 排在全部档位之后,故 seq 取一个大于任何下标的值
+    notes.push({
+      key: k(2, 999),
+      text: `‡ ${p.model} 多档只取命中的最高一档,不累加`,
+    })
   }
   return notes
 }
@@ -128,7 +161,7 @@ export function formatPrice(
     return `未知分组 ${groupArg}。可用分组:${known.join("、")}`
   }
   const rows: string[][] = []
-  const notes: string[] = []
+  const notes: Note[] = []
   for (const m of d.data) {
     if (kw && !m.model_name.toLowerCase().includes(kw)) continue
     let groups: string[]
@@ -189,31 +222,52 @@ export function formatPrice(
   }
   if (notes.length) {
     out.push("")
-    // 去重后再按字符串排序:notes 是在 rows 排序之前、按 enable_groups 原始
-    // 顺序 push 的,若不重新排序,同一模型多组倍率相同时(如 glm-5.2 在
+    // 按 text 去重、按 key 排序:notes 是在 rows 排序之前、按 enable_groups
+    // 原始顺序 push 的,若不重新排序,同一模型多组倍率相同时(如 glm-5.2 在
     // glm-sale/zai-officially 下 gr 都是 1)反转 enable_groups 会让脚注顺序
     // 跟着变,即使表格行序本身已经靠第三级 tie-break 稳定住——「输出不依赖
-    // 输入顺序」的承诺就只对表格成立、对脚注不成立了。
-    out.push(...[...new Set(notes)].sort())
+    // 输入顺序」的承诺就只对表格成立、对脚注不成立了。按 key(而非 text 字典序)
+    // 排是因为阶梯脚注里的 threshold 数字按字符串比会把 "128000" 排到
+    // "32000" 前面,打乱 resolvePrice 已按数值升序排好的档位。
+    out.push(
+      ...[...new Map(notes.map((n) => [n.text, n])).values()]
+        .sort((a, b) => a.key.localeCompare(b.key))
+        .map((n) => n.text)
+    )
   }
   return out.join("\n")
 }
 
 export function formatModels(
   d: Pricing,
-  opts: { group?: string; endpoint?: string } = {}
+  opts: { group?: string; endpoint?: string; vendor?: string } = {}
 ): string {
   const group = opts.group ?? "cc"
   const endpoint = opts.endpoint
+  const vendorKw = (opts.vendor ?? "").toLowerCase()
   const names: string[] = []
   for (const m of d.data) {
     if (!m.enable_groups?.includes(group)) continue
-    if (endpoint && !m.supported_endpoint_types?.includes(endpoint)) continue
+    // 端点走分组级覆盖优先 —— 同一模型在不同组开放的端点可能不同
+    const eps =
+      d.model_group_endpoints?.[group]?.[m.model_name] ??
+      m.supported_endpoint_types ??
+      []
+    if (endpoint && !eps.includes(endpoint)) continue
+    if (vendorKw) {
+      const vn = d.vendors?.find((v) => v.id === m.vendor_id)?.name ?? ""
+      if (!vn.toLowerCase().includes(vendorKw)) continue
+    }
     names.push(m.model_name)
   }
-  const out: string[] = [
-    `# group=${group}${endpoint ? ` endpoint=${endpoint}` : ""} — ${names.length} 个模型`,
-  ]
+  const head = `# group=${group}${endpoint ? ` endpoint=${endpoint}` : ""}${
+    opts.vendor ? ` vendor=${opts.vendor}` : ""
+  } — ${names.length} 个模型`
+  if (names.length === 0 && vendorKw) {
+    const all = [...new Set((d.vendors ?? []).map((v) => v.name))].sort()
+    return `${head}\n无匹配厂商。可用厂商:${all.join("、")}`
+  }
+  const out: string[] = [head]
   for (const n of names.sort((a, b) => a.localeCompare(b))) out.push(n)
   return out.join("\n")
 }
@@ -221,10 +275,12 @@ export function formatModels(
 export function formatGroups(d: Pricing): string {
   const gr = d.group_ratio ?? {}
   const desc = d.usable_group ?? {}
+  const off = new Set(d.inactive_groups ?? [])
   const out: string[] = ["# 分组倍率(group_ratio)与说明"]
   for (const g of Object.keys(gr).sort((a, b) => gr[a] - gr[b])) {
+    const tag = off.has(g) ? "[停用] " : ""
     out.push(
-      `${pad(g, 22)} x${pad(String(gr[g]), 5)} ${(desc[g] ?? "").trim()}`
+      `${pad(g, 22)} x${pad(String(gr[g]), 5)} ${tag}${(desc[g] ?? "").trim()}`
     )
   }
   return out.join("\n")
