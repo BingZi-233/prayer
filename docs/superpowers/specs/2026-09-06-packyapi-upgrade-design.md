@@ -111,7 +111,7 @@ tests/plugins/packyapi/format.test.ts         由 packy-mcp.test.ts 迁移并扩
 
 ```ts
 export interface TierPrice {
-  threshold: number   // 超过该 token 数后生效
+  threshold: number   // 单次请求的输入 token 数超过它后生效(整段重定价)
   input: number       // $/1M,已换算为绝对价
   output: number
 }

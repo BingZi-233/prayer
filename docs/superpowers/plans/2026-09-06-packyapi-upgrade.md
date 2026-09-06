@@ -625,6 +625,11 @@ export interface MeteredPrice extends PriceCommon {
 /** quota_type=1(按次) */
 export interface PerCallPrice extends PriceCommon {
   quotaType: 1
+  /**
+   * 标称价(model_price × gr)—— 平台默认档,**既不是最低价也不是典型价**。
+   * 实测 gpt-image-2:perCall 0.4 是 min 0.0294 的 13.6 倍,却只占 max 3.5579 的 11%;
+   * grok-imagine 则恰好 perCall == min。实际结算在 [min, max] 内随请求参数浮动。
+   */
   perCall: number
   perCallMin?: number
   perCallMax?: number
@@ -1092,8 +1097,12 @@ function zoned(now: Date, timeZone: string): { weekday: number; minutes: number 
     // rule.timezone 是外部字段且无校验,非法值(如 "Not/AZone"、"")会让
     // Intl.DateTimeFormat 抛 RangeError。activePeak 在每个按量模型上都被调用,
     // 不兜住的话一个模型的坏规则会让整张价格表抛异常 —— 连不相关的查询一起挂。
-    // 这里 fail-closed:当作不命中。weekday 0 匹配不上任何 weekdays(rule.weekdays
-    // 用 1-7),minutes NaN 也会被 hitWindow 的显式 NaN 判空拦掉 —— 双重保险。
+    // 这里 fail-closed:当作不命中。两条独立路径共同兜住:
+    //   weekday 0 匹配不上任何 rule.weekdays(它用 ISO 的 1-7);
+    //   minutes NaN 让 hitWindow 三元里的比较恒假 —— AND 与 OR 两个分支皆然。
+    // 注意 hitWindow 的显式 NaN 判空只查窗口两端 f/t,**不查 minutes**,
+    // 所以这里必须返回 NaN:换成 -1 之类的哨兵值会在跨零点分支的
+    // `minutes < t` 上误命中。
     return { weekday: 0, minutes: NaN }
   }
   const get = (t: string) => parts.find((p) => p.type === t)?.value ?? ""
@@ -1292,6 +1301,23 @@ describe("resolvePrice 阶梯价(tiers)", () => {
     expect(metered("claude-opus-5", "cc").tiers).toBeUndefined()
   })
 
+  it("多级阶梯按 threshold 升序输出,且不原地改动入参", () => {
+    const src = [
+      { threshold: 256000, ratio: 5 },
+      { threshold: 128000, ratio: 2.5 },
+    ]
+    const unsorted = {
+      ...P,
+      data: P.data.map((m) =>
+        m.model_name === "gpt-5.6-sol" ? { ...m, tiers: src } : m
+      ),
+    }
+    const p = meteredOf(unsorted, "gpt-5.6-sol", "codex")
+    expect(p.tiers!.map((t) => t.threshold)).toEqual([128000, 256000])
+    // resolvePrice 声明为纯函数:入参数组的顺序不能被就地改掉
+    expect(src.map((t) => t.threshold)).toEqual([256000, 128000])
+  })
+
   it("高峰与阶梯叠加时,input/output 两腿以同一个高峰后基准换算", () => {
     // 实盘没有同时命中高峰规则与 tiers 的模型(高峰只点名 3 个 deepseek,均无
     // tiers),但代码路径存在。用 peak_active 给 gpt-5.6-sol 强行造一个高峰。
@@ -1365,12 +1391,18 @@ pnpm vitest run -t "阶梯价"
 在按量分支的 return 里,`peak` 字段之后追加 `tiers`:
 
 ```ts
+    // 按 threshold 升序:面向用户的顺序由我方保证(见起步须知第 9 条)。
+    // 实盘 11 份快照里 tiers 顺序稳定,但 data[]/enable_groups/vendors 都会抖,
+    // 不赌它永远稳定 —— 整段重定价语义下行序错位会让用户误读哪一档先生效。
+    // `[...m.tiers]` 的拷贝是必须的:直接 .sort() 会原地改调用方传进来的 d.data。
     tiers: m.tiers?.length
-      ? m.tiers.map((t) => ({
-          threshold: t.threshold,
-          input: input * t.ratio,
-          output: output * (t.output_ratio ?? t.ratio),
-        }))
+      ? [...m.tiers]
+          .sort((a, b) => a.threshold - b.threshold)
+          .map((t) => ({
+            threshold: t.threshold,
+            input: input * t.ratio,
+            output: output * (t.output_ratio ?? t.ratio),
+          }))
       : undefined,
 ```
 
@@ -1389,7 +1421,7 @@ pnpm vitest run -t "阶梯价"
 pnpm vitest run tests/plugins/packyapi/pricing.test.ts
 ```
 
-预期:PASS,48 个用例全绿(Task 1 的 25 + Task 2 的 17 + 本 Task 的 6)。
+预期:PASS,49 个用例全绿(Task 1 的 25 + Task 2 的 17 + 本 Task 的 7)。
 
 - [ ] **Step 5: 提交**
 
@@ -1506,7 +1538,7 @@ import type { Pricing } from "@/plugins/packyapi/scripts/pricing"
 pnpm vitest run tests/plugins/packyapi/
 ```
 
-预期:PASS。`pricing.test.ts` 48 个 + `format.test.ts` 16 个 = 64 个,断言未改动而全绿 —— 这就是搬运没走样的证据。
+预期:PASS。`pricing.test.ts` 49 个 + `format.test.ts` 16 个 = 65 个,断言未改动而全绿 —— 这就是搬运没走样的证据。
 
 如果 `format.test.ts` 有任何一条断言需要改动才能通过,说明搬运走样了(最可能是漏搬了 Task 1 的
 `cache_ratio` 守卫,或手改了格式化逻辑)。停下来报告,不要改断言让它变绿。
@@ -1756,10 +1788,19 @@ function notesOf(p: EffectivePrice, m: { model_ratio: number }): string[] {
       });平时 in $${p.peak.offPeakInput.toFixed(2)} / out $${p.peak.offPeakOutput.toFixed(2)}`
     )
   }
-  for (const t of p.tiers ?? []) {
+  // 阶梯是「整段重定价」而非「仅超出部分加价」—— 单次请求的**输入** token 超过
+  // threshold 时,整个请求按该档单价结算,阈值处价格跳变(271999 与 272001 差一倍)。
+  // 依据:实盘 5 个 gpt-5.x 的 {272000, 2, 1.5} 与 OpenAI 公开规则逐字吻合;
+  // grok-4.5 的 200000/2x 与 Grok 公开规则一致;阿里云对 qwen 系明写「该请求的
+  // 所有 Token 均按对应阶梯的单价结算」。「阶梯」二字最易被误读成累进,故写全。
+  const tiers = p.tiers ?? []
+  for (const t of tiers) {
     notes.push(
-      `‡ ${p.model} 长上下文阶梯:>${t.threshold} tokens 时 in $${t.input.toFixed(2)} / out $${t.output.toFixed(2)}`
+      `‡ ${p.model} 长上下文:单次请求输入超 ${t.threshold} tokens 时整个请求按 in $${t.input.toFixed(2)} / out $${t.output.toFixed(2)} 计价(非仅超出部分)`
     )
+  }
+  if (tiers.length > 1) {
+    notes.push(`‡ ${p.model} 多档只取命中的最高一档,不累加`)
   }
   return notes
 }
@@ -1855,7 +1896,7 @@ export function formatPrice(
 pnpm vitest run tests/plugins/packyapi/
 ```
 
-预期:PASS,`pricing.test.ts` 48 个 + `format.test.ts` 28 个全绿(原有 16 + 本 Task 新增 12)。
+预期:PASS,`pricing.test.ts` 49 个 + `format.test.ts` 28 个全绿(原有 16 + 本 Task 新增 12)。
 
 - [ ] **Step 6: 提交**
 
@@ -2207,10 +2248,14 @@ export function formatDetail(
       out.push(`注意:组 ${g} 在 group_ratio 里倍率无定义,下列价格按 1 估算`)
     }
     if (p.quotaType === 1) {
-      out.push(`按次 $${p.perCall.toFixed(4)}/次`)
+      // 三个数各自贴标签:model_price 是平台默认档的标称价,既不是最低价也不是
+      // 典型价 —— 实测 gpt-image-2 的 perCall 是 min 的 13.6 倍却只占 max 的 11%。
+      // 不贴标签的话用户会按 perCall 做预算,而实际可能接近 9 倍(报低了,
+      // 对客服场景比报高更麻烦)。
+      out.push(`按次 标称 $${p.perCall.toFixed(4)}/次(平台默认档)`)
       if (p.perCallMin !== undefined && p.perCallMax !== undefined) {
         out.push(
-          `区间 $${p.perCallMin.toFixed(4)} ~ $${p.perCallMax.toFixed(4)}/次`
+          `     实际 $${p.perCallMin.toFixed(4)} ~ $${p.perCallMax.toFixed(4)}/次,随请求参数(图片尺寸/质量等)浮动 —— 以平台结算为准`
         )
       }
       // image_ratio 的确切语义无官方文档,原样带出而不臆造公式
@@ -2238,10 +2283,14 @@ export function formatDetail(
         };平时 in $${p.peak.offPeakInput.toFixed(2)} / out $${p.peak.offPeakOutput.toFixed(2)}`
       )
     }
+    // 同 Task 5 的脚注:整段重定价,口径是单次请求的输入 token 数
     for (const t of p.tiers ?? []) {
       out.push(
-        `阶梯 >${t.threshold} tokens:in $${t.input.toFixed(2)} / out $${t.output.toFixed(2)}`
+        `阶梯 输入超 ${t.threshold} tokens:整个请求按 in $${t.input.toFixed(2)} / out $${t.output.toFixed(2)}`
       )
+    }
+    if ((p.tiers?.length ?? 0) > 1) {
+      out.push("(多档只取命中的最高一档,不累加;阈值处价格跳变)")
     }
     out.push(
       `端点 ${p.endpoints.map((e) => `${e}${endpointPath(d, e)}`).join("  ")}`
@@ -2491,9 +2540,9 @@ EOF
 | `completion_ratio` | 输出/输入 倍数 |
 | `cache_ratio` | 缓存**读取**/输入 倍数。**仅 57/67 个模型有** —— 缺失时不存在缓存读价,不要当 0 或直接做乘法(会得到 NaN) |
 | `cache_creation_ratio_5m` | 缓存**写入**/输入 倍数(仅部分模型有,claude 系为 1.25) |
-| `tiers` | 长上下文阶梯价 `[{threshold, ratio, output_ratio?}]`,超过 `threshold` tokens 后倍率变化;`output_ratio` 缺省则回落 `ratio` |
-| `model_price` | 按次单价(`quota_type=1` 时用) |
-| `model_price_min` / `model_price_max` | 按次价格区间(图片类模型) |
+| `tiers` | 长上下文阶梯价 `[{threshold, ratio, output_ratio?}]`。`ratio` 是作用在基准价上的**乘数**;单次请求的**输入** token 超过 `threshold` 时,**整个请求**按该档单价结算(非仅超出部分),阈值处价格跳变。多档只取命中的最高一档,不累加。`output_ratio` 缺省则回落 `ratio`。**这是平台给出的阶梯摘要,不是完整计费规则** —— 上游 new-api 的阶梯走 `tiered_expr` 表达式,`tiers` 是它的投影,实际结算以平台为准 |
+| `model_price` | 按次的**标称价**(`quota_type=1` 时用)—— 平台默认档,既非最低价也非典型价。实测 `gpt-image-2` 的标称价是区间下限的 13.6 倍却只占上限的 11% |
+| `model_price_min` / `model_price_max` | 按次价格区间(图片类模型)。实际结算在此区间内随请求参数(图片尺寸/质量等)浮动 |
 | `image_ratio` | 图片计价倍率 |
 | `vendor_id` | 关联 `vendors` |
 | `enable_groups` | 该模型可用的分组 |
@@ -2517,7 +2566,14 @@ EOF
    窗口按 `timezone` 判定,左闭右开(`12:00` 整已不在 `09:00-12:00` 内)。
    `peak_active` 含该模型时以它为权威。
 5. 阶梯价:`tiers` 以第 4 步之后的价为基准换算
-   (`input × ratio`,`output × (output_ratio ?? ratio)`)。
+   (`input × ratio`,`output × (output_ratio ?? ratio)`),按 `threshold` 升序输出。
+   命中口径是**单次请求的输入 token 数**,命中后**整个请求**按该档结算(非仅超出部分);
+   多档只取命中的最高一档。
+   > 「乘数 + 整段重定价」这两点有外部证据:实盘 5 个 `gpt-5.x` 的
+   > `{272000, ratio:2, output_ratio:1.5}` 与 OpenAI 公开规则逐字吻合,`grok-4.5` 的
+   > `200000/2x` 与 Grok 公开规则一致,阿里云对 qwen 系明写「该请求的所有 Token 均按
+   > 对应阶梯的单价结算」。
+   > 但**阶梯与高峰浮动的叠加次序仍无任何文档**,那一条是我方选择。
 6. 按次(`quota_type=1`):`perCall = model_price * gr`,`min`/`max` 同乘 `gr`。
 
 ## 分组倍率与「孤儿组」
@@ -2827,7 +2883,7 @@ pnpm check
 
 预期:typecheck 通过;lint 无**新增**错误(存量告警与本次改动无关,逐条确认报错文件不在 `plugins/packyapi/**` 与 `tests/plugins/packyapi/**`);全部测试绿。
 
-记下最终测试数:`pricing.test.ts` 48 个 + `format.test.ts` 45 个 = 93 个,加上仓库其余用例。
+记下最终测试数:`pricing.test.ts` 49 个 + `format.test.ts` 45 个 = 94 个,加上仓库其余用例。
 
 - [ ] **Step 5: 确认没有遗留文件**
 
