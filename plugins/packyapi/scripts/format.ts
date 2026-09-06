@@ -6,7 +6,12 @@
  * 公告类型放这里而非 packy-mcp.ts:formatAnnouncements 是其唯一的结构化
  * 消费方,放这里可避免两个模块互相 import。
  */
-import type { Pricing } from "./pricing.ts"
+import {
+  DEFAULT_BASE,
+  resolvePrice,
+  type EffectivePrice,
+  type Pricing,
+} from "./pricing.ts"
 
 export interface Announcement {
   id: number
@@ -37,15 +42,84 @@ function padStart(s: string, n: number): string {
 
 // —— 纯格式化函数:输入 Pricing + 参数,返回结构化文本(便于单测,不触网) ——
 
+// 一个组名「认识」的两种来源:group_ratio / inactive_groups 里有倍率定义,
+// 或至少被某个模型的 enable_groups 引用(实盘的「孤儿组」只满足后者)。
+// 两者皆无才算拼错,此时列出候选 —— 否则模型拿不到线索会转去抓 HTML 页面,
+// 正是本插件要避免的。
+function knownGroups(d: Pricing): string[] {
+  return [
+    ...new Set([
+      ...Object.keys(d.group_ratio ?? {}),
+      ...(d.inactive_groups ?? []),
+      ...(d.data ?? []).flatMap((m) => m.enable_groups ?? []),
+    ]),
+  ].sort()
+}
+
+// 「至 12:00」只在规则时区是 Asia/Shanghai 时无歧义。timezone 是外部字段,
+// 非 Asia/Shanghai 时点出来 —— 常见情形下输出长度不变,不破坏默认精简。
+function tzSuffix(tz?: string): string {
+  return !tz || tz === "Asia/Shanghai" ? "" : ` ${tz}`
+}
+
+// 行内标记:† 分组倍率覆盖 / * 高峰中 / ‡ 有阶梯价 / § 孤儿组倍率按 1 估算。
+// 只标不解释,解释集中到表尾脚注 —— 常见问答的 token 不因此上涨。
+function marksOf(p: EffectivePrice): string {
+  return [
+    p.ratioSource === "group-override" ? "†" : "",
+    p.quotaType === 0 && p.peak ? "*" : "",
+    p.quotaType === 0 && p.tiers?.length ? "‡" : "",
+    p.grSource === "fallback-1" ? "§" : "",
+  ].join("")
+}
+
+function notesOf(p: EffectivePrice, m: { model_ratio: number }): string[] {
+  const notes: string[] = []
+  if (p.ratioSource === "group-override") {
+    notes.push(
+      `† ${p.model} 在组 ${p.group} 有专属倍率(model_group_ratio),已覆盖全局 model_ratio ${m.model_ratio}`
+    )
+  }
+  if (p.grSource === "fallback-1") {
+    notes.push(
+      `§ 组 ${p.group} 在 group_ratio 里倍率无定义,上表按 1 估算 —— 实际计费可能不同,请以平台为准`
+    )
+  }
+  if (p.quotaType !== 0) return notes
+  if (p.peak) {
+    notes.push(
+      `* ${p.model} 高峰中(×${p.peak.factor}${
+        p.peak.until ? `,至 ${p.peak.until}${tzSuffix(p.peak.timezone)}` : ""
+      });平时 in $${p.peak.offPeakInput.toFixed(2)} / out $${p.peak.offPeakOutput.toFixed(2)}`
+    )
+  }
+  for (const t of p.tiers ?? []) {
+    notes.push(
+      `‡ ${p.model} 长上下文阶梯:>${t.threshold} tokens 时 in $${t.input.toFixed(2)} / out $${t.output.toFixed(2)}`
+    )
+  }
+  return notes
+}
+
 export function formatPrice(
   d: Pricing,
-  opts: { keyword?: string; group?: string; base?: number } = {}
+  opts: {
+    keyword?: string
+    group?: string
+    base?: number
+    now?: Date
+  } = {}
 ): string {
   const groupArg = opts.group
-  const base = opts.base ?? 2
+  const base = opts.base ?? DEFAULT_BASE
   const kw = (opts.keyword ?? "").toLowerCase()
-  // 行:[model, group, in, out, cache, endpoints]
+  const now = opts.now ?? new Date()
+  const known = knownGroups(d)
+  if (groupArg && !known.includes(groupArg)) {
+    return `未知分组 ${groupArg}。可用分组:${known.join("、")}`
+  }
   const rows: string[][] = []
+  const notes: string[] = []
   for (const m of d.data) {
     if (kw && !m.model_name.toLowerCase().includes(kw)) continue
     let groups: string[]
@@ -57,33 +131,26 @@ export function formatPrice(
     } else {
       groups = m.enable_groups?.includes("cc") ? ["cc"] : []
     }
-    const ep = (m.supported_endpoint_types ?? []).join(",")
     for (const g of groups) {
-      const gr = grValue(d, g)
-      if (m.quota_type === 1) {
-        rows.push([
-          m.model_name,
-          g,
-          `$${(m.model_price * gr).toFixed(4)}/次`,
-          "-",
-          "-",
-          ep,
-        ])
+      const p = resolvePrice(d, m.model_name, g, { base, now })
+      if (!p) continue
+      const name = `${m.model_name}${marksOf(p)}`
+      const ep = p.endpoints.join(",")
+      if (p.quotaType === 1) {
+        // 判别联合已收窄,perCall 在这一支是必填,无需非空断言
+        rows.push([name, g, `$${p.perCall.toFixed(4)}/次`, "-", "-", ep])
       } else {
-        const inp = m.model_ratio * gr * base
-        const cache =
-          m.cache_ratio === undefined
-            ? "-"
-            : `$${(inp * m.cache_ratio).toFixed(2)}`
         rows.push([
-          m.model_name,
+          name,
           g,
-          `$${inp.toFixed(2)}`,
-          `$${(inp * m.completion_ratio).toFixed(2)}`,
-          cache,
+          `$${p.input.toFixed(2)}`,
+          `$${p.output.toFixed(2)}`,
+          // cache_ratio 实盘 10/67 缺失,缺失时出 - 而不是 $NaN
+          p.cacheRead === undefined ? "-" : `$${p.cacheRead.toFixed(2)}`,
           ep,
         ])
       }
+      notes.push(...notesOf(p, m))
     }
   }
   if (rows.length === 0) {
@@ -98,13 +165,27 @@ export function formatPrice(
   out.push(
     `${pad("model", 32)} ${pad("group", 18)} ${padStart("in", 8)} ${padStart("out", 9)} ${padStart("cache", 8)}  endpoints`
   )
+  // 第三级 tie-break 按组名:前两级(模型名、组倍率)在同模型多组时会同时打平,
+  // 没有它行序就落到 d.data / enable_groups 的原始数组顺序上,输出不确定。
   const sorted = rows.sort(
-    (a, b) => a[0].localeCompare(b[0]) || grValue(d, a[1]) - grValue(d, b[1])
+    (a, b) =>
+      a[0].localeCompare(b[0]) ||
+      grValue(d, a[1]) - grValue(d, b[1]) ||
+      a[1].localeCompare(b[1])
   )
   for (const r of sorted) {
     out.push(
       `${pad(r[0], 32)} ${pad(r[1], 18)} ${padStart(r[2], 8)} ${padStart(r[3], 9)} ${padStart(r[4], 8)}  ${r[5]}`
     )
+  }
+  if (notes.length) {
+    out.push("")
+    // 去重后再按字符串排序:notes 是在 rows 排序之前、按 enable_groups 原始
+    // 顺序 push 的,若不重新排序,同一模型多组倍率相同时(如 glm-5.2 在
+    // glm-sale/zai-officially 下 gr 都是 1)反转 enable_groups 会让脚注顺序
+    // 跟着变,即使表格行序本身已经靠第三级 tie-break 稳定住——「输出不依赖
+    // 输入顺序」的承诺就只对表格成立、对脚注不成立了。
+    out.push(...[...new Set(notes)].sort())
   }
   return out.join("\n")
 }
