@@ -272,7 +272,7 @@ export const A: Announcements = {
 | `gpt-5.6-sol` @ `codex` | 2.5 | 15 | 0.25 | cacheWrite 3.125;阶梯 in 5 / out 22.5 |
 | `gpt-5.6-sol` @ `hongjing` | 5 | 30 | 0.5 | 孤儿组,倍率按 1 估算 |
 | `gemini-3-pro-preview` @ `gemini-slb` | 6 | 36 | **无** | 无 cache_ratio 字段 |
-| `gpt-image-2` @ `image` | — | — | — | 按次 0.4/次,区间 0.0294~3.55785 |
+| `gpt-image-2` @ `image` | — | — | — | 按次 0.4/次。区间(`perCallMin`/`perCallMax` = 0.0294~3.55785)**由 Task 3 计算**,本 Task 的 `resolvePrice` 只产出 `perCall` |
 
 - [ ] **Step 2: 写失败的测试**
 
@@ -659,7 +659,7 @@ export function resolvePrice(
 pnpm vitest run tests/plugins/packyapi/pricing.test.ts
 ```
 
-预期:PASS,20 个用例全绿。
+预期:PASS,22 个用例全绿。
 
 - [ ] **Step 6: `packy-mcp.ts` 改用 `pricing.ts` 的类型,并修掉线上的 `$NaN`**
 
@@ -980,7 +980,7 @@ function activePeak(
 pnpm vitest run tests/plugins/packyapi/pricing.test.ts
 ```
 
-预期:PASS,28 个用例全绿(Task 1 的 20 个 + 本 Task 的 8 个)。
+预期:PASS,30 个用例全绿(Task 1 的 22 个 + 本 Task 的 8 个)。
 
 两处边界已在写计划前用 `Intl` 实测过,测试里各有一条对应用例:`12:00` 整不算高峰(窗口左闭右开),周末即使落在时段内也被 `weekdays` 拦下。
 
@@ -1131,7 +1131,7 @@ pnpm vitest run -t "阶梯价"
 pnpm vitest run tests/plugins/packyapi/pricing.test.ts
 ```
 
-预期:PASS,33 个用例全绿(Task 1 的 20 + Task 2 的 8 + 本 Task 的 5)。
+预期:PASS,35 个用例全绿(Task 1 的 22 + Task 2 的 8 + 本 Task 的 5)。
 
 - [ ] **Step 5: 提交**
 
@@ -1234,7 +1234,7 @@ import type { Pricing } from "@/plugins/packyapi/scripts/pricing"
 pnpm vitest run tests/plugins/packyapi/
 ```
 
-预期:PASS。`pricing.test.ts` 33 个 + `format.test.ts` 16 个,断言未改动而全绿 —— 这就是搬运没走样的证据。
+预期:PASS。`pricing.test.ts` 35 个 + `format.test.ts` 16 个,断言未改动而全绿 —— 这就是搬运没走样的证据。
 
 - [ ] **Step 5: 补齐 fixture 的公告部分**
 
@@ -1574,7 +1574,7 @@ export function formatPrice(
 pnpm vitest run tests/plugins/packyapi/
 ```
 
-预期:PASS,`pricing.test.ts` 33 个 + `format.test.ts` 28 个全绿(原有 16 + 本 Task 新增 12)。
+预期:PASS,`pricing.test.ts` 35 个 + `format.test.ts` 28 个全绿(原有 16 + 本 Task 新增 12)。
 
 - [ ] **Step 6: 提交**
 
@@ -2512,7 +2512,7 @@ pnpm check
 
 预期:typecheck 通过;lint 无**新增**错误(存量告警与本次改动无关,逐条确认报错文件不在 `plugins/packyapi/**` 与 `tests/plugins/packyapi/**`);全部测试绿。
 
-记下最终测试数:`pricing.test.ts` 33 个 + `format.test.ts` 44 个 = 77 个,加上仓库其余用例。
+记下最终测试数:`pricing.test.ts` 35 个 + `format.test.ts` 44 个 = 79 个,加上仓库其余用例。
 
 - [ ] **Step 5: 确认没有遗留文件**
 
