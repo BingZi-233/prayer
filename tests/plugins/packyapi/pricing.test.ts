@@ -475,20 +475,39 @@ describe("resolvePrice 阶梯价(tiers)", () => {
     expect(metered("claude-opus-5", "cc").tiers).toBeUndefined()
   })
 
-  it("命中高峰时阶梯以高峰之后的价为基准,input/output 两腿口径一致", () => {
-    // fixture 里没有「高峰规则 + tiers」同时命中的模型(peak_pricing 只点名
-    // deepseek-v4-pro,它没有 tiers)。用 peak_active 强行给 gpt-5.6-sol 造一个
-    // 高峰,验证阶梯换算用的是高峰后的 input/output,而不是高峰前的平时价。
-    const withPeak = {
+  it("多级阶梯按 threshold 升序输出,且不原地改动入参", () => {
+    const src = [
+      { threshold: 256000, ratio: 5 },
+      { threshold: 128000, ratio: 2.5 },
+    ]
+    const unsorted = {
+      ...P,
+      data: P.data.map((m) =>
+        m.model_name === "gpt-5.6-sol" ? { ...m, tiers: src } : m
+      ),
+    }
+    const p = meteredOf(unsorted, "gpt-5.6-sol", "codex")
+    expect(p.tiers!.map((t) => t.threshold)).toEqual([128000, 256000])
+    // resolvePrice 声明为纯函数:入参数组的顺序不能被就地改掉
+    expect(src.map((t) => t.threshold)).toEqual([256000, 128000])
+  })
+
+  it("高峰与阶梯叠加时,input/output 两腿以同一个高峰后基准换算", () => {
+    // 实盘没有同时命中高峰规则与 tiers 的模型(高峰只点名 3 个 deepseek,均无
+    // tiers),但代码路径存在。用 peak_active 给 gpt-5.6-sol 强行造一个高峰。
+    const both = {
       ...P,
       peak_active: { "gpt-5.6-sol": { factor: 2 } },
     }
-    const p = meteredOf(withPeak, "gpt-5.6-sol", "codex")
-    // 平时 input=2.5/output=15,高峰 ×2 → input=5/output=30
-    expect(p.input).toBeCloseTo(5)
-    expect(p.output).toBeCloseTo(30)
-    expect(p.tiers![0].input).toBeCloseTo(10) // 高峰后 input 5 * ratio 2
-    expect(p.tiers![0].output).toBeCloseTo(45) // 高峰后 output 30 * output_ratio 1.5
+    const off = metered("gpt-5.6-sol", "codex")
+    const on = meteredOf(both, "gpt-5.6-sol", "codex")
+    expect(off.input).toBeCloseTo(2.5)
+    expect(off.output).toBeCloseTo(15)
+    expect(on.input).toBeCloseTo(5) // 2.5 × 2
+    expect(on.output).toBeCloseTo(30) // 15 × 2
+    // 阶梯以高峰后价为基准:两腿都乘了同一个 factor,不会一腿平时一腿高峰
+    expect(on.tiers![0].input).toBeCloseTo(10) // 5 × 2
+    expect(on.tiers![0].output).toBeCloseTo(45) // 30 × 1.5
   })
 })
 

@@ -339,12 +339,18 @@ export function resolvePrice(
     // 阶梯以 input/output(已过高峰浮动)为基准换算,input/output 两腿分开
     // 乘各自的 ratio/output_ratio,回落语义与顶层 output 的 completion_ratio
     // 一致。output_ratio 缺省时回落 ratio。
+    // 按 threshold 升序:面向用户的顺序由我方保证(见起步须知第 9 条)。
+    // 实盘 11 份快照里 tiers 顺序稳定,但 data[]/enable_groups/vendors 都会抖,
+    // 不赌它永远稳定 —— 整段重定价语义下行序错位会让用户误读哪一档先生效。
+    // `[...m.tiers]` 的拷贝是必须的:直接 .sort() 会原地改调用方传进来的 d.data。
     tiers: m.tiers?.length
-      ? m.tiers.map((t) => ({
-          threshold: t.threshold,
-          input: input * t.ratio,
-          output: output * (t.output_ratio ?? t.ratio),
-        }))
+      ? [...m.tiers]
+          .sort((a, b) => a.threshold - b.threshold)
+          .map((t) => ({
+            threshold: t.threshold,
+            input: input * t.ratio,
+            output: output * (t.output_ratio ?? t.ratio),
+          }))
       : undefined,
   }
 }
