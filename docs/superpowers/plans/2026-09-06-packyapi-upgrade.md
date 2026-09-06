@@ -814,8 +814,6 @@ EOF
 import { IN_PEAK_AM, IN_PEAK_PM, OFF_PEAK, P, WEEKEND } from "./fixture"
 ```
 
-再把这些 describe 块追加到文件末尾:
-
 同时在 Task 1 建好的 `metered()` helper 旁再加一个收窄 helper,供需要传自定义 `Pricing` 的用例使用:
 
 ```ts
