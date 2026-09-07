@@ -1,4 +1,4 @@
-import type { Repo } from "../db/repo"
+import type { KnowledgeRepository } from "../db/repositories/knowledge.ts"
 
 type EmbedFn = (text: string) => Promise<Float32Array>
 
@@ -25,7 +25,7 @@ export const KB_SEARCH_SQL = `SELECT c.id, c.content, c.source, v.distance
      ORDER BY v.distance`
 
 export async function runKbSearch(
-  repo: Repo,
+  repo: Pick<KnowledgeRepository, "searchKb">,
   embed: EmbedFn,
   query: string
 ): Promise<string> {

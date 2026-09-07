@@ -1,4 +1,4 @@
-import type { Repo } from "./db/repo"
+import type { ConfigRepository } from "./db/repositories/config"
 import { getGroupPolicy } from "./channels/enabled-chats"
 import {
   appConfigSchema,
@@ -27,10 +27,10 @@ export {
 
 const KEY = "app"
 /** 配置存储只依赖键值读写，便于替换数据库实现和隔离测试。 */
-type ConfigRepository = Pick<Repo, "getConfigRow" | "setConfigRow">
+type ConfigStorage = Pick<ConfigRepository, "getConfigRow" | "setConfigRow">
 
 export function getConfig(
-  repo: ConfigRepository,
+  repo: ConfigStorage,
   env: Record<string, string | undefined> = process.env
 ): AppConfig {
   const seed = seedFromEnv(env)
@@ -59,7 +59,7 @@ export function getConfig(
 }
 
 export function setConfig(
-  repo: ConfigRepository,
+  repo: ConfigStorage,
   patch: Partial<AppConfig>
 ): AppConfig {
   const current = getConfig(repo)
