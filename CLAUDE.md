@@ -14,7 +14,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - 知识库入库：`pnpm ingest`（读 `docs/kb/**` → 本地嵌入 → sqlite-vec,幂等）
 - 三件套一键：`pnpm check`（= typecheck + lint + test）
 
-无 CI。声称完成前手动跑 `pnpm check`。
+GitHub Actions 在 PR 与 main 推送时运行 `pnpm check` 和生产构建。声称完成前本地仍须跑 `pnpm check`，详细约定见 `docs/development.md`。
 
 **验证构建别覆盖在跑实例的产物**：pm2 的 `next start` 直接服务 `.next`；
 本机实例还在跑时用 `NEXT_DIST_DIR=.next-verify pnpm build`（已 gitignore）。

@@ -102,6 +102,9 @@ pnpm pm:disable   # 移除 systemd 自启
 
 ## 开发
 
+环境版本、模块职责、配置扩展步骤及测试约定见 [开发与代码质量](docs/development.md)。
+PR 与 main 推送由 GitHub Actions 自动执行类型检查、Lint、测试和生产构建。
+
 ```bash
 pnpm dev          # 本地开发(localhost;勿对外)
 pnpm test         # vitest

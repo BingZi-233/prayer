@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { groupPolicySchema } from "@/app/api/config/route"
+import { groupPolicySchema } from "@/lib/config/schema"
 
 describe("config group policy schema", () => {
   it("rejects negative proactive silence durations", () => {
