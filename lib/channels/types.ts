@@ -1,7 +1,8 @@
 import type { ActionSend } from "../events"
 
 /** 通道标识；discord 一期仅预留类型，不实现 */
-export type ChannelId = "qq" | "tg" | "discord"
+export const CHANNEL_IDS = ["qq", "tg", "discord"] as const
+export type ChannelId = (typeof CHANNEL_IDS)[number]
 
 /** 通道无关会话引用（白名单 / 游标 / policy / 管理面） */
 export interface ChatRef {

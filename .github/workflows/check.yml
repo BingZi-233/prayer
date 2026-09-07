@@ -1,0 +1,30 @@
+name: 代码质量检查
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: check-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+      - uses: pnpm/action-setup@v4
+      - name: 按锁文件安装依赖
+        run: pnpm install --frozen-lockfile
+      - name: 类型、代码规范与回归测试
+        run: pnpm check
+      - name: 生产构建
+        run: pnpm build
