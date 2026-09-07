@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 180" role="img" aria-labelledby="title desc">
+  <title id="title">祈愿 Qiyuan</title>
+  <desc id="desc">祈愿多渠道 AI 客服中台的品牌标志</desc>
+  <defs>
+    <linearGradient id="blue" x1="32" y1="22" x2="122" y2="166" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#4A8EFF" />
+      <stop offset="0.55" stop-color="#2F5AE6" />
+      <stop offset="1" stop-color="#162A84" />
+    </linearGradient>
+    <linearGradient id="violet" x1="144" y1="24" x2="78" y2="166" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#D3B5FF" />
+      <stop offset="0.5" stop-color="#8065F1" />
+      <stop offset="1" stop-color="#3A2CC1" />
+    </linearGradient>
+    <linearGradient id="bubble" x1="72" y1="92" x2="112" y2="146" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#6BDBFF" />
+      <stop offset="1" stop-color="#2884EA" />
+    </linearGradient>
+  </defs>
+  <g transform="translate(0 0)">
+    <path d="M83 23C54 28 31 52 30 83C28 119 51 148 91 164C82 135 83 108 102 83C116 64 127 43 118 27C111 16 98 19 83 23Z" fill="url(#blue)" />
+    <path d="M116 24C145 29 168 53 169 84C171 119 148 148 108 164C117 135 116 108 97 83C83 64 72 43 81 27C88 16 101 19 116 24Z" fill="url(#violet)" />
+    <path d="M73 111C73 97 84 86 98 86H111C125 86 136 97 136 111V124C136 138 125 149 111 149H99L88 158V149C79 145 73 136 73 124V111Z" fill="url(#bubble)" />
+    <circle cx="105" cy="65" r="11" fill="#F4FAFF" fill-opacity="0.96" />
+    <path d="M105 4L109 14L119 18L109 22L105 32L101 22L91 18L101 14Z" fill="#F5C46A" />
+  </g>
+  <g fill="#16204A">
+    <text x="220" y="104" font-family="PingFang SC, Hiragino Sans GB, Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="68" font-weight="600" letter-spacing="8">祈愿</text>
+    <text x="224" y="143" font-family="Inter, Avenir Next, Helvetica Neue, Arial, sans-serif" font-size="16" font-weight="600" letter-spacing="6">QIYUAN</text>
+  </g>
+</svg>

@@ -1,0 +1,136 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 760" role="img" aria-labelledby="title desc">
+  <title id="title">祈愿产品价值</title>
+  <desc id="desc">从社区问题到 AI 客服中台，再到可衡量业务价值的产品闭环</desc>
+  <defs>
+    <linearGradient id="canvas" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#F8FAFF" />
+      <stop offset="1" stop-color="#F2F4FB" />
+    </linearGradient>
+    <linearGradient id="core" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#152254" />
+      <stop offset="0.55" stop-color="#2F48A6" />
+      <stop offset="1" stop-color="#6D5CE7" />
+    </linearGradient>
+    <linearGradient id="coreGlow" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#62D8FF" />
+      <stop offset="1" stop-color="#A28BFF" />
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="16" stdDeviation="18" flood-color="#1C2C61" flood-opacity="0.11" />
+    </filter>
+    <filter id="softShadow" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="8" stdDeviation="10" flood-color="#1C2C61" flood-opacity="0.09" />
+    </filter>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M1 1L11 6L1 11Z" fill="#7280B3" />
+    </marker>
+    <style>
+      .font { font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; }
+      .title { font-size: 30px; font-weight: 700; fill: #14204B; }
+      .subtitle { font-size: 16px; font-weight: 400; fill: #647096; }
+      .card-title { font-size: 22px; font-weight: 700; fill: #14204B; }
+      .card-copy { font-size: 15px; font-weight: 500; fill: #657094; }
+      .core-title { font-size: 30px; font-weight: 700; fill: #FFFFFF; }
+      .core-copy { font-size: 16px; font-weight: 400; fill: #CBD5FF; }
+      .chip { font-size: 14px; font-weight: 600; fill: #FFFFFF; }
+      .value-title { font-size: 18px; font-weight: 700; fill: #14204B; }
+      .value-copy { font-size: 14px; font-weight: 400; fill: #687398; }
+    </style>
+  </defs>
+
+  <rect width="1600" height="760" rx="32" fill="url(#canvas)" />
+  <text x="80" y="78" class="font title">产品价值</text>
+  <text x="80" y="112" class="font subtitle">把一次性回答，变成可持续运营的服务能力</text>
+  <rect x="1336" y="62" width="184" height="36" rx="18" fill="#E8ECFF" />
+  <text x="1428" y="86" text-anchor="middle" class="font" font-size="14" font-weight="700" fill="#4055B8">AI × 人 × 知识</text>
+
+  <rect x="80" y="166" width="360" height="468" rx="28" fill="#FFFFFF" stroke="#E4E8F4" filter="url(#shadow)" />
+  <text x="116" y="220" class="font card-title">客服现场</text>
+  <text x="116" y="250" class="font card-copy">每天都在重复发生的真实问题</text>
+
+  <g transform="translate(116 284)">
+    <circle cx="22" cy="22" r="22" fill="#EEF2FF" />
+    <path d="M12 19C12 14.6 15.6 11 20 11H27C31.4 11 35 14.6 35 19V24C35 28.4 31.4 32 27 32H22L17 36V32C14.1 30.8 12 27.9 12 24V19Z" fill="none" stroke="#4660D7" stroke-width="2.5" />
+    <text x="60" y="20" class="font value-title">问题重复出现</text>
+    <text x="60" y="44" class="font value-copy">同一类咨询反复占用人工时间</text>
+  </g>
+
+  <g transform="translate(116 390)">
+    <circle cx="22" cy="22" r="22" fill="#F1EEFF" />
+    <path d="M22 11V33M12 21.5H32" stroke="#7564E5" stroke-width="2.5" stroke-linecap="round" />
+    <circle cx="22" cy="22" r="7" fill="none" stroke="#7564E5" stroke-width="2.5" />
+    <text x="60" y="20" class="font value-title">复杂问题无人接</text>
+    <text x="60" y="44" class="font value-copy">需要判断、查询或人工介入</text>
+  </g>
+
+  <g transform="translate(116 496)">
+    <circle cx="22" cy="22" r="22" fill="#EAF8FF" />
+    <path d="M13 16.5L22 11L31 16.5V27.5L22 33L13 27.5V16.5Z" fill="none" stroke="#2B9DD7" stroke-width="2.5" />
+    <path d="M13 16.5L22 22L31 16.5M22 22V33" fill="none" stroke="#2B9DD7" stroke-width="2.5" />
+    <text x="60" y="20" class="font value-title">知识分散且易过期</text>
+    <text x="60" y="44" class="font value-copy">答案无法稳定复用和更新</text>
+  </g>
+
+  <path d="M440 400H486" fill="none" stroke="#7280B3" stroke-width="2.5" marker-end="url(#arrow)" />
+
+  <rect x="500" y="136" width="600" height="500" rx="32" fill="url(#core)" filter="url(#shadow)" />
+  <circle cx="800" cy="278" r="114" fill="#FFFFFF" fill-opacity="0.06" stroke="#9EC8FF" stroke-opacity="0.34" />
+  <circle cx="800" cy="278" r="72" fill="#FFFFFF" fill-opacity="0.08" stroke="#B8C8FF" stroke-opacity="0.42" />
+  <path d="M735 309C720 277 727 239 756 216C785 193 824 191 853 212C877 229 890 256 884 284" fill="none" stroke="url(#coreGlow)" stroke-width="14" stroke-linecap="round" />
+  <path d="M865 247C880 278 873 317 844 340C815 363 776 365 747 344C723 327 710 299 716 270" fill="none" stroke="#A78BFA" stroke-width="14" stroke-linecap="round" />
+  <circle cx="800" cy="278" r="17" fill="#FFFFFF" />
+  <path d="M800 160L805 171L817 176L805 181L800 193L795 181L783 176L795 171Z" fill="#F5C46A" />
+
+  <text x="800" y="444" text-anchor="middle" class="font core-title">祈愿 AI 客服中台</text>
+  <text x="800" y="477" text-anchor="middle" class="font core-copy">理解 · 检索 · 协作 · 沉淀</text>
+
+  <g transform="translate(610 522)">
+    <rect width="84" height="34" rx="17" fill="#FFFFFF" fill-opacity="0.13" stroke="#FFFFFF" stroke-opacity="0.16" />
+    <text x="42" y="22" text-anchor="middle" class="font chip">会话</text>
+    <rect x="96" width="84" height="34" rx="17" fill="#FFFFFF" fill-opacity="0.13" stroke="#FFFFFF" stroke-opacity="0.16" />
+    <text x="138" y="22" text-anchor="middle" class="font chip">知识</text>
+    <rect x="192" width="84" height="34" rx="17" fill="#FFFFFF" fill-opacity="0.13" stroke="#FFFFFF" stroke-opacity="0.16" />
+    <text x="234" y="22" text-anchor="middle" class="font chip">工具</text>
+    <rect x="288" width="84" height="34" rx="17" fill="#FFFFFF" fill-opacity="0.13" stroke="#FFFFFF" stroke-opacity="0.16" />
+    <text x="330" y="22" text-anchor="middle" class="font chip">人工</text>
+  </g>
+
+  <path d="M1114 400H1160" fill="none" stroke="#7280B3" stroke-width="2.5" marker-end="url(#arrow)" />
+
+  <rect x="1174" y="166" width="346" height="468" rx="28" fill="#FFFFFF" stroke="#E4E8F4" filter="url(#shadow)" />
+  <text x="1210" y="220" class="font card-title">业务结果</text>
+  <text x="1210" y="250" class="font card-copy">把客服投入转化成可衡量的价值</text>
+
+  <g transform="translate(1210 282)">
+    <rect width="274" height="68" rx="18" fill="#F5F7FF" />
+    <circle cx="34" cy="34" r="16" fill="#DDE5FF" />
+    <path d="M27 35L32 40L42 28" fill="none" stroke="#3E59D3" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
+    <text x="66" y="30" class="font value-title">响应更快</text>
+    <text x="66" y="50" class="font value-copy">覆盖高频咨询，减少等待</text>
+  </g>
+
+  <g transform="translate(1210 366)">
+    <rect width="274" height="68" rx="18" fill="#F8F4FF" />
+    <circle cx="34" cy="34" r="16" fill="#E7DEFF" />
+    <path d="M26 34L32 40L43 27" fill="none" stroke="#7564E5" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
+    <text x="66" y="30" class="font value-title">回答更稳</text>
+    <text x="66" y="50" class="font value-copy">基于知识与工具作答</text>
+  </g>
+
+  <g transform="translate(1210 450)">
+    <rect width="274" height="68" rx="18" fill="#F0FAFF" />
+    <circle cx="34" cy="34" r="16" fill="#D7F2FF" />
+    <path d="M26 34H42M34 26V42" stroke="#2495CF" stroke-width="2.5" stroke-linecap="round" />
+    <text x="66" y="30" class="font value-title">交接顺畅</text>
+    <text x="66" y="50" class="font value-copy">AI 与人工各司其职</text>
+  </g>
+
+  <g transform="translate(1210 534)">
+    <rect width="274" height="68" rx="18" fill="#FFF9EA" />
+    <circle cx="34" cy="34" r="16" fill="#FFE9B7" />
+    <path d="M27 34C27 29.6 30.6 26 35 26C39.4 26 43 29.6 43 34C43 38.4 39.4 42 35 42" fill="none" stroke="#D99422" stroke-width="2.5" stroke-linecap="round" />
+    <path d="M27 34L23 31M27 34L23 37" stroke="#D99422" stroke-width="2.5" stroke-linecap="round" />
+    <text x="66" y="30" class="font value-title">越用越好</text>
+    <text x="66" y="50" class="font value-copy">服务反哺知识，持续优化</text>
+  </g>
+</svg>

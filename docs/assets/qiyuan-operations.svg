@@ -1,0 +1,140 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 820" role="img" aria-labelledby="title desc">
+  <title id="title">祈愿管理后台能力图</title>
+  <desc id="desc">祈愿管理后台覆盖运行监控、会话、人工队列、知识、插件和用量</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#F8FAFF" />
+      <stop offset="1" stop-color="#EEF2FC" />
+    </linearGradient>
+    <linearGradient id="nav" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#121D49" />
+      <stop offset="1" stop-color="#2B3F94" />
+    </linearGradient>
+    <linearGradient id="active" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#3B5BDB" />
+      <stop offset="1" stop-color="#8A78F4" />
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="14" stdDeviation="16" flood-color="#1C2C61" flood-opacity="0.10" />
+    </filter>
+    <style>
+      .font { font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; }
+      .title { font-size: 30px; font-weight: 700; fill: #14204B; }
+      .subtitle { font-size: 16px; fill: #647096; }
+      .nav-title { font-size: 19px; font-weight: 700; fill: #FFFFFF; }
+      .nav-copy { font-size: 12px; fill: #BFCBFF; }
+      .nav-item { font-size: 14px; font-weight: 600; fill: #D5DDFF; }
+      .main-label { font-size: 14px; font-weight: 700; fill: #687398; }
+      .main-title { font-size: 22px; font-weight: 700; fill: #14204B; }
+      .metric { font-size: 30px; font-weight: 700; fill: #14204B; }
+      .copy { font-size: 13px; font-weight: 500; fill: #7480A5; }
+      .card-title { font-size: 16px; font-weight: 700; fill: #14204B; }
+      .small { font-size: 12px; font-weight: 500; fill: #7480A5; }
+    </style>
+  </defs>
+
+  <rect width="1600" height="820" rx="32" fill="url(#bg)" />
+  <text x="72" y="78" class="font title">管理后台如何把 AI 变成业务</text>
+  <text x="72" y="112" class="font subtitle">从“模型在回答”到“团队知道发生了什么、下一步做什么”</text>
+  <rect x="1306" y="60" width="222" height="36" rx="18" fill="#E8ECFF" />
+  <text x="1417" y="84" text-anchor="middle" class="font" font-size="14" font-weight="700" fill="#4156B8">可观测 · 可干预 · 可复盘</text>
+
+  <rect x="72" y="160" width="254" height="570" rx="26" fill="url(#nav)" filter="url(#shadow)" />
+  <circle cx="112" cy="206" r="22" fill="#FFFFFF" fill-opacity="0.14" />
+  <path d="M104 203C104 198 108 194 113 194C118 194 122 198 122 203C122 208 118 212 113 212C108 212 104 208 104 203Z" fill="#FFFFFF" />
+  <path d="M99 221C99 216 105 213 113 213C121 213 127 216 127 221" fill="none" stroke="#65D8FF" stroke-width="3" stroke-linecap="round" />
+  <text x="148" y="207" class="font nav-title">祈愿</text>
+  <text x="148" y="228" class="font nav-copy">AI 客服中台</text>
+
+  <text x="108" y="282" class="font nav-copy">监控</text>
+  <rect x="96" y="300" width="206" height="42" rx="12" fill="#FFFFFF" fill-opacity="0.13" />
+  <circle cx="120" cy="321" r="7" fill="#65D8FF" />
+  <text x="140" y="326" class="font nav-item">运行状态</text>
+  <circle cx="120" cy="365" r="7" fill="#A28BFF" />
+  <text x="140" y="370" class="font nav-item">运行日志</text>
+
+  <text x="108" y="416" class="font nav-copy">客服运营</text>
+  <circle cx="120" cy="452" r="7" fill="#77E1C1" />
+  <text x="140" y="457" class="font nav-item">会话</text>
+  <circle cx="120" cy="496" r="7" fill="#F5C46A" />
+  <text x="140" y="501" class="font nav-item">人工队列</text>
+  <circle cx="120" cy="540" r="7" fill="#65D8FF" />
+  <text x="140" y="545" class="font nav-item">主动回复</text>
+
+  <text x="108" y="591" class="font nav-copy">知识与系统</text>
+  <circle cx="120" cy="627" r="7" fill="#A28BFF" />
+  <text x="140" y="632" class="font nav-item">知识库 / 反思</text>
+  <circle cx="120" cy="671" r="7" fill="#F5C46A" />
+  <text x="140" y="676" class="font nav-item">配置 / 插件</text>
+
+  <rect x="358" y="160" width="1170" height="570" rx="26" fill="#FFFFFF" stroke="#E1E6F2" filter="url(#shadow)" />
+  <text x="398" y="214" class="font main-title">今天的客服运行得怎么样？</text>
+  <text x="398" y="242" class="font copy">一屏查看通道、会话、人工接管和知识沉淀</text>
+  <rect x="1368" y="194" width="112" height="34" rx="17" fill="#E8F8F2" />
+  <circle cx="1391" cy="211" r="6" fill="#2A9B78" />
+  <text x="1405" y="216" class="font" font-size="13" font-weight="700" fill="#247B61">运行中</text>
+
+  <g transform="translate(398 280)">
+    <rect width="256" height="126" rx="20" fill="#F5F7FF" />
+    <text x="24" y="32" class="font main-label">通道连接</text>
+    <text x="24" y="78" class="font metric">2 / 2</text>
+    <text x="24" y="103" class="font copy">QQ · Telegram</text>
+    <circle cx="206" cy="66" r="25" fill="#E0E8FF" />
+    <path d="M194 66L202 74L218 55" fill="none" stroke="#3E59D3" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" />
+  </g>
+  <g transform="translate(674 280)">
+    <rect width="256" height="126" rx="20" fill="#F7F3FF" />
+    <text x="24" y="32" class="font main-label">活跃会话</text>
+    <text x="24" y="78" class="font metric">128</text>
+    <text x="24" y="103" class="font copy">持续跟进中的用户</text>
+    <path d="M184 82C201 59 212 92 229 68" fill="none" stroke="#7564E5" stroke-width="4" stroke-linecap="round" />
+    <circle cx="184" cy="82" r="5" fill="#7564E5" />
+    <circle cx="229" cy="68" r="5" fill="#7564E5" />
+  </g>
+  <g transform="translate(950 280)">
+    <rect width="256" height="126" rx="20" fill="#FFF9EA" />
+    <text x="24" y="32" class="font main-label">人工队列</text>
+    <text x="24" y="78" class="font metric">6</text>
+    <text x="24" y="103" class="font copy">待接待会话</text>
+    <circle cx="208" cy="66" r="25" fill="#FFE9B7" />
+    <path d="M198 68C198 61 203 56 210 56C217 56 222 61 222 68" fill="none" stroke="#C8891D" stroke-width="3" stroke-linecap="round" />
+    <path d="M198 68L193 64M198 68L193 72M222 68L227 64M222 68L227 72" stroke="#C8891D" stroke-width="3" stroke-linecap="round" />
+  </g>
+  <g transform="translate(1226 280)">
+    <rect width="254" height="126" rx="20" fill="#F2FAFF" />
+    <text x="24" y="32" class="font main-label">知识沉淀</text>
+    <text x="24" y="78" class="font metric">42</text>
+    <text x="24" y="103" class="font copy">本周期新增 / 整理条目</text>
+    <path d="M188 86H230M188 72H230M188 58H214" stroke="#2B9DD7" stroke-width="5" stroke-linecap="round" />
+  </g>
+
+  <rect x="398" y="444" width="530" height="238" rx="20" fill="#FFFFFF" stroke="#E4E8F4" />
+  <text x="430" y="486" class="font card-title">实时健康度</text>
+  <text x="430" y="512" class="font copy">把异常暴露在用户投诉之前</text>
+  <path d="M440 622C485 604 509 628 546 585C585 539 622 597 660 561C696 526 730 575 767 548C800 525 831 550 885 515" fill="none" stroke="url(#active)" stroke-width="4" stroke-linecap="round" />
+  <path d="M440 622H885" stroke="#E9ECF4" stroke-width="2" />
+  <circle cx="546" cy="585" r="6" fill="#3B5BDB" />
+  <circle cx="660" cy="561" r="6" fill="#7564E5" />
+  <circle cx="767" cy="548" r="6" fill="#2B9DD7" />
+  <rect x="786" y="472" width="104" height="30" rx="15" fill="#E8F8F2" />
+  <text x="838" y="492" text-anchor="middle" class="font" font-size="12" font-weight="700" fill="#247B61">稳定</text>
+
+  <rect x="954" y="444" width="526" height="238" rx="20" fill="#152254" />
+  <text x="986" y="486" class="font" font-size="18" font-weight="700" fill="#FFFFFF">从数据到动作</text>
+  <text x="986" y="512" class="font" font-size="13" fill="#C9D4FF">每一个指标都能追到具体会话和处理动作</text>
+  <g transform="translate(986 546)">
+    <rect width="142" height="70" rx="16" fill="#FFFFFF" fill-opacity="0.12" />
+    <text x="71" y="30" text-anchor="middle" class="font" font-size="16" font-weight="700" fill="#FFFFFF">问题排行</text>
+    <text x="71" y="52" text-anchor="middle" class="font" font-size="12" fill="#C9D4FF">发现文档缺口</text>
+  </g>
+  <g transform="translate(1150 546)">
+    <rect width="142" height="70" rx="16" fill="#FFFFFF" fill-opacity="0.12" />
+    <text x="71" y="30" text-anchor="middle" class="font" font-size="16" font-weight="700" fill="#FFFFFF">人工队列</text>
+    <text x="71" y="52" text-anchor="middle" class="font" font-size="12" fill="#C9D4FF">及时接管复杂问题</text>
+  </g>
+  <g transform="translate(1314 546)">
+    <rect width="142" height="70" rx="16" fill="#FFFFFF" fill-opacity="0.12" />
+    <text x="71" y="30" text-anchor="middle" class="font" font-size="16" font-weight="700" fill="#FFFFFF">知识反哺</text>
+    <text x="71" y="52" text-anchor="middle" class="font" font-size="12" fill="#C9D4FF">让下一次更稳定</text>
+  </g>
+</svg>

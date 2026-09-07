@@ -8,6 +8,9 @@
 !.yarn/releases
 !.yarn/versions
 
+# IDEA
+.idea
+
 # testing
 /coverage
 

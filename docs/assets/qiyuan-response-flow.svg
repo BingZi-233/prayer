@@ -1,0 +1,128 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 760" role="img" aria-labelledby="title desc">
+  <title id="title">祈愿一次咨询的处理流程</title>
+  <desc id="desc">从消息进入到理解、检索、自动回答或转人工，再到服务沉淀的处理流程</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#F9FAFF" />
+      <stop offset="1" stop-color="#EEF2FC" />
+    </linearGradient>
+    <linearGradient id="blue" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#3557CF" />
+      <stop offset="1" stop-color="#7564E5" />
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="12" stdDeviation="15" flood-color="#1C2C61" flood-opacity="0.10" />
+    </filter>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M1 1L11 6L1 11Z" fill="#7280B3" />
+    </marker>
+    <style>
+      .font { font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; }
+      .title { font-size: 30px; font-weight: 700; fill: #14204B; }
+      .subtitle { font-size: 16px; fill: #647096; }
+      .step { font-size: 13px; font-weight: 700; fill: #5C6A98; letter-spacing: 1px; }
+      .card-title { font-size: 21px; font-weight: 700; fill: #14204B; }
+      .copy { font-size: 14px; font-weight: 500; fill: #687398; }
+      .small { font-size: 13px; font-weight: 500; fill: #7480A5; }
+      .dark-title { font-size: 20px; font-weight: 700; fill: #FFFFFF; }
+      .dark-copy { font-size: 14px; fill: #C8D3FF; }
+      .pill { font-size: 13px; font-weight: 700; fill: #3B56C2; }
+    </style>
+  </defs>
+
+  <rect width="1600" height="760" rx="32" fill="url(#bg)" />
+  <text x="72" y="78" class="font title">一次咨询如何被处理</text>
+  <text x="72" y="112" class="font subtitle">先判断是否有依据，再决定自动回答、调用业务能力，还是交给人工</text>
+  <rect x="1288" y="60" width="240" height="36" rx="18" fill="#E8ECFF" />
+  <text x="1408" y="84" text-anchor="middle" class="font" font-size="14" font-weight="700" fill="#4156B8">可靠优先 · 结果可追踪</text>
+
+  <rect x="72" y="190" width="250" height="300" rx="24" fill="#FFFFFF" stroke="#E1E6F2" filter="url(#shadow)" />
+  <text x="104" y="230" class="font step">01  MESSAGE</text>
+  <text x="104" y="272" class="font card-title">消息进入</text>
+  <text x="104" y="300" class="font copy">只处理配置的生效会话</text>
+  <g transform="translate(104 340)">
+    <rect width="184" height="44" rx="14" fill="#F3F6FF" />
+    <circle cx="25" cy="22" r="12" fill="#DDE5FF" />
+    <path d="M19 18H31V26H19Z" fill="none" stroke="#3E59D3" stroke-width="1.8" />
+    <text x="48" y="28" class="font" font-size="14" font-weight="700" fill="#263A83">QQ / Telegram</text>
+  </g>
+  <g transform="translate(104 396)">
+    <rect width="184" height="44" rx="14" fill="#F7F3FF" />
+    <circle cx="25" cy="22" r="12" fill="#E9E1FF" />
+    <path d="M19 22H31M25 16V28" stroke="#7564E5" stroke-width="1.8" stroke-linecap="round" />
+    <text x="48" y="28" class="font" font-size="14" font-weight="700" fill="#4E3B99">@ 触发 / 上下文</text>
+  </g>
+
+  <path d="M322 340H355" fill="none" stroke="#7280B3" stroke-width="2.5" marker-end="url(#arrow)" />
+
+  <rect x="370" y="190" width="250" height="300" rx="24" fill="#FFFFFF" stroke="#E1E6F2" filter="url(#shadow)" />
+  <text x="402" y="230" class="font step">02  UNDERSTAND</text>
+  <text x="402" y="272" class="font card-title">理解问题</text>
+  <text x="402" y="300" class="font copy">恢复上下文，识别处理意图</text>
+  <g transform="translate(402 344)">
+    <circle cx="24" cy="24" r="24" fill="#EEF2FF" />
+    <path d="M14 23C14 17.5 18.5 13 24 13C29.5 13 34 17.5 34 23C34 28.5 29.5 33 24 33" fill="none" stroke="#4861D8" stroke-width="2.4" stroke-linecap="round" />
+    <path d="M14 23L10 20M14 23L10 26" stroke="#4861D8" stroke-width="2.4" stroke-linecap="round" />
+    <text x="62" y="21" class="font" font-size="15" font-weight="700" fill="#263A83">咨询 / 查询</text>
+    <text x="62" y="43" class="font small">识别问题类型</text>
+  </g>
+  <g transform="translate(402 414)">
+    <circle cx="24" cy="24" r="24" fill="#F7F3FF" />
+    <path d="M15 19H33V31H15Z" fill="none" stroke="#7564E5" stroke-width="2.3" />
+    <path d="M19 16H29M19 23H29M19 27H26" stroke="#7564E5" stroke-width="2.3" stroke-linecap="round" />
+    <text x="62" y="21" class="font" font-size="15" font-weight="700" fill="#4E3B99">重置 / 转人工</text>
+    <text x="62" y="43" class="font small">执行会话策略</text>
+  </g>
+
+  <path d="M620 340H653" fill="none" stroke="#7280B3" stroke-width="2.5" marker-end="url(#arrow)" />
+
+  <rect x="668" y="152" width="340" height="376" rx="26" fill="url(#blue)" filter="url(#shadow)" />
+  <text x="704" y="198" class="font step" fill="#C9D4FF">03  GROUND</text>
+  <text x="704" y="242" class="font dark-title">检索与调用</text>
+  <text x="704" y="270" class="font dark-copy">回答必须有事实依据</text>
+
+  <rect x="704" y="306" width="268" height="74" rx="18" fill="#FFFFFF" fill-opacity="0.13" stroke="#FFFFFF" stroke-opacity="0.18" />
+  <circle cx="738" cy="343" r="19" fill="#FFFFFF" fill-opacity="0.18" />
+  <path d="M729 337L738 331L747 337V348L738 354L729 348Z" fill="none" stroke="#FFFFFF" stroke-width="2" />
+  <path d="M729 337L738 343L747 337M738 343V354" fill="none" stroke="#FFFFFF" stroke-width="2" />
+  <text x="774" y="339" class="font" font-size="16" font-weight="700" fill="#FFFFFF">知识库检索</text>
+  <text x="774" y="361" class="font" font-size="13" fill="#D8E0FF">相关片段与反思条目</text>
+
+  <rect x="704" y="398" width="268" height="74" rx="18" fill="#FFFFFF" fill-opacity="0.13" stroke="#FFFFFF" stroke-opacity="0.18" />
+  <circle cx="738" cy="435" r="19" fill="#FFFFFF" fill-opacity="0.18" />
+  <path d="M728 435L738 425L748 435L738 445Z" fill="none" stroke="#FFFFFF" stroke-width="2" />
+  <text x="774" y="431" class="font" font-size="16" font-weight="700" fill="#FFFFFF">业务工具</text>
+  <text x="774" y="453" class="font" font-size="13" fill="#D8E0FF">插件、Skill 与 MCP</text>
+
+  <path d="M1008 340H1040" fill="none" stroke="#7280B3" stroke-width="2.5" marker-end="url(#arrow)" />
+
+  <rect x="1055" y="152" width="230" height="172" rx="24" fill="#FFFFFF" stroke="#DDE4F2" filter="url(#shadow)" />
+  <text x="1087" y="194" class="font step">04A  ANSWER</text>
+  <circle cx="1100" cy="244" r="23" fill="#E7F8F2" />
+  <path d="M1089 244L1097 252L1112 235" fill="none" stroke="#2A9B78" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" />
+  <text x="1140" y="239" class="font card-title" font-size="19">自动回答</text>
+  <text x="1140" y="266" class="font copy">有依据，直接解决</text>
+
+  <rect x="1055" y="354" width="230" height="172" rx="24" fill="#FFFFFF" stroke="#DDE4F2" filter="url(#shadow)" />
+  <text x="1087" y="396" class="font step">04B  HANDOFF</text>
+  <circle cx="1100" cy="446" r="23" fill="#FFF5DC" />
+  <path d="M1089 447C1089 441 1094 436 1100 436C1106 436 1111 441 1111 447" fill="none" stroke="#C8891D" stroke-width="2.5" stroke-linecap="round" />
+  <path d="M1089 447L1084 443M1089 447L1084 451M1111 447L1116 443M1111 447L1116 451" stroke="#C8891D" stroke-width="2.5" stroke-linecap="round" />
+  <text x="1140" y="441" class="font card-title" font-size="19">转入人工</text>
+  <text x="1140" y="468" class="font copy">不确定，安全交接</text>
+
+  <path d="M1285 238H1315M1285 440H1315" fill="none" stroke="#7280B3" stroke-width="2.5" marker-end="url(#arrow)" />
+
+  <rect x="1330" y="244" width="198" height="244" rx="24" fill="#152254" filter="url(#shadow)" />
+  <text x="1362" y="286" class="font step" fill="#C9D4FF">05  RETAIN</text>
+  <text x="1362" y="330" class="font dark-title" font-size="20">服务沉淀</text>
+  <text x="1362" y="358" class="font dark-copy">把处理结果留下来</text>
+  <circle cx="1429" cy="415" r="38" fill="#FFFFFF" fill-opacity="0.10" stroke="#9ABEFF" stroke-opacity="0.45" />
+  <path d="M1407 415C1407 403 1417 393 1429 393C1441 393 1451 403 1451 415C1451 427 1441 437 1429 437" fill="none" stroke="#66D8FF" stroke-width="6" stroke-linecap="round" />
+  <path d="M1451 415L1458 409M1451 415L1458 421" stroke="#A28BFF" stroke-width="3" stroke-linecap="round" />
+  <text x="1429" y="474" text-anchor="middle" class="font" font-size="13" fill="#D8E0FF">反思 · 排行 · 知识</text>
+
+  <path d="M1429 532C1429 620 930 666 822 575" fill="none" stroke="#7B6AE9" stroke-width="3" stroke-dasharray="8 9" marker-end="url(#arrow)" />
+  <rect x="540" y="624" width="520" height="48" rx="24" fill="#E8ECFF" />
+  <text x="800" y="654" text-anchor="middle" class="font pill">下一次遇到相似问题，回答会更快、更稳</text>
+</svg>

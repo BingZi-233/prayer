@@ -1,118 +1,298 @@
-# OneBot 客服 Agent
+# 祈愿 Qiyuan
 
-基于 Claude Agent SDK 的 OneBot(QQ)群聊客服 Agent。通过正向 WebSocket 连接 NapCat 收发消息,支持知识库检索(RAG)、多轮记忆、业务 tool 调用与转人工,并带一个 Next.js 管理后台。
+## 多渠道 AI 客服中台
 
-除即时应答外,还有三条旁路后台链路持续自演进:
+> 把重复问答交给 AI，把复杂问题交给人工，把每一次服务沉淀成下一次更好的答案。
 
-- **被动反思**:定时扫描已结束会话,从人工回复里沉淀问答要点为反思条目,回填知识库。
-- **反思压缩**:定时把历史反思条目做近义合并、删除被基础文档覆盖或矛盾的旧条目;按快照 id 删除,避免与并发新增反思相互覆盖。
-- **主动补位**:生效群里有人提问却久无人应答时,agent 主动补位——仅在知识库有确切依据且有把握时才作答,否则沉默。
+<p align="center">
+  <img src="docs/assets/qiyuan-mark.png" alt="祈愿品牌标志" width="92" />
+  <br />
+  <strong>祈愿 Qiyuan</strong>
+</p>
 
-技术栈:Next.js 16 + React 19 + shadcn/ui + better-sqlite3(sqlite-vec 向量索引)+ `@anthropic-ai/claude-agent-sdk`。
+祈愿面向需要在 QQ、Telegram 等社区场景持续提供产品咨询的团队。它不是一个只能“聊天”的机器人，而是一套围绕客服业务设计的运行系统：接入真实会话，基于知识库回答，必要时调用业务能力或转人工，并把服务过程持续沉淀为可复用的知识资产。
 
-## 架构
+## 产品价值
 
-单进程:Next.js Node 服务。`instrumentation.ts` 在 Node runtime 启动时装配并拉起 OneBot Agent —— 管住 `next start` 这一个进程即管住全部(Agent + 后台 + WS 连接)。
+<p align="center">
+  <img src="docs/assets/qiyuan-value.svg" alt="祈愿产品价值概览" width="100%" />
+</p>
 
-## 运行步骤
+<p align="center">
+  <a href="#核心能力">核心能力</a> ·
+  <a href="#快速开始">快速开始</a> ·
+  <a href="#管理后台">管理后台</a> ·
+  <a href="#生产部署">生产部署</a>
+</p>
 
-1. **填写 `.env`**
+## 为什么是祈愿
 
-   ```bash
-   cp .env.example .env
-   ```
+传统客服机器人往往停留在“接收消息 → 生成回复”，上线后很快会遇到三个问题：回答缺乏依据、复杂问题没人接、知识无法随着业务变化更新。
 
-   - `CLAUDE_CONFIG_DIR`:Claude Agent SDK 配置目录(默认 `./data/claude-config`)。**模型与中转凭证不放 `.env`**,而是写在此目录的 `settings.json` 的 `env` 块(`ANTHROPIC_MODEL` / `ANTHROPIC_BASE_URL` / `ANTHROPIC_AUTH_TOKEN`)——运行时会剥离进程继承的 `ANTHROPIC_*`,只认这里的配置。管理后台不读写这三项,需直接编辑该文件。
-   - `ONEBOT_WS_URL` / `ONEBOT_ACCESS_TOKEN`:NapCat 正向 WS server 地址与鉴权 token。
-   - `BOT_QQ` / `ADMIN_GROUP_ID`:机器人 QQ 号与转人工通知的管理群号。
-   - `HANDOFF_TIMEOUT_MIN`:转人工超时分钟数。
-   - `DB_PATH`:SQLite(含 sqlite-vec 向量索引)数据库文件路径。
-   - **被动反思**(均有默认值,可不填):`REFLECT_SCAN_MS`(扫描周期,默认 5 分钟)、`REFLECT_LOOKBACK_MS`(回看窗口,默认 2 小时)、`REFLECT_SETTLE_MS`(会话静置多久才提炼,默认 10 分钟)、`REFLECT_WINDOW_MAX`(单次最多提炼消息数,默认 60)。
-   - **反思压缩**:`REFLECT_COMPACT_MS`(压缩周期,默认 24 小时,置 `0` 关闭)、`REFLECT_COMPACT_MIN_ENTRIES`(不足此条数不压缩,默认 10)。
-   - **主动补位**:`PROACTIVE_ENABLED`(设为 `true` 开启,默认关闭)、`PROACTIVE_SCAN_MS`(扫描周期,默认 1 分钟)、`PROACTIVE_SILENCE_MS`(久无人应答阈值,默认 3 分钟)、`PROACTIVE_MAX_PER_SCAN`(单轮最多补位条数,默认 2)。
+祈愿把这三个问题做成了产品闭环：
 
-2. **灌知识库**
+| 客服现场 | 祈愿的处理方式 |
+| --- | --- |
+| 用户在群里提问 | 只在配置的生效会话中响应，支持 @ 触发与会话上下文 |
+| 问题需要事实依据 | 自动检索知识库，将相关内容注入回答流程 |
+| 需要查价格、状态或业务数据 | 通过插件、Skill 和 MCP 接入业务工具 |
+| AI 无法可靠处理 | 转入人工队列，暂停该会话的自动回复 |
+| 人工给出了新答案 | 自动提炼为反思条目，整理、去重并可升格为正式知识 |
 
-   ```bash
-   pnpm ingest
-   ```
+### 核心能力
 
-   将知识文档放入约定目录后执行,生成本地 embedding 并写入向量库。
+- **多渠道接入**：QQ（OneBot / NapCat）与 Telegram 共用一套客服编排、会话、知识和运营能力。
+- **有依据的回答**：本地知识库、向量检索和预检索机制协同工作，减少“看起来合理但没有依据”的回答。
+- **业务能力扩展**：通过插件、Skill 和 MCP 连接价格、公告、账户等业务工具，不把业务逻辑硬编码在客服主流程里。
+- **人机协作**：支持转人工、人工队列、会话挂起与恢复，人工处理完成后可一键恢复自动答。
+- **持续学习**：从已沉淀会话中提取 FAQ，自动合并近义内容、清理过时条目，并按需升格为正式知识。
+- **谨慎主动补位**：在无人应答时主动识别未处理问题；只有检索到明确依据且足够有把握时才回复，优先避免刷屏和误答。
+- **可运营、可审计**：运行状态、会话、人工队列、知识库、问题排行、用量、日志、插件和通道状态集中在管理后台。
 
-3. **构建并以 Node runtime 启动**
+## 一次咨询如何被处理
 
-   ```bash
-   pnpm build
-   pnpm start
-   ```
+<p align="center">
+  <img src="docs/assets/qiyuan-response-flow.svg" alt="祈愿一次咨询的处理流程" width="100%" />
+</p>
 
-   生产/常驻建议用 pm2(见下)。
+祈愿的关键不是让模型“尽量回答”，而是让每一次回答都经过依据判断：有依据就自动解决，需要业务数据就调用工具，不确定就安全转人工，最终把结果沉淀下来。
 
-   > ⚠️ **不能用 `next dev` 跑生产客服 Agent**。两个原因:
-   > 1. Claude Agent SDK 需在**本机 Node runtime** 调用本地 `claude` 二进制,edge/serverless 沙箱不行;必须 `pnpm build && pnpm start`,`instrumentation.ts` 才会装配并建立 OneBot 连接。
-   > 2. `next dev` 对**局域网/远程访问**不可靠:HMR WebSocket 握手失败、客户端 hydration 不完成,导致管理后台页面卡在骨架屏、数据加载不出来(后端 API 本身正常)。对外访问一律走生产构建。
+## 运行架构
 
-4. **NapCat 开正向 WS server**
+<p align="center">
+  <img src="docs/assets/qiyuan-architecture.svg" alt="祈愿运行架构图" width="100%" />
+</p>
 
-   NapCat 侧配置「正向 WebSocket 服务器」,监听端口与 `.env` 的 `ONEBOT_WS_URL` 一致(默认 `ws://127.0.0.1:3001`),按需配 `ONEBOT_ACCESS_TOKEN`。
+### 客服闭环
 
-5. **群里 @bot 测试**
+实际运行时，祈愿将每条消息纳入统一的会话编排：
 
-   已加入的 QQ 群内 `@` 机器人发消息,验证回复 / 知识库问答 / 业务查询 / 转人工。
-
-## 进程管理(pm2)
-
-生产/常驻用 pm2,配置见 `ecosystem.config.cjs`(单进程 fork 模式,native sqlite + WS 长连接不可 cluster,日志写 `logs/`)。
-
-```bash
-pnpm pm:start     # build + 启动(后台守护)
-pnpm pm:status    # 查看状态
-pnpm pm:logs      # 实时日志
-pnpm pm:restart   # 先停再 build 再启(避免 live build 覆盖 .next 导致静态资源 500)
-pnpm pm:stop      # 停止(保留在 pm2 列表)
-pnpm pm:delete    # 从 pm2 移除
-```
-
-开机自启(**Linux / systemd**,需 sudo):
-
-```bash
-pnpm pm:enable    # 装 systemd 自启单元 + pm2 save 快照进程
-pnpm pm:disable   # 移除 systemd 自启
-```
-
-> 进程列表变动(加删 app)后重跑 `pnpm exec pm2 save` 刷新快照,重启才能正确 resurrect。
+1. **接入**：从 QQ 或 Telegram 收到消息，按生效会话白名单和触发规则筛选。
+2. **理解**：恢复会话上下文，识别普通咨询、业务查询、重置或转人工意图。
+3. **检索**：从知识库和反思条目中查找相关依据，必要时调用业务工具。
+4. **响应**：发送简洁答复；无法可靠处理时进入人工队列，而不是编造答案。
+5. **沉淀**：将人工解答和高频问题沉淀为可检索、可治理的知识资产。
 
 ## 管理后台
 
-启动后访问 `/admin`(默认端口 3000,绑 `0.0.0.0` 可局域网访问):
+启动服务后访问 `/admin`。后台配置保存后会触发运行时重新装配，通道、定时任务和 Agent 会按新配置重新生效。
 
-| 路径 | 功能 |
+| 页面 | 用途 |
 | --- | --- |
-| `/admin` | 运行状态(WS 连接 / 会话数 / 转人工队列) |
-| `/admin/config` | 配置(OneBot / Claude SDK / 存储),保存即热重载 |
-| `/admin/kb` | 知识库管理与向量摄入 |
-| `/admin/sessions` | 历史会话对话记录、一键重开 |
-| `/admin/reflection` | 被动反思:从人工回复沉淀的知识条目(压缩后同库) |
-| `/admin/proactive` | 主动补位:无人应答兜底记录 |
-| `/admin/tickets` | 转人工工单 |
-| `/admin/groups` | 生效群白名单 |
-| `/admin/capabilities` | Agent 运行时能力:插件 / 技能 / MCP server / 工具门控 |
-| `/admin/plugins` | 插件安装 / 更新 / 启停(操作后 agent 自动重载) |
-| `/admin/logs` | 运行日志 |
+| `/admin` | 运行状态、通道连接、会话数量、人工队列和今日业务结果 |
+| `/admin/logs` | 运行日志与异常排查 |
+| `/admin/sessions` | 历史会话、消息记录和会话重开 |
+| `/admin/handoff` | 待处理人工会话，处理完成后恢复自动答 |
+| `/admin/proactive` | 主动补位记录与结果 |
+| `/admin/kb` | 知识文档管理、编辑和向量摄入 |
+| `/admin/reflection` | 反思条目、整理进度和知识升格 |
+| `/admin/ranking` | 高频问题排行，帮助团队发现产品与文档缺口 |
+| `/admin/config` | QQ、Telegram、回复体验、会话、反思、通知和存储配置 |
+| `/admin/groups` | 生效会话、活动量和会话级策略覆盖 |
+| `/admin/capabilities` | 当前 Agent 的插件、Skill、MCP 与工具能力 |
+| `/admin/plugins` | 插件安装、更新、启停和重载 |
 
-## 开发
+<p align="center">
+  <img src="docs/assets/qiyuan-operations.svg" alt="祈愿管理后台能力图" width="100%" />
+</p>
 
-环境版本、模块职责、配置扩展步骤及测试约定见 [开发与代码质量](docs/development.md)。
-PR 与 main 推送由 GitHub Actions 自动执行类型检查、Lint、测试和生产构建。
+建议在生产环境设置 `ADMIN_TOKEN`，为管理后台和 `/api` 开启口令保护。
+
+## 技术底座
+
+祈愿以单个 Node.js 进程运行 Next.js 管理后台和客服 Agent。`instrumentation.ts` 在 Node runtime 启动时装配运行时，因此启动一个生产服务进程即可同时获得：
+
+- QQ / Telegram 通道连接与消息分发
+- Agent 会话编排、知识检索、工具调用与人工接管
+- 反思、整理、知识升格、主动补位和问题排行等后台循环
+- 管理后台 API 与实时状态
+- SQLite 业务数据与 sqlite-vec 向量索引
+
+核心技术栈：
+
+- **Runtime**：Node.js 24、Next.js 16、React 19
+- **Agent**：`@anthropic-ai/claude-agent-sdk`，模型通过 Anthropic-compatible provider 接入
+- **知识与存储**：better-sqlite3、sqlite-vec、本地 embedding
+- **管理界面**：shadcn/ui、Tailwind CSS
+- **进程管理**：PM2 fork 单实例
+
+## 快速开始
+
+### 环境要求
+
+- Node.js `24.16.0` 或兼容的 Node.js 24 版本
+- pnpm `11`
+- 能够运行 Claude Agent SDK 所需的本地 `claude` 可执行文件
+- 至少配置一个消息通道：QQ 或 Telegram
+
+### 1. 安装依赖
 
 ```bash
-pnpm dev          # 本地开发(localhost;勿对外)
-pnpm test         # vitest
-pnpm typecheck    # tsc --noEmit
-pnpm lint         # eslint
+pnpm install --frozen-lockfile
+cp .env.example .env
 ```
 
-## 环境要求与限制
+### 2. 配置模型服务
 
-- 部署环境须能找到 `claude` 可执行文件(随 `@anthropic-ai/claude-agent-sdk` 的平台包提供,或用 `pathToClaudeCodeExecutable` 显式指定)。
-- 仅支持标准 Node.js 服务器运行时,**不支持** Vercel / 边缘函数等 edge / serverless 部署。
+模型、Anthropic-compatible endpoint 和鉴权 token 不放在 `.env`，而是写入 `CLAUDE_CONFIG_DIR/settings.json`。默认路径为 `./data/claude-config/settings.json`，也可以通过 `CLAUDE_CONFIG_DIR` 指定其他目录。
+
+示例：
+
+```json
+{
+  "env": {
+    "ANTHROPIC_BASE_URL": "https://your-anthropic-compatible-endpoint",
+    "ANTHROPIC_AUTH_TOKEN": "replace-with-your-token",
+    "ANTHROPIC_MODEL": "your-model-id"
+  }
+}
+```
+
+该文件包含明文凭证，已被 Git 忽略。不要提交到仓库，也不要把 token 写进 README、日志或截图。
+
+### 3. 准备知识库
+
+将 Markdown 等知识文档放入 `docs/kb/`，然后执行：
+
+```bash
+pnpm ingest
+```
+
+摄入过程会生成本地 embedding 并写入 sqlite-vec。`docs/kb/` 默认不纳入版本控制，生产环境建议使用受控目录、挂载卷或通过管理后台维护。
+
+### 4. 构建并启动
+
+```bash
+pnpm build
+pnpm start
+```
+
+访问 <http://localhost:3000/admin>，在配置页完成通道、生效会话和管理面设置。
+
+> `pnpm dev` 只适合开发管理后台。生产客服 Agent 依赖真实 Node runtime 和本地 `claude` 可执行文件，生产环境必须使用 `pnpm build && pnpm start` 或 PM2。
+
+## 通道配置
+
+### QQ / OneBot
+
+1. 在 NapCat 中开启“正向 WebSocket 服务器”。
+2. 将监听地址填入 `ONEBOT_WS_URL`，默认示例为 `ws://127.0.0.1:3001`。
+3. 如启用鉴权，填写 `ONEBOT_ACCESS_TOKEN`。
+4. 配置机器人 QQ 号 `BOT_QQ`，并在 `/admin/config` 选择生效群。
+5. 需要接收转人工通知时，配置 QQ 管理面；管理面只处理管理命令，不参与客服问答。
+6. 在生效群中 @ 机器人发送测试问题。
+
+### Telegram
+
+1. 通过 BotFather 创建 Bot，并获取 `TELEGRAM_BOT_TOKEN`。
+2. 将 Bot 加入目标群或超级群，在 `/admin/config` 中填写生效 chat id。
+3. 如需反思和主动补位读取完整群消息，关闭 BotFather 的 Group Privacy Mode。
+4. Telegram 使用 long polling，同一个 Bot token 只能由一个生产进程消费；不要运行多个副本。
+
+Telegram chat id 必须按字符串保存，尤其是超级群的负数 id，不要在外部配置流程中转成 JavaScript `Number`。
+
+## 配置分层
+
+环境变量用于首次启动时提供种子值；保存后的业务配置持久化在 SQLite 中，并可在管理后台修改。模型凭证始终由 `settings.json` 管理。
+
+常用环境变量：
+
+| 变量 | 作用 |
+| --- | --- |
+| `CLAUDE_CONFIG_DIR` | Agent SDK 配置目录，默认 `./data/claude-config` |
+| `DB_PATH` | SQLite 数据库路径，默认 `./data/agent.db` |
+| `ONEBOT_WS_URL` | QQ / OneBot 正向 WebSocket 地址 |
+| `ONEBOT_ACCESS_TOKEN` | OneBot 鉴权 token，可选 |
+| `BOT_QQ` | QQ 机器人账号 |
+| `TELEGRAM_BOT_TOKEN` | Telegram Bot token |
+| `TELEGRAM_ENABLED_CHATS` | 首次启动时种子的 Telegram chat id 列表，逗号或空格分隔 |
+| `ADMIN_GROUP_ID` | 首次启动时种子的 QQ 管理面 |
+| `ADMIN_TOKEN` | 管理后台和 API 的访问口令，可选但建议生产开启 |
+| `HANDOFF_TIMEOUT_MIN` | 转人工超时后恢复自动答的分钟数 |
+| `RESUME_TTL_MS` | 会话续接空闲时间，设为 `0` 关闭过期 |
+| `KB_PREFETCH_ENABLED` | 是否在每轮消息前自动预检索，默认开启 |
+| `PROACTIVE_ENABLED` | 是否开启无人应答主动补位，默认关闭 |
+| `SUPPORT_URL` | 无法处理业务时展示的支持链接 |
+| `MAX_REPLY_CHARS` | 单条回复拆分上限，`0` 表示不拆分 |
+| `USAGE_BUDGET_USD` | 日用量预算，`0` 表示不告警 |
+
+反思、整理、知识升格、主动补位和主题排行的完整参数见 [`.env.example`](.env.example)，也可以在 `/admin/config` 中调整。
+
+## 生产部署
+
+### PM2
+
+项目已提供单实例 fork 配置 `ecosystem.config.cjs`：
+
+```bash
+pnpm pm:start     # 构建并启动
+pnpm pm:status    # 查看状态
+pnpm pm:logs      # 查看实时日志
+pnpm pm:restart   # 停止、重新构建并启动
+pnpm pm:stop      # 停止但保留进程配置
+pnpm pm:delete    # 从 PM2 移除
+```
+
+<p align="center">
+  <img src="docs/assets/qiyuan-deployment.svg" alt="祈愿生产部署拓扑" width="100%" />
+</p>
+
+Linux 上可使用 systemd 配置开机自启：
+
+```bash
+pnpm pm:enable
+pnpm pm:disable
+```
+
+### 部署边界
+
+- 必须使用标准 Node.js server runtime，不支持 Vercel、Edge Function 或其他 serverless 运行方式。
+- PM2 必须保持 `instances: 1` 和 `fork` 模式：better-sqlite3 是 native 依赖，通道包含长连接 / long polling。
+- Telegram 同一 Bot token 不支持多实例消费。
+- 发布前应备份 SQLite 数据库；可使用 `pnpm db:check` 和 `pnpm db:backup`。
+- 外部访问管理后台时，建议同时配置 `ADMIN_TOKEN`、HTTPS、反向代理访问控制和最小化开放端口。
+
+## 开发与验证
+
+```bash
+pnpm dev          # 开发管理后台
+pnpm typecheck    # TypeScript 检查
+pnpm lint         # ESLint
+pnpm test         # Vitest
+pnpm check        # typecheck + lint + test
+```
+
+涉及页面、路由或生产边界时，使用独立构建目录，避免覆盖正在运行的 `.next`：
+
+```bash
+NEXT_DIST_DIR=.next-verify pnpm build
+```
+
+更完整的模块边界、测试约定、数据库迁移与备份流程见：
+
+- [开发与代码质量](docs/development.md)
+- [数据访问层](docs/data-access.md)
+- [数据库迁移与备份](docs/database-operations.md)
+
+## 项目结构
+
+```text
+app/                    管理后台页面与 API 路由
+components/             管理后台与通用 UI 组件
+lib/agent/              Agent、会话编排、人工接管与后台循环
+lib/channels/           QQ / Telegram 通道抽象与适配器
+lib/db/                 SQLite 数据访问、迁移与领域仓储
+lib/plugins/            插件生命周期管理
+plugins/                本地插件、Skill 与 MCP server
+scripts/                知识库摄入、数据库维护脚本
+docs/kb/                业务知识源文件（默认不入 Git）
+docs/assets/            README 与产品文档视觉素材
+data/                   运行时数据库与 SDK 配置（默认不入 Git）
+logs/                   PM2 与运行日志（默认不入 Git）
+```
+
+## 当前边界
+
+祈愿的设计目标是可控、可解释、可运营的社区客服，不是无限制的通用聊天机器人。生产上线前请至少完成：知识库审核、人工接管演练、通道权限检查、数据库备份恢复演练、管理后台鉴权和用量预算设置。
+
+当前正式支持 QQ / OneBot 和 Telegram；Discord 仅预留通道类型，尚未提供生产适配器。
