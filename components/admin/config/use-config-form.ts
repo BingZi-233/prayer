@@ -7,9 +7,12 @@ import type { AppConfig as Cfg } from "@/lib/config/schema"
 import type { ChatRef } from "@/lib/channels/types"
 import { excludeAdminSurface } from "@/lib/config/chats"
 
-type ScalarConfigKey = {
-  [K in keyof Cfg]: Cfg[K] extends string | number ? K : never
-}[keyof Cfg]
+type ScalarConfigKey = Exclude<
+  {
+    [K in keyof Cfg]: NonNullable<Cfg[K]> extends string | number ? K : never
+  }[keyof Cfg],
+  undefined
+>
 
 function qqChatIds(chats: ChatRef[]): number[] {
   return chats

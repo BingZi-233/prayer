@@ -20,6 +20,7 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 import { Spinner } from "@/components/ui/spinner"
+import { DEFAULT_BRAND } from "@/lib/brand"
 
 function LoginForm() {
   const [token, setToken] = useState("")
@@ -57,8 +58,8 @@ function LoginForm() {
           <Bot className="size-5" />
         </div>
         <div className="flex flex-col items-center gap-0.5 text-center">
-          <span className="text-sm font-semibold">客服 Agent</span>
-          <span className="text-xs text-muted-foreground">管理后台</span>
+          <span className="text-sm font-semibold">{DEFAULT_BRAND.name}</span>
+          <span className="text-xs text-muted-foreground">客服中台</span>
         </div>
       </div>
 

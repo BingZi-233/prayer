@@ -8,6 +8,7 @@ import {
   useRef,
   useState,
 } from "react"
+import { DEFAULT_BRAND } from "@/lib/brand"
 
 /** 与 RuntimeStatus.channels / ChannelStatus 对齐 */
 export interface ChannelStatusView {
@@ -43,6 +44,8 @@ export interface OverviewMetrics {
 }
 
 export interface Overview {
+  brandName?: string
+  brandDescription?: string
   enabledChats: number
   reflectionCount: number
   humanSessions: number
@@ -115,11 +118,13 @@ export function LiveProvider({ children }: { children: React.ReactNode }) {
     }
   }, [])
 
-  // tab 标题:有人工会话 → "(N) 客服 Agent"
+  // tab 标题:有人工会话 → "(N) Prayer · 客服 Agent"
   useEffect(() => {
     const n = overview?.humanSessions ?? 0
-    document.title = n > 0 ? `(${n}) 客服 Agent` : "客服 Agent"
-  }, [overview?.humanSessions])
+    const brandName = overview?.brandName?.trim() || DEFAULT_BRAND.name
+    document.title =
+      n > 0 ? `(${n}) ${brandName} · 客服 Agent` : `${brandName} · 客服 Agent`
+  }, [overview?.brandName, overview?.humanSessions])
 
   // 主动刷新:等在飞的落地后再补一发,确保拿到调用时刻之后的数据
   // (restart 后必须 —— 直接 load 会撞闸门空转,旧数据还能写进 state)

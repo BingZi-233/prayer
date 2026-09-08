@@ -29,6 +29,8 @@ export async function GET(): Promise<NextResponse> {
 
     return NextResponse.json(
       ok({
+        brandName: cfg.brandName,
+        brandDescription: cfg.brandDescription,
         enabledChats: cfg.enabledChats.length,
         reflectionCount: repo.countReflectionEntries(),
         humanSessions: repo.countHumanSessions(),

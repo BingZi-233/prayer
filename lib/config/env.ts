@@ -31,6 +31,8 @@ export function seedFromEnv(
 ): AppConfig {
   const defaults = appConfigSchema.parse({})
   const raw = {
+    brandName: env.BRAND_NAME ?? defaults.brandName,
+    brandDescription: env.BRAND_DESCRIPTION ?? defaults.brandDescription,
     onebotWsUrl: env.ONEBOT_WS_URL ?? defaults.onebotWsUrl,
     onebotAccessToken: env.ONEBOT_ACCESS_TOKEN ?? defaults.onebotAccessToken,
     botQQ: Number(env.BOT_QQ ?? defaults.botQQ),

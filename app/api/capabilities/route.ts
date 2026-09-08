@@ -11,7 +11,7 @@ export async function GET(req: Request): Promise<NextResponse> {
     const cfg = getConfig(
       new Repo(sharedDb(process.env.DB_PATH ?? "./data/agent.db"))
     )
-    // cs / packyapi 及其 MCP server 由 enabledPlugins 动态发现(见 probeCapabilities),无需在此装配 in-process 工具
+    // 业务插件及其 MCP server 由 enabledPlugins 动态发现(见 probeCapabilities),无需在此装配 in-process 工具
     const caps = await probeCapabilities(cfg, { refresh })
     return NextResponse.json(ok(caps))
   } catch (err) {

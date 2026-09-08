@@ -11,6 +11,7 @@ import type { Channel, ChannelId, ChannelStatus } from "./channels/types"
 import { ChannelRegistry } from "./channels/registry"
 import { createChannels } from "./channels/factory"
 import { resolveRuntimeChatConfig } from "./channels/enabled-chats"
+import { resolveBrand } from "./brand"
 
 export type RuntimeState = "stopped" | "starting" | "running" | "error"
 
@@ -67,10 +68,14 @@ async function defaultBuilders(): Promise<RuntimeBuilders> {
       new Agent({
         // 支持链接注入 system prompt,办不了事务时引导
         systemPrompt: "",
+        brand: resolveBrand({
+          name: cfg.brandName,
+          description: cfg.brandDescription,
+        }),
         supportUrl: cfg.supportUrl,
         // 预检索注入:每轮先给候选片段,避免 resume 长会话凭记忆跳过检索
-        // (实测覆盖率曾掉到 11%~70%)。候选不是最终依据,价格/模型仍须调 packy;
-        // 关掉则退回纯 kb_search / packy 工具路径。
+        // (实测覆盖率曾掉到 11%~70%)。候选不是最终依据,易变业务数据仍须调对应工具;
+        // 关掉则退回纯知识库 / 业务工具路径。
         kbPrefetch: cfg.kbPrefetchEnabled
           ? makeKbPrefetch({
               repo,
@@ -81,7 +86,7 @@ async function defaultBuilders(): Promise<RuntimeBuilders> {
               memoTtlMs: cfg.resumeTtlMs,
             })
           : undefined,
-        // 不显式传 pluginPaths:插件(cs / packyapi)及其 MCP server 唯一由 CLAUDE_CONFIG_DIR/settings.json
+        // 不显式传 pluginPaths:业务插件及其 MCP server 唯一由 CLAUDE_CONFIG_DIR/settings.json
         // 的 enabledPlugins(settingSources:["user"])加载,避免与显式 plugins 双加载/冲突。
         // web 插件管理器通过 claude plugin CLI 管理 enabledPlugins + cache。
         // 知识库检索由 cs 插件的 MCP server 承载,其子进程经 env DB_PATH(见 start)打开 DB。
@@ -192,6 +197,10 @@ export class RuntimeManager {
         proactiveSilenceMs: cfg.proactiveSilenceMs,
         proactiveMaxPerScan: cfg.proactiveMaxPerScan,
         handoffTimeoutMin: cfg.handoffTimeoutMin,
+        brand: resolveBrand({
+          name: cfg.brandName,
+          description: cfg.brandDescription,
+        }),
         supportUrl: cfg.supportUrl,
         ackEnabled: cfg.ackEnabled,
         maxReplyChars: cfg.maxReplyChars,

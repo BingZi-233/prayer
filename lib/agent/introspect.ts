@@ -194,7 +194,7 @@ async function probeUncached(
       })
     })(),
     options: {
-      // cs / packyapi 及其 MCP server 全部经 enabledPlugins(settingSources:["user"])动态加载并被
+      // 业务插件及其 MCP server 全部经 enabledPlugins(settingSources:["user"])动态加载并被
       // mcpServerStatus() 上报 —— 不再静态装配 in-process cs,也不显式传 pluginPaths。
       settingSources: ["user"],
       permissionMode: "default",

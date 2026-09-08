@@ -7,6 +7,7 @@ import {
 import { Separator } from "@/components/ui/separator"
 import { LiveProvider } from "@/components/live-provider"
 import { HeaderStatus } from "@/components/header-status"
+import { BrandTitle } from "@/components/admin/brand-title"
 
 export default function AdminLayout({
   children,
@@ -24,9 +25,7 @@ export default function AdminLayout({
               orientation="vertical"
               className="mr-2 h-4 data-vertical:self-center"
             />
-            <span className="min-w-0 truncate text-sm font-medium">
-              客服 Agent
-            </span>
+            <BrandTitle />
             <HeaderStatus />
           </header>
           <div className="flex min-h-0 flex-1 flex-col overflow-auto p-3 sm:p-4 md:p-6">

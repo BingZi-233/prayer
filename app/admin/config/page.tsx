@@ -12,6 +12,7 @@ import {
   Bell,
   HardDrive,
   Shield,
+  Palette,
 } from "lucide-react"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
@@ -32,6 +33,7 @@ import { ReflectSettings } from "@/components/admin/config/reflect-settings"
 import { ProactiveSettings } from "@/components/admin/config/proactive-settings"
 import { NotifySettings } from "@/components/admin/config/notify-settings"
 import { StorageSettings } from "@/components/admin/config/storage-settings"
+import { BrandSettings } from "@/components/admin/config/brand-settings"
 
 export default function ConfigPage() {
   const {
@@ -91,6 +93,9 @@ export default function ConfigPage() {
       {cfg && (
         <Tabs defaultValue="qq">
           <TabsList className="h-auto w-full flex-wrap justify-start">
+            <TabsTrigger value="brand">
+              <Palette data-icon="inline-start" /> 品牌
+            </TabsTrigger>
             <TabsTrigger value="qq">
               <Cable data-icon="inline-start" /> QQ 通道
             </TabsTrigger>
@@ -122,6 +127,8 @@ export default function ConfigPage() {
               <HardDrive data-icon="inline-start" /> 存储
             </TabsTrigger>
           </TabsList>
+
+          <BrandSettings cfg={cfg} updateField={updateField} />
 
           <QqSettings
             cfg={cfg}

@@ -18,6 +18,7 @@ import { registerResolutionRecorder } from "./agent/resolution-recorder"
 import type { GroupPolicy } from "./config-store"
 import type { ChannelId, ChatRef } from "./channels/types"
 import { getGroupPolicy } from "./channels/enabled-chats"
+import type { BrandInput } from "./brand"
 
 export interface AssembleDeps {
   repo: Repo
@@ -52,6 +53,8 @@ export interface AssembleDeps {
   proactiveSilenceMs?: number
   proactiveMaxPerScan?: number
   handoffTimeoutMin?: number
+  /** 平台/客服品牌身份，供主链路与旁路判定器共用。 */
+  brand?: BrandInput
   supportUrl?: string
   ackEnabled?: boolean
   maxReplyChars?: number
@@ -112,7 +115,7 @@ export function assemble(deps: AssembleDeps): () => void {
     registerOrchestrator({
       agent,
       store,
-      classify: makeIntentClassifier(),
+      classify: makeIntentClassifier({ brand: deps.brand }),
       ackEnabled: deps.ackEnabled !== false,
     }),
     registerReplyMapper({ maxChars: deps.maxReplyChars ?? 900 }),
@@ -130,6 +133,7 @@ export function assemble(deps: AssembleDeps): () => void {
       settleMs: deps.topicSettleMs,
       windowMax: deps.topicWindowMax,
       topicPromptMax: deps.topicPromptMax,
+      brand: deps.brand,
       isBypassEnabled: deps.isBypassEnabled,
     }),
     registerReflectionPoller({
@@ -173,7 +177,7 @@ export function assemble(deps: AssembleDeps): () => void {
         repo,
         agent,
         store,
-        classify: makeAnswerabilityClassifier(),
+        classify: makeAnswerabilityClassifier({ brand: deps.brand }),
         enabledChats,
         adminSurface,
         scanMs: deps.proactiveScanMs,

@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 180" role="img" aria-labelledby="title desc">
-  <title id="title">祈愿 Qiyuan</title>
-  <desc id="desc">祈愿多渠道 AI 客服中台的品牌标志</desc>
+  <title id="title">Prayer</title>
+  <desc id="desc">Prayer 多渠道 AI 客服中台的品牌标志</desc>
   <defs>
     <linearGradient id="blue" x1="32" y1="22" x2="122" y2="166" gradientUnits="userSpaceOnUse">
       <stop offset="0" stop-color="#4A8EFF" />
@@ -25,7 +25,7 @@
     <path d="M105 4L109 14L119 18L109 22L105 32L101 22L91 18L101 14Z" fill="#F5C46A" />
   </g>
   <g fill="#16204A">
-    <text x="220" y="104" font-family="PingFang SC, Hiragino Sans GB, Microsoft YaHei, Noto Sans CJK SC, sans-serif" font-size="68" font-weight="600" letter-spacing="8">祈愿</text>
-    <text x="224" y="143" font-family="Inter, Avenir Next, Helvetica Neue, Arial, sans-serif" font-size="16" font-weight="600" letter-spacing="6">QIYUAN</text>
+    <text x="220" y="104" font-family="Inter, Avenir Next, Helvetica Neue, Arial, sans-serif" font-size="68" font-weight="600" letter-spacing="2">Prayer</text>
+    <text x="224" y="143" font-family="Inter, Avenir Next, Helvetica Neue, Arial, sans-serif" font-size="16" font-weight="600" letter-spacing="4">AI SUPPORT PLATFORM</text>
   </g>
 </svg>

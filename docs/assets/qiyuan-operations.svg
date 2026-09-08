@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 820" role="img" aria-labelledby="title desc">
-  <title id="title">祈愿管理后台能力图</title>
-  <desc id="desc">祈愿管理后台覆盖运行监控、会话、人工队列、知识、插件和用量</desc>
+  <title id="title">Prayer 管理后台能力图</title>
+  <desc id="desc">Prayer 管理后台覆盖运行监控、会话、人工队列、知识、插件和用量</desc>
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0" stop-color="#F8FAFF" />
@@ -46,7 +46,7 @@
   <circle cx="112" cy="206" r="22" fill="#FFFFFF" fill-opacity="0.14" />
   <path d="M104 203C104 198 108 194 113 194C118 194 122 198 122 203C122 208 118 212 113 212C108 212 104 208 104 203Z" fill="#FFFFFF" />
   <path d="M99 221C99 216 105 213 113 213C121 213 127 216 127 221" fill="none" stroke="#65D8FF" stroke-width="3" stroke-linecap="round" />
-  <text x="148" y="207" class="font nav-title">祈愿</text>
+  <text x="148" y="207" class="font nav-title">Prayer</text>
   <text x="148" y="228" class="font nav-copy">AI 客服中台</text>
 
   <text x="108" y="282" class="font nav-copy">监控</text>

@@ -20,5 +20,5 @@ class TypedBus extends EventEmitter {
 }
 
 // 单例守卫:热重载不重复创建
-const g = globalThis as unknown as { __packyBus?: TypedBus }
-export const bus: TypedBus = g.__packyBus ?? (g.__packyBus = new TypedBus())
+const g = globalThis as unknown as { __prayerBus?: TypedBus }
+export const bus: TypedBus = g.__prayerBus ?? (g.__prayerBus = new TypedBus())

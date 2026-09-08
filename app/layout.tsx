@@ -5,6 +5,16 @@ import { ThemeProvider } from "@/components/theme-provider"
 import { Toaster } from "@/components/ui/sonner"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
+import type { Metadata } from "next"
+import { DEFAULT_BRAND } from "@/lib/brand"
+
+export const metadata: Metadata = {
+  title: {
+    default: `${DEFAULT_BRAND.name} · 客服中台`,
+    template: `%s · ${DEFAULT_BRAND.name}`,
+  },
+  description: DEFAULT_BRAND.description,
+}
 
 const fontSans = Geist({
   subsets: ["latin"],
@@ -23,7 +33,7 @@ export default function RootLayout({
 }>) {
   return (
     <html
-      lang="en"
+      lang="zh-CN"
       suppressHydrationWarning
       className={cn(
         "antialiased",

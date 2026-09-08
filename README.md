@@ -1,21 +1,21 @@
-# 祈愿 Qiyuan
+# Prayer
 
 ## 多渠道 AI 客服中台
 
 > 把重复问答交给 AI，把复杂问题交给人工，把每一次服务沉淀成下一次更好的答案。
 
 <p align="center">
-  <img src="docs/assets/qiyuan-mark.png" alt="祈愿品牌标志" width="92" />
+  <img src="docs/assets/qiyuan-mark.png" alt="Prayer 品牌标志" width="92" />
   <br />
-  <strong>祈愿 Qiyuan</strong>
+  <strong>Prayer</strong>
 </p>
 
-祈愿面向需要在 QQ、Telegram 等社区场景持续提供产品咨询的团队。它不是一个只能“聊天”的机器人，而是一套围绕客服业务设计的运行系统：接入真实会话，基于知识库回答，必要时调用业务能力或转人工，并把服务过程持续沉淀为可复用的知识资产。
+Prayer 面向需要在 QQ、Telegram 等社区场景持续提供产品咨询的团队。它不是一个只能“聊天”的机器人，而是一套围绕客服业务设计的运行系统：接入真实会话，基于知识库回答，必要时调用业务能力或转人工，并把服务过程持续沉淀为可复用的知识资产。
 
 ## 产品价值
 
 <p align="center">
-  <img src="docs/assets/qiyuan-value.svg" alt="祈愿产品价值概览" width="100%" />
+  <img src="docs/assets/qiyuan-value.svg" alt="Prayer 产品价值概览" width="100%" />
 </p>
 
 <p align="center">
@@ -25,13 +25,13 @@
   <a href="#生产部署">生产部署</a>
 </p>
 
-## 为什么是祈愿
+## 为什么是 Prayer
 
 传统客服机器人往往停留在“接收消息 → 生成回复”，上线后很快会遇到三个问题：回答缺乏依据、复杂问题没人接、知识无法随着业务变化更新。
 
-祈愿把这三个问题做成了产品闭环：
+Prayer 把这三个问题做成了产品闭环：
 
-| 客服现场 | 祈愿的处理方式 |
+| 客服现场 | Prayer 的处理方式 |
 | --- | --- |
 | 用户在群里提问 | 只在配置的生效会话中响应，支持 @ 触发与会话上下文 |
 | 问题需要事实依据 | 自动检索知识库，将相关内容注入回答流程 |
@@ -49,23 +49,29 @@
 - **谨慎主动补位**：在无人应答时主动识别未处理问题；只有检索到明确依据且足够有把握时才回复，优先避免刷屏和误答。
 - **可运营、可审计**：运行状态、会话、人工队列、知识库、问题排行、用量、日志、插件和通道状态集中在管理后台。
 
+### 品牌与业务分离
+
+Prayer 是默认平台品牌，不预设部署方一定经营某个产品。品牌名称和简介可在 `/admin/config` 的「品牌」页签中修改；主 Agent、意图分类、主动补位、问题归类与后台标题会使用同一份配置。产品事实来自部署方知识库，价格、状态、公告等实时能力由启用的业务插件提供。
+
+仓库中的 `packyapi` 是一个可选业务插件示例。启用它时可以查询 PackyAPI 的实时数据；停用或替换它不会改变 Prayer 的平台身份。
+
 ## 一次咨询如何被处理
 
 <p align="center">
-  <img src="docs/assets/qiyuan-response-flow.svg" alt="祈愿一次咨询的处理流程" width="100%" />
+  <img src="docs/assets/qiyuan-response-flow.svg" alt="Prayer 一次咨询的处理流程" width="100%" />
 </p>
 
-祈愿的关键不是让模型“尽量回答”，而是让每一次回答都经过依据判断：有依据就自动解决，需要业务数据就调用工具，不确定就安全转人工，最终把结果沉淀下来。
+Prayer 的关键不是让模型“尽量回答”，而是让每一次回答都经过依据判断：有依据就自动解决，需要业务数据就调用工具，不确定就安全转人工，最终把结果沉淀下来。
 
 ## 运行架构
 
 <p align="center">
-  <img src="docs/assets/qiyuan-architecture.svg" alt="祈愿运行架构图" width="100%" />
+  <img src="docs/assets/qiyuan-architecture.svg" alt="Prayer 运行架构图" width="100%" />
 </p>
 
 ### 客服闭环
 
-实际运行时，祈愿将每条消息纳入统一的会话编排：
+实际运行时，Prayer 将每条消息纳入统一的会话编排：
 
 1. **接入**：从 QQ 或 Telegram 收到消息，按生效会话白名单和触发规则筛选。
 2. **理解**：恢复会话上下文，识别普通咨询、业务查询、重置或转人工意图。
@@ -93,14 +99,14 @@
 | `/admin/plugins` | 插件安装、更新、启停和重载 |
 
 <p align="center">
-  <img src="docs/assets/qiyuan-operations.svg" alt="祈愿管理后台能力图" width="100%" />
+  <img src="docs/assets/qiyuan-operations.svg" alt="Prayer 管理后台能力图" width="100%" />
 </p>
 
 建议在生产环境设置 `ADMIN_TOKEN`，为管理后台和 `/api` 开启口令保护。
 
 ## 技术底座
 
-祈愿以单个 Node.js 进程运行 Next.js 管理后台和客服 Agent。`instrumentation.ts` 在 Node runtime 启动时装配运行时，因此启动一个生产服务进程即可同时获得：
+Prayer 以单个 Node.js 进程运行 Next.js 管理后台和客服 Agent。`instrumentation.ts` 在 Node runtime 启动时装配运行时，因此启动一个生产服务进程即可同时获得：
 
 - QQ / Telegram 通道连接与消息分发
 - Agent 会话编排、知识检索、工具调用与人工接管
@@ -199,6 +205,8 @@ Telegram chat id 必须按字符串保存，尤其是超级群的负数 id，不
 
 | 变量 | 作用 |
 | --- | --- |
+| `BRAND_NAME` | 首次启动时的品牌名称，默认 `Prayer` |
+| `BRAND_DESCRIPTION` | 首次启动时的品牌/业务简介 |
 | `CLAUDE_CONFIG_DIR` | Agent SDK 配置目录，默认 `./data/claude-config` |
 | `DB_PATH` | SQLite 数据库路径，默认 `./data/agent.db` |
 | `ONEBOT_WS_URL` | QQ / OneBot 正向 WebSocket 地址 |
@@ -234,7 +242,7 @@ pnpm pm:delete    # 从 PM2 移除
 ```
 
 <p align="center">
-  <img src="docs/assets/qiyuan-deployment.svg" alt="祈愿生产部署拓扑" width="100%" />
+  <img src="docs/assets/qiyuan-deployment.svg" alt="Prayer 生产部署拓扑" width="100%" />
 </p>
 
 Linux 上可使用 systemd 配置开机自启：
@@ -293,6 +301,6 @@ logs/                   PM2 与运行日志（默认不入 Git）
 
 ## 当前边界
 
-祈愿的设计目标是可控、可解释、可运营的社区客服，不是无限制的通用聊天机器人。生产上线前请至少完成：知识库审核、人工接管演练、通道权限检查、数据库备份恢复演练、管理后台鉴权和用量预算设置。
+Prayer 的设计目标是可控、可解释、可运营的社区客服，不是无限制的通用聊天机器人。生产上线前请至少完成：知识库审核、人工接管演练、通道权限检查、数据库备份恢复演练、管理后台鉴权和用量预算设置。
 
 当前正式支持 QQ / OneBot 和 Telegram；Discord 仅预留通道类型，尚未提供生产适配器。

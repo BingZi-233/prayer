@@ -41,6 +41,15 @@ export const groupPolicySchema = z.object({
 
 /** 配置字段、默认值与类型的唯一来源；不得引入数据库或运行时依赖。 */
 export const appConfigSchema = z.object({
+  /** 平台/客服对外显示名称；默认使用 Prayer，可按部署方白标。 */
+  brandName: z.string().trim().min(1).max(80).default("Prayer"),
+  /** 给 Agent 的简短业务说明；具体事实仍以知识库和插件为准。 */
+  brandDescription: z
+    .string()
+    .trim()
+    .min(1)
+    .max(500)
+    .default("多渠道 AI 客服中台"),
   onebotWsUrl: z.string().default(""),
   onebotAccessToken: z.string().default(""),
   botQQ: z.number().int().nonnegative().default(0),
@@ -77,7 +86,7 @@ export const appConfigSchema = z.object({
   proactiveScanMs: scanMs.default(60_000),
   proactiveSilenceMs: durationMs.default(180_000),
   proactiveMaxPerScan: count.default(2),
-  supportUrl: z.string().default("https://www.packyapi.ai"),
+  supportUrl: z.string().default(""),
   ackEnabled: z.boolean().default(true),
   /** 0 不拆分；开启拆分时至少 50 字，避免发送大量碎片消息。 */
   maxReplyChars: z.union([z.literal(0), safeInteger(50)]).default(900),
@@ -91,7 +100,16 @@ export const appConfigSchema = z.object({
   groupPolicies: z.record(z.string(), groupPolicySchema).default({}),
 })
 
-export type AppConfig = z.output<typeof appConfigSchema>
+type ParsedAppConfig = z.output<typeof appConfigSchema>
+/**
+ * 对外保留新增品牌字段的旧调用兼容性：历史测试/集成方可以继续构造旧形状，
+ * 但所有经过 schema 的运行时配置都会带上默认值。
+ */
+export type AppConfig = Omit<
+  ParsedAppConfig,
+  "brandName" | "brandDescription"
+> &
+  Partial<Pick<ParsedAppConfig, "brandName" | "brandDescription">>
 export type GroupPolicy = z.output<typeof groupPolicySchema>
 
 export function isConfigRecord(

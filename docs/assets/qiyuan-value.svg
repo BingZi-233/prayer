@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 760" role="img" aria-labelledby="title desc">
-  <title id="title">祈愿产品价值</title>
+  <title id="title">Prayer 产品价值</title>
   <desc id="desc">从社区问题到 AI 客服中台，再到可衡量业务价值的产品闭环</desc>
   <defs>
     <linearGradient id="canvas" x1="0" y1="0" x2="1" y2="1">
@@ -81,7 +81,7 @@
   <circle cx="800" cy="278" r="17" fill="#FFFFFF" />
   <path d="M800 160L805 171L817 176L805 181L800 193L795 181L783 176L795 171Z" fill="#F5C46A" />
 
-  <text x="800" y="444" text-anchor="middle" class="font core-title">祈愿 AI 客服中台</text>
+  <text x="800" y="444" text-anchor="middle" class="font core-title">Prayer AI 客服中台</text>
   <text x="800" y="477" text-anchor="middle" class="font core-copy">理解 · 检索 · 协作 · 沉淀</text>
 
   <g transform="translate(610 522)">

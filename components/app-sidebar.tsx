@@ -30,6 +30,7 @@ import {
   SidebarMenuItem,
 } from "@/components/ui/sidebar"
 import { useLive } from "@/components/live-provider"
+import { DEFAULT_BRAND } from "@/lib/brand"
 
 const navGroups = [
   {
@@ -74,6 +75,7 @@ const navGroups = [
 export function AppSidebar() {
   const pathname = usePathname()
   const { overview } = useLive()
+  const brandName = overview?.brandName?.trim() || DEFAULT_BRAND.name
   return (
     <Sidebar>
       <SidebarHeader>
@@ -82,8 +84,8 @@ export function AppSidebar() {
             <Bot className="size-5" />
           </div>
           <div className="flex flex-col leading-tight">
-            <span className="text-sm font-semibold">客服 Agent</span>
-            <span className="text-xs text-muted-foreground">管理后台</span>
+            <span className="text-sm font-semibold">{brandName}</span>
+            <span className="text-xs text-muted-foreground">客服中台</span>
           </div>
         </div>
       </SidebarHeader>

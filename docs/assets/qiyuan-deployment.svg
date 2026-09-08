@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 740" role="img" aria-labelledby="title desc">
-  <title id="title">祈愿生产部署拓扑</title>
+  <title id="title">Prayer 生产部署拓扑</title>
   <desc id="desc">用户入口、单实例 PM2 Node.js 服务、消息通道、SQLite 与模型服务之间的生产部署关系</desc>
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
