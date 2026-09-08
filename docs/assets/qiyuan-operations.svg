@@ -17,6 +17,9 @@
     <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%">
       <feDropShadow dx="0" dy="14" stdDeviation="16" flood-color="#1C2C61" flood-opacity="0.10" />
     </filter>
+    <marker id="action-arrow" markerWidth="10" markerHeight="10" refX="8" refY="5" orient="auto">
+      <path d="M1 1L9 5L1 9Z" fill="#9ABEFF" />
+    </marker>
     <style>
       .font { font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; }
       .title { font-size: 30px; font-weight: 700; fill: #14204B; }
@@ -127,11 +130,14 @@
     <text x="71" y="30" text-anchor="middle" class="font" font-size="16" font-weight="700" fill="#FFFFFF">问题排行</text>
     <text x="71" y="52" text-anchor="middle" class="font" font-size="12" fill="#C9D4FF">发现文档缺口</text>
   </g>
+  <!-- 让“发现问题—人工处理—知识反哺”的运营闭环可被直接读出来 -->
+  <path d="M1128 581H1142" fill="none" stroke="#9ABEFF" stroke-width="2" marker-end="url(#action-arrow)" />
   <g transform="translate(1150 546)">
     <rect width="142" height="70" rx="16" fill="#FFFFFF" fill-opacity="0.12" />
     <text x="71" y="30" text-anchor="middle" class="font" font-size="16" font-weight="700" fill="#FFFFFF">人工队列</text>
     <text x="71" y="52" text-anchor="middle" class="font" font-size="12" fill="#C9D4FF">及时接管复杂问题</text>
   </g>
+  <path d="M1292 581H1306" fill="none" stroke="#9ABEFF" stroke-width="2" marker-end="url(#action-arrow)" />
   <g transform="translate(1314 546)">
     <rect width="142" height="70" rx="16" fill="#FFFFFF" fill-opacity="0.12" />
     <text x="71" y="30" text-anchor="middle" class="font" font-size="16" font-weight="700" fill="#FFFFFF">知识反哺</text>

@@ -60,8 +60,8 @@
     <text x="62" y="51" class="font node-copy">QQ / Telegram</text>
   </g>
 
-  <!-- 用户入口到核心服务：以卡片中线为唯一入口，避免连接线错位 -->
-  <path d="M372 370H420" fill="none" stroke="#7280B3" stroke-width="2.5" marker-end="url(#arrow)" />
+  <!-- 用户入口到核心服务：保留箭头尖端，避免被后绘制的卡片遮住 -->
+  <path d="M372 370H406" fill="none" stroke="#7280B3" stroke-width="2.5" marker-end="url(#arrow)" />
 
   <!-- 核心服务 -->
   <rect x="420" y="150" width="700" height="370" rx="30" fill="url(#server)" filter="url(#shadow)" />
@@ -85,9 +85,9 @@
   </g>
   <text x="464" y="482" class="font" font-size="13" fill="#C9D4FF">所有能力在同一进程内协同；不使用 cluster 多副本</text>
 
-  <!-- 核心服务到外部连接：两条水平线分别对齐上下两组节点 -->
-  <path d="M1120 316H1160" fill="none" stroke="#7280B3" stroke-width="2.5" marker-end="url(#arrow)" />
-  <path d="M1120 424H1160" fill="none" stroke="#7280B3" stroke-width="2.5" marker-end="url(#arrow)" />
+  <!-- 核心服务到外部连接：箭头落在分组卡片外，连接关系一眼可见 -->
+  <path d="M1120 316H1146" fill="none" stroke="#7280B3" stroke-width="2.5" marker-end="url(#arrow)" />
+  <path d="M1120 424H1146" fill="none" stroke="#7280B3" stroke-width="2.5" marker-end="url(#arrow)" />
 
   <!-- 外部连接与数据 -->
   <rect x="1160" y="176" width="368" height="332" rx="26" fill="#FFFFFF" stroke="#E1E6F2" filter="url(#shadow)" />

@@ -73,8 +73,8 @@
     <text x="62" y="49" class="font small">白名单与触发规则</text>
   </g>
 
-  <!-- 聚合入口与核心服务严格共用中线 -->
-  <path d="M372 350H420" fill="none" stroke="#6B78A9" stroke-width="2.5" marker-end="url(#arrow)" />
+  <!-- 留出箭头尖端的呼吸空间，避免被后绘制的核心卡片遮住 -->
+  <path d="M372 350H406" fill="none" stroke="#6B78A9" stroke-width="2.5" marker-end="url(#arrow)" />
 
   <!-- Agent Runtime -->
   <rect x="420" y="150" width="700" height="400" rx="30" fill="url(#runtime)" filter="url(#shadow)" />
@@ -103,9 +103,9 @@
   </g>
   <text x="464" y="514" class="font" font-size="13" fill="#C9D4FF">所有能力在同一进程内协同，状态和上下文可持续复用</text>
 
-  <!-- 两条水平线直接对齐业务层和运营层的分组卡片 -->
-  <path d="M1120 319H1198" fill="none" stroke="#6B78A9" stroke-width="2.5" marker-end="url(#arrow)" />
-  <path d="M1120 427H1198" fill="none" stroke="#6B78A9" stroke-width="2.5" marker-end="url(#arrow)" />
+  <!-- 两条水平线分别对应业务层和运营层；箭头在卡片外完整可见 -->
+  <path d="M1120 319H1146" fill="none" stroke="#6B78A9" stroke-width="2.5" marker-end="url(#arrow)" />
+  <path d="M1120 427H1146" fill="none" stroke="#6B78A9" stroke-width="2.5" marker-end="url(#arrow)" />
 
   <!-- 业务与运营 -->
   <rect x="1160" y="174" width="368" height="352" rx="26" fill="#FFFFFF" stroke="#E1E6F2" filter="url(#shadow)" />
