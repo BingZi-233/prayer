@@ -31,7 +31,10 @@ describe("formatKbBlock", () => {
     expect(s).toContain("[1] 甲")
     expect(s).toContain("[2] 乙")
     expect(s).toContain("知识库检索结果")
+    expect(s).toContain("候选片段")
     expect(s).toContain("kb_search")
+    expect(s).toContain("packy")
+    expect(s).not.toContain("直接据此作答")
   })
 
   it("空片段 → 空串", () => {

@@ -35,7 +35,7 @@ export function ReplySettings({
               }
             />
             <FieldLabel htmlFor="ackEnabled">
-              @ 后先回「收到,正在查」
+              @ 后先回「收到，查询中」
             </FieldLabel>
           </Field>
           <Field>

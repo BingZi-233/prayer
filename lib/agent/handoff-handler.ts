@@ -40,7 +40,7 @@ export function registerHandoffHandler(deps: HandoffHandlerDeps): () => void {
       bus.emit("action.send", {
         channel: e.channel,
         chatId: e.chatId,
-        text: "已经在为你转接人工客服,请稍等~",
+        text: "人工客服转接处理中。",
       })
       return
     }
@@ -55,10 +55,10 @@ export function registerHandoffHandler(deps: HandoffHandlerDeps): () => void {
       detail: "human",
     })
 
-    bus.emit("action.send", {
-      channel: e.channel,
-      chatId: e.chatId,
-      text: "已为你转接人工客服,群管看到后会尽快回复。期间我先不插话。",
+      bus.emit("action.send", {
+        channel: e.channel,
+        chatId: e.chatId,
+        text: "已转接人工客服。群管会回复；期间暂停自动答复。",
     })
 
     const doNotify = shouldNotify
@@ -84,7 +84,7 @@ export function registerHandoffHandler(deps: HandoffHandlerDeps): () => void {
       bus.emit("action.send", {
         channel: parsed.channel,
         chatId: parsed.chatId,
-        text: "已恢复自动客服,有问题 @我 即可~",
+        text: "已恢复自动客服。有问题请 @我。",
       })
     }
     if (adminSurface) {

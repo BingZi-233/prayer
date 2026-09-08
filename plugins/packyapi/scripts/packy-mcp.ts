@@ -86,7 +86,7 @@ server.registerTool(
   {
     title: "PackyAPI 价格/模型查询",
     description:
-      "查询 PackyAPI(Claude/OpenAI/Gemini 兼容的 AI API 中转平台)的模型价格、可用模型 ID、分组倍率、单模型完整计价与平台公告。底层读公开 JSON /api/pricing,本地计价,输出极简结构化文本 —— 比抓 HTML 页面省 token 且精确。计价已计入分组级倍率覆盖(model_group_ratio)与高峰浮动价(peak_pricing),价格单位 $/1M tokens。要单模型的完整计价(缓存写入价、长上下文阶梯价、端点路径、厂商)用 action=detail。",
+      "查询 PackyAPI(Claude/OpenAI/Gemini 兼容的 AI API 中转平台)的模型价格、可用模型 ID、分组倍率、单模型完整计价与平台公告。用户问价格/模型/分组/高峰价/公告时必须调用本工具,不要用知识库预检索片段里的数字作答。底层读公开 JSON /api/pricing,本地计价,输出极简结构化文本 —— 比抓 HTML 页面省 token 且精确。计价已计入分组级倍率覆盖(model_group_ratio)与高峰浮动价(peak_pricing),价格单位 $/1M tokens。要单模型的完整计价(缓存写入价、长上下文阶梯价、端点路径、厂商)用 action=detail。",
     inputSchema: {
       action: z
         .enum(["price", "models", "groups", "raw", "announcements", "detail"])

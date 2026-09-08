@@ -328,7 +328,8 @@ describe("reflection-poller runScan", () => {
     }
     await runScan(opts({ queryFn: qf as never, windowMax: 60 }))
     expect(captured).toContain("在我的订单页点退款") // 回答必须出现在喂给 LLM 的转录里
-    expect(captured).toContain("【已有知识库相关片段】")
+    expect(captured).toContain("<EXISTING_KNOWLEDGE_JSONL>")
+    expect(captured).toContain("<CHAT_RECORDS_JSONL>")
   })
 
   it("prompt 注入已有知识库片段,供 LLM 去重", async () => {
@@ -346,7 +347,7 @@ describe("reflection-poller runScan", () => {
       return fakeQuery({ items: [] })()
     }
     await runScan(opts({ queryFn: qf as never }))
-    expect(captured).toContain("【已有知识库相关片段】")
+    expect(captured).toContain("<EXISTING_KNOWLEDGE_JSONL>")
     expect(captured).toContain("退款一般三个工作日到账")
   })
 

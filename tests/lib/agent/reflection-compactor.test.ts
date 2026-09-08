@@ -242,7 +242,7 @@ describe("runCompact", () => {
       return fakeQuery(faqsItems(2, "甲"))()
     }
     await runCompact(opts({ queryFn: qf as never }))
-    expect(captured).toContain("【权威基础文档片段】")
+    expect(captured).toContain("<AUTHORITATIVE_DOCS_JSONL>")
     expect(captured).toContain("基础片段X")
     expect(captured.split("基础片段X").length - 1).toBe(1) // 去重:只一次
   })

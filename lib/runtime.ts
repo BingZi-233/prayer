@@ -68,8 +68,9 @@ async function defaultBuilders(): Promise<RuntimeBuilders> {
         // 支持链接注入 system prompt,办不了事务时引导
         systemPrompt: "",
         supportUrl: cfg.supportUrl,
-        // 预检索注入:把"要不要查知识库"从模型手里拿走 —— resume 续聊的长会话里
-        // 模型常自认已知而跳过 kb_search(实测覆盖率掉到 11%~70%)。关掉则退回纯工具路径。
+        // 预检索注入:每轮先给候选片段,避免 resume 长会话凭记忆跳过检索
+        // (实测覆盖率曾掉到 11%~70%)。候选不是最终依据,价格/模型仍须调 packy;
+        // 关掉则退回纯 kb_search / packy 工具路径。
         kbPrefetch: cfg.kbPrefetchEnabled
           ? makeKbPrefetch({
               repo,

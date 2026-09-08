@@ -2,13 +2,21 @@ import { describe, it, expect, beforeEach } from "vitest"
 import { openDb } from "@/lib/db/index"
 import { Repo } from "@/lib/db/repo"
 import { bus } from "@/lib/bus"
-import { runKbSearch } from "@/lib/tools/kb"
+import { KB_TOOL_DESC, runKbSearch } from "@/lib/tools/kb"
 
 let repo: Repo
 
 beforeEach(() => {
   bus.removeAllListeners()
   repo = new Repo(openDb(":memory:", 3))
+})
+
+describe("KB_TOOL_DESC", () => {
+  it("政策文档要查 kb_search,实时价格改走 packy", () => {
+    expect(KB_TOOL_DESC).toContain("必须调用")
+    expect(KB_TOOL_DESC).toContain("改调 packy")
+    expect(KB_TOOL_DESC).not.toContain("回答任何产品、业务、接入配置、故障排查等事实性问题前必须先调用")
+  })
 })
 
 describe("runKbSearch", () => {

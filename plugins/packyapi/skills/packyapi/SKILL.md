@@ -1,6 +1,6 @@
 ---
 name: packyapi
-description: 查询 PackyAPI(Claude/OpenAI/Gemini 中转平台)的模型价格、可用模型 ID、分组倍率与官方文档。当用户问 PackyAPI 的定价/模型/配置(base_url、auth token、环境变量、可用模型),或在为 packyapi 配置 Claude Agent SDK / Claude Code / Codex / Gemini CLI 时使用。始终走公开 JSON API,不抓 HTML,省 token 且精确。
+description: 查询 PackyAPI(Claude/OpenAI/Gemini 中转平台)的模型价格、可用模型 ID、分组倍率与官方文档。当用户问 PackyAPI 的定价/模型/配置(base_url、auth token、环境变量、可用模型),或在为 packyapi 配置 Claude Agent SDK / Claude Code / Codex / Gemini CLI 时使用。即使消息里已有知识库预检索片段,价格/模型/分组/公告也必须调 packy,禁止用文档数字报价。始终走公开 JSON API,不抓 HTML,省 token 且精确。
 ---
 
 # PackyAPI 快查
@@ -11,8 +11,8 @@ PackyAPI = AI API 聚合中转平台(`https://www.packyapi.ai`),Anthropic/OpenAI
 ## 铁律:优先 API,不抓 HTML
 
 - 价格 / 模型 / 分组 / 端点路径 → 一律用 MCP 工具 `packy`,底层读公开 JSON `https://www.packyapi.ai/api/pricing`。
-  连官方文档的分组页都滞后于 API,别去那儿查倍率。
-- 仅当需要**文档正文**(教程步骤、FAQ)时,才 WebFetch,且只抓 `references/docs-map.md` 里定位到的**单个** URL。
+  连官方文档的分组页都滞后于 API,别去那儿查倍率。用户消息里即使已有【知识库检索结果】,也不得用那些片段里的数字报价,必须本轮调用 `packy`。
+- 文档正文(教程步骤、FAQ)改用客服知识库检索;本客服会话不开放网页抓取,不要尝试 WebFetch。
 
 ## MCP 工具 `packy`
 

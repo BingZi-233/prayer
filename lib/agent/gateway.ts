@@ -38,8 +38,8 @@ export interface GatewayDeps {
 }
 
 function helpText(supportUrl?: string): string {
-  const link = supportUrl ? `\n官网:${supportUrl}` : ""
-  return `用法说明:问我请 @我;重置对话请 @我 后发「重置」;需要人工请 @我 后发「人工」(单独发「人工」无效)。${link}`
+  const link = supportUrl ? `\n官网：${supportUrl}` : ""
+  return `用法：@我提问；重置：@我 后发「重置」；人工：@我 后发「人工」（单独发「人工」无效）。${link}`
 }
 
 function adminHelpText(): string {
@@ -137,7 +137,7 @@ export function registerGateway(deps: GatewayDeps): () => void {
     // 用户自助重置:清 resumeId,不转 Agent
     if (RESET_KEYWORDS.test(body)) {
       repo.clearResumeId(sessionKey)
-      sendText(channel, chatId, "已重置对话,我们重新开始吧~", messageId)
+      sendText(channel, chatId, "对话已重置。", messageId)
       bus.emit("resolution.recorded", {
         kind: "reset",
         sessionKey,
@@ -161,7 +161,7 @@ export function registerGateway(deps: GatewayDeps): () => void {
         sendText(
           channel,
           chatId,
-          `当前未配置管理侧转人工通道,请通过官网支持渠道联系客服。${link}`.trim(),
+          `未配置管理侧转人工通道。请通过官网联系客服。${link}`.trim(),
           messageId
         )
         return

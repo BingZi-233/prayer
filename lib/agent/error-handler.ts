@@ -15,7 +15,7 @@ export interface ErrorHandlerDeps {
 
 export function defaultFallbackText(supportUrl?: string): string {
   const link = supportUrl ? ` 也可访问 ${supportUrl} 查看官网说明。` : ""
-  return `系统繁忙,请稍后再试,或 @我 后回复「人工」转接客服。${link}`.trim()
+  return `系统繁忙。请稍后重试；需要人工请 @我 后发送「人工」。${link}`.trim()
 }
 
 // 再导出,兼容旧测试/调用方

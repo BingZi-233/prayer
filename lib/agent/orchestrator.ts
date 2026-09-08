@@ -28,7 +28,7 @@ export interface OrchestratorDeps {
   classifyTimeoutMs?: number
 }
 
-const DEFAULT_ACK = "收到,正在查~"
+const DEFAULT_ACK = "收到，查询中。"
 // 意图分类超时默认值:分类是 maxTurns<=2 的短任务,15s 足够;超过基本是 relay 挂死
 const DEFAULT_CLASSIFY_TIMEOUT_MS = 15_000
 
