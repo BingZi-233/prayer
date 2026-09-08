@@ -1,6 +1,5 @@
 "use client"
 
-import { TabsContent } from "@/components/ui/tabs"
 import {
   Field,
   FieldDescription,
@@ -9,6 +8,7 @@ import {
 } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { SectionCard } from "@/components/admin/section-card"
+import { ConfigTabContent } from "./config-tab-content"
 
 import { msToMin, minToMs, msToHr, hrToMs } from "./form-values"
 import type { ConfigForm } from "./use-config-form"
@@ -18,9 +18,12 @@ export function ReflectSettings({
   setCfg,
   updateField,
   fieldValue,
-}: Pick<ConfigForm, "cfg" | "setCfg" | "updateField" | "fieldValue">) {
+  embedded = false,
+}: Pick<ConfigForm, "cfg" | "setCfg" | "updateField" | "fieldValue"> & {
+  embedded?: boolean
+}) {
   return (
-    <TabsContent value="reflect">
+    <ConfigTabContent value="reflect" embedded={embedded}>
       <SectionCard
         title="反思(知识沉淀)"
         description="从人工答复提炼知识。时间单位：分钟 / 小时。"
@@ -151,6 +154,6 @@ export function ReflectSettings({
           </Field>
         </FieldGroup>
       </SectionCard>
-    </TabsContent>
+    </ConfigTabContent>
   )
 }

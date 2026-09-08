@@ -1,7 +1,6 @@
 "use client"
 
 import { X, Plus } from "lucide-react"
-import { TabsContent } from "@/components/ui/tabs"
 import {
   Field,
   FieldDescription,
@@ -13,6 +12,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { SectionCard } from "@/components/admin/section-card"
 import { ChannelDot } from "@/components/channel-status-lights"
+import { ConfigTabContent } from "./config-tab-content"
 
 import type { ConfigForm } from "./use-config-form"
 
@@ -28,6 +28,7 @@ export function TgSettings({
   tgBypassWarn,
   tgChannel,
   tgChatTitle,
+  embedded = false,
 }: Pick<
   ConfigForm,
   | "cfg"
@@ -41,9 +42,9 @@ export function TgSettings({
   | "tgBypassWarn"
   | "tgChannel"
   | "tgChatTitle"
->) {
+> & { embedded?: boolean }) {
   return (
-    <TabsContent value="tg">
+    <ConfigTabContent value="tg" embedded={embedded}>
       <SectionCard
         title="TG 通道"
         description="Telegram Bot Token 与群相关参数。"
@@ -142,6 +143,6 @@ export function TgSettings({
           </Field>
         </FieldGroup>
       </SectionCard>
-    </TabsContent>
+    </ConfigTabContent>
   )
 }

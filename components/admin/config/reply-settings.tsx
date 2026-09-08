@@ -1,6 +1,5 @@
 "use client"
 
-import { TabsContent } from "@/components/ui/tabs"
 import {
   Field,
   FieldDescription,
@@ -10,6 +9,7 @@ import {
 import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
 import { SectionCard } from "@/components/admin/section-card"
+import { ConfigTabContent } from "./config-tab-content"
 
 import type { ConfigForm } from "./use-config-form"
 
@@ -18,9 +18,12 @@ export function ReplySettings({
   setCfg,
   updateField,
   fieldValue,
-}: Pick<ConfigForm, "cfg" | "setCfg" | "updateField" | "fieldValue">) {
+  embedded = false,
+}: Pick<ConfigForm, "cfg" | "setCfg" | "updateField" | "fieldValue"> & {
+  embedded?: boolean
+}) {
   return (
-    <TabsContent value="reply">
+    <ConfigTabContent value="reply" embedded={embedded}>
       <SectionCard
         title="回复体验"
         description="收到消息确认、支持链接与长文拆分。"
@@ -75,6 +78,6 @@ export function ReplySettings({
           </Field>
         </FieldGroup>
       </SectionCard>
-    </TabsContent>
+    </ConfigTabContent>
   )
 }

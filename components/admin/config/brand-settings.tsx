@@ -1,6 +1,5 @@
 "use client"
 
-import { TabsContent } from "@/components/ui/tabs"
 import {
   Field,
   FieldDescription,
@@ -9,6 +8,7 @@ import {
 } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { SectionCard } from "@/components/admin/section-card"
+import { ConfigTabContent } from "./config-tab-content"
 
 import type { ConfigForm } from "./use-config-form"
 
@@ -16,9 +16,10 @@ import type { ConfigForm } from "./use-config-form"
 export function BrandSettings({
   cfg,
   updateField,
-}: Pick<ConfigForm, "cfg" | "updateField">) {
+  embedded = false,
+}: Pick<ConfigForm, "cfg" | "updateField"> & { embedded?: boolean }) {
   return (
-    <TabsContent value="brand">
+    <ConfigTabContent value="brand" embedded={embedded}>
       <SectionCard
         title="品牌"
         description="设置对外名称与客服身份。保存后会同步到管理后台和 Agent。"
@@ -50,6 +51,6 @@ export function BrandSettings({
           </Field>
         </FieldGroup>
       </SectionCard>
-    </TabsContent>
+    </ConfigTabContent>
   )
 }
