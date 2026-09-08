@@ -1,6 +1,5 @@
 "use client"
 
-import { TabsContent } from "@/components/ui/tabs"
 import {
   Field,
   FieldDescription,
@@ -10,6 +9,7 @@ import {
 import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
 import { SectionCard } from "@/components/admin/section-card"
+import { ConfigTabContent } from "./config-tab-content"
 
 import { msToSec, secToMs } from "./form-values"
 import type { ConfigForm } from "./use-config-form"
@@ -19,9 +19,12 @@ export function ProactiveSettings({
   setCfg,
   updateField,
   fieldValue,
-}: Pick<ConfigForm, "cfg" | "setCfg" | "updateField" | "fieldValue">) {
+  embedded = false,
+}: Pick<ConfigForm, "cfg" | "setCfg" | "updateField" | "fieldValue"> & {
+  embedded?: boolean
+}) {
   return (
-    <TabsContent value="proactive">
+    <ConfigTabContent value="proactive" embedded={embedded}>
       <SectionCard
         title="主动回复"
         description="无人应答时谨慎补位。也可在主动回复页一键开关。"
@@ -84,6 +87,6 @@ export function ProactiveSettings({
           </Field>
         </FieldGroup>
       </SectionCard>
-    </TabsContent>
+    </ConfigTabContent>
   )
 }

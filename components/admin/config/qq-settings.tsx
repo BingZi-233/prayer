@@ -1,7 +1,6 @@
 "use client"
 
 import { ChevronsUpDown, X } from "lucide-react"
-import { TabsContent } from "@/components/ui/tabs"
 import {
   Field,
   FieldDescription,
@@ -26,6 +25,7 @@ import {
 import { Checkbox } from "@/components/ui/checkbox"
 import { Badge } from "@/components/ui/badge"
 import { SectionCard } from "@/components/admin/section-card"
+import { ConfigTabContent } from "./config-tab-content"
 
 import type { ConfigForm } from "./use-config-form"
 
@@ -46,6 +46,7 @@ export function QqSettings({
   adminLabel,
   toggleExtraAt,
   groupName,
+  embedded = false,
 }: Pick<
   ConfigForm,
   | "cfg"
@@ -61,9 +62,9 @@ export function QqSettings({
   | "adminLabel"
   | "toggleExtraAt"
   | "groupName"
->) {
+> & { embedded?: boolean }) {
   return (
-    <TabsContent value="qq">
+    <ConfigTabContent value="qq" embedded={embedded}>
       <SectionCard title="QQ 通道" description="OneBot 连接地址与群相关参数。">
         <FieldGroup>
           <Field>
@@ -258,6 +259,6 @@ export function QqSettings({
           </Field>
         </FieldGroup>
       </SectionCard>
-    </TabsContent>
+    </ConfigTabContent>
   )
 }

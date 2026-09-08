@@ -1,18 +1,19 @@
 "use client"
 
-import { TabsContent } from "@/components/ui/tabs"
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field"
 import { Checkbox } from "@/components/ui/checkbox"
 import { SectionCard } from "@/components/admin/section-card"
+import { ConfigTabContent } from "./config-tab-content"
 
 import type { ConfigForm } from "./use-config-form"
 
 export function NotifySettings({
   cfg,
   setCfg,
-}: Pick<ConfigForm, "cfg" | "setCfg">) {
+  embedded = false,
+}: Pick<ConfigForm, "cfg" | "setCfg"> & { embedded?: boolean }) {
   return (
-    <TabsContent value="notify">
+    <ConfigTabContent value="notify" embedded={embedded}>
       <SectionCard title="通知" description="向管理面推送的运行通知。">
         <FieldGroup>
           <Field orientation="horizontal">
@@ -27,6 +28,6 @@ export function NotifySettings({
           </Field>
         </FieldGroup>
       </SectionCard>
-    </TabsContent>
+    </ConfigTabContent>
   )
 }

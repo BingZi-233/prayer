@@ -1,18 +1,19 @@
 "use client"
 
-import { TabsContent } from "@/components/ui/tabs"
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { SectionCard } from "@/components/admin/section-card"
+import { ConfigTabContent } from "./config-tab-content"
 
 import type { ConfigForm } from "./use-config-form"
 
 export function StorageSettings({
   cfg,
   updateField,
-}: Pick<ConfigForm, "cfg" | "updateField">) {
+  embedded = false,
+}: Pick<ConfigForm, "cfg" | "updateField"> & { embedded?: boolean }) {
   return (
-    <TabsContent value="storage">
+    <ConfigTabContent value="storage" embedded={embedded}>
       <SectionCard title="存储" description="数据库文件路径。">
         <FieldGroup>
           <Field>
@@ -26,6 +27,6 @@ export function StorageSettings({
           </Field>
         </FieldGroup>
       </SectionCard>
-    </TabsContent>
+    </ConfigTabContent>
   )
 }

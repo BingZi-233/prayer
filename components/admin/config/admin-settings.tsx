@@ -1,6 +1,5 @@
 "use client"
 
-import { TabsContent } from "@/components/ui/tabs"
 import {
   Field,
   FieldDescription,
@@ -17,6 +16,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { SectionCard } from "@/components/admin/section-card"
+import { ConfigTabContent } from "./config-tab-content"
 
 import type { ConfigForm } from "./use-config-form"
 
@@ -31,6 +31,7 @@ export function AdminSettings({
   setAdminChatId,
   adminGroupOptions,
   adminTgOptions,
+  embedded = false,
 }: Pick<
   ConfigForm,
   | "cfg"
@@ -43,9 +44,9 @@ export function AdminSettings({
   | "setAdminChatId"
   | "adminGroupOptions"
   | "adminTgOptions"
->) {
+> & { embedded?: boolean }) {
   return (
-    <TabsContent value="admin">
+    <ConfigTabContent value="admin" embedded={embedded}>
       <SectionCard
         title="管理面"
         description="转人工/反思/用量告警抄送与 !reset / !resume 落点。可与生效白名单无关。"
@@ -161,6 +162,6 @@ export function AdminSettings({
           </Field>
         </FieldGroup>
       </SectionCard>
-    </TabsContent>
+    </ConfigTabContent>
   )
 }
