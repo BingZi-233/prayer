@@ -32,7 +32,7 @@ export function HeaderStatus() {
             state === "running" && "animate-pulse"
           )}
         />
-        <span className="text-muted-foreground">
+        <span className="text-muted-foreground max-[400px]:hidden">
           {status ? (STATE_LABEL[state!] ?? state) : "…"}
         </span>
       </span>
@@ -44,7 +44,9 @@ export function HeaderStatus() {
           compact
         />
       )}
-      <PollingIndicator />
+      <span className="max-sm:hidden">
+        <PollingIndicator />
+      </span>
       <ThemeToggle />
     </div>
   )

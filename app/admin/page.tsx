@@ -227,7 +227,11 @@ export default function StatusPage() {
           {s?.channels?.map(
             (c) =>
               (!c.connected || c.lastError) && (
-                <Badge key={c.id} variant="destructive">
+                <Badge
+                  key={c.id}
+                  variant="destructive"
+                  className="h-auto max-w-full justify-start whitespace-normal break-words py-1 text-left"
+                >
                   {c.id.toUpperCase()} {c.lastError ? "异常" : "未连接"}
                   {c.lastError ? ` · ${c.lastError.slice(0, 40)}` : ""}
                 </Badge>
