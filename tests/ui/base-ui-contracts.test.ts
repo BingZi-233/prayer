@@ -32,6 +32,21 @@ describe("Base UI migration contract", () => {
     expect(config.style).toBe("base-mira")
   })
 
+  it("the project has no direct radix-ui dependency", async () => {
+    const pkg = JSON.parse(await read("package.json")) as {
+      dependencies?: Record<string, string>
+      devDependencies?: Record<string, string>
+    }
+    expect({ ...pkg.dependencies, ...pkg.devDependencies }).not.toHaveProperty("radix-ui")
+    const lockfile = await read("pnpm-lock.yaml")
+    expect(lockfile).not.toMatch(/(^|\n)\s*radix-ui@/)
+  })
+
+  it("KB tab panels do not rely on stale Radix inactive selectors", async () => {
+    const source = await read("app/admin/kb/page.tsx")
+    expect(source).not.toMatch(/data-\[state=inactive\]:hidden/)
+  })
+
   it("the Button wrapper uses the Base UI primitive and render composition", async () => {
     const source = await read("components/ui/button.tsx")
     expect(source).toMatch(/@base-ui\/react\/button/)

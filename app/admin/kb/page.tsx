@@ -842,7 +842,7 @@ export default function KbPage() {
 
                   <TabsContent
                     value="edit"
-                    className="mt-2 flex min-h-0 flex-1 flex-col gap-2 data-[state=inactive]:hidden"
+                    className="mt-2 flex min-h-0 flex-1 flex-col gap-2"
                   >
                     <Textarea
                       value={content}
@@ -889,7 +889,7 @@ export default function KbPage() {
 
                   <TabsContent
                     value="preview"
-                    className="mt-2 min-h-0 flex-1 overflow-hidden data-[state=inactive]:hidden"
+                    className="mt-2 min-h-0 flex-1 overflow-hidden"
                   >
                     <ScrollArea className="h-full rounded-md border p-4">
                       <MarkdownBody source={content} />
@@ -898,7 +898,7 @@ export default function KbPage() {
 
                   <TabsContent
                     value="chunks"
-                    className="mt-2 min-h-0 flex-1 overflow-hidden data-[state=inactive]:hidden"
+                    className="mt-2 min-h-0 flex-1 overflow-hidden"
                   >
                     <DataState
                       loading={loadingChunks}
