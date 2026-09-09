@@ -32,9 +32,36 @@ describe("session poller", () => {
     const second = shared()
 
     expect(first).toBe(second)
+    await Promise.resolve()
     expect(load).toHaveBeenCalledTimes(1)
     resolve("sessions")
     await expect(first).resolves.toBe("sessions")
+  })
+
+  it("allows retry after a rejected load", async () => {
+    const load = vi
+      .fn<() => Promise<string>>()
+      .mockRejectedValueOnce(new Error("temporary"))
+      .mockResolvedValueOnce("sessions")
+    const shared = createInFlightLoader(load)
+
+    await expect(shared()).rejects.toThrow("temporary")
+    await expect(shared()).resolves.toBe("sessions")
+    expect(load).toHaveBeenCalledTimes(2)
+  })
+
+  it("turns a synchronous loader throw into a rejected promise and allows retry", async () => {
+    let attempts = 0
+    const load = vi.fn(() => {
+      attempts += 1
+      if (attempts === 1) throw new Error("sync failure")
+      return "sessions"
+    })
+    const shared = createInFlightLoader(load)
+
+    await expect(shared()).rejects.toThrow("sync failure")
+    await expect(shared()).resolves.toBe("sessions")
+    expect(load).toHaveBeenCalledTimes(2)
   })
 
   it("reuses in-flight poll and schedules only after completion", async () => {
@@ -82,8 +109,9 @@ describe("session poller", () => {
   it("keeps checking while hidden so the next visible tick can poll", async () => {
     const load = vi.fn(async () => {})
     const timers: (() => void)[] = []
+    let hidden = true
     const p = createSessionPoller(load, {
-      isHidden: () => true,
+      isHidden: () => hidden,
       setTimer: vi.fn((fn) => {
         timers.push(fn)
         return 1 as never
@@ -94,6 +122,10 @@ describe("session poller", () => {
 
     expect(load).not.toHaveBeenCalled()
     expect(timers).toHaveLength(1)
+    hidden = false
+    timers.shift()!()
+    await Promise.resolve()
+    expect(load).toHaveBeenCalledTimes(1)
   })
 
   it("does not schedule after stop while a request is still in flight", async () => {

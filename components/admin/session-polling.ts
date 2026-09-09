@@ -10,13 +10,15 @@ export function commitIfMounted<T>(
   return true
 }
 
-export function createInFlightLoader<T>(load: () => Promise<T>) {
+export function createInFlightLoader<T>(load: () => T | Promise<T>) {
   let inFlight: Promise<T> | null = null
   return () => {
     if (inFlight) return inFlight
-    inFlight = load().finally(() => {
-      inFlight = null
-    })
+    inFlight = Promise.resolve()
+      .then(load)
+      .finally(() => {
+        inFlight = null
+      })
     return inFlight
   }
 }

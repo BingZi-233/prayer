@@ -12,7 +12,7 @@
 ## Verification
 
 - `pnpm vitest run tests/lib/session-polling.test.ts` — 6 passed.
-- `pnpm check` — typecheck, lint, and full suite passed (894 tests), with one unrelated warning in `tests/lib/ranking-route.test.ts`.
+- `pnpm check` — typecheck, lint, and full suite passed (897 tests), with one unrelated warning in the retained, unstaged user change to `tests/lib/ranking-route.test.ts`; that file is not part of the Task 4 commits.
 - `NEXT_DIST_DIR=.next-verify pnpm build` — passed.
 - `pnpm db:check` — integrity check passed.
 - `git diff --check` — passed.
