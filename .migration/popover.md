@@ -30,5 +30,5 @@
 
 ```text
 rg -n "PopoverPrimitive\.(Content|Anchor)|<PopoverTrigger[^>]*asChild|data-open|data-closed" components/ui/popover.tsx components/admin/config/qq-settings.tsx
-# no matches
+# (no output; exit 1)
 ```

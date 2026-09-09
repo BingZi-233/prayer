@@ -29,5 +29,10 @@
 
 ```text
 rg -n "TooltipPrimitive\.(Content|Arrow)|delayDuration|disableHoverableContent|asChild|data-open|data-closed" components/ui/tooltip.tsx components/ui/sidebar.tsx app/layout.tsx
-# delayDuration remains only as the compatibility wrapper prop; no disableHoverableContent/asChild/data-open/data-closed matches in migrated Tooltip code
+# components/ui/tooltip.tsx:9:  delayDuration = 0,
+# components/ui/tooltip.tsx:12:  delayDuration?: number
+# components/ui/tooltip.tsx:17:      delay={delayDuration}
+# components/ui/tooltip.tsx:67:          <TooltipPrimitive.Arrow className="z-50 size-2.5 rotate-45 rounded-[2px] bg-foreground data-[side=bottom]:-translate-y-1/2 data-[side=left]:translate-x-1/2 data-[side=right]:-translate-x-1/2 data-[side=top]:translate-y-1/2" />
+# components/ui/sidebar.tsx:400,402-403,420,422-423,497,505,509,548,552,555,656,662,666: unrelated Sidebar Slot asChild APIs
+# delayDuration is retained only as the compatibility wrapper prop; Arrow is the expected Base part.
 ```

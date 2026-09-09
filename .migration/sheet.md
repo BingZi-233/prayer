@@ -28,5 +28,5 @@
 
 ```text
 rg -n "SheetPrimitive\.(Overlay|Content)|asChild|data-open|data-closed" components/ui/sheet.tsx
-# no matches
+# (no output; exit 1)
 ```
