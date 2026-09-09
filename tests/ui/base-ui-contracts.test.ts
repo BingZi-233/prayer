@@ -137,6 +137,28 @@ describe("Base UI migration contract", () => {
     expect(source).not.toMatch(/data-\[state=inactive\]:hidden/)
   })
 
+  it("uses the check-cx typography and amber theme tokens", async () => {
+    const [globals, layout] = await Promise.all([
+      read("app/globals.css"),
+      read("app/layout.tsx"),
+    ])
+    expect(globals).toContain("--font-sans: var(--font-inter)")
+    expect(globals).toContain("--font-mono: var(--font-geist-mono)")
+    expect(globals).toContain("--primary: oklch(0.67 0.16 58)")
+    expect(layout).toContain("Inter")
+    expect(layout).toContain("Geist_Mono")
+    expect(layout).not.toContain("JetBrains_Mono")
+    expect(layout).not.toMatch(/className=.*font-mono/)
+  })
+
+  it("keeps the base Card density and focus ring contract", async () => {
+    const source = await read("components/ui/card.tsx")
+    expect(source).toContain("group/card")
+    expect(source).toContain("text-xs/relaxed")
+    expect(source).toContain("ring-1 ring-foreground/10")
+    expect(source).toContain("data-[size=sm]")
+  })
+
   it("the Button wrapper uses the Base UI primitive and render composition", async () => {
     const source = await read("components/ui/button.tsx")
     expect(source).toMatch(/@base-ui\/react\/button/)
