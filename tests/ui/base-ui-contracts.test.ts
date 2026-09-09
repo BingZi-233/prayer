@@ -73,6 +73,8 @@ describe("Base UI migration contract", () => {
     expect(source).toMatch(/CheckboxPrimitive\.Root/)
     expect(source).toMatch(/CheckboxPrimitive\.Indicator/)
     expect(source).not.toMatch(/radix-ui|@radix-ui/)
+    expect(source).toMatch(/data-disabled:cursor-not-allowed/)
+    expect(source).toMatch(/data-disabled:opacity-50/)
   })
 
   it("the Switch wrapper uses Base UI switch parts", async () => {
@@ -81,5 +83,11 @@ describe("Base UI migration contract", () => {
     expect(source).toMatch(/SwitchPrimitive\.Root/)
     expect(source).toMatch(/SwitchPrimitive\.Thumb/)
     expect(source).not.toMatch(/radix-ui|@radix-ui/)
+  })
+
+  it("label styles support Base UI data-disabled peers", async () => {
+    const source = await read("components/ui/label.tsx")
+    expect(source).toMatch(/peer-data-disabled:cursor-not-allowed/)
+    expect(source).toMatch(/peer-data-disabled:opacity-50/)
   })
 })
