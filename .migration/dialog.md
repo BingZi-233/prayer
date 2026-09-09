@@ -25,7 +25,7 @@
 
 - Automated focused contract: `pnpm vitest run tests/ui/dialog-migration-contracts.test.ts` — 2 tests passed.
 - `pnpm typecheck` was run; it remains blocked by the pre-existing `components/ui/command.tsx:59` `PayloadChildRenderFunction` type error (no Dialog errors).
-- `pnpm lint` is required at integration time; run it with the rest of the migration suite.
+- `pnpm lint` completed with 0 errors and 1 pre-existing warning in `tests/lib/ranking-route.test.ts:5` (`probe` unused).
 - Manual browser checks still required: open from admin status/reflection, close with Escape, outside click, focus return to trigger, and 320/390px width.
 
 ## Residual scan
