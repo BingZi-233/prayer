@@ -38,4 +38,18 @@ describe("Base UI migration contract", () => {
     expect(source).toMatch(/ButtonPrimitive/)
     expect(source).not.toMatch(/radix-ui|@radix-ui|Slot\.Root/)
   })
+
+  it("the Badge wrapper uses Base UI render composition", async () => {
+    const source = await read("components/ui/badge.tsx")
+    expect(source).toMatch(/@base-ui\/react\/use-render/)
+    expect(source).toMatch(/@base-ui\/react\/merge-props/)
+    expect(source).not.toMatch(/Slot/)
+  })
+
+  it("the BubbleContent wrapper uses Base UI render composition", async () => {
+    const source = await read("components/ui/bubble.tsx")
+    expect(source).toMatch(/@base-ui\/react\/use-render/)
+    expect(source).toMatch(/@base-ui\/react\/merge-props/)
+    expect(source).not.toMatch(/Slot/)
+  })
 })
