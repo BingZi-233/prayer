@@ -1,4 +1,10 @@
 type Timer = ReturnType<typeof setTimeout>
+type SessionPollerOptions = {
+  intervalMs?: number
+  isHidden?: () => boolean
+  setTimer?: (fn: () => void, ms: number) => Timer
+  clearTimer?: (timer: Timer) => void
+}
 
 export function commitIfMounted<T>(
   value: T,
@@ -36,14 +42,24 @@ export function createMountedInFlightLoader<T>(
     })
 }
 
+export function createSessionListCoordinator<T>(
+  load: () => T | Promise<T>,
+  isMounted: () => boolean,
+  commit: (value: T) => void,
+  options?: SessionPollerOptions,
+  afterPoll?: (value: T) => void | Promise<void>
+) {
+  const loadSessions = createMountedInFlightLoader(load, isMounted, commit)
+  const poller = createSessionPoller(async () => {
+    const value = await loadSessions()
+    if (afterPoll) await afterPoll(value)
+  }, options)
+  return { loadSessions, poller }
+}
+
 export function createSessionPoller(
   load: () => Promise<void>,
-  options: {
-    intervalMs?: number
-    isHidden?: () => boolean
-    setTimer?: (fn: () => void, ms: number) => Timer
-    clearTimer?: (timer: Timer) => void
-  } = {}
+  options: SessionPollerOptions = {}
 ) {
   const intervalMs = options.intervalMs ?? 4000
   const isHidden = options.isHidden ?? (() => document.hidden)

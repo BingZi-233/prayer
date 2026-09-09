@@ -58,10 +58,7 @@ import { VirtualList } from "@/components/admin/virtual-list"
 import { MasterDetail } from "@/components/admin/master-detail"
 import { DataState, EmptyState } from "@/components/admin/data-state"
 import { RelativeTime } from "@/components/relative-time"
-import {
-  createMountedInFlightLoader,
-  createSessionPoller,
-} from "@/components/admin/session-polling"
+import { createSessionListCoordinator } from "@/components/admin/session-polling"
 import {
   sessionKeyParts,
   useGroupNames,
@@ -192,7 +189,10 @@ function SessionsInner() {
   const mountedRef = useRef(false)
   const isMounted = useCallback(() => mountedRef.current, [])
   const commitSessions = useCallback((next: Sess[] | null) => {
-    if (next) setSessions(next)
+    if (next) {
+      sessionsRef.current = next
+      setSessions(next)
+    }
   }, [])
   const filterRef = useRef(filter)
   const transcriptGenRef = useRef(0)
@@ -300,25 +300,45 @@ function SessionsInner() {
     syncUrl(null, filterRef.current)
   }, [syncUrl])
 
-  const loadSessions = useMemo(
+  const refreshActiveTranscript = useCallback(async (list: Sess[] | null) => {
+    if (!list || !mountedRef.current) return
+    const key = activeKeyRef.current
+    if (!key) return
+    const s = list.find((x) => x.key === key)
+    if (!s?.sessionId || activeUpdatedAtRef.current === s.updatedAt) return
+    activeUpdatedAtRef.current = s.updatedAt
+    const gen = ++transcriptGenRef.current
+    const tr = await fetch(
+      `/api/sessions/${encodeURIComponent(s.sessionId)}`
+    ).then((x) => x.json())
+    if (
+      mountedRef.current &&
+      transcriptGenRef.current === gen &&
+      activeKeyRef.current === key &&
+      tr.ok
+    ) {
+      setMsgs(tr.data as Msg[])
+    }
+  }, [])
+  /* eslint-disable react-hooks/refs */
+  const sessionCoordinator = useMemo(
     () =>
-      createMountedInFlightLoader(
+      createSessionListCoordinator(
         async (): Promise<Sess[] | null> => {
           const r = await fetch("/api/sessions").then((x) => x.json())
           if (r.ok) return r.data as Sess[]
           return null
         },
         // 生命周期由 effect 维护，loader 仅在异步完成时读取该 ref。
-        // eslint-disable-next-line react-hooks/refs
         isMounted,
-        commitSessions
+        commitSessions,
+        { intervalMs: POLL_MS },
+        refreshActiveTranscript
       ),
-    [commitSessions, isMounted]
+    [commitSessions, isMounted, refreshActiveTranscript]
   )
-  useEffect(() => {
-    sessionsRef.current = sessions
-  }, [sessions])
-
+  /* eslint-enable react-hooks/refs */
+  const loadSessions = sessionCoordinator.loadSessions
   // 仅当 URL 的 key 真的变化时才从外链打开;sessions 轮询不触发
   const paramKey = params.get("key")
   useEffect(() => {
@@ -361,43 +381,13 @@ function SessionsInner() {
   // 静默轮询列表;transcript 仅在当前会话 updatedAt 变化时刷新
   useEffect(() => {
     mountedRef.current = true
-    let cancelled = false
-    const tick = async () => {
-      if (cancelled) return
-      try {
-        const list = await loadSessions()
-        if (!list || cancelled) return
-
-        const key = activeKeyRef.current
-        if (!key) return
-        const s = list.find((x) => x.key === key)
-        if (!s?.sessionId) return
-        if (activeUpdatedAtRef.current === s.updatedAt) return
-        // 会话有新活动 → 静默重拉 transcript(不打断选中)
-        activeUpdatedAtRef.current = s.updatedAt
-        const gen = ++transcriptGenRef.current
-        const tr = await fetch(
-          `/api/sessions/${encodeURIComponent(s.sessionId)}`
-        ).then((x) => x.json())
-        if (
-          cancelled ||
-          transcriptGenRef.current !== gen ||
-          activeKeyRef.current !== key
-        )
-          return
-        if (tr.ok && mountedRef.current) setMsgs(tr.data as Msg[])
-      } catch {
-        /* 静默 */
-      }
-    }
-    const poller = createSessionPoller(tick, { intervalMs: POLL_MS })
+    const poller = sessionCoordinator.poller
     poller.start()
     return () => {
-      cancelled = true
       mountedRef.current = false
       poller.stop()
     }
-  }, [loadSessions])
+  }, [sessionCoordinator])
 
   async function refresh() {
     setRefreshing(true)

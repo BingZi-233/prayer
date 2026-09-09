@@ -3,6 +3,7 @@ import {
   commitIfMounted,
   createInFlightLoader,
   createMountedInFlightLoader,
+  createSessionListCoordinator,
   createSessionPoller,
 } from "@/components/admin/session-polling"
 
@@ -47,6 +48,41 @@ describe("session poller", () => {
 
     mounted = true
     await expect(shared()).resolves.toBe("sessions")
+    expect(commit).toHaveBeenCalledWith("sessions")
+  })
+
+  it("shares one list load between poll and manual paths", async () => {
+    let resolve!: (value: string) => void
+    let mounted = true
+    const commit = vi.fn()
+    const load = vi
+      .fn<() => Promise<string>>()
+      .mockImplementationOnce(
+        () =>
+          new Promise<string>((r) => {
+            resolve = r
+          })
+      )
+      .mockResolvedValue("sessions")
+    const coordinator = createSessionListCoordinator(
+      load,
+      () => mounted,
+      commit,
+      { isHidden: () => false, setTimer: () => 1 as never }
+    )
+
+    const polled = coordinator.poller.poll()
+    const manual = coordinator.loadSessions()
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(load).toHaveBeenCalledTimes(1)
+    mounted = false
+    resolve("sessions")
+    await Promise.all([polled, manual])
+    expect(commit).not.toHaveBeenCalled()
+
+    mounted = true
+    await coordinator.loadSessions()
     expect(commit).toHaveBeenCalledWith("sessions")
   })
 
