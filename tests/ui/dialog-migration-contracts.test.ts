@@ -28,7 +28,12 @@ describe("Base UI dialog migration contract", () => {
     expect(source).toMatch(/@base-ui\/react\/alert-dialog/)
     expect(source).toMatch(/AlertDialogPrimitive\.Backdrop/)
     expect(source).toMatch(/AlertDialogPrimitive\.Popup/)
-    expect(source).toMatch(/AlertDialogPrimitive\.Close/)
+    expect(source).toMatch(
+      /render=\{<AlertDialogPrimitive\.Close data-slot="alert-dialog-action" \/>\}/
+    )
+    expect(source).toMatch(
+      /render=\{<AlertDialogPrimitive\.Close data-slot="alert-dialog-cancel" \/>\}/
+    )
     expect(source).not.toMatch(/radix-ui|@radix-ui/)
     expect(source).not.toMatch(
       /AlertDialogPrimitive\.(Overlay|Content|Cancel|Action)|asChild/

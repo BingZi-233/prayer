@@ -152,11 +152,11 @@ function AlertDialogAction({
   variant = "default",
   size = "default",
   ...props
-}: React.ComponentProps<typeof Button> &
+}: React.ComponentProps<typeof AlertDialogPrimitive.Close> &
   Pick<React.ComponentProps<typeof Button>, "variant" | "size">) {
   return (
     <Button
-      data-slot="alert-dialog-action"
+      render={<AlertDialogPrimitive.Close data-slot="alert-dialog-action" />}
       variant={variant}
       size={size}
       className={cn(className)}

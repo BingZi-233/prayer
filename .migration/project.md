@@ -44,6 +44,7 @@ The two remaining `data-[state=...]` matches are ordinary table/sidebar state st
 - Select controlled callbacks can emit `null`; consumers now ignore `null` where the existing domain state has no empty value.
 - Label, Separator, Checkbox, and Switch use native/Base state attributes (`data-disabled`, `data-checked`, etc.) with matching styles.
 - Dialog, AlertDialog, Sheet, and Popover focus, Escape, outside-dismissal, collision, and focus-restoration behavior is provided by Base UI. No Radix-specific focus/outside event handlers were present in consumers.
+- AlertDialog Action and Cancel both compose Base `Close`; the sessions multi-step action calls `preventDefault()` before advancing its controlled step, while final destructive actions close and restore focus as before.
 
 ## Verify by hand
 

@@ -5,7 +5,7 @@
 - Replaced the Radix AlertDialog import with `@base-ui/react/alert-dialog` 1.6.0.
 - Kept the public `AlertDialog*` wrapper names and boolean controlled state API.
 - Mapped `Overlay` to `Backdrop`, `Content` to `Popup`, and `Cancel` to Base `Close`.
-- `AlertDialogAction` is now an ordinary Base Button, retaining `variant`/`size` and destructive styling supplied by consumers.
+- `AlertDialogAction` and `AlertDialogCancel` both compose Base `Close` through the shared Button `render` API, retaining `variant`/`size` and destructive styling supplied by consumers.
 - Alert dialog transitions now target `data-starting-style` and `data-ending-style`.
 
 ## Left alone
@@ -17,14 +17,14 @@
 ## Behavior changes
 
 - Base AlertDialog provides modal focus trapping, Escape/outside-press behavior, and focus restoration. Radix-specific event parameters were not passed through.
-- Cancel uses Base `Close`; Action intentionally remains a regular Button so existing async delete/discard handlers control completion.
+- Cancel and Action use Base `Close`, so successful action presses close the alert dialog and restore focus. The existing multi-step session action calls `preventDefault()` before advancing its controlled step, so that intermediate confirmation remains open; async handlers retain their existing side effects.
 
 ## Verify by hand
 
 - Automated focused contract: `pnpm vitest run tests/ui/dialog-migration-contracts.test.ts` — 3 tests passed.
 - `pnpm typecheck` passes. AlertDialog has no surfaced children-propagation error in current consumers; its root remains otherwise unchanged.
 - `pnpm lint` completed with 0 errors and 1 pre-existing warning in `tests/lib/ranking-route.test.ts:5` (`probe` unused).
-- Manual browser checks still required: destructive confirmation, Cancel/Action close behavior, Escape/outside click, focus return, and 320/390px width.
+- Final browser evidence for destructive confirmation, Cancel/Action close behavior, Escape/outside click, focus return, and 320/390px width is recorded in `.migration/project.md`.
 
 ## Residual scan
 
