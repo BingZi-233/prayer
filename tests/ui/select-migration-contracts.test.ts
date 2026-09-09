@@ -24,7 +24,16 @@ describe("Base UI Select migration contract", () => {
     expect(source).toMatch(/bottom-0[^"]*left-0[^"]*w-full/)
     expect(source).toMatch(/origin-\(--transform-origin\)/)
     expect(source).toMatch(/data-align-trigger/)
+    expect(source).toMatch(/data-\[align-trigger=true\]:animate-none/)
     expect(source).toMatch(/data-\[side=none\]/)
+    expect(source).toMatch(/data-\[side=none\]:data-starting-style:scale-100/)
+    expect(source).toMatch(/data-\[side=none\]:data-starting-style:opacity-100/)
+    expect(source).toMatch(
+      /data-\[side=none\]:data-starting-style:transition-none/
+    )
+    expect(source).toMatch(
+      /data-\[side=none\]:data-ending-style:transition-none/
+    )
     expect(source).not.toMatch(/position\s*=/)
     expect(source).not.toMatch(/SelectPrimitive\.Viewport/)
   })

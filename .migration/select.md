@@ -31,3 +31,8 @@
 $ rg -n "position=|SelectPrimitive\.Viewport|radix-ui|@radix-ui" components/ui/select.tsx app/admin/config app/admin/groups/page.tsx app/admin/kb/page.tsx components/admin app/admin/plugins/page.tsx
 # no output (exit 1)
 ```
+
+## Fix round 2
+
+- Item-aligned popups now neutralize generic animation via `data-[align-trigger=true]:animate-none`.
+- Base `data-side=none` starting styles force scale/opacity to 100% and disable transitions; ending styles are likewise neutralized.
