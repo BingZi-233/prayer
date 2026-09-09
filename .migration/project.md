@@ -47,11 +47,42 @@ The two remaining `data-[state=...]` matches are ordinary table/sidebar state st
 
 ## Verify by hand
 
-- `pnpm vitest run tests/ui/base-ui-contracts.test.ts` — 15 tests passed. Fixture coverage proves that bundled `radix-ui`, scoped `@radix-ui/react-dialog`, and `require("radix-ui")` are rejected while plain report strings and `data-[state=selected]` are ignored.
+- `pnpm vitest run tests/ui/base-ui-contracts.test.ts` — 18 tests passed. Fixture coverage proves that bundled `radix-ui`, scoped `@radix-ui/react-dialog`, and `require("radix-ui")` are rejected while plain report strings and `data-[state=selected]` are ignored.
 - `pnpm typecheck` — passed (`tsc --noEmit`).
 - `pnpm lint` — passed with 0 errors and one pre-existing warning at `tests/lib/ranking-route.test.ts:5` (`probe` unused).
 - `git diff --check` — passed.
 - Direct dependency check confirms no `radix-ui` importer or `radix-ui@` package entry; remaining `@radix-ui/*` lockfile entries are transitive through `cmdk`.
-- Manual QA still recommended: dialog/alert-dialog focus return and Escape/outside dismissal, Select keyboard/typeahead/null behavior, Tabs keyboard activation, mobile Sheet widths at 320/390px, Sidebar collapsed tooltips, and Popover collision near viewport edges.
+- The dialog/alert-dialog focus and Escape path, Select open/close behavior,
+  Tabs switching, mobile Sheet widths, and Sidebar collapse checks are recorded
+  in the final browser evidence below.
 
 Remaining Radix wrappers: **0** (16/16 migrated).
+
+## Final verification (2026-09-10)
+
+- Browser validation used the Next dev server on port 3100 and the Next MCP
+  preflight. `get_compilation_issues` returned no issues and `get_errors`
+  returned empty `configErrors` and `sessionErrors` after the route pass.
+- The following authenticated routes loaded successfully at desktop width:
+  `/admin`, `/admin/config`, `/admin/sessions`, `/admin/kb`, `/admin/groups`,
+  `/admin/handoff`, `/admin/plugins`, `/admin/reflection`, and
+  `/admin/ranking`. At 390px and 320px, the checked routes kept document
+  `scrollWidth === innerWidth`; the groups table and KB truncation are
+  intentional inner overflow regions rather than page overflow.
+- Manual interaction checks passed for the login invalid-token error path,
+  desktop sidebar collapse/restore, mobile Sheet open/Escape close, Dialog
+  Escape plus focus return, Select listbox open/close, Config Tabs switching,
+  and the light/dark theme toggle at 320px.
+- The final `pnpm check` passed (85 test files, 931 tests); ESLint reported
+  zero errors and the existing `tests/lib/ranking-route.test.ts:5` warning.
+  `NEXT_DIST_DIR=.next-verify pnpm build` also passed and generated all 40
+  static pages. The generated directory was removed from the worktree after
+  verification.
+- A fresh residual scan found no `radix-ui`, `@radix-ui`, `Slot`, or `asChild`
+  source references under `components`, `app`, or `lib`; the only remaining
+  `data-[state=...]` classes are the table selected state and Base sidebar
+  collapsed state. The lockfile's transitive Radix entries remain through
+  `cmdk` by design.
+- The dev log still showed the pre-existing Telegram `409 Conflict:
+  terminated by other getUpdates request` heartbeat condition; it is unrelated
+  to the UI migration and was not treated as a browser regression.

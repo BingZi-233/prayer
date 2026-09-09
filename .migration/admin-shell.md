@@ -17,9 +17,9 @@ focused contract, typecheck, lint, and diff checks pass.
   `humanSessions` badge.
 - `components/admin/page-shell.tsx`, `master-detail.tsx`, `data-state.tsx`,
   `item-card.tsx`, and `virtual-list.tsx`: added min-width/min-height guards,
-  responsive gaps, compact empty/error vertical rhythm, card ring/border
-  treatment, and overscroll containment. The mobile master-detail hidden
-  switching and virtualizer measurement/scroll container remain unchanged.
+  responsive gaps, compact empty/error vertical rhythm, and card ring/border
+  treatment. The mobile master-detail hidden switching and virtualizer
+  measurement/scroll container remain unchanged.
 - Visual-only route updates in `app/admin/page.tsx`, `sessions/page.tsx`,
   `config/page.tsx`, and `reflection/page.tsx` add narrow-layout guards and
   base-mira card/tab density without changing handlers, API calls, state, or
@@ -64,3 +64,16 @@ focused contract, typecheck, lint, and diff checks pass.
   `/admin/plugins`, `/admin/reflection`, and `/admin/ranking` in light/dark at
   390px and 320px; confirm no horizontal overflow, intact sticky header, and
   preserved list/detail scrolling.
+
+## Final browser evidence (2026-09-10)
+
+- All routes listed above loaded in the authenticated browser session. The
+  checked 390px/320px pages kept document width equal to the viewport; the
+  groups table and KB truncation retained only their intentional inner
+  overflow. The sticky header remained intact.
+- Desktop sidebar collapse/restore, mobile Sheet open/Escape close, Dialog
+  Escape/focus return, Select listbox, Config Tabs, and the 320px theme toggle
+  all behaved as expected. No browser console errors were reported.
+- The final focused contract run passed 18/18, `pnpm check` passed, and the
+  isolated production build passed. Virtual-list nested scroll chaining was
+  explicitly left browser-native; no `overscroll-contain` behavior is added.

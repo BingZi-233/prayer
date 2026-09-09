@@ -47,7 +47,18 @@ contracts, typecheck, lint, and diff checks pass.
 - `pnpm lint` — passed with 0 errors and one pre-existing warning at
   `tests/lib/ranking-route.test.ts:5` (`probe` unused).
 - `git diff --check` — passed.
-- Check `/login` at 320px and 390px: card remains within the viewport, the
-  token form still submits to `/api/auth/login`, and invalid tokens retain the
-  existing toast/error path. Check both `.light` and `.dark` themes for amber
-  primary contrast and readable muted text.
+- The final browser pass below covers `/login` at 320px and 390px, the existing
+  invalid-token error path, and light/dark amber contrast.
+
+## Final browser evidence (2026-09-10)
+
+- `/login` was checked at 390px and 320px with `scrollWidth === innerWidth`;
+  an invalid token produced the existing `口令错误` toast, and a valid local
+  session reached `/admin` without changing the auth flow.
+- The 320px theme toggle switched the document between dark and light classes,
+  retained the amber primary token, and kept the document width equal to the
+  viewport. The captured 390px and 320px admin screenshots showed no page
+  clipping.
+- Final focused contracts, `pnpm check`, and the isolated production build
+  passed; see `.migration/project.md` for the complete route and interaction
+  matrix.
