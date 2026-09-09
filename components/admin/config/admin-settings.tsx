@@ -56,7 +56,9 @@ export function AdminSettings({
             <FieldLabel htmlFor="adminChannel">通道</FieldLabel>
             <Select
               value={cfg.adminSurface?.channel ?? "none"}
-              onValueChange={(v) => setAdminChannel(v as "none" | "qq" | "tg")}
+              onValueChange={(v) => {
+                if (v !== null) setAdminChannel(v as "none" | "qq" | "tg")
+              }}
             >
               <SelectTrigger id="adminChannel">
                 <SelectValue placeholder="选择管理面通道" />
@@ -80,7 +82,9 @@ export function AdminSettings({
               {groups ? (
                 <Select
                   value={adminQq ? String(adminQq) : ""}
-                  onValueChange={(v) => setAdminChatId(v)}
+                  onValueChange={(v) => {
+                    if (v !== null) setAdminChatId(v)
+                  }}
                 >
                   <SelectTrigger id="adminSurfaceQq">
                     <SelectValue placeholder="选择管理群" />
@@ -116,7 +120,9 @@ export function AdminSettings({
                       ? cfg.adminSurface.chatId
                       : ""
                   }
-                  onValueChange={(v) => setAdminChatId(v)}
+                  onValueChange={(v) => {
+                    if (v !== null) setAdminChatId(v)
+                  }}
                 >
                   <SelectTrigger id="adminSurfaceTgSelect">
                     <SelectValue placeholder="从生效 Chat 中选择" />
