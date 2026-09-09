@@ -58,7 +58,10 @@ import { VirtualList } from "@/components/admin/virtual-list"
 import { MasterDetail } from "@/components/admin/master-detail"
 import { DataState, EmptyState } from "@/components/admin/data-state"
 import { RelativeTime } from "@/components/relative-time"
-import { createSessionListCoordinator } from "@/components/admin/session-polling"
+import {
+  createSessionListCoordinator,
+  refreshAfterAction,
+} from "@/components/admin/session-polling"
 import {
   sessionKeyParts,
   useGroupNames,
@@ -441,7 +444,7 @@ function SessionsInner() {
         body: JSON.stringify({ action: "reset_all" }),
       }).then((x) => x.json())
       if (r.ok) {
-        await loadSessions()
+        await refreshAfterAction(() => true, loadSessions)
         toast.success(`已重开 ${r.data.reset} 个会话`)
       } else toast.error(`重开失败:${r.error}`)
     } catch (e) {
@@ -460,7 +463,7 @@ function SessionsInner() {
         body: JSON.stringify({ action: "reset", key }),
       }).then((x) => x.json())
       if (r.ok) {
-        await loadSessions()
+        await refreshAfterAction(() => true, loadSessions)
         toast.success("已重开该会话,下条消息开新对话")
       } else toast.error(`重开失败:${r.error}`)
     } catch (e) {
@@ -478,7 +481,7 @@ function SessionsInner() {
       }).then((x) => x.json())
       if (r.ok) {
         toast.success("已恢复自动答")
-        await loadSessions()
+        await refreshAfterAction(() => true, loadSessions)
       } else toast.error(r.error || "恢复失败")
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e))

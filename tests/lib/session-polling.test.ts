@@ -5,6 +5,7 @@ import {
   createMountedInFlightLoader,
   createSessionListCoordinator,
   createSessionPoller,
+  refreshAfterAction,
 } from "@/components/admin/session-polling"
 
 describe("session poller", () => {
@@ -109,15 +110,25 @@ describe("session poller", () => {
     )
 
     coordinator.poller.start()
-    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+    for (let i = 0; i < 20; i++) await Promise.resolve()
     expect(afterPoll).toHaveBeenCalledTimes(1)
     expect(timers).toHaveLength(1)
 
     timers.shift()!()
-    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+    for (let i = 0; i < 20; i++) await Promise.resolve()
     expect(afterPoll).toHaveBeenCalledTimes(2)
     expect(timers).toHaveLength(1)
     coordinator.poller.stop()
+  })
+
+  it("refreshes after successful page actions and skips failed actions", async () => {
+    const load = vi.fn().mockResolvedValue("sessions")
+    const success = vi.fn().mockResolvedValue(true)
+    const failure = vi.fn().mockResolvedValue(false)
+
+    await expect(refreshAfterAction(success, load)).resolves.toBe("sessions")
+    await expect(refreshAfterAction(failure, load)).resolves.toBeNull()
+    expect(load).toHaveBeenCalledTimes(1)
   })
 
   it("reuses the same promise for concurrent external loads", async () => {

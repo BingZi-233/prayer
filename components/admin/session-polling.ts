@@ -42,6 +42,14 @@ export function createMountedInFlightLoader<T>(
     })
 }
 
+export async function refreshAfterAction<T>(
+  action: () => boolean | Promise<boolean>,
+  loadSessions: () => Promise<T>
+): Promise<T | null> {
+  if (!(await action())) return null
+  return loadSessions()
+}
+
 export function createSessionListCoordinator<T>(
   load: () => T | Promise<T>,
   isMounted: () => boolean,
