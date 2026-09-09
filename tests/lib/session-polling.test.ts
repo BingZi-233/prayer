@@ -157,6 +157,29 @@ describe("session poller", () => {
     await first
     expect(timers).toHaveLength(1)
   })
+
+  it("swallows scheduled poll failures and schedules the next tick", async () => {
+    const load = vi.fn().mockRejectedValue(new Error("poll failure"))
+    const timers: (() => void)[] = []
+    const p = createSessionPoller(load, {
+      isHidden: () => false,
+      setTimer: vi.fn((fn) => {
+        timers.push(fn)
+        return 1 as never
+      }),
+    })
+
+    p.start()
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(load).toHaveBeenCalledTimes(1)
+    expect(timers).toHaveLength(1)
+    timers.shift()!()
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(load).toHaveBeenCalledTimes(2)
+    p.stop()
+  })
   it("stop prevents future scheduling and hidden polls", async () => {
     const load = vi.fn(async () => {})
     const setTimer = vi.fn(() => 1 as never)

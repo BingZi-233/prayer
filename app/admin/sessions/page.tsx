@@ -301,23 +301,27 @@ function SessionsInner() {
   }, [syncUrl])
 
   const refreshActiveTranscript = useCallback(async (list: Sess[] | null) => {
-    if (!list || !mountedRef.current) return
-    const key = activeKeyRef.current
-    if (!key) return
-    const s = list.find((x) => x.key === key)
-    if (!s?.sessionId || activeUpdatedAtRef.current === s.updatedAt) return
-    activeUpdatedAtRef.current = s.updatedAt
-    const gen = ++transcriptGenRef.current
-    const tr = await fetch(
-      `/api/sessions/${encodeURIComponent(s.sessionId)}`
-    ).then((x) => x.json())
-    if (
-      mountedRef.current &&
-      transcriptGenRef.current === gen &&
-      activeKeyRef.current === key &&
-      tr.ok
-    ) {
-      setMsgs(tr.data as Msg[])
+    try {
+      if (!list || !mountedRef.current) return
+      const key = activeKeyRef.current
+      if (!key) return
+      const s = list.find((x) => x.key === key)
+      if (!s?.sessionId || activeUpdatedAtRef.current === s.updatedAt) return
+      activeUpdatedAtRef.current = s.updatedAt
+      const gen = ++transcriptGenRef.current
+      const tr = await fetch(
+        `/api/sessions/${encodeURIComponent(s.sessionId)}`
+      ).then((x) => x.json())
+      if (
+        mountedRef.current &&
+        transcriptGenRef.current === gen &&
+        activeKeyRef.current === key &&
+        tr.ok
+      ) {
+        setMsgs(tr.data as Msg[])
+      }
+    } catch {
+      /* 静默 */
     }
   }, [])
   /* eslint-disable react-hooks/refs */

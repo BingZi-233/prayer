@@ -72,7 +72,7 @@ export function createSessionPoller(
     if (stopped || timer) return
     timer = setTimer(() => {
       timer = null
-      void poll()
+      void poll().catch(() => {})
     }, intervalMs)
   }
   const poll = () => {
@@ -91,7 +91,7 @@ export function createSessionPoller(
   return {
     start() {
       stopped = false
-      void poll()
+      void poll().catch(() => {})
     },
     poll,
     stop() {
