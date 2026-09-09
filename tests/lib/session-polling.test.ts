@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest"
 import {
   commitIfMounted,
   createInFlightLoader,
+  createMountedInFlightLoader,
   createSessionPoller,
 } from "@/components/admin/session-polling"
 
@@ -15,6 +16,37 @@ describe("session poller", () => {
 
     mounted = true
     expect(commitIfMounted("sessions", () => mounted, commit)).toBe(true)
+    expect(commit).toHaveBeenCalledWith("sessions")
+  })
+
+  it("shares a mounted page loader and skips commit after cleanup", async () => {
+    let resolve!: (value: string) => void
+    let mounted = true
+    const commit = vi.fn()
+    const load = vi
+      .fn<() => Promise<string>>()
+      .mockImplementationOnce(
+        () =>
+          new Promise<string>((r) => {
+            resolve = r
+          })
+      )
+      .mockResolvedValue("sessions")
+    const shared = createMountedInFlightLoader(load, () => mounted, commit)
+
+    const first = shared()
+    const second = shared()
+    void second
+    await Promise.resolve()
+    expect(load).toHaveBeenCalledTimes(1)
+
+    mounted = false
+    resolve("sessions")
+    await expect(first).resolves.toBe("sessions")
+    expect(commit).not.toHaveBeenCalled()
+
+    mounted = true
+    await expect(shared()).resolves.toBe("sessions")
     expect(commit).toHaveBeenCalledWith("sessions")
   })
 

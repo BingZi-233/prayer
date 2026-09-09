@@ -23,6 +23,19 @@ export function createInFlightLoader<T>(load: () => T | Promise<T>) {
   }
 }
 
+export function createMountedInFlightLoader<T>(
+  load: () => T | Promise<T>,
+  isMounted: () => boolean,
+  commit: (value: T) => void
+) {
+  const shared = createInFlightLoader(load)
+  return () =>
+    shared().then((value) => {
+      commitIfMounted(value, isMounted, commit)
+      return value
+    })
+}
+
 export function createSessionPoller(
   load: () => Promise<void>,
   options: {

@@ -59,8 +59,7 @@ import { MasterDetail } from "@/components/admin/master-detail"
 import { DataState, EmptyState } from "@/components/admin/data-state"
 import { RelativeTime } from "@/components/relative-time"
 import {
-  commitIfMounted,
-  createInFlightLoader,
+  createMountedInFlightLoader,
   createSessionPoller,
 } from "@/components/admin/session-polling"
 import {
@@ -191,6 +190,10 @@ function SessionsInner() {
   const activeUpdatedAtRef = useRef<number | null>(null)
   const sessionsRef = useRef<Sess[] | null>(null)
   const mountedRef = useRef(false)
+  const isMounted = useCallback(() => mountedRef.current, [])
+  const commitSessions = useCallback((next: Sess[] | null) => {
+    if (next) setSessions(next)
+  }, [])
   const filterRef = useRef(filter)
   const transcriptGenRef = useRef(0)
   // 上次已处理的 URL key;仅在 param 真变化时从 URL 打开,避免 sessions 轮询反复 open
@@ -297,31 +300,24 @@ function SessionsInner() {
     syncUrl(null, filterRef.current)
   }, [syncUrl])
 
-  const fetchSessions = useMemo(
+  const loadSessions = useMemo(
     () =>
-      createInFlightLoader(async (): Promise<Sess[] | null> => {
-        const r = await fetch("/api/sessions").then((x) => x.json())
-        if (r.ok) {
-          return r.data as Sess[]
-        }
-        return null
-      }),
-    []
+      createMountedInFlightLoader(
+        async (): Promise<Sess[] | null> => {
+          const r = await fetch("/api/sessions").then((x) => x.json())
+          if (r.ok) return r.data as Sess[]
+          return null
+        },
+        // 生命周期由 effect 维护，loader 仅在异步完成时读取该 ref。
+        // eslint-disable-next-line react-hooks/refs
+        isMounted,
+        commitSessions
+      ),
+    [commitSessions, isMounted]
   )
-  const loadSessions = useCallback(async (): Promise<Sess[] | null> => {
-    const list = await fetchSessions()
-    commitIfMounted(
-      list,
-      () => mountedRef.current,
-      (next) => {
-        if (next) {
-          sessionsRef.current = next
-          setSessions(next)
-        }
-      }
-    )
-    return list
-  }, [fetchSessions])
+  useEffect(() => {
+    sessionsRef.current = sessions
+  }, [sessions])
 
   // 仅当 URL 的 key 真的变化时才从外链打开;sessions 轮询不触发
   const paramKey = params.get("key")
