@@ -72,18 +72,52 @@ describe("session poller", () => {
     )
 
     const polled = coordinator.poller.poll()
-    const manual = coordinator.loadSessions()
+    const manualActions = [
+      coordinator.loadSessions(), // refresh
+      coordinator.loadSessions(), // resetAll
+      coordinator.loadSessions(), // resetOne
+      coordinator.loadSessions(), // resumeHandoff
+    ]
     await Promise.resolve()
     await Promise.resolve()
     expect(load).toHaveBeenCalledTimes(1)
     mounted = false
     resolve("sessions")
-    await Promise.all([polled, manual])
+    await Promise.all([polled, ...manualActions])
     expect(commit).not.toHaveBeenCalled()
 
     mounted = true
     await coordinator.loadSessions()
     expect(commit).toHaveBeenCalledWith("sessions")
+  })
+
+  it("swallows coordinator afterPoll failures and schedules another tick", async () => {
+    const timers: (() => void)[] = []
+    const afterPoll = vi.fn().mockRejectedValue(new Error("transcript failure"))
+    const coordinator = createSessionListCoordinator(
+      vi.fn().mockResolvedValue("sessions"),
+      () => true,
+      vi.fn(),
+      {
+        isHidden: () => false,
+        setTimer: vi.fn((fn) => {
+          timers.push(fn)
+          return 1 as never
+        }),
+      },
+      afterPoll
+    )
+
+    coordinator.poller.start()
+    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+    expect(afterPoll).toHaveBeenCalledTimes(1)
+    expect(timers).toHaveLength(1)
+
+    timers.shift()!()
+    await new Promise<void>((resolve) => setTimeout(resolve, 0))
+    expect(afterPoll).toHaveBeenCalledTimes(2)
+    expect(timers).toHaveLength(1)
+    coordinator.poller.stop()
   })
 
   it("reuses the same promise for concurrent external loads", async () => {
