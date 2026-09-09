@@ -443,8 +443,8 @@ function SessionsInner() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ action: "reset_all" }),
       }).then((x) => x.json())
+      await refreshAfterAction(r, loadSessions)
       if (r.ok) {
-        await refreshAfterAction(() => true, loadSessions)
         toast.success(`已重开 ${r.data.reset} 个会话`)
       } else toast.error(`重开失败:${r.error}`)
     } catch (e) {
@@ -462,8 +462,8 @@ function SessionsInner() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ action: "reset", key }),
       }).then((x) => x.json())
+      await refreshAfterAction(r, loadSessions)
       if (r.ok) {
-        await refreshAfterAction(() => true, loadSessions)
         toast.success("已重开该会话,下条消息开新对话")
       } else toast.error(`重开失败:${r.error}`)
     } catch (e) {
@@ -479,9 +479,9 @@ function SessionsInner() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ action: "resume_handoff", key }),
       }).then((x) => x.json())
+      await refreshAfterAction(r, loadSessions)
       if (r.ok) {
         toast.success("已恢复自动答")
-        await refreshAfterAction(() => true, loadSessions)
       } else toast.error(r.error || "恢复失败")
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e))

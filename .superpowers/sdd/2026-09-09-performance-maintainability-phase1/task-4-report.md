@@ -11,6 +11,7 @@
 - Scheduled poll failures are explicitly consumed while the coordinator continues scheduling after rejection; transcript refresh failures remain silent.
 - Added coordinator coverage for scheduled `afterPoll` rejection and the four manual page action paths sharing one list request.
 - Added the page action refresh helper so successful reset/resume actions refresh through the shared loader while failed actions do not; rejection coverage uses injected microtask flushing only.
+- Action refresh now consumes actual POST response objects, with reset_all, reset, and resume_handoff fixtures covering ok and failed branches.
 - Replaced sessions page `setInterval` with the poller while retaining transcript generation/key guards and payload handling.
 - Stabilized `LiveProvider` context value with `useMemo` over status, overview, lastUpdated, and refresh.
 

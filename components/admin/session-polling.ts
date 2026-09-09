@@ -43,10 +43,10 @@ export function createMountedInFlightLoader<T>(
 }
 
 export async function refreshAfterAction<T>(
-  action: () => boolean | Promise<boolean>,
+  response: { ok: boolean; [key: string]: unknown },
   loadSessions: () => Promise<T>
 ): Promise<T | null> {
-  if (!(await action())) return null
+  if (!response.ok) return null
   return loadSessions()
 }
 

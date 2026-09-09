@@ -52,7 +52,7 @@ describe("session poller", () => {
     expect(commit).toHaveBeenCalledWith("sessions")
   })
 
-  it("shares one list load between poll and manual paths", async () => {
+  it("shares one list load between poll and real page action paths", async () => {
     let resolve!: (value: string) => void
     let mounted = true
     const commit = vi.fn()
@@ -74,10 +74,18 @@ describe("session poller", () => {
 
     const polled = coordinator.poller.poll()
     const manualActions = [
-      coordinator.loadSessions(), // refresh
-      coordinator.loadSessions(), // resetAll
-      coordinator.loadSessions(), // resetOne
-      coordinator.loadSessions(), // resumeHandoff
+      refreshAfterAction(
+        { action: "reset_all", ok: true },
+        coordinator.loadSessions
+      ),
+      refreshAfterAction(
+        { action: "reset", ok: true },
+        coordinator.loadSessions
+      ),
+      refreshAfterAction(
+        { action: "resume_handoff", ok: true },
+        coordinator.loadSessions
+      ),
     ]
     await Promise.resolve()
     await Promise.resolve()
@@ -121,14 +129,26 @@ describe("session poller", () => {
     coordinator.poller.stop()
   })
 
-  it("refreshes after successful page actions and skips failed actions", async () => {
+  it("refreshes only for real successful page action responses", async () => {
     const load = vi.fn().mockResolvedValue("sessions")
-    const success = vi.fn().mockResolvedValue(true)
-    const failure = vi.fn().mockResolvedValue(false)
-
-    await expect(refreshAfterAction(success, load)).resolves.toBe("sessions")
-    await expect(refreshAfterAction(failure, load)).resolves.toBeNull()
-    expect(load).toHaveBeenCalledTimes(1)
+    const responses = [
+      { action: "reset_all", ok: true },
+      { action: "reset", ok: true },
+      { action: "resume_handoff", ok: true },
+    ]
+    for (const response of responses) {
+      await expect(refreshAfterAction(response, load)).resolves.toBe("sessions")
+    }
+    await expect(
+      refreshAfterAction({ action: "reset_all", ok: false }, load)
+    ).resolves.toBeNull()
+    await expect(
+      refreshAfterAction({ action: "reset", ok: false }, load)
+    ).resolves.toBeNull()
+    await expect(
+      refreshAfterAction({ action: "resume_handoff", ok: false }, load)
+    ).resolves.toBeNull()
+    expect(load).toHaveBeenCalledTimes(3)
   })
 
   it("reuses the same promise for concurrent external loads", async () => {
