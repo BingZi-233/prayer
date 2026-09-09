@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server"
-import { sharedDb } from "@/lib/db/shared"
-import { Repo } from "@/lib/db/repo"
-import { getConfig, type GroupPolicy } from "@/lib/config-store"
+import { getAppContext } from "@/lib/app-context"
+import type { GroupPolicy } from "@/lib/config-store"
 import {
   getGroupPolicy,
   listEnabledChats,
@@ -18,10 +17,7 @@ function chatKey(channel: string, chatId: string): string {
 // 生效群活动页:生效群 ∪ 有活动群,各群消息量/最近活动/反思游标/沉淀数 + 策略覆盖
 export async function GET(): Promise<NextResponse> {
   try {
-    const cfg = getConfig(
-      new Repo(sharedDb(process.env.DB_PATH ?? "./data/agent.db"))
-    )
-    const repo = new Repo(sharedDb(cfg.dbPath))
+    const { cfg, repo } = getAppContext()
 
     const enabled = listEnabledChats(cfg)
     const enabledSet = new Set(enabled.map((c) => chatKey(c.channel, c.chatId)))

@@ -1,16 +1,11 @@
 import { NextResponse } from "next/server"
-import { sharedDb } from "@/lib/db/shared"
-import { Repo } from "@/lib/db/repo"
-import { getConfig } from "@/lib/config-store"
+import { getAppContext } from "@/lib/app-context"
 import { ok, fail } from "@/lib/api"
 
 // status 页汇总卡 + 全局角标 + 结果指标
 export async function GET(): Promise<NextResponse> {
   try {
-    const cfg = getConfig(
-      new Repo(sharedDb(process.env.DB_PATH ?? "./data/agent.db"))
-    )
-    const repo = new Repo(sharedDb(cfg.dbPath))
+    const { cfg, repo } = getAppContext()
     const dayStart = new Date()
     dayStart.setHours(0, 0, 0, 0)
     const since = dayStart.getTime()

@@ -1,8 +1,6 @@
 import { NextResponse } from "next/server"
 import { Bot } from "grammy"
-import { sharedDb } from "@/lib/db/shared"
-import { Repo } from "@/lib/db/repo"
-import { getConfig } from "@/lib/config-store"
+import { getAppContext } from "@/lib/app-context"
 import { getRuntime } from "@/lib/runtime"
 import { getNameCache, type GroupNameRow } from "@/lib/name-cache"
 import { ok } from "@/lib/api"
@@ -17,9 +15,7 @@ import { ok } from "@/lib/api"
  */
 export async function GET(): Promise<NextResponse> {
   const cache = getNameCache()
-  const cfg = getConfig(
-    new Repo(sharedDb(process.env.DB_PATH ?? "./data/agent.db"))
-  )
+  const { cfg } = getAppContext()
   const byId = new Map<number, string>()
 
   // 1) 已缓存的单会话名(含 TG 消息侧写入)

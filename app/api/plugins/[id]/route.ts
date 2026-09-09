@@ -1,22 +1,17 @@
 import { NextRequest, NextResponse } from "next/server"
 import { z } from "zod"
-import { sharedDb } from "@/lib/db/shared"
-import { Repo } from "@/lib/db/repo"
-import { getConfig } from "@/lib/config-store"
+import { getAppContext } from "@/lib/app-context"
 import { getRuntime, defaultBuilders } from "@/lib/runtime"
 import { PluginManager, type CliResult } from "@/lib/plugins/manager"
 import { ok, fail } from "@/lib/api"
 
-function cfg() {
-  return getConfig(new Repo(sharedDb(process.env.DB_PATH ?? "./data/agent.db")))
-}
 function manager() {
-  return new PluginManager(cfg().claudeConfigDir)
+  return new PluginManager(getAppContext().cfg.claudeConfigDir)
 }
 async function applyAndReconfigure(result: CliResult): Promise<NextResponse> {
   if (!result.ok)
     return NextResponse.json(fail(result.error ?? "操作失败"), { status: 500 })
-  const c = cfg()
+  const { cfg: c } = getAppContext()
   await getRuntime().reconfigure(c, await defaultBuilders())
   return NextResponse.json(ok(true))
 }

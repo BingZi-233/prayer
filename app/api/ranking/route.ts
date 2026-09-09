@@ -1,7 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { sharedDb } from "@/lib/db/shared"
-import { Repo } from "@/lib/db/repo"
-import { getConfig } from "@/lib/config-store"
+import { getAppContext } from "@/lib/app-context"
 import { ok, fail } from "@/lib/api"
 import { embed } from "@/lib/tools/embed"
 import {
@@ -21,10 +19,7 @@ const TOP_KB = 30 // 只对前 N 主题算 KB 命中,控制 embedding 次数
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
   try {
-    const cfg = getConfig(
-      new Repo(sharedDb(process.env.DB_PATH ?? "./data/agent.db"))
-    )
-    const repo = new Repo(sharedDb(cfg.dbPath))
+    const { repo } = getAppContext()
     const now = Date.now()
     const raw = req.nextUrl.searchParams.get("window") ?? "7d"
     const window = raw === "30d" || raw === "all" ? raw : "7d"

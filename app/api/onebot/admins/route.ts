@@ -1,7 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { sharedDb } from "@/lib/db/shared"
-import { Repo } from "@/lib/db/repo"
-import { getConfig } from "@/lib/config-store"
+import { getAppContext } from "@/lib/app-context"
 import { collectAdmins } from "@/lib/onebot/admins"
 import {
   loadGroupMembers,
@@ -9,9 +7,7 @@ import {
 } from "@/lib/onebot/members-fetch"
 import { ok, fail } from "@/lib/api"
 
-function repo(): Repo {
-  return new Repo(sharedDb(process.env.DB_PATH ?? "./data/agent.db"))
-}
+function repo() { return getAppContext().repo }
 
 /** 解析 ?groups=1,2,3;非法项丢弃 */
 function parseGroupsParam(raw: string | null): number[] | null {
@@ -36,7 +32,7 @@ function parseGroupsParam(raw: string | null): number[] | null {
  * bot 未连接或部分群拉失败时:有结果仍返回 ok,全失败 503。
  */
 export async function GET(req: NextRequest): Promise<NextResponse> {
-  const cfg = getConfig(repo())
+  const { cfg } = getAppContext()
   const fromQuery = parseGroupsParam(req.nextUrl.searchParams.get("groups"))
   const fromCfg = cfg.enabledChats
     .filter((c) => c.channel === "qq")

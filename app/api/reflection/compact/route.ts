@@ -1,7 +1,5 @@
 import { NextResponse } from "next/server"
-import { sharedDb } from "@/lib/db/shared"
-import { Repo } from "@/lib/db/repo"
-import { getConfig } from "@/lib/config-store"
+import { getAppContext } from "@/lib/app-context"
 import { runCompact } from "@/lib/agent/reflection-compactor"
 import { ok, fail } from "@/lib/api"
 import { resolveAdminSurface } from "@/lib/channels/enabled-chats"
@@ -11,10 +9,7 @@ import { resolveAdminSurface } from "@/lib/channels/enabled-chats"
 // runCompact 默认 embed/queryFn 可直接用。runCompact 自吞异常不抛,故以前后条数差判断是否实际整理。
 export async function POST(): Promise<NextResponse> {
   try {
-    const cfg = getConfig(
-      new Repo(sharedDb(process.env.DB_PATH ?? "./data/agent.db"))
-    )
-    const repo = new Repo(sharedDb(cfg.dbPath))
+    const { cfg, repo } = getAppContext()
     const before = repo.reflectionEntries().length
     await runCompact({
       repo,

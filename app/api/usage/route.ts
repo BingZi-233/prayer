@@ -10,9 +10,7 @@ import {
   type KbCoverage,
   type ToolStat,
 } from "@/lib/tool-stats"
-import { sharedDb } from "@/lib/db/shared"
-import { Repo } from "@/lib/db/repo"
-import { getConfig } from "@/lib/config-store"
+import { getAppContext } from "@/lib/app-context"
 import { ok } from "@/lib/api"
 
 // 调用点中文名(与 lib/usage-stats.ts 的 UsageSite 对应);顺序即展示顺序
@@ -144,10 +142,7 @@ export async function GET(): Promise<NextResponse> {
     rows: { site: string; label: string; count: number; costUsd: number }[]
   } | null = null
   try {
-    const cfg = getConfig(
-      new Repo(sharedDb(process.env.DB_PATH ?? "./data/agent.db"))
-    )
-    const repo = new Repo(sharedDb(cfg.dbPath))
+    const { cfg, repo } = getAppContext()
     const drows = repo.usageDaily(day)
     daily = {
       day,
