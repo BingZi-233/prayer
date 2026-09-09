@@ -59,6 +59,7 @@ import { MasterDetail } from "@/components/admin/master-detail"
 import { DataState, EmptyState } from "@/components/admin/data-state"
 import { RelativeTime } from "@/components/relative-time"
 import {
+  commitIfMounted,
   createInFlightLoader,
   createSessionPoller,
 } from "@/components/admin/session-polling"
@@ -189,6 +190,7 @@ function SessionsInner() {
   const activeKeyRef = useRef<string | null>(null)
   const activeUpdatedAtRef = useRef<number | null>(null)
   const sessionsRef = useRef<Sess[] | null>(null)
+  const mountedRef = useRef(false)
   const filterRef = useRef(filter)
   const transcriptGenRef = useRef(0)
   // 上次已处理的 URL key;仅在 param 真变化时从 URL 打开,避免 sessions 轮询反复 open
@@ -239,7 +241,7 @@ function SessionsInner() {
         // 过期请求:用户已切到别的会话
         if (transcriptGenRef.current !== gen || activeKeyRef.current !== forKey)
           return
-        if (r.ok) setMsgs(r.data as Msg[])
+        if (r.ok && mountedRef.current) setMsgs(r.data as Msg[])
       } catch {
         if (
           transcriptGenRef.current === gen &&
@@ -252,7 +254,7 @@ function SessionsInner() {
           transcriptGenRef.current === gen &&
           activeKeyRef.current === forKey
         ) {
-          setLoading(false)
+          if (mountedRef.current) setLoading(false)
         }
       }
     },
@@ -308,10 +310,16 @@ function SessionsInner() {
   )
   const loadSessions = useCallback(async (): Promise<Sess[] | null> => {
     const list = await fetchSessions()
-    if (list) {
-      sessionsRef.current = list
-      setSessions(list)
-    }
+    commitIfMounted(
+      list,
+      () => mountedRef.current,
+      (next) => {
+        if (next) {
+          sessionsRef.current = next
+          setSessions(next)
+        }
+      }
+    )
     return list
   }, [fetchSessions])
 
@@ -356,6 +364,7 @@ function SessionsInner() {
 
   // 静默轮询列表;transcript 仅在当前会话 updatedAt 变化时刷新
   useEffect(() => {
+    mountedRef.current = true
     let cancelled = false
     const tick = async () => {
       if (cancelled) return
@@ -380,7 +389,7 @@ function SessionsInner() {
           activeKeyRef.current !== key
         )
           return
-        if (tr.ok) setMsgs(tr.data as Msg[])
+        if (tr.ok && mountedRef.current) setMsgs(tr.data as Msg[])
       } catch {
         /* 静默 */
       }
@@ -389,6 +398,7 @@ function SessionsInner() {
     poller.start()
     return () => {
       cancelled = true
+      mountedRef.current = false
       poller.stop()
     }
   }, [loadSessions])

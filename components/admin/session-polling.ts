@@ -1,5 +1,15 @@
 type Timer = ReturnType<typeof setTimeout>
 
+export function commitIfMounted<T>(
+  value: T,
+  isMounted: () => boolean,
+  commit: (value: T) => void
+): boolean {
+  if (!isMounted()) return false
+  commit(value)
+  return true
+}
+
 export function createInFlightLoader<T>(load: () => Promise<T>) {
   let inFlight: Promise<T> | null = null
   return () => {

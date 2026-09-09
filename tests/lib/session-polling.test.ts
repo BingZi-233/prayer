@@ -1,10 +1,23 @@
 import { describe, expect, it, vi } from "vitest"
 import {
+  commitIfMounted,
   createInFlightLoader,
   createSessionPoller,
 } from "@/components/admin/session-polling"
 
 describe("session poller", () => {
+  it("does not commit a completed load after unmount", () => {
+    let mounted = false
+    const commit = vi.fn()
+
+    expect(commitIfMounted("sessions", () => mounted, commit)).toBe(false)
+    expect(commit).not.toHaveBeenCalled()
+
+    mounted = true
+    expect(commitIfMounted("sessions", () => mounted, commit)).toBe(true)
+    expect(commit).toHaveBeenCalledWith("sessions")
+  })
+
   it("reuses the same promise for concurrent external loads", async () => {
     let resolve!: (value: string) => void
     const load = vi.fn(
