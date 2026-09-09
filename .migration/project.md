@@ -10,6 +10,7 @@
 - `components.json`: changed `style` from `radix-mira` to `base-mira` (confirmed by `npx shadcn@latest info --json`, which reports `base: "base"`).
 - `package.json` / `pnpm-lock.yaml`: removed the direct `radix-ui` dependency with `pnpm remove radix-ui`. No unrelated dependency entries changed.
 - `@base-ui/react` remains pinned at `1.6.0`.
+- `tests/ui/base-ui-contracts.test.ts` now guards every direct dependency key (`radix-ui` and all `@radix-ui/*`) and recursively parses every `.ts`/`.tsx` file under `components`, `app`, and `lib` with the TypeScript AST. It only reports import/export/require/dynamic-import module specifiers, not report text or ordinary `data-[state]` classes.
 
 ### Wrapper status (16/16 migrated)
 
@@ -46,7 +47,7 @@ The two remaining `data-[state=...]` matches are ordinary table/sidebar state st
 
 ## Verify by hand
 
-- `pnpm vitest run tests/ui/base-ui-contracts.test.ts` — 12 tests passed.
+- `pnpm vitest run tests/ui/base-ui-contracts.test.ts` — 15 tests passed. Fixture coverage proves that bundled `radix-ui`, scoped `@radix-ui/react-dialog`, and `require("radix-ui")` are rejected while plain report strings and `data-[state=selected]` are ignored.
 - `pnpm typecheck` — passed (`tsc --noEmit`).
 - `pnpm lint` — passed with 0 errors and one pre-existing warning at `tests/lib/ranking-route.test.ts:5` (`probe` unused).
 - `git diff --check` — passed.

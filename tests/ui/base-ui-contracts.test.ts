@@ -1,7 +1,56 @@
-import { readFile } from "node:fs/promises"
+import { readFile, readdir } from "node:fs/promises"
+import path from "node:path"
+import ts from "typescript"
 import { describe, expect, it } from "vitest"
 
 const read = (path: string) => readFile(path, "utf8")
+
+const isRadixPackage = (name: string) =>
+  name === "radix-ui" || name === "@radix-ui" || name.startsWith("@radix-ui/")
+
+async function sourceFiles(directory: string): Promise<string[]> {
+  const entries = await readdir(directory, { withFileTypes: true })
+  const nested = await Promise.all(
+    entries.map(async (entry) => {
+      const entryPath = path.join(directory, entry.name)
+      if (entry.isDirectory()) return sourceFiles(entryPath)
+      return /\.tsx?$/.test(entry.name) ? [entryPath] : []
+    })
+  )
+  return nested.flat()
+}
+
+function radixModuleReferences(source: string): string[] {
+  const file = ts.createSourceFile("source.tsx", source, ts.ScriptTarget.Latest, true)
+  const references: string[] = []
+  const addReference = (specifier: ts.Expression) => {
+    if (ts.isStringLiteral(specifier) && isRadixPackage(specifier.text)) {
+      references.push(specifier.text)
+    }
+  }
+  const visit = (node: ts.Node) => {
+    if (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) {
+      if (node.moduleSpecifier) addReference(node.moduleSpecifier)
+    } else if (
+      ts.isImportEqualsDeclaration(node) &&
+      ts.isExternalModuleReference(node.moduleReference) &&
+      node.moduleReference.expression
+    ) {
+      addReference(node.moduleReference.expression)
+    } else if (ts.isCallExpression(node)) {
+      const [specifier] = node.arguments
+      if (
+        (ts.isIdentifier(node.expression) && node.expression.text === "require") ||
+        node.expression.kind === ts.SyntaxKind.ImportKeyword
+      ) {
+        if (specifier) addReference(specifier)
+      }
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(file)
+  return references
+}
 
 describe("Base UI migration contract", () => {
   it("all migrated wrappers contain no Radix import", async () => {
@@ -32,14 +81,55 @@ describe("Base UI migration contract", () => {
     expect(config.style).toBe("base-mira")
   })
 
-  it("the project has no direct radix-ui dependency", async () => {
+  it("the direct dependency guard recognizes bundled and scoped Radix packages", () => {
+    const dependencies = {
+      "@base-ui/react": "1.6.0",
+      "@radix-ui/react-dialog": "1.1.23",
+      "radix-ui": "1.6.7",
+    }
+    expect(Object.keys(dependencies).filter(isRadixPackage)).toEqual([
+      "@radix-ui/react-dialog",
+      "radix-ui",
+    ])
+  })
+
+  it("the source guard recognizes imports and requires without matching plain strings", () => {
+    expect(
+      radixModuleReferences(`
+        import { Dialog } from "@radix-ui/react-dialog"
+        const legacy = require("radix-ui")
+      `)
+    ).toEqual(["@radix-ui/react-dialog", "radix-ui"])
+    expect(
+      radixModuleReferences(
+        'const report = "import { Dialog } from @radix-ui/react-dialog"; const state = "data-[state=selected]"'
+      )
+    ).toEqual([])
+  })
+
+  it("the project has no direct Radix dependency", async () => {
     const pkg = JSON.parse(await read("package.json")) as {
       dependencies?: Record<string, string>
       devDependencies?: Record<string, string>
     }
-    expect({ ...pkg.dependencies, ...pkg.devDependencies }).not.toHaveProperty("radix-ui")
+    expect(Object.keys({ ...pkg.dependencies, ...pkg.devDependencies }).filter(isRadixPackage)).toEqual([])
     const lockfile = await read("pnpm-lock.yaml")
     expect(lockfile).not.toMatch(/(^|\n)\s*radix-ui@/)
+  })
+
+  it("all source files contain no Radix import or require", async () => {
+    const paths = (await Promise.all(["components", "app", "lib"].map(sourceFiles))).flat()
+    const references = await Promise.all(
+      paths.map(async (sourcePath) => ({
+        sourcePath,
+        references: radixModuleReferences(await read(sourcePath)),
+      }))
+    )
+    expect(
+      references
+        .filter(({ references }) => references.length > 0)
+        .map(({ sourcePath, references }) => `${sourcePath}: ${references.join(", ")}`)
+    ).toEqual([])
   })
 
   it("KB tab panels do not rely on stale Radix inactive selectors", async () => {
