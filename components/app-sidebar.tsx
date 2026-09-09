@@ -104,14 +104,12 @@ export function AppSidebar() {
                   return (
                     <SidebarMenuItem key={n.href}>
                       <SidebarMenuButton
-                        asChild
+                        render={<Link href={n.href} />}
                         isActive={active}
                         tooltip={n.label}
                       >
-                        <Link href={n.href}>
-                          <n.icon />
-                          <span>{n.label}</span>
-                        </Link>
+                        <n.icon />
+                        <span>{n.label}</span>
                       </SidebarMenuButton>
                       {badge === "human" &&
                         (overview?.humanSessions ?? 0) > 0 && (
