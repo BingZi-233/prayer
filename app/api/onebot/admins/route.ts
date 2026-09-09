@@ -7,8 +7,6 @@ import {
 } from "@/lib/onebot/members-fetch"
 import { ok, fail } from "@/lib/api"
 
-function repo() { return getAppContext().repo }
-
 /** 解析 ?groups=1,2,3;非法项丢弃 */
 function parseGroupsParam(raw: string | null): number[] | null {
   if (raw == null || raw === "") return null

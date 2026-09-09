@@ -13,8 +13,6 @@ import { ok, fail } from "@/lib/api"
 import { isKbRelPath, relFromParts, safeKbAbs } from "@/lib/kb-path"
 import { getAppContext } from "@/lib/app-context"
 
-function repo() { return getAppContext().repo }
-
 // catch-all 段:file 为路径片段数组(如 ["faq","退款.md"]),支持子目录
 function resolveRel(parts: string[]): { rel: string; abs: string } | null {
   const rel = relFromParts(parts)

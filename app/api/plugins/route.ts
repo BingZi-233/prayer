@@ -5,13 +5,14 @@ import { getRuntime, defaultBuilders } from "@/lib/runtime"
 import { PluginManager } from "@/lib/plugins/manager"
 import { ok, fail } from "@/lib/api"
 
-function manager() {
-  return new PluginManager(getAppContext().cfg.claudeConfigDir)
+function manager(cfg: { claudeConfigDir: string }) {
+  return new PluginManager(cfg.claudeConfigDir)
 }
 
 export async function GET(): Promise<NextResponse> {
   try {
-    return NextResponse.json(ok(await manager().list()))
+    const { cfg } = getAppContext()
+    return NextResponse.json(ok(await manager(cfg).list()))
   } catch (err) {
     return NextResponse.json(
       fail(err instanceof Error ? err.message : String(err)),
@@ -35,7 +36,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const { repoOrPath, marketplaceName, pluginName } = parsed.data
 
   try {
-    const m = manager()
+    const { cfg } = getAppContext()
+    const m = manager(cfg)
     const added = await m.addMarketplace(repoOrPath)
     if (!added.ok)
       return NextResponse.json(fail(added.error ?? "添加 marketplace 失败"), {
@@ -47,8 +49,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         status: 500,
       })
 
-    const { cfg: c } = getAppContext()
-    await getRuntime().reconfigure(c, await defaultBuilders())
+    await getRuntime().reconfigure(cfg, await defaultBuilders())
     return NextResponse.json(ok(await m.list()))
   } catch (err) {
     return NextResponse.json(

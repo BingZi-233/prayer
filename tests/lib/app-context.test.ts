@@ -33,5 +33,8 @@ describe("application data context", () => {
     expect(second.cfg.dbPath).toBe(businessPath)
     expect(second.configRepo).toBe(first.configRepo)
     expect(second.repo).not.toBe(first.configRepo)
+    second.repo.setSessionId("qq:100", "session-business")
+    expect(second.repo.getSessionId("qq:100")).toBe("session-business")
+    expect(second.configRepo.getSessionId("qq:100")).toBeUndefined()
   })
 })

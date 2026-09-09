@@ -17,3 +17,12 @@
 ## Concerns
 
 - No known functional concerns. Existing route helpers remain in a few files for compatibility, but handlers now obtain the app context directly once per operation.
+
+## Review round 1 fixes
+
+- Added a complete stable `getAppContext` mock to `plugins/id-route.test.ts`.
+- Refactored plugin collection and id handlers so each operation resolves one context and passes its config snapshot through manager/reconfigure helpers.
+- Removed dead `repo()` helpers from KB catch-all and OneBot admin routes.
+- Strengthened context isolation test with a session write/read assertion proving business data lands in the resolved business database, not the config database.
+
+Round 1 verification: `pnpm vitest run tests/lib` — 71 files, 778 tests passed; `pnpm typecheck` passed; `git diff --check` passed.
