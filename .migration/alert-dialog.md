@@ -21,7 +21,7 @@
 
 ## Verify by hand
 
-- Automated focused contract: `pnpm vitest run tests/ui/dialog-migration-contracts.test.ts` — 3 tests passed.
+- Automated focused contract: `pnpm vitest run tests/ui/dialog-migration-contracts.test.ts` — 4 tests passed.
 - `pnpm typecheck` passes. AlertDialog has no surfaced children-propagation error in current consumers; its root remains otherwise unchanged.
 - `pnpm lint` completed with 0 errors and 1 pre-existing warning in `tests/lib/ranking-route.test.ts:5` (`probe` unused).
 - Final browser evidence for destructive confirmation, Cancel/Action close behavior, the sessions intermediate step staying open, Escape/outside click, focus return, and 320/390px width is recorded in `.migration/project.md`; the destructive final action was not executed against live session data.

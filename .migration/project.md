@@ -49,7 +49,7 @@ The two remaining `data-[state=...]` matches are ordinary table/sidebar state st
 
 ## Verify by hand
 
-- `pnpm vitest run tests/ui/base-ui-contracts.test.ts` — 18 tests passed. Fixture coverage proves that bundled `radix-ui`, scoped `@radix-ui/react-dialog`, and `require("radix-ui")` are rejected while plain report strings and `data-[state=selected]` are ignored.
+- `pnpm vitest run tests/ui/base-ui-contracts.test.ts` — 19 tests passed. Fixture coverage proves that bundled `radix-ui`, scoped `@radix-ui/react-dialog`, and `require("radix-ui")` are rejected while plain report strings and `data-[state=selected]` are ignored.
 - `pnpm typecheck` — passed (`tsc --noEmit`).
 - `pnpm lint` — passed with 0 errors and one pre-existing warning at `tests/lib/ranking-route.test.ts:5` (`probe` unused).
 - `git diff --check` — passed.
@@ -77,7 +77,7 @@ Remaining Radix wrappers: **0** (16/16 migrated).
   the sessions multi-step AlertDialog (the intermediate step stays open), and
   the light/dark theme toggle at 320px. The destructive final action was not
   executed against live session data.
-- The final `pnpm check` passed (85 test files, 931 tests); ESLint reported
+- The final `pnpm check` passed (85 test files, 933 tests); ESLint reported
   zero errors and the existing `tests/lib/ranking-route.test.ts:5` warning.
   `NEXT_DIST_DIR=.next-verify pnpm build` also passed and generated all 40
   static pages. The generated directory was removed from the worktree after
