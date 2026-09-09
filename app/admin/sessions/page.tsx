@@ -60,7 +60,7 @@ import { DataState, EmptyState } from "@/components/admin/data-state"
 import { RelativeTime } from "@/components/relative-time"
 import {
   createSessionListCoordinator,
-  refreshAfterAction,
+  postSessionAction,
 } from "@/components/admin/session-polling"
 import {
   sessionKeyParts,
@@ -438,12 +438,11 @@ function SessionsInner() {
     setConfirmStep(0)
     setResetting(true)
     try {
-      const r = await fetch("/api/sessions", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ action: "reset_all" }),
-      }).then((x) => x.json())
-      await refreshAfterAction(r, loadSessions)
+      const { response: r } = await postSessionAction(
+        "reset_all",
+        undefined,
+        loadSessions
+      )
       if (r.ok) {
         toast.success(`已重开 ${r.data.reset} 个会话`)
       } else toast.error(`重开失败:${r.error}`)
@@ -457,12 +456,11 @@ function SessionsInner() {
   async function resetOne(key: string) {
     setResetKey(null)
     try {
-      const r = await fetch("/api/sessions", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ action: "reset", key }),
-      }).then((x) => x.json())
-      await refreshAfterAction(r, loadSessions)
+      const { response: r } = await postSessionAction(
+        "reset",
+        key,
+        loadSessions
+      )
       if (r.ok) {
         toast.success("已重开该会话,下条消息开新对话")
       } else toast.error(`重开失败:${r.error}`)
@@ -474,12 +472,11 @@ function SessionsInner() {
   async function resumeHandoff(key: string) {
     setResuming(true)
     try {
-      const r = await fetch("/api/sessions", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ action: "resume_handoff", key }),
-      }).then((x) => x.json())
-      await refreshAfterAction(r, loadSessions)
+      const { response: r } = await postSessionAction(
+        "resume_handoff",
+        key,
+        loadSessions
+      )
       if (r.ok) {
         toast.success("已恢复自动答")
       } else toast.error(r.error || "恢复失败")

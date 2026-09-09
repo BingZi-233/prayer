@@ -6,6 +6,7 @@ import {
   createSessionListCoordinator,
   createSessionPoller,
   refreshAfterAction,
+  postSessionAction,
 } from "@/components/admin/session-polling"
 
 describe("session poller", () => {
@@ -149,6 +150,62 @@ describe("session poller", () => {
       refreshAfterAction({ action: "resume_handoff", ok: false }, load)
     ).resolves.toBeNull()
     expect(load).toHaveBeenCalledTimes(3)
+  })
+
+  it("posts real session action bodies and refreshes only successful responses", async () => {
+    let resolve!: (value: string) => void
+    const load = vi.fn(
+      () =>
+        new Promise<string>((r) => {
+          resolve = r
+        })
+    )
+    const coordinator = createSessionListCoordinator(
+      load,
+      () => true,
+      vi.fn(),
+      { isHidden: () => false }
+    )
+    const requests: unknown[] = []
+    const fetcher = vi.fn(async (_input: string, init: RequestInit) => {
+      requests.push(JSON.parse(String(init.body)))
+      const body = JSON.parse(String(init.body)) as { action: string }
+      return {
+        json: async () => ({ ok: body.action !== "reset", data: {} }),
+      }
+    })
+
+    const poll = coordinator.poller.poll()
+    const action1 = postSessionAction(
+      "reset_all",
+      undefined,
+      coordinator.loadSessions,
+      fetcher
+    )
+    const action2 = postSessionAction(
+      "reset",
+      "qq:1:2",
+      coordinator.loadSessions,
+      fetcher
+    )
+    const action3 = postSessionAction(
+      "resume_handoff",
+      "tg:-3:4",
+      coordinator.loadSessions,
+      fetcher
+    )
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(load).toHaveBeenCalledTimes(1)
+    resolve("sessions")
+    await Promise.all([poll, action1, action2, action3])
+
+    expect(requests).toEqual([
+      { action: "reset_all" },
+      { action: "reset", key: "qq:1:2" },
+      { action: "resume_handoff", key: "tg:-3:4" },
+    ])
+    expect(load).toHaveBeenCalledTimes(1)
   })
 
   it("reuses the same promise for concurrent external loads", async () => {

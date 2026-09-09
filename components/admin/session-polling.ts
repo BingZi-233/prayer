@@ -50,6 +50,38 @@ export async function refreshAfterAction<T>(
   return loadSessions()
 }
 
+type SessionAction = "reset_all" | "reset" | "resume_handoff"
+type SessionActionResponse = {
+  ok: boolean
+  data: { reset?: number }
+  error?: string
+  [key: string]: unknown
+}
+
+export async function postSessionAction<T>(
+  action: SessionAction,
+  key: string | undefined,
+  loadSessions: () => Promise<T>,
+  fetcher: (
+    input: string,
+    init: RequestInit
+  ) => Promise<{
+    json(): Promise<SessionActionResponse>
+  }> = fetch
+): Promise<{
+  response: SessionActionResponse
+  refreshed: T | null
+}> {
+  const body = key === undefined ? { action } : { action, key }
+  const response = await fetcher("/api/sessions", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  }).then((res) => res.json())
+  const refreshed = await refreshAfterAction(response, loadSessions)
+  return { response, refreshed }
+}
+
 export function createSessionListCoordinator<T>(
   load: () => T | Promise<T>,
   isMounted: () => boolean,

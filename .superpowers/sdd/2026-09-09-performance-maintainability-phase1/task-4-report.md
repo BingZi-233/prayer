@@ -12,13 +12,14 @@
 - Added coordinator coverage for scheduled `afterPoll` rejection and the four manual page action paths sharing one list request.
 - Added the page action refresh helper so successful reset/resume actions refresh through the shared loader while failed actions do not; rejection coverage uses injected microtask flushing only.
 - Action refresh now consumes actual POST response objects, with reset_all, reset, and resume_handoff fixtures covering ok and failed branches.
+- Added `postSessionAction` as the page-used POST composition: it builds each action body, parses the real response, and refreshes only successful actions through the shared coordinator loader.
 - Replaced sessions page `setInterval` with the poller while retaining transcript generation/key guards and payload handling.
 - Stabilized `LiveProvider` context value with `useMemo` over status, overview, lastUpdated, and refresh.
 
 ## Verification
 
-- `pnpm vitest run tests/lib/session-polling.test.ts` — 13 passed.
-- `pnpm check` — typecheck, lint, and full suite passed (902 tests), with one unrelated warning in the retained, unstaged user change to `tests/lib/ranking-route.test.ts`; that file is not part of the Task 4 commits.
+- `pnpm vitest run tests/lib/session-polling.test.ts` — 14 passed.
+- `pnpm check` — typecheck, lint, and full suite passed (903 tests), with one unrelated warning in the retained, unstaged user change to `tests/lib/ranking-route.test.ts`; that file is not part of the Task 4 commits.
 - `NEXT_DIST_DIR=.next-verify pnpm build` — passed.
 - `pnpm db:check` — integrity check passed.
 - `git diff --check` — passed.
