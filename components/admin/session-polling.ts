@@ -1,4 +1,16 @@
 type Timer = ReturnType<typeof setTimeout>
+
+export function createInFlightLoader<T>(load: () => Promise<T>) {
+  let inFlight: Promise<T> | null = null
+  return () => {
+    if (inFlight) return inFlight
+    inFlight = load().finally(() => {
+      inFlight = null
+    })
+    return inFlight
+  }
+}
+
 export function createSessionPoller(
   load: () => Promise<void>,
   options: {

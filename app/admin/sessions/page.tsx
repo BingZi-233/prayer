@@ -58,7 +58,10 @@ import { VirtualList } from "@/components/admin/virtual-list"
 import { MasterDetail } from "@/components/admin/master-detail"
 import { DataState, EmptyState } from "@/components/admin/data-state"
 import { RelativeTime } from "@/components/relative-time"
-import { createSessionPoller } from "@/components/admin/session-polling"
+import {
+  createInFlightLoader,
+  createSessionPoller,
+} from "@/components/admin/session-polling"
 import {
   sessionKeyParts,
   useGroupNames,
@@ -292,16 +295,25 @@ function SessionsInner() {
     syncUrl(null, filterRef.current)
   }, [syncUrl])
 
+  const fetchSessions = useMemo(
+    () =>
+      createInFlightLoader(async (): Promise<Sess[] | null> => {
+        const r = await fetch("/api/sessions").then((x) => x.json())
+        if (r.ok) {
+          return r.data as Sess[]
+        }
+        return null
+      }),
+    []
+  )
   const loadSessions = useCallback(async (): Promise<Sess[] | null> => {
-    const r = await fetch("/api/sessions").then((x) => x.json())
-    if (r.ok) {
-      const list = r.data as Sess[]
+    const list = await fetchSessions()
+    if (list) {
       sessionsRef.current = list
       setSessions(list)
-      return list
     }
-    return null
-  }, [])
+    return list
+  }, [fetchSessions])
 
   // 仅当 URL 的 key 真的变化时才从外链打开;sessions 轮询不触发
   const paramKey = params.get("key")
@@ -348,11 +360,8 @@ function SessionsInner() {
     const tick = async () => {
       if (cancelled) return
       try {
-        const r = await fetch("/api/sessions").then((x) => x.json())
-        if (!r.ok || cancelled) return
-        const list = r.data as Sess[]
-        sessionsRef.current = list
-        setSessions(list)
+        const list = await loadSessions()
+        if (!list || cancelled) return
 
         const key = activeKeyRef.current
         if (!key) return
@@ -382,7 +391,7 @@ function SessionsInner() {
       cancelled = true
       poller.stop()
     }
-  }, [])
+  }, [loadSessions])
 
   async function refresh() {
     setRefreshing(true)

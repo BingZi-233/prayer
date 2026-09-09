@@ -1,7 +1,29 @@
 import { describe, expect, it, vi } from "vitest"
-import { createSessionPoller } from "@/components/admin/session-polling"
+import {
+  createInFlightLoader,
+  createSessionPoller,
+} from "@/components/admin/session-polling"
 
 describe("session poller", () => {
+  it("reuses the same promise for concurrent external loads", async () => {
+    let resolve!: (value: string) => void
+    const load = vi.fn(
+      () =>
+        new Promise<string>((r) => {
+          resolve = r
+        })
+    )
+    const shared = createInFlightLoader(load)
+
+    const first = shared()
+    const second = shared()
+
+    expect(first).toBe(second)
+    expect(load).toHaveBeenCalledTimes(1)
+    resolve("sessions")
+    await expect(first).resolves.toBe("sessions")
+  })
+
   it("reuses in-flight poll and schedules only after completion", async () => {
     let resolve!: () => void
     const load = vi.fn(
