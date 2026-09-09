@@ -13,7 +13,12 @@ export function ItemCard({
   className?: string
 }) {
   return (
-    <div className={cn("rounded-md border bg-muted/40 p-3", className)}>
+    <div
+      className={cn(
+        "min-w-0 rounded-lg border border-border/70 bg-card/50 p-3 shadow-xs ring-1 ring-foreground/5",
+        className
+      )}
+    >
       {meta != null && (
         <div className="mb-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
           {meta}

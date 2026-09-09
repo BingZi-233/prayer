@@ -16,10 +16,10 @@ export default function AdminLayout({
 }) {
   return (
     <LiveProvider>
-      <SidebarProvider className="h-svh overflow-hidden">
+      <SidebarProvider className="h-svh overflow-hidden bg-muted/30">
         <AppSidebar />
-        <SidebarInset className="min-h-0 overflow-hidden">
-          <header className="sticky top-0 z-20 flex h-14 shrink-0 items-center gap-2 border-b bg-background/95 px-3 backdrop-blur supports-[backdrop-filter]:bg-background/80 sm:px-4">
+        <SidebarInset className="min-h-0 overflow-hidden bg-muted/20 md:m-2 md:ml-0 md:rounded-xl md:shadow-sm">
+          <header className="sticky top-0 z-20 flex h-14 shrink-0 items-center gap-2 border-b bg-background/95 px-3 backdrop-blur supports-[backdrop-filter]:bg-background/80 sm:px-4 md:px-6">
             <SidebarTrigger className="-ml-1 shrink-0" />
             <Separator
               orientation="vertical"

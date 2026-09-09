@@ -144,7 +144,7 @@ function CompactionRow({ c }: { c: Compaction }) {
 
   return (
     <details
-      className="rounded-md border bg-muted/40"
+      className="rounded-lg border border-border/70 bg-card/50 shadow-xs ring-1 ring-foreground/5"
       onToggle={(e) => {
         if (e.currentTarget.open) void load()
       }}

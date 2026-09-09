@@ -155,7 +155,7 @@ function SessionsSkeleton() {
   return (
     <PageShell fill>
       <Skeleton className="h-12 w-64 shrink-0" />
-      <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[320px_1fr]">
+      <div className="grid min-h-0 min-w-0 flex-1 gap-3 lg:gap-4 lg:grid-cols-[320px_1fr]">
         <Skeleton className="h-full min-h-80" />
         <Skeleton className="h-full min-h-80" />
       </div>

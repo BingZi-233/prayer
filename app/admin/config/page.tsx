@@ -104,7 +104,7 @@ export default function ConfigPage() {
         <Tabs
           defaultValue="base"
           orientation="vertical"
-          className="grid gap-4 md:grid-cols-[220px_minmax(0,1fr)] md:items-start"
+          className="grid min-w-0 gap-3 md:grid-cols-[220px_minmax(0,1fr)] md:items-start md:gap-4"
         >
           <div className="h-fit md:sticky md:top-20">
             <div className="mb-1 px-2 pt-1 pb-1 text-[11px] font-semibold tracking-wide text-muted-foreground">
@@ -113,7 +113,7 @@ export default function ConfigPage() {
             <TabsList
               variant="line"
               aria-label="设置分类"
-              className="grid h-fit w-full grid-cols-2 content-start gap-1 rounded-xl border bg-muted/30 p-2 md:grid-cols-1 md:rounded-lg md:border-0 md:bg-muted/40 md:p-1"
+              className="grid h-fit w-full grid-cols-2 content-start gap-1 rounded-lg border bg-muted/30 p-2 md:grid-cols-1 md:rounded-lg md:border-0 md:bg-muted/40 md:p-1"
             >
               <TabsTrigger
                 value="base"

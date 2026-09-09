@@ -21,7 +21,7 @@ export function EmptyState({
   description?: ReactNode
 }) {
   return (
-    <Empty>
+    <Empty className="min-h-32 py-8">
       <EmptyHeader>
         {Icon && (
           <EmptyMedia variant="icon">
@@ -46,7 +46,7 @@ export function ErrorState({
   onRetry?: () => void
 }) {
   return (
-    <Empty>
+    <Empty className="min-h-32 py-8">
       <EmptyHeader>
         <EmptyMedia variant="icon">
           <TriangleAlert />

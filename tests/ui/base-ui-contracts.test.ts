@@ -217,4 +217,12 @@ describe("Base UI migration contract", () => {
     expect(source).toMatch(/peer-data-disabled:cursor-not-allowed/)
     expect(source).toMatch(/peer-data-disabled:opacity-50/)
   })
+
+  it("admin shell uses the inset surface and compact sticky header", async () => {
+    const source = await read("app/admin/layout.tsx")
+    expect(source).toMatch(/<SidebarInset[^>]*className="[^"]*bg-muted\/20/)
+    expect(source).toMatch(/<SidebarInset[^>]*className="[^"]*md:rounded-xl/)
+    expect(source).toMatch(/<header[^>]*className="[^"]*sticky[^\"]*h-14/)
+    expect(source).toMatch(/className="[^"]*md:p-6/)
+  })
 })
