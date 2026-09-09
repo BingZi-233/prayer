@@ -58,6 +58,7 @@ import { VirtualList } from "@/components/admin/virtual-list"
 import { MasterDetail } from "@/components/admin/master-detail"
 import { DataState, EmptyState } from "@/components/admin/data-state"
 import { RelativeTime } from "@/components/relative-time"
+import { createSessionPoller } from "@/components/admin/session-polling"
 import {
   sessionKeyParts,
   useGroupNames,
@@ -302,13 +303,6 @@ function SessionsInner() {
     return null
   }, [])
 
-  // 首屏拉列表;挪进异步边界,setState 不落在 effect 同步路径上
-  useEffect(() => {
-    void (async () => {
-      await loadSessions()
-    })()
-  }, [loadSessions])
-
   // 仅当 URL 的 key 真的变化时才从外链打开;sessions 轮询不触发
   const paramKey = params.get("key")
   useEffect(() => {
@@ -352,7 +346,7 @@ function SessionsInner() {
   useEffect(() => {
     let cancelled = false
     const tick = async () => {
-      if (document.hidden || cancelled) return
+      if (cancelled) return
       try {
         const r = await fetch("/api/sessions").then((x) => x.json())
         if (!r.ok || cancelled) return
@@ -382,10 +376,11 @@ function SessionsInner() {
         /* 静默 */
       }
     }
-    const t = setInterval(() => void tick(), POLL_MS)
+    const poller = createSessionPoller(tick, { intervalMs: POLL_MS })
+    poller.start()
     return () => {
       cancelled = true
-      clearInterval(t)
+      poller.stop()
     }
   }, [])
 
