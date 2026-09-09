@@ -46,7 +46,9 @@ focused contract, typecheck, lint, and diff checks pass.
   light ring/border treatment, and navigation labels use the sidebar muted
   foreground token. These are visual-only changes.
 - No intended changes to route transitions, sidebar persistence, mobile
-  master-detail switching, virtual-list measurement, or scrolling behavior.
+  master-detail switching, virtual-list measurement, or scrolling behavior;
+  the virtual-list wrapper deliberately does not set `overscroll-contain`, so
+  nested mobile scroll chaining remains browser-native.
 
 ## Verify by hand
 

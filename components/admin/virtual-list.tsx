@@ -41,7 +41,7 @@ export function VirtualList<T>({
   return (
     <div
       ref={parentRef}
-      className={cn("min-h-0 min-w-0 overscroll-contain overflow-y-auto", className)}
+      className={cn("min-h-0 min-w-0 overflow-y-auto", className)}
     >
       <div
         style={{
