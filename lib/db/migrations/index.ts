@@ -18,4 +18,5 @@ export {
   ensureQuestionTopicUnique,
   ensureSeenMessagesCreatedIndex,
   migrateLegacySessionKeys,
+  ensureHotReadIndexes,
 } from "./schema.ts"

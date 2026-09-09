@@ -11,16 +11,7 @@ import { dirname } from "node:path"
 import { z } from "zod"
 import { ok, fail } from "@/lib/api"
 import { isKbRelPath, relFromParts, safeKbAbs } from "@/lib/kb-path"
-import { sharedDb } from "@/lib/db/shared"
-import { Repo } from "@/lib/db/repo"
-import { getConfig } from "@/lib/config-store"
-
-function repo(): Repo {
-  const cfg = getConfig(
-    new Repo(sharedDb(process.env.DB_PATH ?? "./data/agent.db"))
-  )
-  return new Repo(sharedDb(cfg.dbPath))
-}
+import { getAppContext } from "@/lib/app-context"
 
 // catch-all 段:file 为路径片段数组(如 ["faq","退款.md"]),支持子目录
 function resolveRel(parts: string[]): { rel: string; abs: string } | null {
@@ -85,7 +76,8 @@ export async function PATCH(
       return NextResponse.json(fail("目标已存在"), { status: 409 })
     mkdirSync(dirname(newAbs), { recursive: true })
     renameSync(r.abs, newAbs)
-    repo().renameKbDoc(r.rel, newRel)
+    const { repo: dbRepo } = getAppContext()
+    dbRepo.renameKbDoc(r.rel, newRel)
     return NextResponse.json(ok({ path: newRel }))
   } catch (err) {
     return NextResponse.json(
@@ -107,7 +99,8 @@ export async function DELETE(
     if (!existsSync(r.abs))
       return NextResponse.json(fail("文件不存在"), { status: 404 })
     unlinkSync(r.abs)
-    const purged = repo().deleteKbDoc(r.rel)
+    const { repo: dbRepo } = getAppContext()
+    const purged = dbRepo.deleteKbDoc(r.rel)
     return NextResponse.json(ok({ path: r.rel, purged }))
   } catch (err) {
     return NextResponse.json(

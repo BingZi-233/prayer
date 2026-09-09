@@ -1,7 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { sharedDb } from "@/lib/db/shared"
-import { Repo } from "@/lib/db/repo"
-import { getConfig } from "@/lib/config-store"
+import { getAppContext } from "@/lib/app-context"
 import { ok, fail } from "@/lib/api"
 
 // 单条整理记录详情(before/after 全文)。列表接口只给摘要,前端展开时才来这里拉,
@@ -16,10 +14,7 @@ export async function GET(
     if (!Number.isInteger(n))
       return NextResponse.json(fail("参数非法"), { status: 400 })
 
-    const cfg = getConfig(
-      new Repo(sharedDb(process.env.DB_PATH ?? "./data/agent.db"))
-    )
-    const repo = new Repo(sharedDb(cfg.dbPath))
+    const { repo } = getAppContext()
     const detail = repo.compactionDetail(n)
     if (!detail) return NextResponse.json(fail("记录不存在"), { status: 404 })
     return NextResponse.json(ok(detail))

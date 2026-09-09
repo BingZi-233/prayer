@@ -59,6 +59,10 @@ import { MasterDetail } from "@/components/admin/master-detail"
 import { DataState, EmptyState } from "@/components/admin/data-state"
 import { RelativeTime } from "@/components/relative-time"
 import {
+  createSessionListCoordinator,
+  postSessionAction,
+} from "@/components/admin/session-polling"
+import {
   sessionKeyParts,
   useGroupNames,
   useMemberNames,
@@ -185,6 +189,14 @@ function SessionsInner() {
   const activeKeyRef = useRef<string | null>(null)
   const activeUpdatedAtRef = useRef<number | null>(null)
   const sessionsRef = useRef<Sess[] | null>(null)
+  const mountedRef = useRef(false)
+  const isMounted = useCallback(() => mountedRef.current, [])
+  const commitSessions = useCallback((next: Sess[] | null) => {
+    if (next) {
+      sessionsRef.current = next
+      setSessions(next)
+    }
+  }, [])
   const filterRef = useRef(filter)
   const transcriptGenRef = useRef(0)
   // 上次已处理的 URL key;仅在 param 真变化时从 URL 打开,避免 sessions 轮询反复 open
@@ -235,7 +247,7 @@ function SessionsInner() {
         // 过期请求:用户已切到别的会话
         if (transcriptGenRef.current !== gen || activeKeyRef.current !== forKey)
           return
-        if (r.ok) setMsgs(r.data as Msg[])
+        if (r.ok && mountedRef.current) setMsgs(r.data as Msg[])
       } catch {
         if (
           transcriptGenRef.current === gen &&
@@ -248,7 +260,7 @@ function SessionsInner() {
           transcriptGenRef.current === gen &&
           activeKeyRef.current === forKey
         ) {
-          setLoading(false)
+          if (mountedRef.current) setLoading(false)
         }
       }
     },
@@ -291,24 +303,49 @@ function SessionsInner() {
     syncUrl(null, filterRef.current)
   }, [syncUrl])
 
-  const loadSessions = useCallback(async (): Promise<Sess[] | null> => {
-    const r = await fetch("/api/sessions").then((x) => x.json())
-    if (r.ok) {
-      const list = r.data as Sess[]
-      sessionsRef.current = list
-      setSessions(list)
-      return list
+  const refreshActiveTranscript = useCallback(async (list: Sess[] | null) => {
+    try {
+      if (!list || !mountedRef.current) return
+      const key = activeKeyRef.current
+      if (!key) return
+      const s = list.find((x) => x.key === key)
+      if (!s?.sessionId || activeUpdatedAtRef.current === s.updatedAt) return
+      activeUpdatedAtRef.current = s.updatedAt
+      const gen = ++transcriptGenRef.current
+      const tr = await fetch(
+        `/api/sessions/${encodeURIComponent(s.sessionId)}`
+      ).then((x) => x.json())
+      if (
+        mountedRef.current &&
+        transcriptGenRef.current === gen &&
+        activeKeyRef.current === key &&
+        tr.ok
+      ) {
+        setMsgs(tr.data as Msg[])
+      }
+    } catch {
+      /* 静默 */
     }
-    return null
   }, [])
-
-  // 首屏拉列表;挪进异步边界,setState 不落在 effect 同步路径上
-  useEffect(() => {
-    void (async () => {
-      await loadSessions()
-    })()
-  }, [loadSessions])
-
+  /* eslint-disable react-hooks/refs */
+  const sessionCoordinator = useMemo(
+    () =>
+      createSessionListCoordinator(
+        async (): Promise<Sess[] | null> => {
+          const r = await fetch("/api/sessions").then((x) => x.json())
+          if (r.ok) return r.data as Sess[]
+          return null
+        },
+        // 生命周期由 effect 维护，loader 仅在异步完成时读取该 ref。
+        isMounted,
+        commitSessions,
+        { intervalMs: POLL_MS },
+        refreshActiveTranscript
+      ),
+    [commitSessions, isMounted, refreshActiveTranscript]
+  )
+  /* eslint-enable react-hooks/refs */
+  const loadSessions = sessionCoordinator.loadSessions
   // 仅当 URL 的 key 真的变化时才从外链打开;sessions 轮询不触发
   const paramKey = params.get("key")
   useEffect(() => {
@@ -350,44 +387,14 @@ function SessionsInner() {
 
   // 静默轮询列表;transcript 仅在当前会话 updatedAt 变化时刷新
   useEffect(() => {
-    let cancelled = false
-    const tick = async () => {
-      if (document.hidden || cancelled) return
-      try {
-        const r = await fetch("/api/sessions").then((x) => x.json())
-        if (!r.ok || cancelled) return
-        const list = r.data as Sess[]
-        sessionsRef.current = list
-        setSessions(list)
-
-        const key = activeKeyRef.current
-        if (!key) return
-        const s = list.find((x) => x.key === key)
-        if (!s?.sessionId) return
-        if (activeUpdatedAtRef.current === s.updatedAt) return
-        // 会话有新活动 → 静默重拉 transcript(不打断选中)
-        activeUpdatedAtRef.current = s.updatedAt
-        const gen = ++transcriptGenRef.current
-        const tr = await fetch(
-          `/api/sessions/${encodeURIComponent(s.sessionId)}`
-        ).then((x) => x.json())
-        if (
-          cancelled ||
-          transcriptGenRef.current !== gen ||
-          activeKeyRef.current !== key
-        )
-          return
-        if (tr.ok) setMsgs(tr.data as Msg[])
-      } catch {
-        /* 静默 */
-      }
-    }
-    const t = setInterval(() => void tick(), POLL_MS)
+    mountedRef.current = true
+    const poller = sessionCoordinator.poller
+    poller.start()
     return () => {
-      cancelled = true
-      clearInterval(t)
+      mountedRef.current = false
+      poller.stop()
     }
-  }, [])
+  }, [sessionCoordinator])
 
   async function refresh() {
     setRefreshing(true)
@@ -431,13 +438,12 @@ function SessionsInner() {
     setConfirmStep(0)
     setResetting(true)
     try {
-      const r = await fetch("/api/sessions", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ action: "reset_all" }),
-      }).then((x) => x.json())
+      const { response: r } = await postSessionAction(
+        "reset_all",
+        undefined,
+        loadSessions
+      )
       if (r.ok) {
-        await loadSessions()
         toast.success(`已重开 ${r.data.reset} 个会话`)
       } else toast.error(`重开失败:${r.error}`)
     } catch (e) {
@@ -450,13 +456,12 @@ function SessionsInner() {
   async function resetOne(key: string) {
     setResetKey(null)
     try {
-      const r = await fetch("/api/sessions", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ action: "reset", key }),
-      }).then((x) => x.json())
+      const { response: r } = await postSessionAction(
+        "reset",
+        key,
+        loadSessions
+      )
       if (r.ok) {
-        await loadSessions()
         toast.success("已重开该会话,下条消息开新对话")
       } else toast.error(`重开失败:${r.error}`)
     } catch (e) {
@@ -467,14 +472,13 @@ function SessionsInner() {
   async function resumeHandoff(key: string) {
     setResuming(true)
     try {
-      const r = await fetch("/api/sessions", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ action: "resume_handoff", key }),
-      }).then((x) => x.json())
+      const { response: r } = await postSessionAction(
+        "resume_handoff",
+        key,
+        loadSessions
+      )
       if (r.ok) {
         toast.success("已恢复自动答")
-        await loadSessions()
       } else toast.error(r.error || "恢复失败")
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e))

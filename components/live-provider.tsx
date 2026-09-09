@@ -5,6 +5,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from "react"
@@ -135,9 +136,9 @@ export function LiveProvider({ children }: { children: React.ReactNode }) {
     return loadRef.current()
   }, [])
 
-  return (
-    <LiveCtx.Provider value={{ status, overview, lastUpdated, refresh }}>
-      {children}
-    </LiveCtx.Provider>
+  const value = useMemo(
+    () => ({ status, overview, lastUpdated, refresh }),
+    [status, overview, lastUpdated, refresh]
   )
+  return <LiveCtx.Provider value={value}>{children}</LiveCtx.Provider>
 }

@@ -9,6 +9,7 @@ import {
   verifyDatabaseFile,
 } from "@/lib/db/backup"
 import { openDb } from "@/lib/db/index"
+import { CURRENT_SCHEMA_VERSION } from "@/lib/db/migrations/index"
 
 const databases: Database.Database[] = []
 const directories: string[] = []
@@ -42,7 +43,7 @@ describe("数据库备份", () => {
       join(directory, "backups", "snapshot.db")
     )
 
-    expect(result.userVersion).toBe(7)
+    expect(result.userVersion).toBe(CURRENT_SCHEMA_VERSION)
     expect(result.totalPages).toBeGreaterThan(0)
     expect(verifyDatabaseFile(result.path)).toEqual({
       ok: true,

@@ -6,6 +6,7 @@ import {
   migrateToVersion5,
   migrateToVersion6,
   migrateToVersion7,
+  migrateToVersion8,
   repairVersion2,
 } from "./schema.ts"
 
@@ -49,6 +50,12 @@ export const MIGRATIONS: readonly MigrationStep[] = [
     name: "入站消息清理索引",
     up: migrateToVersion7,
     repair: migrateToVersion7,
+  },
+  {
+    version: 8,
+    name: "热点读取索引",
+    up: migrateToVersion8,
+    repair: migrateToVersion8,
   },
 ]
 

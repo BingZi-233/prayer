@@ -25,6 +25,13 @@ vi.mock("@/lib/db/repo", () => ({ Repo: vi.fn() }))
 vi.mock("@/lib/config-store", () => ({
   getConfig: () => ({ claudeConfigDir: "/tmp/x", dbPath: ":memory:" }),
 }))
+vi.mock("@/lib/app-context", () => ({
+  getAppContext: () => ({
+    cfg: { claudeConfigDir: "/tmp/x", dbPath: ":memory:" },
+    configRepo: {},
+    repo: {},
+  }),
+}))
 
 import { PATCH, DELETE } from "@/app/api/plugins/[id]/route"
 

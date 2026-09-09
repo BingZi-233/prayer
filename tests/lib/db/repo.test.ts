@@ -7,6 +7,7 @@ import {
   migrateLegacySessionKeys,
   ensureQuestionTopicUnique,
 } from "@/lib/db/index"
+import { CURRENT_SCHEMA_VERSION } from "@/lib/db/migrations/index"
 import { Repo } from "@/lib/db/repo"
 import BetterSqlite3 from "better-sqlite3"
 import type Database from "better-sqlite3"
@@ -877,8 +878,8 @@ describe("channel schema migration", () => {
     raw.close()
 
     const migrated = openDb(p, 3)
-    // v1→v2→…→v7 一路升完
-    expect(migrated.pragma("user_version", { simple: true }) as number).toBe(7)
+    // v1→当前版本一路升完
+    expect(migrated.pragma("user_version", { simple: true }) as number).toBe(CURRENT_SCHEMA_VERSION)
     // v4: group_messages 补 mentioned_bot 列,老数据默认 0
     const gmCols = (
       migrated.prepare("PRAGMA table_info(group_messages)").all() as {
@@ -925,7 +926,7 @@ describe("channel schema migration", () => {
     // 幂等:再 open 不炸
     migrated.close()
     const again = openDb(p, 3)
-    expect(again.pragma("user_version", { simple: true })).toBe(7)
+    expect(again.pragma("user_version", { simple: true })).toBe(CURRENT_SCHEMA_VERSION)
     again.close()
     rmSync(dir, { recursive: true, force: true })
   })
@@ -1032,11 +1033,11 @@ describe("v6 迁移:性能索引", () => {
     raw.close()
 
     const upgraded = openDb(p, 3)
-    // v6(索引+唯一化)→ v7(seen_messages 索引)一路升完
-    expect(upgraded.pragma("user_version", { simple: true }) as number).toBe(7)
+    // v6(索引+唯一化)→当前版本一路升完
+    expect(upgraded.pragma("user_version", { simple: true }) as number).toBe(CURRENT_SCHEMA_VERSION)
     upgraded.close()
     const again = openDb(p, 3)
-    expect(again.pragma("user_version", { simple: true })).toBe(7)
+    expect(again.pragma("user_version", { simple: true })).toBe(CURRENT_SCHEMA_VERSION)
     again.close()
     rmSync(dir, { recursive: true, force: true })
   })

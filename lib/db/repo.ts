@@ -370,6 +370,9 @@ export class Repo {
   topicSamples(...args: Parameters<TopicsRepository["topicSamples"]>) {
     return this.topics.topicSamples(...args)
   }
+  topicSamplesBatch(...args: Parameters<TopicsRepository["topicSamplesBatch"]>) {
+    return this.topics.topicSamplesBatch(...args)
+  }
   topicCursors(...args: Parameters<TopicsRepository["topicCursors"]>) {
     return this.topics.topicCursors(...args)
   }

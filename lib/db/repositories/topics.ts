@@ -98,6 +98,24 @@ export class TopicsRepository {
     return rows.map((r) => r.text)
   }
 
+  topicSamplesBatch(topicIds: number[], limit: number, sinceTs = 0): Map<number, string[]> {
+    const result = new Map<number, string[]>()
+    for (const id of topicIds) result.set(id, [])
+    if (topicIds.length === 0 || limit <= 0) return result
+    const placeholders = topicIds.map(() => "?").join(",")
+    const rows = this.sql.prepare<{ topic_id: number; text: string }>(
+      `SELECT topic_id, text FROM (
+         SELECT topic_id, text, MAX(msg_ts) AS ts,
+                ROW_NUMBER() OVER (PARTITION BY topic_id ORDER BY MAX(msg_ts) DESC) AS rn
+         FROM question_occurrences
+         WHERE topic_id IN (${placeholders}) AND msg_ts >= ?
+         GROUP BY topic_id, text
+       ) WHERE rn <= ? ORDER BY topic_id, ts DESC`
+    ).all(...topicIds, sinceTs, limit)
+    for (const row of rows) result.get(row.topic_id)!.push(row.text)
+    return result
+  }
+
   // 生效 chat 中 topic 游标的最小值(忽略从未处理过的 0,避免恒卡 prune)。
   // 无任何 >0 游标 → MAX_SAFE_INTEGER(prune 不受 topic 侧约束)。
   // 接受 {channel, chatId}[] 或历史 number[](视为 qq 群号,Phase 0 兼容)。

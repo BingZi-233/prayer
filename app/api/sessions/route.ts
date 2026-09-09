@@ -1,16 +1,12 @@
 import { NextRequest, NextResponse } from "next/server"
 import { z } from "zod"
-import { sharedDb } from "@/lib/db/shared"
-import { Repo } from "@/lib/db/repo"
-import { getConfig } from "@/lib/config-store"
+import { getAppContext } from "@/lib/app-context"
 import { ok, fail } from "@/lib/api"
 import { bus } from "@/lib/bus"
 
-function sessionContext(): { repo: Repo; resumeTtlMs: number } {
-  const cfg = getConfig(
-    new Repo(sharedDb(process.env.DB_PATH ?? "./data/agent.db"))
-  )
-  return { repo: new Repo(sharedDb(cfg.dbPath)), resumeTtlMs: cfg.resumeTtlMs }
+function sessionContext() {
+  const { repo, cfg } = getAppContext()
+  return { repo, resumeTtlMs: cfg.resumeTtlMs }
 }
 
 export async function GET(): Promise<NextResponse> {

@@ -1,22 +1,18 @@
 import { NextRequest, NextResponse } from "next/server"
 import { z } from "zod"
-import { sharedDb } from "@/lib/db/shared"
-import { Repo } from "@/lib/db/repo"
-import { getConfig } from "@/lib/config-store"
+import { getAppContext } from "@/lib/app-context"
 import { getRuntime, defaultBuilders } from "@/lib/runtime"
 import { PluginManager } from "@/lib/plugins/manager"
 import { ok, fail } from "@/lib/api"
 
-function cfg() {
-  return getConfig(new Repo(sharedDb(process.env.DB_PATH ?? "./data/agent.db")))
-}
-function manager() {
-  return new PluginManager(cfg().claudeConfigDir)
+function manager(cfg: { claudeConfigDir: string }) {
+  return new PluginManager(cfg.claudeConfigDir)
 }
 
 export async function GET(): Promise<NextResponse> {
   try {
-    return NextResponse.json(ok(await manager().list()))
+    const { cfg } = getAppContext()
+    return NextResponse.json(ok(await manager(cfg).list()))
   } catch (err) {
     return NextResponse.json(
       fail(err instanceof Error ? err.message : String(err)),
@@ -40,7 +36,8 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   const { repoOrPath, marketplaceName, pluginName } = parsed.data
 
   try {
-    const m = manager()
+    const { cfg } = getAppContext()
+    const m = manager(cfg)
     const added = await m.addMarketplace(repoOrPath)
     if (!added.ok)
       return NextResponse.json(fail(added.error ?? "添加 marketplace 失败"), {
@@ -52,8 +49,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         status: 500,
       })
 
-    const c = cfg()
-    await getRuntime().reconfigure(c, await defaultBuilders())
+    await getRuntime().reconfigure(cfg, await defaultBuilders())
     return NextResponse.json(ok(await m.list()))
   } catch (err) {
     return NextResponse.json(

@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from "next/server"
-import { sharedDb } from "@/lib/db/shared"
-import { Repo } from "@/lib/db/repo"
-import { getConfig } from "@/lib/config-store"
+import { getAppContext } from "@/lib/app-context"
 import { ok, fail } from "@/lib/api"
 import { embed } from "@/lib/tools/embed"
+import { mapWithConcurrency } from "@/lib/concurrency"
 import {
   isDuplicateOfHits,
   DEFAULT_DUP_TOP_K,
@@ -21,10 +20,7 @@ const TOP_KB = 30 // 只对前 N 主题算 KB 命中,控制 embedding 次数
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
   try {
-    const cfg = getConfig(
-      new Repo(sharedDb(process.env.DB_PATH ?? "./data/agent.db"))
-    )
-    const repo = new Repo(sharedDb(cfg.dbPath))
+    const { repo } = getAppContext()
     const now = Date.now()
     const raw = req.nextUrl.searchParams.get("window") ?? "7d"
     const window = raw === "30d" || raw === "all" ? raw : "7d"
@@ -34,20 +30,26 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
     const topics = []
     let gaps = 0
     let questions = 0
+    const samplesByTopic = repo.topicSamplesBatch(ranked.map((r) => r.id), 5, since)
+    const probes = await mapWithConcurrency(ranked.slice(0, TOP_KB), 4, async (r) => {
+      const samples = samplesByTopic.get(r.id) ?? []
+      const probe = samples[0] ?? r.title
+      const hits = repo.searchKb(await embed(probe), DEFAULT_DUP_TOP_K)
+      const dup = isDuplicateOfHits(probe, hits, DEFAULT_DUP_MAX_DISTANCE)
+      return { id: r.id, samples, kbCovered: dup.duplicate, kbDistance: dup.hit?.distance ?? (hits.length ? hits[0].distance : null) }
+    })
+    const probeById = new Map(probes.map((p) => [p.id, p]))
     for (let idx = 0; idx < ranked.length; idx++) {
       const r = ranked[idx]
       questions += r.count
-      const samples = repo.topicSamples(r.id, 5, since)
+      const samples = samplesByTopic.get(r.id) ?? []
       // null = 未评估(排名 TOP_KB 之外不算 KB,避免误标盲区)
       let kbCovered: boolean | null = null
       let kbDistance: number | null = null
       if (idx < TOP_KB) {
-        const probe = samples[0] ?? r.title
-        const hits = repo.searchKb(await embed(probe), DEFAULT_DUP_TOP_K)
-        const dup = isDuplicateOfHits(probe, hits, DEFAULT_DUP_MAX_DISTANCE)
-        kbCovered = dup.duplicate
-        kbDistance =
-          dup.hit?.distance ?? (hits.length ? hits[0].distance : null)
+        const p = probeById.get(r.id)!
+        kbCovered = p.kbCovered
+        kbDistance = p.kbDistance
         if (!kbCovered) gaps++
       }
       topics.push({

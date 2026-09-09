@@ -9,7 +9,10 @@ const { reconfigure, defaultBuilders } = vi.hoisted(() => ({
   reconfigure: vi.fn(),
   defaultBuilders: vi.fn(async () => ({})),
 }))
-vi.mock("@/lib/db/shared", () => ({ sharedDb: () => db }))
+vi.mock("@/lib/db/shared", () => ({
+  sharedDb: () => db,
+  sharedRepo: () => new Repo(db),
+}))
 vi.mock("@/lib/runtime", () => ({
   getRuntime: () => ({ reconfigure }),
   defaultBuilders,
