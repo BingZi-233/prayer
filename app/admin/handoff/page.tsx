@@ -158,6 +158,7 @@ export default function HandoffQueuePage() {
                             href={`/admin/sessions?key=${encodeURIComponent(r.key)}&human=1`}
                           />
                         }
+                        nativeButton={false}
                         variant="ghost"
                         size="sm"
                       >

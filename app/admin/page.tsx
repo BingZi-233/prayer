@@ -222,6 +222,7 @@ export default function StatusPage() {
           {(ov?.humanSessions ?? 0) > 0 && (
             <Button
               render={<Link href="/admin/handoff" />}
+              nativeButton={false}
               variant="outline"
               size="sm"
             >
