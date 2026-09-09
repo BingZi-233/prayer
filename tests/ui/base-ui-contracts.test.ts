@@ -52,4 +52,34 @@ describe("Base UI migration contract", () => {
     expect(source).toMatch(/@base-ui\/react\/merge-props/)
     expect(source).not.toMatch(/Slot/)
   })
+
+  it("the Label wrapper uses a native label element", async () => {
+    const source = await read("components/ui/label.tsx")
+    expect(source).toMatch(/React\.ComponentProps<"label">/)
+    expect(source).not.toMatch(/radix-ui|@radix-ui|LabelPrimitive/)
+  })
+
+  it("the Separator wrapper uses the callable Base UI primitive", async () => {
+    const source = await read("components/ui/separator.tsx")
+    expect(source).toMatch(/@base-ui\/react\/separator/)
+    expect(source).toMatch(/<SeparatorPrimitive(?:\s|>)/)
+    expect(source).not.toMatch(/SeparatorPrimitive\.Root/)
+    expect(source).not.toMatch(/decorative|radix-ui|@radix-ui/)
+  })
+
+  it("the Checkbox wrapper uses Base UI checkbox parts", async () => {
+    const source = await read("components/ui/checkbox.tsx")
+    expect(source).toMatch(/@base-ui\/react\/checkbox/)
+    expect(source).toMatch(/CheckboxPrimitive\.Root/)
+    expect(source).toMatch(/CheckboxPrimitive\.Indicator/)
+    expect(source).not.toMatch(/radix-ui|@radix-ui/)
+  })
+
+  it("the Switch wrapper uses Base UI switch parts", async () => {
+    const source = await read("components/ui/switch.tsx")
+    expect(source).toMatch(/@base-ui\/react\/switch/)
+    expect(source).toMatch(/SwitchPrimitive\.Root/)
+    expect(source).toMatch(/SwitchPrimitive\.Thumb/)
+    expect(source).not.toMatch(/radix-ui|@radix-ui/)
+  })
 })
