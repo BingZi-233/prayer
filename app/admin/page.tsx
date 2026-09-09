@@ -175,15 +175,15 @@ export default function StatusPage() {
         description="查看运行状态与今日业务结果。"
         actions={
           <Dialog>
-            <DialogTrigger asChild>
-              <Button disabled={busy} className="w-full sm:w-auto">
-                {busy ? (
-                  <Spinner data-icon="inline-start" />
-                ) : (
-                  <RotateCw data-icon="inline-start" />
-                )}
-                {busy ? "重启中…" : "重启 Agent"}
-              </Button>
+            <DialogTrigger
+              render={<Button disabled={busy} className="w-full sm:w-auto" />}
+            >
+              {busy ? (
+                <Spinner data-icon="inline-start" />
+              ) : (
+                <RotateCw data-icon="inline-start" />
+              )}
+              {busy ? "重启中…" : "重启 Agent"}
             </DialogTrigger>
             <DialogContent>
               <DialogHeader>
@@ -193,13 +193,13 @@ export default function StatusPage() {
                 </DialogDescription>
               </DialogHeader>
               <DialogFooter>
-                <DialogClose asChild>
-                  <Button variant="outline">取消</Button>
+                <DialogClose render={<Button variant="outline" />}>
+                  取消
                 </DialogClose>
-                <DialogClose asChild>
-                  <Button onClick={restart} disabled={busy}>
-                    确认重启
-                  </Button>
+                <DialogClose
+                  render={<Button onClick={restart} disabled={busy} />}
+                >
+                  确认重启
                 </DialogClose>
               </DialogFooter>
             </DialogContent>
