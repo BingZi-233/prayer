@@ -13,6 +13,15 @@ describe("Base UI dialog migration contract", () => {
     expect(source).not.toMatch(/DialogPrimitive\.(Overlay|Content)|asChild/)
   })
 
+  it("keeps Dialog children narrowed to ReactNode for Radix-compatible consumers", async () => {
+    const source = await readFile("components/ui/dialog.tsx", "utf8")
+
+    expect(source).toMatch(
+      /Omit<React\.ComponentProps<typeof DialogPrimitive\.Root>, "children">/
+    )
+    expect(source).toMatch(/children\?: React\.ReactNode/)
+  })
+
   it("maps AlertDialog parts to Base UI Backdrop, Popup, and Close", async () => {
     const source = await readFile("components/ui/alert-dialog.tsx", "utf8")
 

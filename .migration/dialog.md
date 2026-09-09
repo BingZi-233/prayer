@@ -23,8 +23,8 @@
 
 ## Verify by hand
 
-- Automated focused contract: `pnpm vitest run tests/ui/dialog-migration-contracts.test.ts` — 2 tests passed.
-- `pnpm typecheck` was run; it remains blocked by the pre-existing `components/ui/command.tsx:59` `PayloadChildRenderFunction` type error (no Dialog errors).
+- Automated focused contract: `pnpm vitest run tests/ui/dialog-migration-contracts.test.ts` — 3 tests passed.
+- `pnpm typecheck` passes after narrowing the Dialog root `children` prop to `React.ReactNode`; the Base payload-render function no longer leaks into Radix-compatible consumers such as `CommandDialog`.
 - `pnpm lint` completed with 0 errors and 1 pre-existing warning in `tests/lib/ranking-route.test.ts:5` (`probe` unused).
 - Manual browser checks still required: open from admin status/reflection, close with Escape, outside click, focus return to trigger, and 320/390px width.
 

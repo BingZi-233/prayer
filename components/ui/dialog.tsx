@@ -9,7 +9,9 @@ import { XIcon } from "lucide-react"
 
 function Dialog({
   ...props
-}: React.ComponentProps<typeof DialogPrimitive.Root>) {
+}: Omit<React.ComponentProps<typeof DialogPrimitive.Root>, "children"> & {
+  children?: React.ReactNode
+}) {
   return <DialogPrimitive.Root data-slot="dialog" {...props} />
 }
 
