@@ -16,3 +16,9 @@
 ## Concerns
 
 - None known; response fields and 500 error behavior remain unchanged.
+
+## Review round 1
+
+- Expanded ranking fixtures to 31 topics and verified exactly 30 embedding/search calls, max embedding concurrency <=4, title probe fallback, and null KB fields beyond TOP_KB.
+- Added embedding failure, KB search failure, and empty-ranking (topics[]) contracts.
+- Verification: target tests 7 passed; full `pnpm vitest run tests/lib` — 74 files, 785 tests passed; typecheck and diff-check passed.
