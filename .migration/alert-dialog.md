@@ -25,3 +25,10 @@
 - `pnpm typecheck` was run; it remains blocked by the pre-existing `components/ui/command.tsx:59` `PayloadChildRenderFunction` type error (no AlertDialog errors).
 - `pnpm lint` is required at integration time; run it with the rest of the migration suite.
 - Manual browser checks still required: destructive confirmation, Cancel/Action close behavior, Escape/outside click, focus return, and 320/390px width.
+
+## Residual scan
+
+```text
+rg -n "AlertDialogPrimitive\\.(Overlay|Content|Cancel|Action)|asChild|onOpenAutoFocus|onCloseAutoFocus|onInteractOutside" components/ui/alert-dialog.tsx app/admin/kb/page.tsx app/admin/page.tsx app/admin/reflection/page.tsx app/admin/groups/page.tsx
+# no matches
+```
