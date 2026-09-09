@@ -31,4 +31,11 @@ describe("Base UI migration contract", () => {
     const config = JSON.parse(await read("components.json")) as { style: string }
     expect(config.style).toBe("base-mira")
   })
+
+  it("the Button wrapper uses the Base UI primitive and render composition", async () => {
+    const source = await read("components/ui/button.tsx")
+    expect(source).toMatch(/@base-ui\/react\/button/)
+    expect(source).toMatch(/ButtonPrimitive/)
+    expect(source).not.toMatch(/radix-ui|@radix-ui|Slot\.Root/)
+  })
 })

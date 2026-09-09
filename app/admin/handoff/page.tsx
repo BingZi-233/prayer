@@ -152,13 +152,17 @@ export default function HandoffQueuePage() {
                   </TableCell>
                   <TableCell>
                     <div className="flex flex-wrap gap-1">
-                      <Button asChild variant="ghost" size="sm">
-                        <Link
-                          href={`/admin/sessions?key=${encodeURIComponent(r.key)}&human=1`}
-                        >
-                          <MessagesSquare data-icon="inline-start" />
-                          查看会话
-                        </Link>
+                      <Button
+                        render={
+                          <Link
+                            href={`/admin/sessions?key=${encodeURIComponent(r.key)}&human=1`}
+                          />
+                        }
+                        variant="ghost"
+                        size="sm"
+                      >
+                        <MessagesSquare data-icon="inline-start" />
+                        查看会话
                       </Button>
                       <Button
                         variant="outline"

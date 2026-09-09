@@ -220,8 +220,12 @@ export default function StatusPage() {
           contentClassName="flex flex-wrap gap-2"
         >
           {(ov?.humanSessions ?? 0) > 0 && (
-            <Button asChild variant="outline" size="sm">
-              <Link href="/admin/handoff">人工会话 {ov!.humanSessions}</Link>
+            <Button
+              render={<Link href="/admin/handoff" />}
+              variant="outline"
+              size="sm"
+            >
+              人工会话 {ov!.humanSessions}
             </Button>
           )}
           {s?.channels?.map(
