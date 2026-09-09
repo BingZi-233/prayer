@@ -332,7 +332,7 @@ Overlay→Backdrop、Content→Popup；居中 Dialog 不使用 Positioner。关�
 
 - [x] Step 3: 迁移 AlertDialog
 
-Overlay→Backdrop、Content→Popup、Cancel/Action→Close；多步骤确认通过 `preventDefault()` 保持中间步骤打开；保留 destructive variant 和确认语义。
+Overlay→Backdrop、Content→Popup、Cancel/Action→Close；多步骤确认通过 `preventBaseUIHandler()`（并保留 `preventDefault()`）保持中间步骤打开；保留 destructive variant 和确认语义。
 
 - [x] Step 4: 扫描消费者
 

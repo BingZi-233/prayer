@@ -1049,6 +1049,7 @@ function SessionsInner() {
               <AlertDialogAction
                 onClick={(e) => {
                   e.preventDefault()
+                  e.preventBaseUIHandler()
                   setConfirmStep((s) => s + 1)
                 }}
               >

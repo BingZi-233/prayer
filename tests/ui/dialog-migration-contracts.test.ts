@@ -39,4 +39,10 @@ describe("Base UI dialog migration contract", () => {
       /AlertDialogPrimitive\.(Overlay|Content|Cancel|Action)|asChild/
     )
   })
+
+  it("keeps the sessions multi-step action open until the final step", async () => {
+    const source = await readFile("app/admin/sessions/page.tsx", "utf8")
+
+    expect(source).toMatch(/e\.preventDefault\(\)\s+e\.preventBaseUIHandler\(\)/)
+  })
 })

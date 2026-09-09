@@ -17,14 +17,14 @@
 ## Behavior changes
 
 - Base AlertDialog provides modal focus trapping, Escape/outside-press behavior, and focus restoration. Radix-specific event parameters were not passed through.
-- Cancel and Action use Base `Close`, so successful action presses close the alert dialog and restore focus. The existing multi-step session action calls `preventDefault()` before advancing its controlled step, so that intermediate confirmation remains open; async handlers retain their existing side effects.
+- Cancel and Action use Base `Close`, so successful action presses close the alert dialog and restore focus. The existing multi-step session action calls both `preventDefault()` and Base UI's `preventBaseUIHandler()` before advancing its controlled step, so that intermediate confirmation remains open; async handlers retain their existing side effects.
 
 ## Verify by hand
 
 - Automated focused contract: `pnpm vitest run tests/ui/dialog-migration-contracts.test.ts` — 3 tests passed.
 - `pnpm typecheck` passes. AlertDialog has no surfaced children-propagation error in current consumers; its root remains otherwise unchanged.
 - `pnpm lint` completed with 0 errors and 1 pre-existing warning in `tests/lib/ranking-route.test.ts:5` (`probe` unused).
-- Final browser evidence for destructive confirmation, Cancel/Action close behavior, Escape/outside click, focus return, and 320/390px width is recorded in `.migration/project.md`.
+- Final browser evidence for destructive confirmation, Cancel/Action close behavior, the sessions intermediate step staying open, Escape/outside click, focus return, and 320/390px width is recorded in `.migration/project.md`; the destructive final action was not executed against live session data.
 
 ## Residual scan
 

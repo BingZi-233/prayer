@@ -20,6 +20,7 @@
 
 - Removed the three stale `data-[state=inactive]:hidden` selectors from `app/admin/kb/page.tsx`; Base Tabs panels provide hidden/unmount semantics.
 - Reviewed both AlertDialog instances in `app/admin/sessions/page.tsx` and the delete/discard dialogs in `app/admin/kb/page.tsx`; they use the migrated controlled boolean API and require no prop changes.
+- The two standalone admin navigation actions use semantic `Link` elements styled with `buttonVariants`; they do not use `Button nativeButton={false}`, so anchors retain native link keyboard and screen-reader semantics.
 - The source sweep command and result:
 
 ```text
@@ -44,7 +45,7 @@ The two remaining `data-[state=...]` matches are ordinary table/sidebar state st
 - Select controlled callbacks can emit `null`; consumers now ignore `null` where the existing domain state has no empty value.
 - Label, Separator, Checkbox, and Switch use native/Base state attributes (`data-disabled`, `data-checked`, etc.) with matching styles.
 - Dialog, AlertDialog, Sheet, and Popover focus, Escape, outside-dismissal, collision, and focus-restoration behavior is provided by Base UI. No Radix-specific focus/outside event handlers were present in consumers.
-- AlertDialog Action and Cancel both compose Base `Close`; the sessions multi-step action calls `preventDefault()` before advancing its controlled step, while final destructive actions close and restore focus as before.
+- AlertDialog Action and Cancel both compose Base `Close`; the sessions multi-step action calls `preventBaseUIHandler()` (alongside `preventDefault()`) before advancing its controlled step, while final destructive actions close and restore focus as before.
 
 ## Verify by hand
 
@@ -73,7 +74,9 @@ Remaining Radix wrappers: **0** (16/16 migrated).
 - Manual interaction checks passed for the login invalid-token error path,
   desktop sidebar collapse/restore, mobile Sheet open/Escape close, Dialog
   Escape plus focus return, Select listbox open/close, Config Tabs switching,
-  and the light/dark theme toggle at 320px.
+  the sessions multi-step AlertDialog (the intermediate step stays open), and
+  the light/dark theme toggle at 320px. The destructive final action was not
+  executed against live session data.
 - The final `pnpm check` passed (85 test files, 931 tests); ESLint reported
   zero errors and the existing `tests/lib/ranking-route.test.ts:5` warning.
   `NEXT_DIST_DIR=.next-verify pnpm build` also passed and generated all 40

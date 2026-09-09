@@ -225,4 +225,23 @@ describe("Base UI migration contract", () => {
     expect(source).toMatch(/<header[^>]*className="[^"]*sticky[^\"]*h-14/)
     expect(source).toMatch(/className="[^"]*md:p-6/)
   })
+
+  it("keeps navigation actions as semantic links", async () => {
+    const [admin, handoff] = await Promise.all([
+      read("app/admin/page.tsx"),
+      read("app/admin/handoff/page.tsx"),
+    ])
+
+    expect(admin).toMatch(
+      /<Link\s+href="\/admin\/handoff"[\s\S]*buttonVariants\(/
+    )
+    expect(handoff).toMatch(
+      /<Link\s+href=\{`\/admin\/sessions\?key=/
+    )
+    expect(handoff).toMatch(
+      /buttonVariants\(\{ variant: "ghost", size: "sm" \}\)/
+    )
+    expect(admin).not.toMatch(/nativeButton=\{false\}/)
+    expect(handoff).not.toMatch(/nativeButton=\{false\}/)
+  })
 })

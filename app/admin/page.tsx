@@ -20,7 +20,7 @@ import {
   Wrench,
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
+import { Button, buttonVariants } from "@/components/ui/button"
 import { Spinner } from "@/components/ui/spinner"
 import { Skeleton } from "@/components/ui/skeleton"
 import {
@@ -220,14 +220,15 @@ export default function StatusPage() {
           contentClassName="flex flex-wrap gap-2"
         >
           {(ov?.humanSessions ?? 0) > 0 && (
-            <Button
-              render={<Link href="/admin/handoff" />}
-              nativeButton={false}
-              variant="outline"
-              size="sm"
+            <Link
+              href="/admin/handoff"
+              className={buttonVariants({ variant: "outline", size: "sm" })}
+              data-slot="button"
+              data-variant="outline"
+              data-size="sm"
             >
               人工会话 {ov!.humanSessions}
-            </Button>
+            </Link>
           )}
           {s?.channels?.map(
             (c) =>
