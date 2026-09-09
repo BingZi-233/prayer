@@ -9,8 +9,6 @@ import {
 import type { ChannelId } from "@/lib/channels/types"
 import { ok, fail } from "@/lib/api"
 
-function getRepo() { return getAppContext().repo }
-
 function chatKey(channel: string, chatId: string): string {
   return `${channel}:${chatId}`
 }

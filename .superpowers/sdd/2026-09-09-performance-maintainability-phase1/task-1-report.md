@@ -26,3 +26,11 @@
 - Strengthened context isolation test with a session write/read assertion proving business data lands in the resolved business database, not the config database.
 
 Round 1 verification: `pnpm vitest run tests/lib` — 71 files, 778 tests passed; `pnpm typecheck` passed; `git diff --check` passed.
+
+## Review round 2 fixes
+
+- Removed the remaining unused `getRepo()` helpers from reflection and proactive routes.
+
+Round 2 verification follows below.
+
+`pnpm vitest run tests/lib` — 71 files, 778 tests passed; `pnpm typecheck` passed; `git diff --check` passed.

@@ -7,8 +7,6 @@ import { buildGroupChatStats } from "@/lib/reflect-stats"
 import { applyPromote } from "@/lib/reflect-promote"
 import { embed } from "@/lib/tools/embed"
 
-function getRepo() { return getAppContext().repo }
-
 function chatKey(channel: string, chatId: string): string {
   return `${channel}:${chatId}`
 }
