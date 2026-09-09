@@ -1005,3 +1005,17 @@ export function migrateToVersion6(db: Database.Database): void {
 export function migrateToVersion7(db: Database.Database): void {
   ensureSeenMessagesCreatedIndex(db)
 }
+
+/** v8：热点读取路径索引。 */
+export function ensureHotReadIndexes(db: Database.Database): void {
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_qt_updated_at ON question_topics(updated_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_sessions_human_since ON sessions(human_mode, human_since);
+    CREATE INDEX IF NOT EXISTS idx_tickets_status_created ON tickets(status, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_qo_topic_msg_ts ON question_occurrences(topic_id, msg_ts DESC);
+  `)
+}
+
+export function migrateToVersion8(db: Database.Database): void {
+  ensureHotReadIndexes(db)
+}
