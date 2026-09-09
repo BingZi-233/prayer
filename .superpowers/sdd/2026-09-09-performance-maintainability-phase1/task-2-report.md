@@ -17,3 +17,8 @@
 ## Concerns
 
 - Legacy repo tests still assert user_version 7; production schema is intentionally 8 per this task brief.
+
+## Review round 1 fixes
+
+- Replaced all DB test assertions hard-coded to version 7 (repo migration and backup coverage) with `CURRENT_SCHEMA_VERSION`, and updated migration comments.
+- Full verification: `pnpm vitest run tests/lib` — 72 files, 779 tests passed; `pnpm typecheck` passed; `git diff --check` passed.
