@@ -102,18 +102,20 @@ export function QqSettings({
             {groups ? (
               <>
                 <Popover>
-                  <PopoverTrigger asChild>
-                    <Button
-                      id="enabledChatsQq"
-                      variant="outline"
-                      role="combobox"
-                      className="justify-between font-normal"
-                    >
-                      {enabledQqIds.length
-                        ? `已选 ${enabledQqIds.length} 个群`
-                        : "选择生效群"}
-                      <ChevronsUpDown className="opacity-50" />
-                    </Button>
+                  <PopoverTrigger
+                    render={
+                      <Button
+                        id="enabledChatsQq"
+                        variant="outline"
+                        role="combobox"
+                        className="justify-between font-normal"
+                      />
+                    }
+                  >
+                    {enabledQqIds.length
+                      ? `已选 ${enabledQqIds.length} 个群`
+                      : "选择生效群"}
+                    <ChevronsUpDown className="opacity-50" />
                   </PopoverTrigger>
                   <PopoverContent className="p-0" align="start">
                     <Command>
@@ -189,18 +191,20 @@ export function QqSettings({
             ) : (
               <>
                 <Popover>
-                  <PopoverTrigger asChild>
-                    <Button
-                      id="extraAtQQs"
-                      variant="outline"
-                      role="combobox"
-                      className="justify-between font-normal"
-                    >
-                      {cfg.extraAtQQs.length
-                        ? `已选 ${cfg.extraAtQQs.length} 人`
-                        : "选择群管理员"}
-                      <ChevronsUpDown className="opacity-50" />
-                    </Button>
+                  <PopoverTrigger
+                    render={
+                      <Button
+                        id="extraAtQQs"
+                        variant="outline"
+                        role="combobox"
+                        className="justify-between font-normal"
+                      />
+                    }
+                  >
+                    {cfg.extraAtQQs.length
+                      ? `已选 ${cfg.extraAtQQs.length} 人`
+                      : "选择群管理员"}
+                    <ChevronsUpDown className="opacity-50" />
                   </PopoverTrigger>
                   <PopoverContent className="p-0" align="start">
                     <Command>
