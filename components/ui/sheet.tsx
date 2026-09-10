@@ -41,7 +41,8 @@ function SheetOverlay({
     <SheetPrimitive.Backdrop
       data-slot="sheet-overlay"
       className={cn(
-        "fixed inset-0 isolate z-50 bg-black/80 duration-100 data-ending-style:animate-out data-ending-style:fade-out-0 data-starting-style:animate-in data-starting-style:fade-in-0 supports-backdrop-filter:backdrop-blur-xs",
+        // fill-mode-forwards：遮罩退场(100ms)比面板(200ms)快，不保持终帧就会弹回全黑
+        "fixed inset-0 isolate z-50 bg-black/80 duration-100 data-ending-style:animate-out data-ending-style:fade-out-0 data-ending-style:fill-mode-forwards data-starting-style:animate-in data-starting-style:fade-in-0 supports-backdrop-filter:backdrop-blur-xs",
         className
       )}
       {...props}
