@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest"
 import { openDb } from "@/lib/db/index"
 import { Repo } from "@/lib/db/repo"
-import { KB_SEARCH_SQL } from "@/lib/tools/kb"
+import { KB_SEARCH_SQL } from "@/lib/db/kb-sql"
 
-// cs 插件子进程的 kb_search 用 KB_SEARCH_SQL 直接查库(kb.ts 唯一事实源)。
+// cs 插件子进程的 kb_search 用 KB_SEARCH_SQL 直接查库(lib/db/kb-sql.ts 唯一事实源)。
 // 本组验证:插件路径与 repo.searchKb 行为一致——驳回/升格条目不外漏。
 const vec = () => new Float32Array([1, 0, 0])
 

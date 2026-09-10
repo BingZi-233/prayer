@@ -55,8 +55,11 @@ async function main(): Promise<void> {
   const { embed } = await import(
     pathToFileURL(join(root, "lib/tools/embed.ts")).href
   )
-  const { runKbSearch, KB_TOOL_DESC, KB_SEARCH_SQL } = await import(
+  const { runKbSearch, KB_TOOL_DESC } = await import(
     pathToFileURL(join(root, "lib/tools/kb.ts")).href
+  )
+  const { KB_SEARCH_SQL } = await import(
+    pathToFileURL(join(root, "lib/db/kb-sql.ts")).href
   )
 
   // 只读打开:多进程共享同一 WAL 库,检索为纯读;不建表/迁移(由主进程负责)
@@ -64,7 +67,7 @@ async function main(): Promise<void> {
   const db = new Database(dbPath, { readonly: true, fileMustExist: true })
   sqliteVec.load(db)
 
-  // 与 repo.searchKb 共用 KB_SEARCH_SQL(kb.ts 唯一事实源):此前内联副本
+  // 与 repo.searchKb 共用 KB_SEARCH_SQL(lib/db/kb-sql.ts 唯一事实源):此前内联副本
   // 漏了 reflection_meta 过滤,管理员驳回的知识仍会经 kb_search 漏给用户
   const stmt = db.prepare(KB_SEARCH_SQL)
   const repo = {

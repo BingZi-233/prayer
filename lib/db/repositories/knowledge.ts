@@ -1,6 +1,6 @@
 import type { SqliteContext } from "../context.ts"
 import type { KbHit } from "../models.ts"
-import { KB_SEARCH_SQL } from "../../tools/kb.ts"
+import { KB_SEARCH_SQL } from "../kb-sql.ts"
 
 /** 知识分块和向量的物理存储；删除时维护关联数据的一致性。 */
 export class KnowledgeRepository {
