@@ -118,7 +118,9 @@ export default function PluginsPage() {
             <FieldLabel>来源</FieldLabel>
             <Select
               value={form.source}
-              onValueChange={(v) => setForm({ ...form, source: v })}
+              onValueChange={(v) => {
+                if (v !== null) setForm({ ...form, source: v })
+              }}
             >
               <SelectTrigger className="w-full">
                 <SelectValue />

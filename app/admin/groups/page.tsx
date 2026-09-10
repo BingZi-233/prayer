@@ -527,7 +527,9 @@ export default function GroupsPage() {
                 <FieldLabel>主动补位</FieldLabel>
                 <Select
                   value={proactiveTri}
-                  onValueChange={(v) => setProactiveTri(v as Tri)}
+                  onValueChange={(v) => {
+                    if (v !== null) setProactiveTri(v as Tri)
+                  }}
                 >
                   <SelectTrigger>
                     <SelectValue />
@@ -547,9 +549,9 @@ export default function GroupsPage() {
                 <FieldLabel>静默阈值</FieldLabel>
                 <Select
                   value={silenceMode}
-                  onValueChange={(v) =>
-                    setSilenceMode(v as "inherit" | "custom")
-                  }
+                  onValueChange={(v) => {
+                    if (v !== null) setSilenceMode(v as "inherit" | "custom")
+                  }}
                 >
                   <SelectTrigger>
                     <SelectValue />
@@ -580,7 +582,9 @@ export default function GroupsPage() {
                 <FieldLabel>转人工时通知管理面</FieldLabel>
                 <Select
                   value={handoffTri}
-                  onValueChange={(v) => setHandoffTri(v as Tri)}
+                  onValueChange={(v) => {
+                    if (v !== null) setHandoffTri(v as Tri)
+                  }}
                 >
                   <SelectTrigger>
                     <SelectValue />

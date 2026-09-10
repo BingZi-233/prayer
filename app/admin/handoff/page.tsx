@@ -5,7 +5,7 @@ import { useMemo, useState } from "react"
 import { toast } from "sonner"
 import { LifeBuoy, MessagesSquare } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
+import { Button, buttonVariants } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Spinner } from "@/components/ui/spinner"
 import {
@@ -152,14 +152,16 @@ export default function HandoffQueuePage() {
                   </TableCell>
                   <TableCell>
                     <div className="flex flex-wrap gap-1">
-                      <Button asChild variant="ghost" size="sm">
-                        <Link
-                          href={`/admin/sessions?key=${encodeURIComponent(r.key)}&human=1`}
-                        >
-                          <MessagesSquare data-icon="inline-start" />
-                          查看会话
-                        </Link>
-                      </Button>
+                      <Link
+                        href={`/admin/sessions?key=${encodeURIComponent(r.key)}&human=1`}
+                        className={buttonVariants({ variant: "ghost", size: "sm" })}
+                        data-slot="button"
+                        data-variant="ghost"
+                        data-size="sm"
+                      >
+                        <MessagesSquare data-icon="inline-start" />
+                        查看会话
+                      </Link>
                       <Button
                         variant="outline"
                         size="sm"

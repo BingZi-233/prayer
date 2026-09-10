@@ -1,10 +1,9 @@
-import { Geist, JetBrains_Mono } from "next/font/google"
+import { Geist_Mono, Inter } from "next/font/google"
 
 import "./globals.css"
 import { ThemeProvider } from "@/components/theme-provider"
 import { Toaster } from "@/components/ui/sonner"
 import { TooltipProvider } from "@/components/ui/tooltip"
-import { cn } from "@/lib/utils"
 import type { Metadata } from "next"
 import { DEFAULT_BRAND } from "@/lib/brand"
 
@@ -16,14 +15,16 @@ export const metadata: Metadata = {
   description: DEFAULT_BRAND.description,
 }
 
-const fontSans = Geist({
+const inter = Inter({
   subsets: ["latin"],
-  variable: "--font-sans",
+  variable: "--font-inter",
+  display: "swap",
 })
 
-const jetbrainsMono = JetBrains_Mono({
+const geistMono = Geist_Mono({
   subsets: ["latin"],
-  variable: "--font-mono",
+  variable: "--font-geist-mono",
+  display: "swap",
 })
 
 export default function RootLayout({
@@ -35,14 +36,9 @@ export default function RootLayout({
     <html
       lang="zh-CN"
       suppressHydrationWarning
-      className={cn(
-        "antialiased",
-        fontSans.variable,
-        "font-mono",
-        jetbrainsMono.variable
-      )}
+      className={`${inter.variable} ${geistMono.variable}`}
     >
-      <body>
+      <body className="antialiased">
         <ThemeProvider>
           <TooltipProvider>{children}</TooltipProvider>
           <Toaster />

@@ -52,9 +52,9 @@ function LoginForm() {
   }
 
   return (
-    <div className="flex min-h-svh flex-col items-center justify-center gap-6 bg-background p-4">
+    <div className="flex min-h-svh flex-col items-center justify-center gap-6 bg-muted p-4 sm:p-6 md:p-10">
       <div className="flex flex-col items-center gap-3">
-        <div className="flex size-10 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+        <div className="flex size-8 items-center justify-center rounded-md bg-primary text-primary-foreground">
           <Bot className="size-5" />
         </div>
         <div className="flex flex-col items-center gap-0.5 text-center">
@@ -63,7 +63,7 @@ function LoginForm() {
         </div>
       </div>
 
-      <Card className="w-full max-w-sm">
+      <Card className="w-full max-w-md">
         <CardHeader>
           <CardTitle>登录</CardTitle>
           <CardDescription>

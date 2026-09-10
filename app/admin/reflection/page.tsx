@@ -144,7 +144,7 @@ function CompactionRow({ c }: { c: Compaction }) {
 
   return (
     <details
-      className="rounded-md border bg-muted/40"
+      className="rounded-lg border border-border/70 bg-card/50 shadow-xs ring-1 ring-foreground/5"
       onToggle={(e) => {
         if (e.currentTarget.open) void load()
       }}
@@ -501,15 +501,17 @@ export default function ReflectionPage() {
               {promoteBusy ? "升格评审中…" : "立即升格评审"}
             </Button>
             <Dialog>
-              <DialogTrigger asChild>
-                <Button disabled={busy || !willCompact} variant="outline">
-                  {busy ? (
-                    <Spinner data-icon="inline-start" />
-                  ) : (
-                    <Wand2 data-icon="inline-start" />
-                  )}
-                  {busy ? "整理中…" : "立即整理"}
-                </Button>
+              <DialogTrigger
+                render={
+                  <Button disabled={busy || !willCompact} variant="outline" />
+                }
+              >
+                {busy ? (
+                  <Spinner data-icon="inline-start" />
+                ) : (
+                  <Wand2 data-icon="inline-start" />
+                )}
+                {busy ? "整理中…" : "立即整理"}
               </DialogTrigger>
               <DialogContent>
                 <DialogHeader>
@@ -520,13 +522,13 @@ export default function ReflectionPage() {
                   </DialogDescription>
                 </DialogHeader>
                 <DialogFooter>
-                  <DialogClose asChild>
-                    <Button variant="outline">取消</Button>
+                  <DialogClose render={<Button variant="outline" />}>
+                    取消
                   </DialogClose>
-                  <DialogClose asChild>
-                    <Button onClick={compact} disabled={busy}>
-                      确认整理
-                    </Button>
+                  <DialogClose
+                    render={<Button onClick={compact} disabled={busy} />}
+                  >
+                    确认整理
                   </DialogClose>
                 </DialogFooter>
               </DialogContent>

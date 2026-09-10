@@ -78,9 +78,9 @@ export function AppSidebar() {
   const brandName = overview?.brandName?.trim() || DEFAULT_BRAND.name
   return (
     <Sidebar>
-      <SidebarHeader>
+      <SidebarHeader className="border-b border-sidebar-border/60 px-2 py-2">
         <div className="flex items-center gap-2 px-2 py-1.5">
-          <div className="flex size-8 items-center justify-center rounded-md bg-primary text-primary-foreground">
+          <div className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-sm">
             <Bot className="size-5" />
           </div>
           <div className="flex flex-col leading-tight">
@@ -89,10 +89,12 @@ export function AppSidebar() {
           </div>
         </div>
       </SidebarHeader>
-      <SidebarContent>
+      <SidebarContent className="px-2 py-3">
         {navGroups.map((group) => (
-          <SidebarGroup key={group.label}>
-            <SidebarGroupLabel>{group.label}</SidebarGroupLabel>
+          <SidebarGroup key={group.label} className="py-1">
+            <SidebarGroupLabel className="px-2 text-[11px] font-semibold tracking-wide text-sidebar-foreground/60">
+              {group.label}
+            </SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
                 {group.items.map((n) => {
@@ -104,14 +106,12 @@ export function AppSidebar() {
                   return (
                     <SidebarMenuItem key={n.href}>
                       <SidebarMenuButton
-                        asChild
+                        render={<Link href={n.href} />}
                         isActive={active}
                         tooltip={n.label}
                       >
-                        <Link href={n.href}>
-                          <n.icon />
-                          <span>{n.label}</span>
-                        </Link>
+                        <n.icon />
+                        <span>{n.label}</span>
                       </SidebarMenuButton>
                       {badge === "human" &&
                         (overview?.humanSessions ?? 0) > 0 && (

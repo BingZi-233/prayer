@@ -39,7 +39,10 @@ export function VirtualList<T>({
   })
 
   return (
-    <div ref={parentRef} className={cn("overflow-y-auto", className)}>
+    <div
+      ref={parentRef}
+      className={cn("min-h-0 min-w-0 overflow-y-auto", className)}
+    >
       <div
         style={{
           height: virtualizer.getTotalSize(),
@@ -52,6 +55,7 @@ export function VirtualList<T>({
             key={vi.key}
             data-index={vi.index}
             ref={virtualizer.measureElement}
+            className="min-w-0"
             style={{
               position: "absolute",
               top: 0,

@@ -36,7 +36,11 @@ export function SectionCard({
           {title}
         </CardTitle>
         {description && <CardDescription>{description}</CardDescription>}
-        {action && <CardAction>{action}</CardAction>}
+        {action && (
+          <CardAction className="flex flex-wrap items-center gap-2">
+            {action}
+          </CardAction>
+        )}
       </CardHeader>
       {children != null && (
         <CardContent className={cn("min-h-0", contentClassName)}>

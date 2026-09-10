@@ -20,7 +20,7 @@ import {
   Wrench,
 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
+import { Button, buttonVariants } from "@/components/ui/button"
 import { Spinner } from "@/components/ui/spinner"
 import { Skeleton } from "@/components/ui/skeleton"
 import {
@@ -168,22 +168,22 @@ export default function StatusPage() {
   const hasAlerts = (ov?.humanSessions ?? 0) > 0 || channelDown
 
   return (
-    <PageShell className="lg:gap-6">
+    <PageShell className="min-w-0 gap-4 lg:gap-6">
       <PageHeader
         className="shrink-0"
         title="运行状态"
         description="查看运行状态与今日业务结果。"
         actions={
           <Dialog>
-            <DialogTrigger asChild>
-              <Button disabled={busy} className="w-full sm:w-auto">
-                {busy ? (
-                  <Spinner data-icon="inline-start" />
-                ) : (
-                  <RotateCw data-icon="inline-start" />
-                )}
-                {busy ? "重启中…" : "重启 Agent"}
-              </Button>
+            <DialogTrigger
+              render={<Button disabled={busy} className="w-full sm:w-auto" />}
+            >
+              {busy ? (
+                <Spinner data-icon="inline-start" />
+              ) : (
+                <RotateCw data-icon="inline-start" />
+              )}
+              {busy ? "重启中…" : "重启 Agent"}
             </DialogTrigger>
             <DialogContent>
               <DialogHeader>
@@ -193,13 +193,13 @@ export default function StatusPage() {
                 </DialogDescription>
               </DialogHeader>
               <DialogFooter>
-                <DialogClose asChild>
-                  <Button variant="outline">取消</Button>
+                <DialogClose render={<Button variant="outline" />}>
+                  取消
                 </DialogClose>
-                <DialogClose asChild>
-                  <Button onClick={restart} disabled={busy}>
-                    确认重启
-                  </Button>
+                <DialogClose
+                  render={<Button onClick={restart} disabled={busy} />}
+                >
+                  确认重启
                 </DialogClose>
               </DialogFooter>
             </DialogContent>
@@ -220,9 +220,15 @@ export default function StatusPage() {
           contentClassName="flex flex-wrap gap-2"
         >
           {(ov?.humanSessions ?? 0) > 0 && (
-            <Button asChild variant="outline" size="sm">
-              <Link href="/admin/handoff">人工会话 {ov!.humanSessions}</Link>
-            </Button>
+            <Link
+              href="/admin/handoff"
+              className={buttonVariants({ variant: "outline", size: "sm" })}
+              data-slot="button"
+              data-variant="outline"
+              data-size="sm"
+            >
+              人工会话 {ov!.humanSessions}
+            </Link>
           )}
           {s?.channels?.map(
             (c) =>
