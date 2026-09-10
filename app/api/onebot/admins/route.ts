@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getAppContext } from "@/lib/app-context"
-import { collectAdmins } from "@/lib/onebot/admins"
+import { collectAdmins } from "@/lib/channels/qq/admins"
 import { getRuntime } from "@/lib/runtime"
 import {
   loadGroupMembers,
   toAdminMemberShape,
-} from "@/lib/onebot/members-fetch"
+} from "@/lib/channels/qq/members-fetch"
 import { ok, fail } from "@/lib/api"
 
 /** 解析 ?groups=1,2,3;非法项丢弃 */

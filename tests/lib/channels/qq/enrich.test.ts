@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest"
-import { enrich } from "@/lib/onebot/enrich"
-import type { ParsedMessage } from "@/lib/onebot/parse"
+import { enrich } from "@/lib/channels/qq/enrich"
+import type { ParsedMessage } from "@/lib/channels/qq/parse"
 
 const base: ParsedMessage = {
   groupId: 1,

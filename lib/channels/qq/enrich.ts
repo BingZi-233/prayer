@@ -1,8 +1,8 @@
-import type { IncomingMessage, ImageInput } from "../events"
+import type { IncomingMessage, ImageInput } from "../../events"
 import type { ParsedMessage } from "./parse"
 import { extractSegments, fetchImageBase64, type ImageData } from "./media"
-import { errorMessage } from "../log-context"
-import { logger } from "../logger"
+import { errorMessage } from "../../log-context"
+import { logger } from "../../logger"
 
 // OneBot API 调用器:client 注入(基于 echo 请求-响应)。失败/超时返回 undefined。
 // 应答载荷各 API 形状不同,统一 unknown,由下方收据类型窄化

@@ -3,7 +3,7 @@ import { WebSocketServer, type WebSocket } from "ws"
 import type { AddressInfo } from "node:net"
 import { bus } from "@/lib/bus"
 import type { IncomingMessage } from "@/lib/events"
-import { OneBotClient } from "@/lib/onebot/client"
+import { OneBotClient } from "@/lib/channels/qq/client"
 
 // OneBot 服务端收到的 API 请求帧(测试断言用)
 interface SentAction {

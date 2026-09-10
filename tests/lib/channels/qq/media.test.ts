@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest"
-import { extractSegments, fetchImageBase64 } from "@/lib/onebot/media"
+import { extractSegments, fetchImageBase64 } from "@/lib/channels/qq/media"
 
 afterEach(() => vi.restoreAllMocks())
 

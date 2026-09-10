@@ -6,9 +6,9 @@ import {
   loadGroupMembers,
   resetMembersInflight,
   type FetchMembers,
-} from "@/lib/onebot/members-fetch"
+} from "@/lib/channels/qq/members-fetch"
 import { NameCache, resetNameCache } from "@/lib/name-cache"
-import { collectAdmins } from "@/lib/onebot/admins"
+import { collectAdmins } from "@/lib/channels/qq/admins"
 
 describe("parseGroupMembers", () => {
   it("解析 user_id/card/nickname/role,名字优先 card", () => {

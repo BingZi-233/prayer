@@ -336,6 +336,10 @@ main 构建。这个成本是拆细的代价，接受。
 - 不处理认证模型与 Cloud 多租户架构（沿用 phase 1 的推迟决定）。
 - 不删不建 `lib/channels/discord/`。它目前只是 README 占位（`factory.ts:62` 注明二期），
   随 `channels/` 保留原位。
+- **不改错误事件的 `scope` 标签。** `lib/channels/qq/client.ts` 里有一处
+  `scope: "onebot.enrich"`，它会经 `lib/logger.ts` 格式化成 `[onebot.enrich]` 出现在日志里，
+  属**可观察输出**，改名就是行为变更。按通道前缀命名它该是 `qq.enrich`（TG 侧对应值是
+  `tg.enrich`），但那是独立的行为变更，不属于任何一次「纯搬迁」，另行处理。
 
 ## 验收标准
 
@@ -370,6 +374,17 @@ main 构建。这个成本是拆细的代价，接受。
 但 `tests/lib/onebot/client.test.ts:6` 导入的正是要删除的 shim，必须改指
 `@/lib/channels/qq/client`（`OneBotClient` 的实际定义处）——这是改写 import，不是搬文件。
 搬空后 `tests/lib/onebot/` 整目录删除。
+
+**护栏的映射表会随搬迁变脏，且不总是可探测。** `PREFIX_RULES` 是手工维护的路径表，
+每个搬迁阶段都要改。已查明「忘记登记旧前缀」在两种情形下后果不同：若旧路径下还留有文件，
+「`lib` 下每个文件都归属于某一层」会报 orphan（可发现）；若该路径既无文件、也无新文件，
+那条死规则**完全不可见** —— 它不产生假 PASS（`scanLib` 遍历的是真实文件），但会污染映射表、
+误导后来改表的人。
+
+廉价堵法（约 10 行、零依赖）：断言**每条精确文件规则**（前缀不以 `/` 结尾）必须命中一个
+真实存在的文件。它堵不住目录规则（`lib/onebot/` 这类——目录可以合法地空着），但阶段 2a、3
+会大量新增精确文件规则（`lib/agent/reflection-poller.ts`、`lib/tools/embed.ts` 之类），
+那正是这条断言的目标。**尚未实施，留给下一个改动护栏映射表的阶段顺带补上。**
 
 **分层测试只守跨层方向，层内方向无人管。** 现存两处层内互引：
 `lib/config-store.ts` 运行时 import `channels/enabled-chats`，而后者以 `import type` 反向
