@@ -219,11 +219,21 @@ lib/agent/reflection-promoter.ts:7   knowledge → conversation  ./agent
 也是行为不变，它是本次唯一触碰函数签名与常量归属的地方，单独成一个分支便于评审。
 阶段 5 与它们互相独立，顺序可调。
 
-**每个搬迁阶段（1、2a、2b、3、4）的隐含必做项，同样进验收：** 同步
-`tests/architecture/layering.test.ts` —— 改 `PREFIX_RULES` 里搬家文件的前缀、把旧前缀登记进
-`RETIRED_PREFIXES`、按需下调 `TOLERATED` 并 bump `CURRENT_STAGE`。漏登记不会让核心的
-「逆向依赖精确一致」失败，但会让「退役前缀已被清空」这条防线**静默失效**——那正是「旧路径
-真的删干净了」的机器检查，靠人记得登记才生效。
+**每个搬迁阶段（1、2a、2b、3、4）的隐含必做项，同样进验收：**
+
+1. **同步护栏映射表** —— 改 `tests/architecture/layering.test.ts` 的 `PREFIX_RULES`（删掉搬走文件的
+   规则，新位置由 `lib/core/` 这类目录规则覆盖）、把旧前缀登记进 `RETIRED_PREFIXES`、按需下调
+   `TOLERATED` 并 bump `CURRENT_STAGE`。漏登记不会让核心的「逆向依赖精确一致」失败，但会让
+   「退役前缀已被清空」这条防线**静默失效**——那正是「旧路径真的删干净了」的机器检查，
+   靠人记得登记才生效。
+2. **同步镜像测试目录** —— `docs/development.md` 明写「测试放在 `tests/`，镜像源码目录」。
+   源码搬了，对应的测试目录要跟着搬，包括新增层级（`lib/db/` → `lib/core/db/` 时，
+   `tests/lib/db/` → `tests/lib/core/db/`）。不做的话那份文档立刻开始说谎，而这正是本次重构
+   要消灭的东西。测试多用 `@/` 别名导入，所以多数情况下只需 `git mv`。
+   **阶段 1 之所以没暴露这条**，是因为它只在同深度内搬（`lib/onebot/` → `lib/channels/qq/`），
+   镜像恰好自动成立。
+3. **删掉 `docs/development.md`「待改写条目」表里自己那一行**——使命结束即删除，留着就是新的
+   腐烂源。顺带清掉更早阶段遗留下来、已经完成的死行。
 
 代价如实说明：阶段 1–4 合计约 90 个源文件及对应测试需要改 import 路径。改动机械但量大，
 所以拆成 7 个分支，使每刀评审只需看一个概念。

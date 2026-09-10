@@ -343,7 +343,82 @@ spec 风险节记录的静默缺口。文档里的 lib/db、lib/config 引用同
 加 core/,并删除已完成的 2a 待改写条目。"
 ```
 
-## Task 3: 全量验证
+## Task 3: 测试目录对齐源码结构
+
+**Files:**
+- Move: `tests/lib/db/` → `tests/lib/core/db/`；`tests/lib/config/` → `tests/lib/core/config/`；以及 11 个设施文件对应的测试
+
+**为什么必须做：** `docs/development.md` 明写「测试放在 `tests/`，镜像源码目录」。Task 1 把源码搬进了 `lib/core/`，但测试还留在 `tests/lib/`，镜像关系断了 —— 那份文档立刻开始说谎，而这正是本次重构要消灭的东西。
+
+阶段 1 没暴露这条，是因为它只在同深度内搬（`lib/onebot/` → `lib/channels/qq/`），镜像恰好自动成立。本阶段新增了 `core/` 这一层，必须在测试侧同样新增。
+
+- [ ] **Step 1: 搬两个目录**
+
+```bash
+mkdir -p tests/lib/core
+git mv tests/lib/db tests/lib/core/db
+git mv tests/lib/config tests/lib/core/config
+```
+
+- [ ] **Step 2: 搬 11 个设施文件对应的测试**
+
+先确认哪些存在（不是每个源文件都有测试）：
+
+```bash
+ls tests/lib/{api,app-context,auth,brand,bus,concurrency,config-store,log-context,logger,settings-writer,utils}.test.ts 2>/dev/null
+```
+
+把**存在的**逐个 `git mv` 到 `tests/lib/core/`，例如：
+
+```bash
+git mv tests/lib/api.test.ts tests/lib/core/api.test.ts
+git mv tests/lib/app-context.test.ts tests/lib/core/app-context.test.ts
+# …其余按 ls 结果逐个执行
+```
+
+- [ ] **Step 3: 跑测试并修正失效的导入**
+
+```bash
+pnpm vitest run
+```
+
+Expected: **92 文件 / 971 用例**全过。
+
+测试多数用 `@/lib/...` 别名导入，所以很可能**一条 import 都不用改**。但有少数可能用相对路径（如 `../../lib/db/...`），typecheck 与 vitest 会报出来，逐个修正。
+
+**注意**：`tests/architecture/layering.test.ts` 的「lib 下每个文件都归属于某一层」只扫 `lib/`，不受测试目录搬迁影响。
+
+- [ ] **Step 4: 更新文档里的测试路径举例**
+
+`docs/development.md` 与 `CLAUDE.md` 里可能有举例的测试路径。检查：
+
+```bash
+grep -rn "tests/lib/" docs/*.md CLAUDE.md
+```
+
+把指向**本次搬走的**测试文件路径改到新位置（例如 `tests/lib/db/repo.test.ts` → `tests/lib/core/db/repo.test.ts`）。**注意**：`docs/data-access.md` 里的 `tests/lib/db/transactions.test.ts` 也要一并改——之前 implementer 因为本阶段不含测试搬迁而保留了它，现在搬迁做了，它就过时了。
+
+- [ ] **Step 5: 确认没有旧目录残留**
+
+```bash
+ls tests/lib/db tests/lib/config 2>&1
+grep -rn "tests/lib/db\|tests/lib/config" --include='*.ts' --include='*.tsx' --include='*.md' tests docs CLAUDE.md
+```
+
+Expected: 两个 `ls` 报不存在；grep 无输出。
+
+- [ ] **Step 6: 提交**
+
+```bash
+git add -A
+git commit -m "refactor(test): 测试目录镜像 lib/core 结构
+
+docs/development.md 要求测试镜像源码目录,而 Task 1 把源码搬进了
+lib/core/ 却没动测试,镜像关系断了。补上 core/ 这一层。多数测试
+用 @/ 别名导入,故以 git mv 为主。"
+```
+
+## Task 4: 全量验证
 
 - [ ] **Step 1: 完整质量门**
 
