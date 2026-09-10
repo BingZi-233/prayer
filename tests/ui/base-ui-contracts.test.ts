@@ -137,7 +137,7 @@ describe("Base UI migration contract", () => {
     expect(source).not.toMatch(/data-\[state=inactive\]:hidden/)
   })
 
-  it("uses the check-cx typography and amber theme tokens", async () => {
+  it("uses the Inter typography and amber theme tokens", async () => {
     const [globals, layout] = await Promise.all([
       read("app/globals.css"),
       read("app/layout.tsx"),
@@ -218,12 +218,14 @@ describe("Base UI migration contract", () => {
     expect(source).toMatch(/peer-data-disabled:opacity-50/)
   })
 
-  it("admin shell uses the inset surface and compact sticky header", async () => {
+  it("admin shell keeps a flat inset surface with a compact sticky header", async () => {
     const source = await read("app/admin/layout.tsx")
-    expect(source).toMatch(/<SidebarInset[^>]*className="[^"]*bg-muted\/20/)
-    expect(source).toMatch(/<SidebarInset[^>]*className="[^"]*md:rounded-xl/)
+    expect(source).toMatch(/<SidebarInset[^>]*className="[^"]*min-h-0/)
     expect(source).toMatch(/<header[^>]*className="[^"]*sticky[^\"]*h-14/)
-    expect(source).toMatch(/className="[^"]*md:p-6/)
+    expect(source).toMatch(/className="[^"]*p-4 md:p-6/)
+    // 内容区不平铺成"浮起卡片":不加最大宽度、不给 inset 加描边/阴影
+    expect(source).not.toMatch(/max-w-\[/)
+    expect(source).not.toMatch(/ring-1|shadow-sm|bg-muted\/4/)
   })
 
   it("keeps navigation actions as semantic links", async () => {
@@ -239,7 +241,7 @@ describe("Base UI migration contract", () => {
       /<Link\s+href=\{`\/admin\/sessions\?key=/
     )
     expect(handoff).toMatch(
-      /buttonVariants\(\{ variant: "ghost", size: "sm" \}\)/
+      /buttonVariants\(\{[\s\S]{0,60}variant: "ghost",[\s\S]{0,60}size: "sm"/
     )
     expect(admin).not.toMatch(/nativeButton=\{false\}/)
     expect(handoff).not.toMatch(/nativeButton=\{false\}/)

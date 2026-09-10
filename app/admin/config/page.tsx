@@ -30,19 +30,18 @@ import { NotifySettings } from "@/components/admin/config/notify-settings"
 import { StorageSettings } from "@/components/admin/config/storage-settings"
 import { BrandSettings } from "@/components/admin/config/brand-settings"
 
-function CategoryHeader({
-  title,
-  description,
-}: {
-  title: string
-  description: string
-}) {
-  return (
-    <div className="space-y-1">
-      <h2 className="text-lg font-semibold tracking-tight">{title}</h2>
-      <p className="text-sm text-muted-foreground">{description}</p>
-    </div>
-  )
+const CATEGORIES = [
+  { value: "base", label: "基础与管理", icon: Settings2 },
+  { value: "channels", label: "渠道接入", icon: Cable },
+  { value: "conversation", label: "对话与自动化", icon: MessageSquareText },
+  { value: "knowledge", label: "知识与通知", icon: Brain },
+  { value: "advanced", label: "系统高级", icon: Wrench },
+] as const
+
+// 卡片网格:宽屏两列,窄屏单列。设置项各自是独立的 SectionCard,
+// 与其余页面同一套卡片语言,不再另起左侧竖排导航。
+function SettingsGrid({ children }: { children: React.ReactNode }) {
+  return <div className="grid items-start gap-4 xl:grid-cols-2">{children}</div>
 }
 
 export default function ConfigPage() {
@@ -75,6 +74,7 @@ export default function ConfigPage() {
     adminGroupOptions,
     adminTgOptions,
     busy,
+    dirty,
     save,
     error,
     reload,
@@ -101,90 +101,22 @@ export default function ConfigPage() {
       {!cfg && !error && <Skeleton className="h-72 w-full" />}
 
       {cfg && (
-        <Tabs
-          defaultValue="base"
-          orientation="vertical"
-          className="grid min-w-0 gap-3 md:grid-cols-[220px_minmax(0,1fr)] md:items-start md:gap-4"
-        >
-          <div className="h-fit md:sticky md:top-20">
-            <div className="mb-1 px-2 pt-1 pb-1 text-[11px] font-semibold tracking-wide text-muted-foreground">
-              设置分类
-            </div>
-            <TabsList
-              variant="line"
-              aria-label="设置分类"
-              className="grid h-fit w-full grid-cols-2 content-start gap-1 rounded-lg border bg-muted/30 p-2 md:grid-cols-1 md:rounded-lg md:border-0 md:bg-muted/40 md:p-1"
-            >
-              <TabsTrigger
-                value="base"
-                className="h-auto min-h-10 justify-start gap-2 px-3 py-2 text-left"
-              >
-                <Settings2 data-icon="inline-start" />
-                <span className="min-w-0">
-                  <span className="block">基础与管理</span>
-                  <span className="hidden text-[11px] font-normal text-muted-foreground md:block">
-                    品牌与管理命令
-                  </span>
-                </span>
-              </TabsTrigger>
-              <TabsTrigger
-                value="channels"
-                className="h-auto min-h-10 justify-start gap-2 px-3 py-2 text-left"
-              >
-                <Cable data-icon="inline-start" />
-                <span className="min-w-0">
-                  <span className="block">渠道接入</span>
-                  <span className="hidden text-[11px] font-normal text-muted-foreground md:block">
-                    QQ 与 Telegram
-                  </span>
-                </span>
-              </TabsTrigger>
-              <TabsTrigger
-                value="conversation"
-                className="h-auto min-h-10 justify-start gap-2 px-3 py-2 text-left"
-              >
-                <MessageSquareText data-icon="inline-start" />
-                <span className="min-w-0">
-                  <span className="block">对话与自动化</span>
-                  <span className="hidden text-[11px] font-normal text-muted-foreground md:block">
-                    回复、会话、主动补位
-                  </span>
-                </span>
-              </TabsTrigger>
-              <TabsTrigger
-                value="knowledge"
-                className="h-auto min-h-10 justify-start gap-2 px-3 py-2 text-left"
-              >
-                <Brain data-icon="inline-start" />
-                <span className="min-w-0">
-                  <span className="block">知识与通知</span>
-                  <span className="hidden text-[11px] font-normal text-muted-foreground md:block">
-                    预检索、反思与提醒
-                  </span>
-                </span>
-              </TabsTrigger>
-              <TabsTrigger
-                value="advanced"
-                className="h-auto min-h-10 justify-start gap-2 px-3 py-2 text-left"
-              >
-                <Wrench data-icon="inline-start" />
-                <span className="min-w-0">
-                  <span className="block">系统高级</span>
-                  <span className="hidden text-[11px] font-normal text-muted-foreground md:block">
-                    SDK 与存储路径
-                  </span>
-                </span>
-              </TabsTrigger>
+        <Tabs defaultValue="base">
+          {/* 窄屏标签放不下,横向滚动而不是换行 */}
+          <div className="-mx-1 overflow-x-auto px-1 pb-1">
+            <TabsList className="w-max">
+              {CATEGORIES.map((c) => (
+                <TabsTrigger key={c.value} value={c.value}>
+                  <c.icon data-icon="inline-start" />
+                  {c.label}
+                </TabsTrigger>
+              ))}
             </TabsList>
           </div>
 
-          <div className="min-w-0">
-            <TabsContent value="base" className="m-0 space-y-4">
-              <CategoryHeader
-                title="基础与管理"
-                description="先确认对外身份，再设置管理命令和转人工的接收位置。"
-              />
-              <BrandSettings cfg={cfg} updateField={updateField} embedded />
+          <TabsContent value="base" className="pt-4">
+            <SettingsGrid>
+              <BrandSettings cfg={cfg} updateField={updateField} />
               <AdminSettings
                 cfg={cfg}
                 updateField={updateField}
@@ -196,15 +128,12 @@ export default function ConfigPage() {
                 setAdminChatId={setAdminChatId}
                 adminGroupOptions={adminGroupOptions}
                 adminTgOptions={adminTgOptions}
-                embedded
               />
-            </TabsContent>
+            </SettingsGrid>
+          </TabsContent>
 
-            <TabsContent value="channels" className="m-0 space-y-4">
-              <CategoryHeader
-                title="渠道接入"
-                description="配置消息通道和生效会话；未配置凭证的通道不会启动。"
-              />
+          <TabsContent value="channels" className="pt-4">
+            <SettingsGrid>
               <QqSettings
                 cfg={cfg}
                 updateField={updateField}
@@ -219,7 +148,6 @@ export default function ConfigPage() {
                 adminLabel={adminLabel}
                 toggleExtraAt={toggleExtraAt}
                 groupName={groupName}
-                embedded
               />
               <TgSettings
                 cfg={cfg}
@@ -233,64 +161,69 @@ export default function ConfigPage() {
                 tgBypassWarn={tgBypassWarn}
                 tgChannel={tgChannel}
                 tgChatTitle={tgChatTitle}
-                embedded
               />
-            </TabsContent>
+            </SettingsGrid>
+          </TabsContent>
 
-            <TabsContent value="conversation" className="m-0 space-y-4">
-              <CategoryHeader
-                title="对话与自动化"
-                description="调整回复呈现、会话生命周期和无人应答时的主动补位策略。"
-              />
+          <TabsContent value="conversation" className="pt-4">
+            <SettingsGrid>
               <ReplySettings
                 cfg={cfg}
                 setCfg={setCfg}
                 updateField={updateField}
                 fieldValue={fieldValue}
-                embedded
               />
-              <SessionSettings cfg={cfg} setCfg={setCfg} embedded />
+              <SessionSettings cfg={cfg} setCfg={setCfg} />
               <ProactiveSettings
                 cfg={cfg}
                 setCfg={setCfg}
                 updateField={updateField}
                 fieldValue={fieldValue}
-                embedded
               />
-            </TabsContent>
+            </SettingsGrid>
+          </TabsContent>
 
-            <TabsContent value="knowledge" className="m-0 space-y-4">
-              <CategoryHeader
-                title="知识与通知"
-                description="管理知识沉淀节奏，并决定是否向管理面发送相关运行提醒。"
-              />
+          <TabsContent value="knowledge" className="pt-4">
+            <SettingsGrid>
               <KnowledgePrefetchSettings
                 cfg={cfg}
                 setCfg={setCfg}
                 updateField={updateField}
                 fieldValue={fieldValue}
-                embedded
               />
               <ReflectSettings
                 cfg={cfg}
                 setCfg={setCfg}
                 updateField={updateField}
                 fieldValue={fieldValue}
-                embedded
               />
-              <NotifySettings cfg={cfg} setCfg={setCfg} embedded />
-            </TabsContent>
+              <NotifySettings cfg={cfg} setCfg={setCfg} />
+            </SettingsGrid>
+          </TabsContent>
 
-            <TabsContent value="advanced" className="m-0 space-y-4">
-              <CategoryHeader
-                title="系统高级"
-                description="仅在需要调整运行目录或数据库位置时修改这些参数。"
-              />
-              <SdkSettings cfg={cfg} updateField={updateField} embedded />
-              <StorageSettings cfg={cfg} updateField={updateField} embedded />
-            </TabsContent>
-          </div>
+          <TabsContent value="advanced" className="pt-4">
+            <SettingsGrid>
+              <SdkSettings cfg={cfg} updateField={updateField} />
+              <StorageSettings cfg={cfg} updateField={updateField} />
+            </SettingsGrid>
+          </TabsContent>
         </Tabs>
+      )}
+
+      {dirty && (
+        <div className="sticky bottom-0 z-10 flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card px-3 py-2 text-xs shadow-sm">
+          <span className="text-muted-foreground">
+            有未保存的改动,保存后立即生效。
+          </span>
+          <Button size="sm" onClick={save} disabled={busy || !cfg}>
+            {busy ? (
+              <Spinner data-icon="inline-start" />
+            ) : (
+              <Save data-icon="inline-start" />
+            )}
+            {busy ? "保存中…" : "保存并生效"}
+          </Button>
+        </div>
       )}
     </PageShell>
   )

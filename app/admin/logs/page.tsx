@@ -23,7 +23,6 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { cn } from "@/lib/utils"
 import { PageShell } from "@/components/admin/page-shell"
 import { PageHeader } from "@/components/admin/page-header"
-import { SectionCard } from "@/components/admin/section-card"
 import { DataState, EmptyState } from "@/components/admin/data-state"
 import { usePolling } from "@/components/admin/use-polling"
 
@@ -55,8 +54,8 @@ const LEVEL_STYLE = {
   },
   warn: {
     badge: "secondary" as const,
-    rail: "bg-amber-500",
-    text: "text-amber-600 dark:text-amber-400",
+    rail: "bg-primary",
+    text: "text-primary",
   },
   info: {
     badge: "outline" as const,
@@ -64,6 +63,11 @@ const LEVEL_STYLE = {
     text: "text-muted-foreground",
   },
 }
+const LEVEL_LABEL = {
+  info: "信息",
+  warn: "警告",
+  error: "错误",
+} as const
 const levelStyle = (lv: string) =>
   LEVEL_STYLE[lv as keyof typeof LEVEL_STYLE] ?? LEVEL_STYLE.info
 
@@ -147,7 +151,7 @@ export default function LogsPage() {
   const virtualizer = useVirtualizer({
     count: shown.length,
     getScrollElement: () => parentRef.current,
-    estimateSize: () => 40,
+    estimateSize: () => 31,
     overscan: 12,
     getItemKey: (i) => rowKey(shown[i], i),
   })
@@ -189,61 +193,50 @@ export default function LogsPage() {
     <PageShell>
       <PageHeader
         title="运行日志"
-        description="按时间线逐条输出运行日志。内存保留最近 2000 条，重启后清空。"
+        description={`按时间线逐条输出运行日志，内存保留最近 2000 条，重启后清空。当前 ${shown.length} / ${logs.length} 条。`}
       />
 
-      <SectionCard
-        icon={ScrollText}
-        title="日志"
-        description={`${shown.length} / ${logs.length} 条`}
-        action={
-          <div className="flex flex-wrap items-center gap-2">
-            {(["info", "warn", "error"] as const).map((lv) => {
-              const on = levels.has(lv)
-              return (
-                <Badge
-                  key={lv}
-                  variant={on ? levelStyle(lv).badge : "outline"}
-                  className={cn(
-                    "cursor-pointer uppercase select-none",
-                    !on && "opacity-45"
-                  )}
-                  onClick={() => toggleLevel(lv)}
-                >
-                  {lv}
-                </Badge>
-              )
-            })}
-            <InputGroup className="h-8 w-52">
-              <InputGroupAddon>
-                <Search />
-              </InputGroupAddon>
-              <InputGroupInput
-                placeholder="搜索 scope / 群 / 文案…"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-              />
-            </InputGroup>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setPaused((p) => !p)}
+      <div className="flex flex-wrap items-center gap-2">
+        <InputGroup className="w-full sm:w-64">
+          <InputGroupAddon>
+            <Search />
+          </InputGroupAddon>
+          <InputGroupInput
+            placeholder="搜索 scope / 群 / 文案…"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+        </InputGroup>
+        {(["info", "warn", "error"] as const).map((lv) => {
+          const on = levels.has(lv)
+          return (
+            <Badge
+              key={lv}
+              variant={on ? levelStyle(lv).badge : "outline"}
+              className={cn("cursor-pointer select-none", !on && "opacity-45")}
+              onClick={() => toggleLevel(lv)}
             >
-              {paused ? (
-                <Play data-icon="inline-start" />
-              ) : (
-                <Pause data-icon="inline-start" />
-              )}
-              {paused ? "继续滚动" : "暂停滚动"}
-            </Button>
-            <Button variant="ghost" size="sm" onClick={copyAll}>
-              <Copy data-icon="inline-start" />
-              复制
-            </Button>
-          </div>
-        }
-      >
-        <DataState
+              {LEVEL_LABEL[lv]}
+            </Badge>
+          )
+        })}
+        <div className="ml-auto flex flex-wrap items-center gap-2">
+          <Button variant="ghost" size="sm" onClick={() => setPaused((p) => !p)}>
+            {paused ? (
+              <Play data-icon="inline-start" />
+            ) : (
+              <Pause data-icon="inline-start" />
+            )}
+            {paused ? "继续滚动" : "暂停滚动"}
+          </Button>
+          <Button variant="ghost" size="sm" onClick={copyAll}>
+            <Copy data-icon="inline-start" />
+            复制
+          </Button>
+        </div>
+      </div>
+
+      <DataState
           loading={loading}
           error={error}
           empty={logs.length === 0}
@@ -260,146 +253,165 @@ export default function LogsPage() {
               description="调整级别过滤或搜索关键词。"
             />
           ) : (
-            <div
-              ref={parentRef}
-              className="bg-muted/30 h-[560px] overflow-y-auto rounded-lg border font-mono text-[0.8125rem] leading-relaxed"
-            >
+            <div className="overflow-hidden rounded-lg border">
+              {/* 列头:与行同宽,列表里也不用猜哪一列是什么 */}
+              <div className="text-muted-foreground flex h-8 shrink-0 items-center gap-3 border-b bg-background pr-3 pl-3.5 text-xs">
+                <span className="w-[4.5rem] shrink-0">时间</span>
+                <span className="w-10 shrink-0">级别</span>
+                <span className="hidden w-40 shrink-0 sm:block">来源</span>
+                <span className="min-w-0 flex-1">内容</span>
+                <span className="size-3.5 shrink-0" />
+              </div>
               <div
-                style={{
-                  height: virtualizer.getTotalSize(),
-                  position: "relative",
-                  width: "100%",
-                }}
+                ref={parentRef}
+                className="h-[520px] overflow-y-auto font-mono text-xs"
               >
-                {virtualizer.getVirtualItems().map((vi) => {
-                  const l = shown[vi.index]
-                  const key = rowKey(l, vi.index)
-                  const open = expanded.has(key)
-                  const s = levelStyle(l.level)
-                  const chat = chatLabel(l)
-                  const expandable = hasExpandableDetail(l)
+                <div
+                  style={{
+                    height: virtualizer.getTotalSize(),
+                    position: "relative",
+                    width: "100%",
+                  }}
+                >
+                  {virtualizer.getVirtualItems().map((vi) => {
+                    const l = shown[vi.index]
+                    const key = rowKey(l, vi.index)
+                    const open = expanded.has(key)
+                    const s = levelStyle(l.level)
+                    const chat = chatLabel(l)
+                    const expandable = hasExpandableDetail(l)
 
-                  return (
-                    <div
-                      key={vi.key}
-                      data-index={vi.index}
-                      ref={virtualizer.measureElement}
-                      style={{
-                        position: "absolute",
-                        top: 0,
-                        left: 0,
-                        width: "100%",
-                        transform: `translateY(${vi.start}px)`,
-                      }}
-                      className={cn(
-                        "group/row border-border/50 relative border-b",
-                        open ? "bg-muted/40" : "hover:bg-muted/50"
-                      )}
-                    >
-                      {/* 左侧严重度色条 */}
-                      <span
-                        aria-hidden
+                    return (
+                      <div
+                        key={vi.key}
+                        data-index={vi.index}
+                        ref={virtualizer.measureElement}
+                        style={{
+                          position: "absolute",
+                          top: 0,
+                          left: 0,
+                          width: "100%",
+                          transform: `translateY(${vi.start}px)`,
+                        }}
                         className={cn(
-                          "absolute inset-y-0 left-0 w-0.5",
-                          s.rail,
-                          l.level === "info" &&
-                            "opacity-0 group-hover/row:opacity-100"
-                        )}
-                      />
-
-                      <button
-                        type="button"
-                        disabled={!expandable}
-                        onClick={() => expandable && toggleRow(key)}
-                        className={cn(
-                          "flex w-full items-start gap-3 py-2 pr-3 pl-3.5 text-left",
-                          expandable ? "cursor-pointer" : "cursor-default"
+                          "group/row border-border/50 relative border-b",
+                          open ? "bg-muted/40" : "hover:bg-muted/50"
                         )}
                       >
-                        <time
-                          dateTime={new Date(l.ts).toISOString()}
-                          className="text-muted-foreground w-[4.5rem] shrink-0 pt-px tabular-nums"
-                        >
-                          {new Date(l.ts).toLocaleTimeString()}
-                        </time>
-
+                        {/* 左侧严重度色条 */}
                         <span
+                          aria-hidden
                           className={cn(
-                            "w-12 shrink-0 pt-px text-[0.7rem] font-semibold tracking-wide uppercase",
-                            s.text
+                            "absolute inset-y-0 left-0 w-0.5",
+                            s.rail,
+                            l.level === "info" &&
+                              "opacity-0 group-hover/row:opacity-100"
+                          )}
+                        />
+
+                        <button
+                          type="button"
+                          disabled={!expandable}
+                          onClick={() => expandable && toggleRow(key)}
+                          className={cn(
+                            "flex w-full items-center gap-3 py-1.5 pr-3 pl-3.5 text-left",
+                            expandable ? "cursor-pointer" : "cursor-default"
                           )}
                         >
-                          {l.level}
-                        </span>
+                          <time
+                            dateTime={new Date(l.ts).toISOString()}
+                            className="text-muted-foreground w-[4.5rem] shrink-0 tabular-nums"
+                          >
+                            {new Date(l.ts).toLocaleTimeString()}
+                          </time>
 
-                        <span
-                          className={cn(
-                            "min-w-0 flex-1 break-words",
-                            l.level === "error"
-                              ? "text-foreground font-medium"
-                              : "text-foreground/90",
-                            !open && "truncate"
-                          )}
-                        >
-                          {l.msg}
-                        </span>
-
-                        {expandable ? (
-                          <ChevronRight
+                          <span
                             className={cn(
-                              "text-muted-foreground mt-0.5 size-3.5 shrink-0 opacity-0 transition-all group-hover/row:opacity-100",
-                              open && "rotate-90 opacity-100"
+                              "w-10 shrink-0 text-[0.7rem] font-medium",
+                              s.text
                             )}
-                          />
-                        ) : (
-                          <span className="size-3.5 shrink-0" />
-                        )}
-                      </button>
+                          >
+                            {LEVEL_LABEL[
+                              l.level as keyof typeof LEVEL_LABEL
+                            ] ?? l.level}
+                          </span>
 
-                      {open && expandable ? (
-                        <div className="border-border/60 flex flex-col gap-2 border-t border-dashed py-2.5 pr-3 pl-3.5 sm:pl-[8.25rem]">
-                          {(() => {
-                            const meta = [
-                              l.scope ? (["scope", l.scope] as const) : null,
-                              chat ? (["会话", chat] as const) : null,
-                              l.sessionKey
-                                ? (["session", l.sessionKey] as const)
-                                : null,
-                            ].filter(Boolean) as ReadonlyArray<
-                              readonly [string, string]
-                            >
-                            if (meta.length === 0) return null
-                            return (
-                              <div className="text-muted-foreground flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
-                                {meta.map(([k, v]) => (
-                                  <span
-                                    key={k}
-                                    className="flex items-center gap-1.5"
-                                  >
-                                    <span className="opacity-55">{k}</span>
-                                    <span className="text-foreground/80 tabular-nums">
-                                      {v}
+                          <span
+                            className="text-muted-foreground hidden w-40 shrink-0 truncate sm:block"
+                            title={l.scope}
+                          >
+                            {l.scope ?? "—"}
+                          </span>
+
+                          <span
+                            className={cn(
+                              "min-w-0 flex-1 truncate",
+                              l.level === "error"
+                                ? "font-medium text-foreground"
+                                : "text-foreground/90"
+                            )}
+                          >
+                            {l.msg}
+                          </span>
+
+                          {expandable ? (
+                            <ChevronRight
+                              className={cn(
+                                "text-muted-foreground size-3.5 shrink-0 opacity-0 transition-all group-hover/row:opacity-100",
+                                open && "rotate-90 opacity-100"
+                              )}
+                            />
+                          ) : (
+                            <span className="size-3.5 shrink-0" />
+                          )}
+                        </button>
+
+                        {open && expandable ? (
+                          <div className="border-border/60 flex flex-col gap-2 border-t border-dashed py-2.5 pr-3 pl-3.5">
+                            <p className="text-xs leading-relaxed whitespace-pre-wrap text-foreground/90">
+                              {l.msg}
+                            </p>
+                            {(() => {
+                              const meta = [
+                                chat ? (["会话", chat] as const) : null,
+                                l.sessionKey
+                                  ? (["session", l.sessionKey] as const)
+                                  : null,
+                              ].filter(Boolean) as ReadonlyArray<
+                                readonly [string, string]
+                              >
+                              if (meta.length === 0) return null
+                              return (
+                                <div className="text-muted-foreground flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+                                  {meta.map(([k, v]) => (
+                                    <span
+                                      key={k}
+                                      className="flex items-center gap-1.5"
+                                    >
+                                      <span className="opacity-55">{k}</span>
+                                      <span className="text-foreground/80 tabular-nums">
+                                        {v}
+                                      </span>
                                     </span>
-                                  </span>
-                                ))}
-                              </div>
-                            )
-                          })()}
-                          {l.raw && l.raw !== l.msg ? (
-                            <pre className="bg-muted/80 text-muted-foreground max-h-36 overflow-auto rounded-md p-2.5 text-[0.7rem] leading-relaxed break-all whitespace-pre-wrap">
-                              {l.raw}
-                            </pre>
-                          ) : null}
-                        </div>
-                      ) : null}
-                    </div>
-                  )
-                })}
+                                  ))}
+                                </div>
+                              )
+                            })()}
+                            {l.raw && l.raw !== l.msg ? (
+                              <pre className="bg-muted/80 text-muted-foreground max-h-36 overflow-auto rounded-md p-2.5 text-[0.7rem] leading-relaxed break-all whitespace-pre-wrap">
+                                {l.raw}
+                              </pre>
+                            ) : null}
+                          </div>
+                        ) : null}
+                      </div>
+                    )
+                  })}
+                </div>
               </div>
             </div>
           )}
-        </DataState>
-      </SectionCard>
+      </DataState>
     </PageShell>
   )
 }

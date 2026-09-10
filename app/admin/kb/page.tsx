@@ -17,8 +17,6 @@ import {
   BookOpen,
   AlertTriangle,
   Boxes,
-  Database,
-  Ruler,
   Search,
   Folder,
   FolderOpen,
@@ -34,6 +32,12 @@ import {
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Input } from "@/components/ui/input"
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupButton,
+  InputGroupInput,
+} from "@/components/ui/input-group"
 import { Spinner } from "@/components/ui/spinner"
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -59,8 +63,8 @@ import {
 } from "@/components/ui/alert-dialog"
 import { PageShell } from "@/components/admin/page-shell"
 import { PageHeader } from "@/components/admin/page-header"
-import { MetricBadge, MetricBadgeRow } from "@/components/admin/stat"
 import { SectionCard } from "@/components/admin/section-card"
+import { Notice } from "@/components/admin/notice"
 import { ItemCard } from "@/components/admin/item-card"
 import { MasterDetail } from "@/components/admin/master-detail"
 import { DataState, EmptyState } from "@/components/admin/data-state"
@@ -623,7 +627,6 @@ export default function KbPage() {
           <div className="flex flex-wrap gap-2">
             <Button
               variant="outline"
-              size="sm"
               onClick={() => {
                 setCreatePath(
                   active?.includes("/")
@@ -638,7 +641,6 @@ export default function KbPage() {
             </Button>
             <Button
               variant="secondary"
-              size="sm"
               onClick={() => void ingest()}
               disabled={ingesting}
             >
@@ -653,55 +655,36 @@ export default function KbPage() {
         }
       />
 
-      <MetricBadgeRow className="shrink-0">
-        <MetricBadge
-          icon={Boxes}
-          label="分块数"
-          value={stats ? stats.chunks : "—"}
-          loading={!stats}
-        />
-        <MetricBadge
-          icon={Database}
-          label="已索引"
-          value={stats ? stats.vecs : "—"}
-          loading={!stats}
-        />
-        <MetricBadge
-          icon={FileText}
-          label="文档数"
-          value={stats ? stats.docs.length : "—"}
-          loading={!stats}
-        />
-        <MetricBadge
-          icon={Ruler}
-          label="索引维度"
-          value={stats ? stats.dim : "—"}
-          loading={!stats}
-        />
-      </MetricBadgeRow>
+      {stats && (
+        <p className="shrink-0 text-xs text-muted-foreground tabular-nums">
+          {stats.docs.length} 个文档 · {stats.chunks} 个分块 · 已索引{" "}
+          {stats.vecs} · 维度 {stats.dim}
+        </p>
+      )}
 
-      {(orphan !== 0 || dirtyDocs.size > 0 || unsaved) && (
-        <div className="flex shrink-0 flex-col gap-1 rounded-md border border-destructive/40 px-3 py-2 text-sm font-medium text-destructive">
-          {unsaved && (
-            <div className="flex items-center gap-2">
-              <AlertTriangle className="size-4 shrink-0" />
-              当前文档有未保存改动（⌘/Ctrl+S 保存）
-            </div>
-          )}
-          {orphan !== 0 && (
-            <div className="flex items-center gap-2">
-              <AlertTriangle className="size-4 shrink-0" />
-              {orphan} 个分块缺少向量，需重建索引。
-            </div>
-          )}
-          {dirtyDocs.size > 0 && (
-            <div className="flex items-center gap-2">
-              <AlertTriangle className="size-4 shrink-0" />
-              {dirtyDocs.size} 个文档已改未重建：
-              {Array.from(dirtyDocs).join(", ")}
-            </div>
-          )}
-        </div>
+      {unsaved && (
+        <Notice
+          variant="warning"
+          title="当前文档有未保存改动"
+          description="按 ⌘/Ctrl+S 仅保存，或在编辑页「保存并生效」写入并重建索引。"
+          className="shrink-0"
+        />
+      )}
+      {orphan !== 0 && (
+        <Notice
+          variant="warning"
+          title={`${orphan} 个分块缺少向量`}
+          description="需要点右上角「重建索引」补齐检索向量。"
+          className="shrink-0"
+        />
+      )}
+      {dirtyDocs.size > 0 && (
+        <Notice
+          variant="warning"
+          title={`${dirtyDocs.size} 个文档已改未重建`}
+          description={`${Array.from(dirtyDocs).join(", ")} —— 检索索引仍是旧内容。`}
+          className="shrink-0"
+        />
       )}
 
       <MasterDetail
@@ -722,25 +705,28 @@ export default function KbPage() {
             className="flex min-h-0 min-w-0 flex-col overflow-hidden"
             contentClassName="flex min-h-0 min-w-0 flex-1 flex-col gap-2"
           >
-            <div className="relative shrink-0">
-              <Search className="pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-              <Input
+            <InputGroup className="shrink-0 bg-background">
+              <InputGroupAddon>
+                <Search />
+              </InputGroupAddon>
+              <InputGroupInput
                 placeholder="搜索路径…"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                className="h-8 pr-8 pl-8 text-xs"
+                aria-label="搜索路径"
               />
               {query && (
-                <button
-                  type="button"
-                  className="absolute top-1/2 right-2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                  onClick={() => setQuery("")}
-                  aria-label="清除"
-                >
-                  <X className="size-3.5" />
-                </button>
+                <InputGroupAddon align="inline-end">
+                  <InputGroupButton
+                    size="icon-xs"
+                    onClick={() => setQuery("")}
+                    aria-label="清除"
+                  >
+                    <X />
+                  </InputGroupButton>
+                </InputGroupAddon>
               )}
-            </div>
+            </InputGroup>
 
             <DataState
               loading={files === null}
@@ -786,7 +772,6 @@ export default function KbPage() {
                   )}
                 </span>
               }
-              icon={FileText}
               className="flex min-h-0 min-w-0 flex-col overflow-hidden"
               contentClassName="flex min-h-0 min-w-0 flex-1 flex-col gap-2"
               action={

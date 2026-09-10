@@ -4,11 +4,7 @@ import { useMemo, useState } from "react"
 import { toast } from "sonner"
 import {
   Brain,
-  Clock,
-  Layers,
   GitCompareArrows,
-  Timer,
-  Gauge,
   Wand2,
   Check,
   X,
@@ -21,13 +17,13 @@ import { Spinner } from "@/components/ui/spinner"
 import { VirtualList } from "@/components/admin/virtual-list"
 import { Skeleton } from "@/components/ui/skeleton"
 import {
-  Table,
   TableBody,
   TableCell,
   TableHead,
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { TableShell } from "@/components/admin/table-shell"
 import {
   Dialog,
   DialogClose,
@@ -41,7 +37,7 @@ import {
 import { RelativeTime } from "@/components/relative-time"
 import { PageShell } from "@/components/admin/page-shell"
 import { PageHeader } from "@/components/admin/page-header"
-import { MetricBadge, MetricBadgeRow } from "@/components/admin/stat"
+import { MetricRows } from "@/components/admin/stat"
 import { SectionCard } from "@/components/admin/section-card"
 import { ItemCard } from "@/components/admin/item-card"
 import { DataState } from "@/components/admin/data-state"
@@ -537,60 +533,54 @@ export default function ReflectionPage() {
         }
       />
 
-      <MetricBadgeRow>
-        <MetricBadge
-          icon={Clock}
-          label="扫描周期"
-          value={d ? min(d.config.scanMs) : "—"}
-          loading={loading}
-        />
-        <MetricBadge
-          icon={Clock}
-          label="静置等待"
-          value={d ? min(d.config.settleMs) : "—"}
-          loading={loading}
-        />
-        <MetricBadge
-          icon={Layers}
-          label="回溯范围"
-          value={d ? min(d.config.lookbackMs) : "—"}
-          loading={loading}
-        />
-        <MetricBadge
-          icon={Layers}
-          label="窗口上限"
-          value={d ? d.config.windowMax : "—"}
-          loading={loading}
-        />
-        <MetricBadge
-          icon={Timer}
-          label="整理周期"
-          value={d ? hr(d.config.compactMs) : "—"}
-          loading={loading}
-        />
-        <MetricBadge
-          icon={Gauge}
-          label="可整理/门槛"
-          loading={loading}
-          value={d ? `${approvedCount}/${d.config.compactMinEntries}` : "—"}
-          tone={willCompact ? "primary" : undefined}
-        />
-        <MetricBadge
-          icon={Sparkles}
-          label="升格周期"
-          value={
-            d ? (d.config.promoteMs > 0 ? hr(d.config.promoteMs) : "关") : "—"
-          }
-          loading={loading}
-        />
-        <MetricBadge
-          icon={FileUp}
-          label="待升格候选"
-          loading={loading}
-          value={d ? `${approvedCount}/${d.config.promoteMinEntries}` : "—"}
-          tone={willPromote ? "primary" : undefined}
-        />
-      </MetricBadgeRow>
+      <MetricRows
+        items={[
+          {
+            label: "扫描周期",
+            value: d ? min(d.config.scanMs) : "—",
+            hint: "后台扫描生效会话的间隔。",
+          },
+          {
+            label: "静置等待",
+            value: d ? min(d.config.settleMs) : "—",
+            hint: "人工答复后静置多久才提炼,避免打断进行中的对话。",
+          },
+          {
+            label: "回溯范围",
+            value: d ? min(d.config.lookbackMs) : "—",
+            hint: "最多回看多久内的对话。",
+          },
+          {
+            label: "窗口上限",
+            value: d ? d.config.windowMax : "—",
+            hint: "单轮提炼的对话条数上限。",
+          },
+          {
+            label: "整理周期",
+            value: d ? hr(d.config.compactMs) : "—",
+            hint: "近义去重合并的自动执行周期。",
+          },
+          {
+            label: "可整理 / 门槛",
+            value: d ? `${approvedCount}/${d.config.compactMinEntries}` : "—",
+            hint: "已入库条目数与触发整理的门槛。",
+          },
+          {
+            label: "升格周期",
+            value: d
+              ? d.config.promoteMs > 0
+                ? hr(d.config.promoteMs)
+                : "关"
+              : "—",
+            hint: "正式文档升格评审的周期;「关」表示停用。",
+          },
+          {
+            label: "待升格候选",
+            value: d ? `${approvedCount}/${d.config.promoteMinEntries}` : "—",
+            hint: "已入库条目数与升格评审门槛。",
+          },
+        ]}
+      />
 
       <SectionCard
         title="每群反思进度"
@@ -606,7 +596,7 @@ export default function ReflectionPage() {
           emptyDescription="生效群出现人工答复后，进度会显示在这里。"
           skeleton={<Skeleton className="h-40 w-full" />}
         >
-          <Table>
+          <TableShell minWidth="min-w-[560px]">
             <TableHeader>
               <TableRow>
                 <TableHead>群</TableHead>
@@ -641,12 +631,11 @@ export default function ReflectionPage() {
                 </TableRow>
               ))}
             </TableBody>
-          </Table>
+          </TableShell>
         </DataState>
       </SectionCard>
 
       <SectionCard
-        icon={GitCompareArrows}
         title={`整理记录${d ? ` (${d.compactions.length})` : ""}`}
         description="每次整理的时间与条目变化。"
       >
@@ -669,7 +658,6 @@ export default function ReflectionPage() {
       </SectionCard>
 
       <SectionCard
-        icon={Brain}
         title={`知识条目${d ? ` (${d.entries.length})` : ""}`}
         description="自动入库的自学习知识，Agent 检索可直接命中；可驳回，或升格为正式文档。"
       >

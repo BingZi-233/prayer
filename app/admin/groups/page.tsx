@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react"
 import { toast } from "sonner"
-import { Users, Settings2, RotateCcw, Bell, Timer, Zap } from "lucide-react"
+import { Users, Settings2, RotateCcw } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -31,18 +31,18 @@ import {
   FieldLabel,
 } from "@/components/ui/field"
 import {
-  Table,
   TableBody,
   TableCell,
   TableHead,
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { TableShell } from "@/components/admin/table-shell"
+import { RowActions } from "@/components/admin/row-actions"
 import { RelativeTime } from "@/components/relative-time"
 import { PageShell } from "@/components/admin/page-shell"
 import { PageHeader } from "@/components/admin/page-header"
-import { SectionCard } from "@/components/admin/section-card"
-import { MetricBadge, MetricBadgeRow } from "@/components/admin/stat"
+import { MetricRows } from "@/components/admin/stat"
 import { DataState } from "@/components/admin/data-state"
 import { usePolling } from "@/components/admin/use-polling"
 import { useGroupNames } from "@/lib/group-name"
@@ -290,44 +290,37 @@ export default function GroupsPage() {
     <PageShell>
       <PageHeader
         title="生效会话"
-        description={`按会话开关机器人应答，并覆盖主动补位 / 转人工通知策略。${overrideCount ? `当前 ${overrideCount} 个会话有独立策略。` : "未设置覆盖时全部跟随全局配置。"}`}
+        description="按会话开关机器人应答，并覆盖主动补位 / 转人工通知策略；未覆盖的项跟随全局，管理群只处理 !reset / !resume，不参与客服问答。"
       />
 
       {globals && (
-        <MetricBadgeRow>
-          <MetricBadge
-            icon={Zap}
-            label="主动补位"
-            value={globals.proactiveEnabled ? "开" : "关"}
-            tone={globals.proactiveEnabled ? "primary" : undefined}
-          />
-          <MetricBadge
-            icon={Timer}
-            label="静默阈值"
-            value={min(globals.proactiveSilenceMs)}
-          />
-          <MetricBadge
-            icon={Bell}
-            label="转人工通知"
-            value="开"
-            tone="primary"
-          />
-          {overrideCount > 0 && (
-            <MetricBadge
-              icon={Settings2}
-              label="独立策略"
-              value={`${overrideCount} 会话`}
-            />
-          )}
-        </MetricBadgeRow>
+        <MetricRows
+          items={[
+            {
+              label: "全局主动补位",
+              value: globals.proactiveEnabled ? "开" : "关",
+              hint: "可在配置页修改默认;单群可在此覆盖。",
+            },
+            {
+              label: "全局静默阈值",
+              value: min(globals.proactiveSilenceMs),
+              hint: "无人应答超过此时长才补位。",
+            },
+            {
+              label: "转人工通知",
+              value: "开",
+              hint: "转人工时向管理面发消息提醒。",
+            },
+            {
+              label: "独立策略",
+              value: overrideCount,
+              hint: "覆盖了全局默认的会话数量。",
+            },
+          ]}
+        />
       )}
 
-      <SectionCard
-        title="会话活动与策略"
-        icon={Users}
-        description="可在配置页修改全局默认；表格内可按会话覆盖。管理群只处理 !reset / !resume，不参与客服问答。"
-      >
-        <DataState
+      <DataState
           loading={loading}
           error={error}
           empty={rows.length === 0}
@@ -337,7 +330,7 @@ export default function GroupsPage() {
           emptyDescription="生效会话有消息后会出现在这里。也可先在配置页勾选生效会话。"
           skeleton={<Skeleton className="h-40 w-full" />}
         >
-          <Table>
+          <TableShell minWidth="min-w-[880px]">
             <TableHeader>
               <TableRow>
                 <TableHead>会话</TableHead>
@@ -347,31 +340,31 @@ export default function GroupsPage() {
                 <TableHead>转人工通知</TableHead>
                 <TableHead className="text-right">消息量</TableHead>
                 <TableHead>最近活动</TableHead>
-                <TableHead className="w-28">策略</TableHead>
+                <TableHead className="w-12 text-right">操作</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {rows.map((r) => (
                 <TableRow key={r.policyKey}>
-                  <TableCell className="font-medium">
-                    <div className="flex flex-col gap-0.5">
-                      <div className="flex items-center gap-1.5">
-                        <Badge variant="outline" className="px-1.5 text-[10px]">
-                          {channelLabel(r.channel)}
+                  <TableCell className="max-w-[320px] font-medium">
+                    <div className="flex items-center gap-1.5">
+                      <Badge variant="outline" className="px-1.5 text-[10px]">
+                        {channelLabel(r.channel)}
+                      </Badge>
+                      <span className="truncate">{rowLabel(r, name)}</span>
+                      {rowLabel(r, name) !== r.chatId && (
+                        <span className="truncate font-mono text-[11px] text-muted-foreground">
+                          {r.chatId}
+                        </span>
+                      )}
+                      {r.isAdmin && (
+                        <Badge
+                          variant="secondary"
+                          className="px-1.5 text-[10px]"
+                        >
+                          管理群
                         </Badge>
-                        <span>{rowLabel(r, name)}</span>
-                        {r.isAdmin && (
-                          <Badge
-                            variant="secondary"
-                            className="px-1.5 text-[10px]"
-                          >
-                            管理群
-                          </Badge>
-                        )}
-                      </div>
-                      <span className="font-mono text-xs text-muted-foreground">
-                        {r.chatId}
-                      </span>
+                      )}
                     </div>
                   </TableCell>
                   <TableCell>
@@ -380,16 +373,12 @@ export default function GroupsPage() {
                         仅管理命令
                       </span>
                     ) : (
-                      <div className="flex items-center gap-2">
-                        <Switch
-                          checked={r.enabled}
-                          disabled={busyKey === r.policyKey}
-                          onCheckedChange={(v) => toggle(r, v)}
-                        />
-                        <Badge variant={r.enabled ? "default" : "secondary"}>
-                          {r.enabled ? "生效" : "未生效"}
-                        </Badge>
-                      </div>
+                      <Switch
+                        checked={r.enabled}
+                        disabled={busyKey === r.policyKey}
+                        onCheckedChange={(v) => toggle(r, v)}
+                        aria-label={`${r.enabled ? "关闭" : "开启"} ${rowLabel(r, name)} 的自动应答`}
+                      />
                     )}
                   </TableCell>
                   <TableCell>
@@ -458,38 +447,39 @@ export default function GroupsPage() {
                   <TableCell className="text-muted-foreground">
                     {r.lastTs ? <RelativeTime ts={r.lastTs} /> : "—"}
                   </TableCell>
-                  <TableCell>
-                    <div className="flex gap-1">
-                      {!r.isAdmin && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => openEditor(r)}
-                        >
-                          <Settings2 data-icon="inline-start" />
-                          编辑
-                        </Button>
-                      )}
-                      {r.hasOverride && (
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          disabled={busyKey === r.policyKey}
-                          title="清除覆盖，跟随全局"
-                          onClick={() => clearPolicy(r)}
-                        >
-                          <RotateCcw data-icon="inline-start" />
-                          清除
-                        </Button>
-                      )}
-                    </div>
+                  <TableCell className="text-right">
+                    {r.isAdmin ? (
+                      <span className="text-muted-foreground">—</span>
+                    ) : (
+                      <RowActions
+                        items={[
+                          {
+                            key: "edit",
+                            label: "编辑策略",
+                            icon: <Settings2 />,
+                            onSelect: () => openEditor(r),
+                          },
+                          ...(r.hasOverride
+                            ? [
+                                {
+                                  key: "clear",
+                                  label: "清除覆盖",
+                                  icon: <RotateCcw />,
+                                  separatorBefore: true,
+                                  disabled: busyKey === r.policyKey,
+                                  onSelect: () => void clearPolicy(r),
+                                },
+                              ]
+                            : []),
+                        ]}
+                      />
+                    )}
                   </TableCell>
                 </TableRow>
               ))}
             </TableBody>
-          </Table>
+          </TableShell>
         </DataState>
-      </SectionCard>
 
       <Sheet
         open={editing !== null}
@@ -526,6 +516,11 @@ export default function GroupsPage() {
               <Field>
                 <FieldLabel>主动补位</FieldLabel>
                 <Select
+                  items={{
+                    inherit: "跟随全局",
+                    on: "强制开启",
+                    off: "强制关闭",
+                  }}
                   value={proactiveTri}
                   onValueChange={(v) => {
                     if (v !== null) setProactiveTri(v as Tri)
@@ -548,6 +543,10 @@ export default function GroupsPage() {
               <Field>
                 <FieldLabel>静默阈值</FieldLabel>
                 <Select
+                  items={{
+                    inherit: "跟随全局",
+                    custom: "自定义(分钟)",
+                  }}
                   value={silenceMode}
                   onValueChange={(v) => {
                     if (v !== null) setSilenceMode(v as "inherit" | "custom")
@@ -581,6 +580,11 @@ export default function GroupsPage() {
               <Field>
                 <FieldLabel>转人工时通知管理面</FieldLabel>
                 <Select
+                  items={{
+                    inherit: "跟随默认(通知)",
+                    on: "通知",
+                    off: "不通知",
+                  }}
                   value={handoffTri}
                   onValueChange={(v) => {
                     if (v !== null) setHandoffTri(v as Tri)

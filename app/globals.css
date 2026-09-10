@@ -53,6 +53,7 @@
 }
 
 :root {
+  color-scheme: light;
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
   --card: oklch(1 0 0);
@@ -89,6 +90,7 @@
 }
 
 .dark {
+  color-scheme: dark;
   --background: oklch(0.145 0 0);
   --foreground: oklch(0.985 0 0);
   --card: oklch(0.205 0 0);
@@ -123,6 +125,10 @@
 }
 
 @layer base {
+  html {
+    background: var(--background);
+  }
+
   * {
     @apply border-border outline-ring/50;
   }
@@ -146,4 +152,24 @@
       scroll-behavior: auto !important;
     }
   }
+}
+
+@layer components {
+  /* TableShell 内部:表头吸顶。白底 + 一条 inset 分隔线,
+     不用灰底,避免与卡片形成双层色带。 */
+  [data-slot="table-shell"] [data-slot="table-header"] {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: var(--background);
+    box-shadow: inset 0 -1px 0 var(--border);
+  }
+
+}
+
+/* 表头文字用 muted。这条必须放在 @layer 之外:CSS 层顺序优先于选择器权重,
+   放在 components 层会被 Tailwind 的 utilities 层(TableHead 自带的
+   text-foreground)盖掉。 */
+[data-slot="table-shell"] [data-slot="table-head"] {
+  color: var(--muted-foreground);
 }

@@ -135,7 +135,7 @@ export default function CapabilitiesPage() {
             </TabsTrigger>
           </TabsList>
 
-          <TabsContent value="plugins">
+          <TabsContent value="plugins" className="pt-4">
             <SectionCard
               title="插件"
               description="已加载的本地插件。"
@@ -171,7 +171,7 @@ export default function CapabilitiesPage() {
             </SectionCard>
           </TabsContent>
 
-          <TabsContent value="skills">
+          <TabsContent value="skills" className="pt-4">
             <SectionCard
               title="技能"
               description="机器人可自动触发的技能。"
@@ -207,7 +207,7 @@ export default function CapabilitiesPage() {
             </SectionCard>
           </TabsContent>
 
-          <TabsContent value="mcp">
+          <TabsContent value="mcp" className="pt-4">
             <SectionCard
               title="MCP Server"
               description="已注册的 MCP 服务及其工具。"
@@ -265,7 +265,7 @@ export default function CapabilitiesPage() {
             </SectionCard>
           </TabsContent>
 
-          <TabsContent value="policy">
+          <TabsContent value="policy" className="pt-4">
             <SectionCard
               title="工具门控"
               description="工具调用的放行与限制规则。"

@@ -3,28 +3,12 @@
 import { useState } from "react"
 import Link from "next/link"
 import { toast } from "sonner"
-import {
-  Activity,
-  Plug,
-  Users,
-  RotateCw,
-  TriangleAlert,
-  Clock,
-  LifeBuoy,
-  ShieldCheck,
-  Brain,
-  MessagesSquare,
-  Gauge,
-  Target,
-  Zap,
-  Wrench,
-} from "lucide-react"
+import { RotateCw, TriangleAlert, LifeBuoy, Gauge } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { Spinner } from "@/components/ui/spinner"
 import { Skeleton } from "@/components/ui/skeleton"
 import {
-  Table,
   TableBody,
   TableCell,
   TableHead,
@@ -45,7 +29,10 @@ import {
 import { PageShell } from "@/components/admin/page-shell"
 import { PageHeader } from "@/components/admin/page-header"
 import { SectionCard } from "@/components/admin/section-card"
-import { MetricBadge, MetricBadgeRow } from "@/components/admin/stat"
+import { TableShell } from "@/components/admin/table-shell"
+import { Notice } from "@/components/admin/notice"
+import { MetricRows, StatCard, StatGrid } from "@/components/admin/stat"
+import { DataState, EmptyState } from "@/components/admin/data-state"
 import { usePolling } from "@/components/admin/use-polling"
 import {
   useLive,
@@ -97,14 +84,14 @@ const kfmt = (n: number) =>
       ? `${(n / 1000).toFixed(1)}k`
       : String(Math.round(n))
 
-/** 单元格:上为本次运行累计,下为单次调用均值(防把进程累计误读成单次量) */
+/** 单元格:累计值 + 同行 muted 的单次均值(防把进程累计误读成单次量) */
 function TokenCell({ total, count }: { total: number; count: number }) {
   return (
     <>
       {kfmt(total)}
-      <div className="text-xs text-muted-foreground">
+      <span className="ml-1 text-[11px] text-muted-foreground">
         均 {kfmt(total / Math.max(count, 1))}
-      </div>
+      </span>
     </>
   )
 }
@@ -114,6 +101,10 @@ const STATE_LABEL: Record<string, string> = {
   stopped: "已停止",
   starting: "启动中",
   error: "错误",
+}
+
+function statusLabel(state: string): string {
+  return STATE_LABEL[state] ?? "未知"
 }
 
 function channelOf(s: Status, id: string): ChannelStatusView | undefined {
@@ -137,7 +128,12 @@ export default function StatusPage() {
   // status/overview 来自全局 LiveProvider(单份轮询,本页不再重复打 /api/status、/api/overview);
   // usage 只在本页需要,走带 in-flight 闸门的 usePolling
   const { status: s, overview: ov, refresh: refreshLive } = useLive()
-  const { data: usage } = usePolling<Usage>("/api/usage", 30_000)
+  const {
+    data: usage,
+    error: usageError,
+    loading: usageLoading,
+    refresh: refreshUsage,
+  } = usePolling<Usage>("/api/usage", 30_000)
   const [busy, setBusy] = useState(false)
 
   async function restart() {
@@ -168,7 +164,7 @@ export default function StatusPage() {
   const hasAlerts = (ov?.humanSessions ?? 0) > 0 || channelDown
 
   return (
-    <PageShell className="min-w-0 gap-4 lg:gap-6">
+    <PageShell className="min-w-0">
       <PageHeader
         className="shrink-0"
         title="运行状态"
@@ -208,16 +204,11 @@ export default function StatusPage() {
       />
 
       {hasAlerts ? (
-        <SectionCard
-          className="shrink-0 border-destructive/50"
-          title={
-            <span className="flex items-center gap-2 text-destructive">
-              <LifeBuoy className="size-4" />
-              有待处理事项
-            </span>
-          }
+        <Notice
+          variant="warning"
+          icon={<LifeBuoy className="size-4" />}
+          title="有待处理事项"
           description="请尽快处理人工会话，或检查连接状态。"
-          contentClassName="flex flex-wrap gap-2"
         >
           {(ov?.humanSessions ?? 0) > 0 && (
             <Link
@@ -236,7 +227,7 @@ export default function StatusPage() {
                 <Badge
                   key={c.id}
                   variant="destructive"
-                  className="h-auto max-w-full justify-start whitespace-normal break-words py-1 text-left"
+                  className="h-auto max-w-full justify-start py-1 text-left break-words whitespace-normal"
                 >
                   {c.id.toUpperCase()} {c.lastError ? "异常" : "未连接"}
                   {c.lastError ? ` · ${c.lastError.slice(0, 40)}` : ""}
@@ -246,32 +237,60 @@ export default function StatusPage() {
           {!s?.channels?.length && s && !s.wsConnected && (
             <Badge variant="destructive">WS 未连接</Badge>
           )}
-        </SectionCard>
+        </Notice>
       ) : null}
 
-      <MetricBadgeRow className="shrink-0">
-        <MetricBadge
-          icon={Activity}
-          label="状态"
+      <StatGrid>
+        <StatCard
+          label="运行状态"
           loading={!s}
-          value={s ? (STATE_LABEL[s.state] ?? s.state) : "—"}
+          value={s ? statusLabel(s.state) : "—"}
+          hint={
+            s?.bootedAt ? (
+              <>
+                启动于 <RelativeTime ts={s.bootedAt} />
+              </>
+            ) : (
+              "后台 Agent 进程状态。"
+            )
+          }
           warn={s?.state === "error"}
-          tone={s?.state === "running" ? "primary" : undefined}
         />
-        <MetricBadge
-          icon={Plug}
-          label="QQ"
+        <StatCard
+          label="活动会话"
           loading={!s}
-          value={s ? (channelConnected(s, "qq") ? "已连接" : "断开") : "—"}
-          warn={!!s && !channelConnected(s, "qq")}
-          tone={s && channelConnected(s, "qq") ? "primary" : undefined}
+          value={s?.sessionCount ?? "—"}
+          hint={`其中人工接待 ${s?.handoffQueue ?? ov?.humanSessions ?? 0} 个。`}
         />
-        <MetricBadge
-          icon={Plug}
-          label="TG"
-          loading={!s}
+        <StatCard
+          label="生效会话"
+          loading={!ov}
+          value={ov?.enabledChats ?? "—"}
+          hint="启用机器人应答的会话数量。"
+        />
+        <StatCard
+          label="自动解决率"
+          loading={!ov}
           value={
-            !s
+            m?.autoResolutionRate != null ? pct(m.autoResolutionRate) : "—"
+          }
+          hint="自动答 ÷ (自动答 + 主动补位 + 转人工 + 错误)。"
+        />
+      </StatGrid>
+
+      <p className="text-xs text-muted-foreground">通道与今日结果(今日 0 点起累计)</p>
+
+      <MetricRows
+        items={[
+          {
+            label: "QQ 通道",
+            value: s ? (channelConnected(s, "qq") ? "已连接" : "断开") : "—",
+            hint: "NapCat 正向 WebSocket 连接。",
+            warn: !!s && !channelConnected(s, "qq"),
+          },
+          {
+            label: "TG 通道",
+            value: !s
               ? "—"
               : !channelPresent(s, "tg")
                 ? "未配置"
@@ -279,106 +298,38 @@ export default function StatusPage() {
                   ? "已连接"
                   : channelError(s, "tg")
                     ? "异常"
-                    : "断开"
-          }
-          warn={!!s && channelPresent(s, "tg") && !channelConnected(s, "tg")}
-          tone={s && channelConnected(s, "tg") ? "primary" : undefined}
-        />
-        <MetricBadge
-          icon={Users}
-          label="活动会话"
-          loading={!s}
-          value={s?.sessionCount ?? "—"}
-        />
-        <MetricBadge
-          icon={ShieldCheck}
-          label="生效会话"
-          loading={!ov}
-          value={ov?.enabledChats ?? "—"}
-        />
-        <MetricBadge
-          icon={Brain}
-          label="知识条目"
-          loading={!ov}
-          value={ov?.reflectionCount ?? "—"}
-        />
-        <MetricBadge
-          icon={Target}
-          label="自动解决率"
-          loading={!ov}
-          value={
-            m?.autoResolutionRate != null ? pct(m.autoResolutionRate) : "—"
-          }
-        />
-      </MetricBadgeRow>
-
-      <SectionCard
-        className="shrink-0"
-        title="今日结果"
-        icon={Target}
-        description="今日 0 点起累计。自动解决率 = 自动答 ÷ (自动答 + 主动补位 + 转人工 + 错误)。"
-        contentClassName="flex flex-wrap gap-2"
-      >
-        {!m ? (
-          <>
-            {Array.from({ length: 8 }).map((_, i) => (
-              <Skeleton key={i} className="h-8 w-24 rounded-full" />
-            ))}
-          </>
-        ) : (
-          <>
-            <MetricBadge icon={MessagesSquare} label="自动答" value={m.auto} />
-            <MetricBadge icon={Zap} label="主动补位" value={m.proactive} />
-            <MetricBadge
-              icon={LifeBuoy}
-              label="转人工"
-              value={m.handoff}
-              warn={m.handoff > 0}
-            />
-            <MetricBadge
-              icon={TriangleAlert}
-              label="错误"
-              value={m.error}
-              warn={m.error > 0}
-            />
-            <MetricBadge
-              icon={ShieldCheck}
-              label="意图拦截"
-              value={m.blocked}
-            />
-            <MetricBadge
-              icon={Zap}
-              label="主动跳过"
-              value={m.proactiveSilent}
-            />
-            <MetricBadge
-              icon={TriangleAlert}
-              label="标为不当"
-              value={m.proactiveBad}
-              warn={m.proactiveBad > 0}
-            />
-            <MetricBadge
-              icon={Gauge}
-              label="今日成本"
-              value={
-                <>
-                  ${m.usageCostUsd.toFixed(4)}
-                  {m.usageBudgetUsd > 0 && (
-                    <span className="font-normal text-muted-foreground">
-                      {" "}
-                      / ${m.usageBudgetUsd}
-                    </span>
-                  )}
-                </>
-              }
-            />
-          </>
-        )}
-      </SectionCard>
+                    : "断开",
+            hint: "Telegram 长轮询通道,未配置则不启动。",
+            warn: !!s && channelPresent(s, "tg") && !channelConnected(s, "tg"),
+          },
+          {
+            label: "知识条目",
+            value: ov?.reflectionCount ?? "—",
+            hint: "自动入库的自学习知识。",
+          },
+          {
+            label: "今日成本",
+            value: m ? `$${m.usageCostUsd.toFixed(4)}` : "—",
+            hint: m?.usageBudgetUsd
+              ? `预算 $${m.usageBudgetUsd}。`
+              : "今日 0 点起累计的模型调用费用。",
+          },
+          { label: "自动答", value: m?.auto ?? "—" },
+          { label: "主动补位", value: m?.proactive ?? "—" },
+          { label: "转人工", value: m?.handoff ?? "—", warn: (m?.handoff ?? 0) > 0 },
+          { label: "错误", value: m?.error ?? "—", warn: (m?.error ?? 0) > 0 },
+          { label: "意图拦截", value: m?.blocked ?? "—" },
+          { label: "主动跳过", value: m?.proactiveSilent ?? "—" },
+          {
+            label: "标为不当",
+            value: m?.proactiveBad ?? "—",
+            warn: (m?.proactiveBad ?? 0) > 0,
+          },
+        ]}
+      />
 
       <SectionCard
         title="模型用量"
-        icon={Gauge}
         description={
           usage?.daily
             ? `本次运行累计（token 列下方为单次调用均值）；今日已记账 $${usage.daily.costUsd.toFixed(4)}${usage.daily.budgetUsd > 0 ? ` / 预算 $${usage.daily.budgetUsd}` : ""}。`
@@ -400,106 +351,124 @@ export default function StatusPage() {
           ) : undefined
         }
       >
-        {!usage ? (
-          <div className="flex flex-wrap gap-2">
-            {Array.from({ length: 4 }).map((_, i) => (
-              <Skeleton key={i} className="h-8 w-24" />
-            ))}
-          </div>
-        ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>调用点</TableHead>
-                <TableHead className="text-right">次数</TableHead>
-                <TableHead className="text-right">命中率</TableHead>
-                <TableHead className="hidden text-right sm:table-cell">
-                  缓存命中/写入
-                </TableHead>
-                <TableHead className="hidden text-right md:table-cell">
-                  未缓存输入
-                </TableHead>
-                <TableHead className="hidden text-right md:table-cell">
-                  输出
-                </TableHead>
-                <TableHead className="text-right">成本($)</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {usage.rows.map((r) => (
-                <TableRow key={r.site}>
-                  <TableCell className="font-medium whitespace-nowrap">
-                    {r.label}
-                  </TableCell>
+        <DataState
+          loading={usageLoading}
+          error={usageError}
+          empty={usage?.rows.length === 0}
+          onRetry={refreshUsage}
+          emptyIcon={Gauge}
+          emptyTitle="暂无模型用量"
+          emptyDescription="服务产生模型调用后，这里会显示按调用点汇总的用量。"
+          skeleton={
+            <div className="flex flex-wrap gap-2">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <Skeleton key={i} className="h-8 w-24" />
+              ))}
+            </div>
+          }
+        >
+          {usage ? (
+            <TableShell minWidth="min-w-[44rem]">
+              <TableHeader>
+                <TableRow>
+                  <TableHead>调用点</TableHead>
+                  <TableHead className="text-right">次数</TableHead>
+                  <TableHead className="text-right">命中率</TableHead>
+                  <TableHead className="hidden text-right sm:table-cell">
+                    缓存命中/写入
+                  </TableHead>
+                  <TableHead className="hidden text-right md:table-cell">
+                    未缓存输入
+                  </TableHead>
+                  <TableHead className="hidden text-right md:table-cell">
+                    输出
+                  </TableHead>
+                  <TableHead className="text-right">成本($)</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {usage.rows.map((r) => (
+                  <TableRow key={r.site}>
+                    <TableCell className="font-medium whitespace-nowrap">
+                      {r.label}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {r.count}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Badge
+                        variant={r.hitRatio >= 0.8 ? "default" : "secondary"}
+                      >
+                        {pct(r.hitRatio)}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="hidden text-right tabular-nums sm:table-cell">
+                      {kfmt(r.cacheRead)} / {kfmt(r.cacheCreation)}
+                      <div className="text-xs text-muted-foreground">
+                        均 {kfmt(r.cacheRead / Math.max(r.count, 1))}
+                      </div>
+                    </TableCell>
+                    <TableCell className="hidden text-right tabular-nums md:table-cell">
+                      <TokenCell total={r.input} count={r.count} />
+                    </TableCell>
+                    <TableCell className="hidden text-right tabular-nums md:table-cell">
+                      <TokenCell total={r.output} count={r.count} />
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {r.costUsd.toFixed(4)}
+                    </TableCell>
+                  </TableRow>
+                ))}
+                <TableRow className="font-medium">
+                  <TableCell>合计</TableCell>
                   <TableCell className="text-right tabular-nums">
-                    {r.count}
+                    {usage.total.count}
                   </TableCell>
                   <TableCell className="text-right">
-                    <Badge
-                      variant={r.hitRatio >= 0.8 ? "default" : "secondary"}
-                    >
-                      {pct(r.hitRatio)}
+                    <Badge variant="secondary">
+                      {pct(usage.total.hitRatio)}
                     </Badge>
                   </TableCell>
                   <TableCell className="hidden text-right tabular-nums sm:table-cell">
-                    {kfmt(r.cacheRead)} / {kfmt(r.cacheCreation)}
-                    <div className="text-xs text-muted-foreground">
-                      均 {kfmt(r.cacheRead / Math.max(r.count, 1))}
+                    {kfmt(usage.total.cacheRead)} /{" "}
+                    {kfmt(usage.total.cacheCreation)}
+                    <div className="text-xs font-normal text-muted-foreground">
+                      均{" "}
+                      {kfmt(
+                        usage.total.cacheRead / Math.max(usage.total.count, 1)
+                      )}
                     </div>
                   </TableCell>
                   <TableCell className="hidden text-right tabular-nums md:table-cell">
-                    <TokenCell total={r.input} count={r.count} />
+                    <TokenCell
+                      total={usage.total.input}
+                      count={usage.total.count}
+                    />
                   </TableCell>
                   <TableCell className="hidden text-right tabular-nums md:table-cell">
-                    <TokenCell total={r.output} count={r.count} />
+                    <TokenCell
+                      total={usage.total.output}
+                      count={usage.total.count}
+                    />
                   </TableCell>
                   <TableCell className="text-right tabular-nums">
-                    {r.costUsd.toFixed(4)}
+                    {usage.total.costUsd.toFixed(4)}
                   </TableCell>
                 </TableRow>
-              ))}
-              <TableRow className="font-medium">
-                <TableCell>合计</TableCell>
-                <TableCell className="text-right tabular-nums">
-                  {usage.total.count}
-                </TableCell>
-                <TableCell className="text-right">
-                  <Badge variant="secondary">{pct(usage.total.hitRatio)}</Badge>
-                </TableCell>
-                <TableCell className="hidden text-right tabular-nums sm:table-cell">
-                  {kfmt(usage.total.cacheRead)} /{" "}
-                  {kfmt(usage.total.cacheCreation)}
-                  <div className="text-xs font-normal text-muted-foreground">
-                    均{" "}
-                    {kfmt(
-                      usage.total.cacheRead / Math.max(usage.total.count, 1)
-                    )}
-                  </div>
-                </TableCell>
-                <TableCell className="hidden text-right tabular-nums md:table-cell">
-                  <TokenCell
-                    total={usage.total.input}
-                    count={usage.total.count}
-                  />
-                </TableCell>
-                <TableCell className="hidden text-right tabular-nums md:table-cell">
-                  <TokenCell
-                    total={usage.total.output}
-                    count={usage.total.count}
-                  />
-                </TableCell>
-                <TableCell className="text-right tabular-nums">
-                  {usage.total.costUsd.toFixed(4)}
-                </TableCell>
-              </TableRow>
-            </TableBody>
-          </Table>
-        )}
+              </TableBody>
+            </TableShell>
+          ) : (
+            <EmptyState
+              icon={Gauge}
+              title="暂无模型用量"
+              description="服务产生模型调用后，这里会显示按调用点汇总的用量。"
+            />
+          )}
+        </DataState>
       </SectionCard>
 
       <SectionCard
         title="工具调用"
-        icon={Wrench}
         description={
           usage?.tools
             ? `主客服本次运行的工具使用；今日已记账 ${usage.tools.daily.coverage.totalRuns} 轮。`
@@ -546,7 +515,7 @@ export default function StatusPage() {
             本次运行还没有工具调用记录。
           </p>
         ) : (
-          <Table>
+          <TableShell minWidth="min-w-[520px]">
             <TableHeader>
               <TableRow>
                 <TableHead>工具</TableHead>
@@ -575,7 +544,7 @@ export default function StatusPage() {
                 </TableRow>
               ))}
             </TableBody>
-          </Table>
+          </TableShell>
         )}
       </SectionCard>
 
@@ -594,13 +563,6 @@ export default function StatusPage() {
             {s.lastError}
           </pre>
         </SectionCard>
-      )}
-
-      {s?.bootedAt && (
-        <footer className="flex shrink-0 items-center gap-1.5 border-t pt-3 text-xs text-muted-foreground">
-          <Clock className="size-3.5 shrink-0" />
-          启动于 <RelativeTime ts={s.bootedAt} />
-        </footer>
       )}
     </PageShell>
   )

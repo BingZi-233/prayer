@@ -8,8 +8,9 @@ const eslintConfig = defineConfig([
   // Override default ignores of eslint-config-next.
   globalIgnores([
     // Default ignores of eslint-config-next:
-    ".next/**",
-    ".next-verify/**",
+    // .next* 覆盖自定义 distDir(NEXT_DIST_DIR=.next-verify / .next-ui-dev),
+    // 这些构建产物不该被当成源码 lint。
+    ".next*/**",
     "out/**",
     "build/**",
     "next-env.d.ts",

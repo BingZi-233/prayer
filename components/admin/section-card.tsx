@@ -1,4 +1,4 @@
-import type { ComponentType, ReactNode } from "react"
+import type { ReactNode } from "react"
 import {
   Card,
   CardAction,
@@ -9,12 +9,11 @@ import {
 } from "@/components/ui/card"
 import { cn } from "@/lib/utils"
 
-// 统一区块卡:标题(可带图标)+ 可选描述 + 可选右上操作位 + 内容。
-// 固定 CardTitle 字号、描述槽恒在,消除各页 CardTitle 字号/description 有无的不齐。
+// 区块卡:标题 + 可选描述 + 可选右上操作位 + 内容。
+// 不加图标、不加底色、不加分隔线,靠间距分组。
 export function SectionCard({
   title,
   description,
-  icon: Icon,
   action,
   children,
   className,
@@ -22,20 +21,20 @@ export function SectionCard({
 }: {
   title: ReactNode
   description?: ReactNode
-  icon?: ComponentType<{ className?: string }>
   action?: ReactNode
   children?: ReactNode
   className?: string
   contentClassName?: string
 }) {
   return (
-    <Card className={cn("min-h-0", className)}>
+    <Card className={cn("min-h-0 overflow-hidden", className)}>
       <CardHeader className="shrink-0">
-        <CardTitle className="flex items-center gap-2">
-          {Icon && <Icon className="size-4 shrink-0" />}
-          {title}
-        </CardTitle>
-        {description && <CardDescription>{description}</CardDescription>}
+        <CardTitle>{title}</CardTitle>
+        {description && (
+          <CardDescription className="text-xs sm:text-sm">
+            {description}
+          </CardDescription>
+        )}
         {action && (
           <CardAction className="flex flex-wrap items-center gap-2">
             {action}

@@ -4,9 +4,6 @@ import { useState } from "react"
 import { toast } from "sonner"
 import {
   Zap,
-  Clock,
-  Timer,
-  Hash,
   MessageSquareReply,
   User,
   ThumbsUp,
@@ -18,17 +15,17 @@ import { VirtualList } from "@/components/admin/virtual-list"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Switch } from "@/components/ui/switch"
 import {
-  Table,
   TableBody,
   TableCell,
   TableHead,
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { TableShell } from "@/components/admin/table-shell"
 import { RelativeTime } from "@/components/relative-time"
 import { PageShell } from "@/components/admin/page-shell"
 import { PageHeader } from "@/components/admin/page-header"
-import { MetricBadge, MetricBadgeRow } from "@/components/admin/stat"
+import { MetricRows } from "@/components/admin/stat"
 import { SectionCard } from "@/components/admin/section-card"
 import { ItemCard } from "@/components/admin/item-card"
 import { DataState } from "@/components/admin/data-state"
@@ -135,33 +132,30 @@ export default function ProactivePage() {
         }
       />
 
-      <MetricBadgeRow>
-        <MetricBadge
-          icon={Zap}
-          label="状态"
-          loading={loading}
-          value={!d ? "—" : d.config.enabled ? "已启用" : "已关闭"}
-          tone={d?.config.enabled ? "primary" : undefined}
-        />
-        <MetricBadge
-          icon={Timer}
-          label="静默阈值"
-          value={d ? min(d.config.silenceMs) : "—"}
-          loading={loading}
-        />
-        <MetricBadge
-          icon={Clock}
-          label="扫描周期"
-          value={d ? min(d.config.scanMs) : "—"}
-          loading={loading}
-        />
-        <MetricBadge
-          icon={Hash}
-          label="单次上限"
-          value={d ? d.config.maxPerScan : "—"}
-          loading={loading}
-        />
-      </MetricBadgeRow>
+      <MetricRows
+        items={[
+          {
+            label: "状态",
+            value: !d ? "—" : d.config.enabled ? "已启用" : "已关闭",
+            hint: "全局开关,可在右上角切换;单群可在生效会话页覆盖。",
+          },
+          {
+            label: "静默阈值",
+            value: d ? min(d.config.silenceMs) : "—",
+            hint: "群内无人应答超过此时长,机器人才会补位。",
+          },
+          {
+            label: "扫描周期",
+            value: d ? min(d.config.scanMs) : "—",
+            hint: "后台扫描未应答消息的间隔。",
+          },
+          {
+            label: "单次上限",
+            value: d ? d.config.maxPerScan : "—",
+            hint: "每轮扫描最多补位的条数,防止刷屏。",
+          },
+        ]}
+      />
 
       <SectionCard
         title="每群进度"
@@ -177,7 +171,7 @@ export default function ProactivePage() {
           emptyDescription="在配置页选择生效群并启用主动回复后，进度会显示在这里。"
           skeleton={<Skeleton className="h-40 w-full" />}
         >
-          <Table>
+          <TableShell minWidth="min-w-[640px]">
             <TableHeader>
               <TableRow>
                 <TableHead>群</TableHead>
@@ -224,12 +218,11 @@ export default function ProactivePage() {
                 </TableRow>
               ))}
             </TableBody>
-          </Table>
+          </TableShell>
         </DataState>
       </SectionCard>
 
       <SectionCard
-        icon={MessageSquareReply}
         title={`最近主动回复${d ? ` (${d.total})` : ""}`}
         description="可标记回复是否恰当，便于后续优化。"
       >
