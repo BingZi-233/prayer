@@ -9,13 +9,13 @@ import { Button, buttonVariants } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Spinner } from "@/components/ui/spinner"
 import {
-  Table,
   TableBody,
   TableCell,
   TableHead,
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { TableShell } from "@/components/admin/table-shell"
 import { RelativeTime } from "@/components/relative-time"
 import { PageShell } from "@/components/admin/page-shell"
 import { PageHeader } from "@/components/admin/page-header"
@@ -108,7 +108,7 @@ export default function HandoffQueuePage() {
           emptyDescription="用户请求转人工后会出现在此。也可在「会话」页筛选。"
           skeleton={<Skeleton className="h-40 w-full" />}
         >
-          <Table>
+          <TableShell minWidth="min-w-[720px]">
             <TableHeader>
               <TableRow>
                 <TableHead>会话</TableHead>
@@ -180,7 +180,7 @@ export default function HandoffQueuePage() {
                 </TableRow>
               ))}
             </TableBody>
-          </Table>
+          </TableShell>
         </DataState>
       </SectionCard>
     </PageShell>

@@ -40,7 +40,12 @@ import {
   MessageScrollerViewport,
 } from "@/components/ui/message-scroller"
 import { Badge } from "@/components/ui/badge"
-import { Input } from "@/components/ui/input"
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupButton,
+  InputGroupInput,
+} from "@/components/ui/input-group"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -155,7 +160,7 @@ function SessionsSkeleton() {
   return (
     <PageShell fill>
       <Skeleton className="h-12 w-64 shrink-0" />
-      <div className="grid min-h-0 min-w-0 flex-1 gap-3 lg:gap-4 lg:grid-cols-[320px_1fr]">
+      <div className="grid min-h-0 min-w-0 flex-1 gap-3 lg:grid-cols-[320px_1fr] lg:gap-4">
         <Skeleton className="h-full min-h-80" />
         <Skeleton className="h-full min-h-80" />
       </div>
@@ -625,25 +630,28 @@ function SessionsInner() {
               ))}
             </div>
 
-            <div className="relative">
-              <Search className="pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-              <Input
+            <InputGroup className="bg-background">
+              <InputGroupAddon>
+                <Search />
+              </InputGroupAddon>
+              <InputGroupInput
                 placeholder="搜索群名 / 昵称 / 问题…"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                className="h-8 pr-8 pl-8 text-xs"
+                aria-label="搜索会话"
               />
               {query && (
-                <button
-                  type="button"
-                  className="absolute top-1/2 right-2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                  onClick={() => setQuery("")}
-                  aria-label="清除搜索"
-                >
-                  <X className="size-3.5" />
-                </button>
+                <InputGroupAddon align="inline-end">
+                  <InputGroupButton
+                    size="icon-xs"
+                    onClick={() => setQuery("")}
+                    aria-label="清除搜索"
+                  >
+                    <X />
+                  </InputGroupButton>
+                </InputGroupAddon>
               )}
-            </div>
+            </InputGroup>
 
             <DataState
               loading={sessions === null}

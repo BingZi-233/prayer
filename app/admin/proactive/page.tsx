@@ -18,13 +18,13 @@ import { VirtualList } from "@/components/admin/virtual-list"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Switch } from "@/components/ui/switch"
 import {
-  Table,
   TableBody,
   TableCell,
   TableHead,
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { TableShell } from "@/components/admin/table-shell"
 import { RelativeTime } from "@/components/relative-time"
 import { PageShell } from "@/components/admin/page-shell"
 import { PageHeader } from "@/components/admin/page-header"
@@ -177,7 +177,7 @@ export default function ProactivePage() {
           emptyDescription="在配置页选择生效群并启用主动回复后，进度会显示在这里。"
           skeleton={<Skeleton className="h-40 w-full" />}
         >
-          <Table>
+          <TableShell minWidth="min-w-[640px]">
             <TableHeader>
               <TableRow>
                 <TableHead>群</TableHead>
@@ -224,7 +224,7 @@ export default function ProactivePage() {
                 </TableRow>
               ))}
             </TableBody>
-          </Table>
+          </TableShell>
         </DataState>
       </SectionCard>
 
