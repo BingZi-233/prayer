@@ -24,3 +24,4 @@
 ## Unresolved risks
 
 - The generated `dropdown-menu.tsx` is a full shadcn component; only the parts used by `RowActions` are exercised. Keyboard navigation was not exhaustively tested.
+- A note previously written here claimed repo-wide lint failures were pre-existing; that was wrong. They were generated files under `.next-ui-dev/` leaking into `eslint` — fixed by the `.next*/**` ignore in `eslint.config.mjs`.

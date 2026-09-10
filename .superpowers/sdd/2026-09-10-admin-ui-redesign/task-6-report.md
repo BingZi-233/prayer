@@ -24,7 +24,8 @@ Sweep: 13 routes (`/login`, `/admin`, `/admin/logs`, `/admin/sessions`, `/admin/
 
 - `pnpm typecheck` — PASS.
 - `pnpm test` — PASS (90 files, 954 tests).
-- `eslint` on every file changed by this branch — 0 errors. Repository-wide lint has 1749 pre-existing errors across 162 files, none in files this branch touches; that backlog predates this work and is out of scope.
+- `eslint` on every file changed by this branch — 0 errors.
+- Correction to an earlier claim in this report: a local `eslint .` run appeared to show ~1700 "pre-existing" errors. They were entirely generated output under `.next-ui-dev/` (the dev dist dir this verification created); `eslint.config.mjs` ignored `.next-verify/**` but not `.next-ui-dev/**`. Fixed by ignoring `.next*/**`; `pnpm check` (typecheck + lint + tests) now passes end-to-end locally, matching CI on this PR.
 - `NEXT_DIST_DIR=.next-verify pnpm build` — PASS.
 - `git diff --check` — PASS.
 
