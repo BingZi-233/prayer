@@ -178,7 +178,8 @@ export default function ConfigPage() {
             </TabsList>
           </div>
 
-          <div className="min-w-0">
+          {/* 设置项列限宽:输入框铺满整行既难读也难扫,限宽后接近表单卡的阅读宽度 */}
+          <div className="min-w-0 max-w-3xl">
             <TabsContent value="base" className="m-0 flex flex-col gap-4">
               <CategoryHeader
                 title="基础与管理"
