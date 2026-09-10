@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { ok, fail } from "@/lib/api"
-import { loadGroupMembers } from "@/lib/onebot/members-fetch"
+import { loadGroupMembers } from "@/lib/channels/qq/members-fetch"
 import { getRuntime } from "@/lib/runtime"
 
 // 批量拉整群成员群名片/昵称:?group=<gid> → [{ userId, name, role? }]

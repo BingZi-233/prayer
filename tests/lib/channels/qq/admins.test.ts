@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { collectAdmins } from "@/lib/onebot/admins"
+import { collectAdmins } from "@/lib/channels/qq/admins"
 
 describe("collectAdmins", () => {
   it("只保留 owner/admin,member 丢弃", () => {

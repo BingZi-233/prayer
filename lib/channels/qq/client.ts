@@ -2,11 +2,11 @@ import WebSocket from "ws"
 import { bus } from "../../bus"
 import type { ActionSend } from "../../events"
 import { logger } from "../../logger"
-import { enrich } from "../../onebot/enrich"
+import { enrich } from "./enrich"
 import {
   parseGroupMessage,
   type RawGroupMessageEvent,
-} from "../../onebot/parse"
+} from "./parse"
 import { StaleWatchdog } from "../keepalive"
 
 interface Pending {
