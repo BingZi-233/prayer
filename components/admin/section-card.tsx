@@ -29,13 +29,13 @@ export function SectionCard({
   contentClassName?: string
 }) {
   return (
-    <Card className={cn("min-h-0", className)}>
-      <CardHeader className="shrink-0">
+    <Card className={cn("min-h-0 overflow-hidden shadow-sm", className)}>
+      <CardHeader className="shrink-0 border-b border-border/60 bg-muted/20 px-4 py-3 sm:px-4">
         <CardTitle className="flex items-center gap-2">
           {Icon && <Icon className="size-4 shrink-0" />}
           {title}
         </CardTitle>
-        {description && <CardDescription>{description}</CardDescription>}
+        {description && <CardDescription className="text-xs sm:text-sm">{description}</CardDescription>}
         {action && (
           <CardAction className="flex flex-wrap items-center gap-2">
             {action}
@@ -43,7 +43,7 @@ export function SectionCard({
         )}
       </CardHeader>
       {children != null && (
-        <CardContent className={cn("min-h-0", contentClassName)}>
+        <CardContent className={cn("min-h-0 px-4 py-3.5 sm:px-4 sm:py-4", contentClassName)}>
           {children}
         </CardContent>
       )}

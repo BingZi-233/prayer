@@ -38,7 +38,7 @@ function CategoryHeader({
   description: string
 }) {
   return (
-    <div className="space-y-1">
+    <div className="flex flex-col gap-1">
       <h2 className="text-lg font-semibold tracking-tight">{title}</h2>
       <p className="text-sm text-muted-foreground">{description}</p>
     </div>
@@ -179,7 +179,7 @@ export default function ConfigPage() {
           </div>
 
           <div className="min-w-0">
-            <TabsContent value="base" className="m-0 space-y-4">
+            <TabsContent value="base" className="m-0 flex flex-col gap-4">
               <CategoryHeader
                 title="基础与管理"
                 description="先确认对外身份，再设置管理命令和转人工的接收位置。"
@@ -200,7 +200,7 @@ export default function ConfigPage() {
               />
             </TabsContent>
 
-            <TabsContent value="channels" className="m-0 space-y-4">
+            <TabsContent value="channels" className="m-0 flex flex-col gap-4">
               <CategoryHeader
                 title="渠道接入"
                 description="配置消息通道和生效会话；未配置凭证的通道不会启动。"
@@ -237,7 +237,7 @@ export default function ConfigPage() {
               />
             </TabsContent>
 
-            <TabsContent value="conversation" className="m-0 space-y-4">
+            <TabsContent value="conversation" className="m-0 flex flex-col gap-4">
               <CategoryHeader
                 title="对话与自动化"
                 description="调整回复呈现、会话生命周期和无人应答时的主动补位策略。"
@@ -259,7 +259,7 @@ export default function ConfigPage() {
               />
             </TabsContent>
 
-            <TabsContent value="knowledge" className="m-0 space-y-4">
+            <TabsContent value="knowledge" className="m-0 flex flex-col gap-4">
               <CategoryHeader
                 title="知识与通知"
                 description="管理知识沉淀节奏，并决定是否向管理面发送相关运行提醒。"
@@ -281,7 +281,7 @@ export default function ConfigPage() {
               <NotifySettings cfg={cfg} setCfg={setCfg} embedded />
             </TabsContent>
 
-            <TabsContent value="advanced" className="m-0 space-y-4">
+            <TabsContent value="advanced" className="m-0 flex flex-col gap-4">
               <CategoryHeader
                 title="系统高级"
                 description="仅在需要调整运行目录或数据库位置时修改这些参数。"

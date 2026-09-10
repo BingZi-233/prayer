@@ -77,10 +77,10 @@ export function AppSidebar() {
   const { overview } = useLive()
   const brandName = overview?.brandName?.trim() || DEFAULT_BRAND.name
   return (
-    <Sidebar>
-      <SidebarHeader className="border-b border-sidebar-border/60 px-2 py-2">
+    <Sidebar variant="inset">
+      <SidebarHeader className="border-b border-sidebar-border/60 px-3 py-3">
         <div className="flex items-center gap-2 px-2 py-1.5">
-          <div className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-sm">
+          <div className="flex size-9 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-sm">
             <Bot className="size-5" />
           </div>
           <div className="flex flex-col leading-tight">

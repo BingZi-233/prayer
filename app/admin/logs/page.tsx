@@ -55,8 +55,8 @@ const LEVEL_STYLE = {
   },
   warn: {
     badge: "secondary" as const,
-    rail: "bg-amber-500",
-    text: "text-amber-600 dark:text-amber-400",
+    rail: "bg-primary",
+    text: "text-primary",
   },
   info: {
     badge: "outline" as const,

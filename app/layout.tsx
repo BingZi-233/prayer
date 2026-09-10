@@ -37,8 +37,9 @@ export default function RootLayout({
       lang="zh-CN"
       suppressHydrationWarning
       className={`${inter.variable} ${geistMono.variable}`}
+      style={{ backgroundColor: "var(--background)" }}
     >
-      <body className="antialiased">
+      <body className="min-h-svh bg-background text-foreground antialiased">
         <ThemeProvider>
           <TooltipProvider>{children}</TooltipProvider>
           <Toaster />
