@@ -6,9 +6,9 @@ import {
   openDb,
   migrateLegacySessionKeys,
   ensureQuestionTopicUnique,
-} from "@/lib/db/index"
-import { CURRENT_SCHEMA_VERSION } from "@/lib/db/migrations/index"
-import { Repo } from "@/lib/db/repo"
+} from "@/lib/core/db/index"
+import { CURRENT_SCHEMA_VERSION } from "@/lib/core/db/migrations/index"
+import { Repo } from "@/lib/core/db/repo"
 import BetterSqlite3 from "better-sqlite3"
 import type Database from "better-sqlite3"
 

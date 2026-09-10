@@ -2,7 +2,7 @@
 
 import { useEffect, useState, type ReactNode } from "react"
 import { ChevronLeft } from "lucide-react"
-import { cn } from "@/lib/utils"
+import { cn } from "@/lib/core/utils"
 
 // Tailwind 断点像素值(与下方 md:/lg: 前缀一一对应)
 const BP_PX = { md: 768, lg: 1024 } as const

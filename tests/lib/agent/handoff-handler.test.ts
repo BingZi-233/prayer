@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest"
-import { openDb } from "@/lib/db/index"
-import { Repo } from "@/lib/db/repo"
-import { bus } from "@/lib/bus"
+import { openDb } from "@/lib/core/db/index"
+import { Repo } from "@/lib/core/db/repo"
+import { bus } from "@/lib/core/bus"
 import { registerHandoffHandler } from "@/lib/agent/handoff-handler"
 import type { ActionSend } from "@/lib/events"
 

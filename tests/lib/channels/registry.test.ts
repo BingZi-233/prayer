@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from "vitest"
-import { bus } from "@/lib/bus"
+import { bus } from "@/lib/core/bus"
 import { ChannelRegistry } from "@/lib/channels/registry"
 import type {
   Channel,

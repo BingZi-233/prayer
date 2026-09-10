@@ -31,7 +31,7 @@ import {
 } from "@/components/ui/sidebar"
 import { NavLinkIcon } from "@/components/nav-link-icon"
 import { useLive } from "@/components/live-provider"
-import { DEFAULT_BRAND } from "@/lib/brand"
+import { DEFAULT_BRAND } from "@/lib/core/brand"
 
 const navGroups = [
   {

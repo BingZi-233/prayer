@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server"
 import { z } from "zod"
-import { getAppContext } from "@/lib/app-context"
-import type { AppConfig } from "@/lib/config-store"
+import { getAppContext } from "@/lib/core/app-context"
+import type { AppConfig } from "@/lib/core/config-store"
 import { getRuntime, defaultBuilders } from "@/lib/runtime"
 import { PluginManager, type CliResult } from "@/lib/plugins/manager"
-import { ok, fail } from "@/lib/api"
+import { ok, fail } from "@/lib/core/api"
 
 function manager(cfg: { claudeConfigDir: string }) {
   return new PluginManager(cfg.claudeConfigDir)

@@ -1,5 +1,5 @@
 import type { ReactNode } from "react"
-import { cn } from "@/lib/utils"
+import { cn } from "@/lib/core/utils"
 
 // 统一表格外壳:圆角边框 + 限高滚动 + 吸顶表头(吸顶样式见 globals.css 的
 // [data-slot="table-shell"] 规则)。限高让长表格在自身容器内滚动,

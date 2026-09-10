@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest"
-import { openDb } from "@/lib/db/index"
-import { Repo } from "@/lib/db/repo"
+import { openDb } from "@/lib/core/db/index"
+import { Repo } from "@/lib/core/db/repo"
 
 let repo: Repo
 const vec = () => new Float32Array([1, 0, 0])

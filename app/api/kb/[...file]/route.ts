@@ -9,9 +9,9 @@ import {
 } from "node:fs"
 import { dirname } from "node:path"
 import { z } from "zod"
-import { ok, fail } from "@/lib/api"
+import { ok, fail } from "@/lib/core/api"
 import { isKbRelPath, relFromParts, safeKbAbs } from "@/lib/kb-path"
-import { getAppContext } from "@/lib/app-context"
+import { getAppContext } from "@/lib/core/app-context"
 
 // catch-all 段:file 为路径片段数组(如 ["faq","退款.md"]),支持子目录
 function resolveRel(parts: string[]): { rel: string; abs: string } | null {

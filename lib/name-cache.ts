@@ -309,7 +309,7 @@ export function getNameCache(): NameCache {
     // 延迟 require,避免纯内存单测强依赖 native better-sqlite3 初始化顺序;
     // 合法 require:此处必须在运行时按需加载,不能提为顶层静态 import
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const mod = require("@/lib/db/shared") as typeof import("@/lib/db/shared")
+    const mod = require("@/lib/core/db/shared") as typeof import("@/lib/core/db/shared")
     cache.attachPersistence(
       createSqliteNameCachePersistence(mod.sharedDb(defaultDbPath()))
     )

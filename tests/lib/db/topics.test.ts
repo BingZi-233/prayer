@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest"
-import { openDb } from "@/lib/db"
-import { Repo } from "@/lib/db/repo"
+import { openDb } from "@/lib/core/db"
+import { Repo } from "@/lib/core/db/repo"
 
 let db: ReturnType<typeof openDb> | undefined
 afterEach(() => { db?.close(); db = undefined })

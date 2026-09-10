@@ -5,7 +5,7 @@ import {
   CURRENT_SCHEMA_VERSION,
   MIGRATIONS,
   migrateDatabase,
-} from "@/lib/db/migrations/index"
+} from "@/lib/core/db/migrations/index"
 
 const opened: Database.Database[] = []
 

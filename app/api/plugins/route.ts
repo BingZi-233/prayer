@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server"
 import { z } from "zod"
-import { getAppContext } from "@/lib/app-context"
+import { getAppContext } from "@/lib/core/app-context"
 import { getRuntime, defaultBuilders } from "@/lib/runtime"
 import { PluginManager } from "@/lib/plugins/manager"
-import { ok, fail } from "@/lib/api"
+import { ok, fail } from "@/lib/core/api"
 
 function manager(cfg: { claudeConfigDir: string }) {
   return new PluginManager(cfg.claudeConfigDir)

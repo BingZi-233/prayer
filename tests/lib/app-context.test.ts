@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "vitest"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { getAppContext } from "@/lib/app-context"
+import { getAppContext } from "@/lib/core/app-context"
 
 const dirs: string[] = []
 afterEach(() => {

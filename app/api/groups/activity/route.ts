@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server"
-import { getAppContext } from "@/lib/app-context"
-import type { GroupPolicy } from "@/lib/config-store"
+import { getAppContext } from "@/lib/core/app-context"
+import type { GroupPolicy } from "@/lib/core/config-store"
 import {
   getGroupPolicy,
   listEnabledChats,
   policyKey,
 } from "@/lib/channels/enabled-chats"
 import type { ChannelId } from "@/lib/channels/types"
-import { ok, fail } from "@/lib/api"
+import { ok, fail } from "@/lib/core/api"
 import { buildGroupChatStats } from "@/lib/reflect-stats"
 
 function chatKey(channel: string, chatId: string): string {

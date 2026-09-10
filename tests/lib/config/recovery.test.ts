@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest"
-import { getConfig, setConfig } from "@/lib/config-store"
-import type { Repo } from "@/lib/db/repo"
+import { getConfig, setConfig } from "@/lib/core/config-store"
+import type { Repo } from "@/lib/core/db/repo"
 
 /** 配置仅依赖两项存储操作；测试恢复行为无需加载原生数据库。 */
 function configRepo(initial?: string) {

@@ -7,7 +7,7 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
-import { cn } from "@/lib/utils"
+import { cn } from "@/lib/core/utils"
 
 /** 指标卡:小标签 + 大数字 + 一行说明。用于少量核心 KPI(概览页)。 */
 export function StatCard({

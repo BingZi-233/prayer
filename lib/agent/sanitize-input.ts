@@ -9,7 +9,7 @@
  * 策略:只改送给模型的副本,DB/日志保留原文;用中性占位保留语义。
  */
 
-import { errorMessage } from "../log-context"
+import { errorMessage } from "../core/log-context"
 
 /** [匹配, 替换] —— 长词优先,避免子串互相干扰 */
 const REPLACEMENTS: readonly [RegExp, string][] = [

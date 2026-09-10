@@ -7,9 +7,9 @@ import {
   backupDatabase,
   checkDatabaseIntegrity,
   verifyDatabaseFile,
-} from "@/lib/db/backup"
-import { openDb } from "@/lib/db/index"
-import { CURRENT_SCHEMA_VERSION } from "@/lib/db/migrations/index"
+} from "@/lib/core/db/backup"
+import { openDb } from "@/lib/core/db/index"
+import { CURRENT_SCHEMA_VERSION } from "@/lib/core/db/migrations/index"
 
 const databases: Database.Database[] = []
 const directories: string[] = []

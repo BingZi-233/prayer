@@ -1,5 +1,5 @@
-import type { AppConfig } from "../config-store"
-import type { Repo } from "../db/repo"
+import type { AppConfig } from "../core/config-store"
+import type { Repo } from "../core/db/repo"
 import type { Channel, ChannelId } from "./types"
 import { QqChannel } from "./qq"
 import { TelegramChannel } from "./tg/client"

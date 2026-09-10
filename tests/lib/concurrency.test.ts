@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { mapWithConcurrency } from "@/lib/concurrency"
+import { mapWithConcurrency } from "@/lib/core/concurrency"
 
 describe("mapWithConcurrency", () => {
   it("keeps order and bounds active workers", async () => {

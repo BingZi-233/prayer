@@ -1,4 +1,4 @@
-import { CHANNEL_IDS, type ChannelId, type ChatRef } from "../channels/types"
+import { CHANNEL_IDS, type ChannelId, type ChatRef } from "../../channels/types"
 
 /** 解析逗号/空白分隔的 QQ 列表,过滤非法项并去重 */
 export function parseQQList(raw: string | undefined): number[] {

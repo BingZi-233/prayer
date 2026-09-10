@@ -3,7 +3,7 @@ import {
   errorMessage,
   groupIdFromSession,
   chatRefFromSession,
-} from "@/lib/log-context"
+} from "@/lib/core/log-context"
 
 describe("errorMessage / chatRefFromSession", () => {
   it("errorMessage", () => {

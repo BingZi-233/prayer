@@ -20,7 +20,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
-import { cn } from "@/lib/utils"
+import { cn } from "@/lib/core/utils"
 import { PageShell } from "@/components/admin/page-shell"
 import { PageHeader } from "@/components/admin/page-header"
 import { DataState, EmptyState } from "@/components/admin/data-state"

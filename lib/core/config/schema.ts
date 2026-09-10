@@ -1,5 +1,5 @@
 import { z } from "zod"
-import { CHANNEL_IDS } from "../channels/types"
+import { CHANNEL_IDS } from "../../channels/types"
 
 /** Node 定时器超过此值会退回 1ms，周期必须同时约束上下限。 */
 const MAX_TIMER_MS = 2 ** 31 - 1

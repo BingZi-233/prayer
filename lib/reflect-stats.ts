@@ -1,4 +1,4 @@
-import { parseReflectionSource, type Repo } from "./db/repo"
+import { parseReflectionSource, type Repo } from "./core/db/repo"
 
 function chatKey(channel: string, chatId: string): string {
   return `${channel}:${chatId}`

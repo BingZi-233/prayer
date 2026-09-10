@@ -12,7 +12,7 @@ vi.mock("@/lib/agent/reflection-poller", () => ({
   DEFAULT_DUP_TOP_K: 5,
   DEFAULT_DUP_MAX_DISTANCE: 0.45,
 }))
-vi.mock("@/lib/app-context", () => ({
+vi.mock("@/lib/core/app-context", () => ({
   getAppContext: () => ({ repo: { rankingByWindow: rankedMock, topicSamplesBatch: batchMock, searchKb: searchMock } }),
 }))
 import { GET } from "@/app/api/ranking/route"

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
-import { DEFAULT_BRAND, resolveBrand } from "@/lib/brand"
-import { appConfigSchema } from "@/lib/config/schema"
+import { DEFAULT_BRAND, resolveBrand } from "@/lib/core/brand"
+import { appConfigSchema } from "@/lib/core/config/schema"
 import { buildDefaultSystem } from "@/lib/agent/agent"
 import { buildIntentSystem } from "@/lib/agent/intent"
 import { buildAnswerabilitySystem } from "@/lib/agent/answerability"

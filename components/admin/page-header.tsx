@@ -1,5 +1,5 @@
 import type { ReactNode } from "react"
-import { cn } from "@/lib/utils"
+import { cn } from "@/lib/core/utils"
 
 // 全站统一页头:标题 + 可选描述 + 可选右上操作位。
 // 不加分隔线,操作位与标题块顶端对齐。

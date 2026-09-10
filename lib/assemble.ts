@@ -1,4 +1,4 @@
-import type { Repo } from "./db/repo"
+import type { Repo } from "./core/db/repo"
 import type { Agent } from "./agent/agent"
 import { SessionStore } from "./agent/session"
 import { registerGateway } from "./agent/gateway"
@@ -15,10 +15,10 @@ import { registerUnansweredPoller } from "./agent/unanswered-poller"
 import { makeAnswerabilityClassifier } from "./agent/answerability"
 import { registerHandoffHandler } from "./agent/handoff-handler"
 import { registerResolutionRecorder } from "./agent/resolution-recorder"
-import type { GroupPolicy } from "./config-store"
+import type { GroupPolicy } from "./core/config-store"
 import type { ChannelId, ChatRef } from "./channels/types"
 import { getGroupPolicy } from "./channels/enabled-chats"
-import type { BrandInput } from "./brand"
+import type { BrandInput } from "./core/brand"
 
 export interface AssembleDeps {
   repo: Repo

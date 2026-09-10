@@ -5,7 +5,7 @@ import {
   resetNameCache,
   getNameCache,
 } from "@/lib/name-cache"
-import { openDb } from "@/lib/db/index"
+import { openDb } from "@/lib/core/db/index"
 import { createSqliteNameCachePersistence } from "@/lib/name-cache-store"
 
 describe("NameCache", () => {

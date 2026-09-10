@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import type { AppConfig } from "@/lib/config-store"
+import type { AppConfig } from "@/lib/core/config-store"
 import {
   listEnabledChats,
   isChatEnabled,

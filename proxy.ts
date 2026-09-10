@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { timingSafeEqualStr } from "@/lib/auth"
+import { timingSafeEqualStr } from "@/lib/core/auth"
 
 /**
  * 后台最低鉴权:

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest"
-import { logger, captureConsole, consoleLine } from "@/lib/logger"
+import { logger, captureConsole, consoleLine } from "@/lib/core/logger"
 
 describe("logger ring buffer", () => {
   beforeEach(() => logger.clear())

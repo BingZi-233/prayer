@@ -9,7 +9,7 @@ import {
   useRef,
   useState,
 } from "react"
-import { DEFAULT_BRAND } from "@/lib/brand"
+import { DEFAULT_BRAND } from "@/lib/core/brand"
 
 /** 与 RuntimeStatus.channels / ChannelStatus 对齐 */
 export interface ChannelStatusView {

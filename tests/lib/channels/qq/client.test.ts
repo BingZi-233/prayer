@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach } from "vitest"
 import { WebSocketServer, type WebSocket } from "ws"
 import type { AddressInfo } from "node:net"
-import { bus } from "@/lib/bus"
+import { bus } from "@/lib/core/bus"
 import type { IncomingMessage } from "@/lib/events"
 import { OneBotClient } from "@/lib/channels/qq/client"
 

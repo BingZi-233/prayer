@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { maskSecret, mergeSecret } from "@/lib/settings-writer"
+import { maskSecret, mergeSecret } from "@/lib/core/settings-writer"
 
 describe("maskSecret", () => {
   it("空值返回空", () => expect(maskSecret("")).toBe(""))

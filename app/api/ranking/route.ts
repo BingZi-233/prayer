@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server"
-import { getAppContext } from "@/lib/app-context"
-import { ok, fail } from "@/lib/api"
+import { getAppContext } from "@/lib/core/app-context"
+import { ok, fail } from "@/lib/core/api"
 import { embed } from "@/lib/tools/embed"
-import { mapWithConcurrency } from "@/lib/concurrency"
+import { mapWithConcurrency } from "@/lib/core/concurrency"
 import {
   isDuplicateOfHits,
   DEFAULT_DUP_TOP_K,

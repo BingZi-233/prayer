@@ -7,7 +7,7 @@ import {
   LOGIN_MAX_FAILS,
   recordLoginFail,
   timingSafeEqualStr,
-} from "@/lib/auth"
+} from "@/lib/core/auth"
 
 beforeEach(() => {
   // globalThis 状态必须显式清,防用例间串扰

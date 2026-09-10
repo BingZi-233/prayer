@@ -1,5 +1,5 @@
-import { bus } from "../bus"
-import type { Repo } from "../db/repo"
+import { bus } from "../core/bus"
+import type { Repo } from "../core/db/repo"
 import type { IncomingMessage } from "../events"
 import {
   isAdminSurface,

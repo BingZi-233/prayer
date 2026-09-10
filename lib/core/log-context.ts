@@ -1,6 +1,6 @@
 /** 运行日志的上下文工具:错误文案抽取 + 从 sessionKey 反解 chat-ref */
 
-import type { ChannelId } from "./channels/types"
+import type { ChannelId } from "../channels/types"
 
 /** 从 unknown 抽出错误文案 */
 export function errorMessage(err: unknown): string {

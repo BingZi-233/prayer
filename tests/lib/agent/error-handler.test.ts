@@ -1,11 +1,11 @@
 import { describe, it, expect, beforeEach, vi } from "vitest"
-import { bus } from "@/lib/bus"
+import { bus } from "@/lib/core/bus"
 import {
   registerErrorHandler,
   formatErrorLine,
   errorMessage,
 } from "@/lib/agent/error-handler"
-import { logger } from "@/lib/logger"
+import { logger } from "@/lib/core/logger"
 import type { ActionSend } from "@/lib/events"
 
 beforeEach(() => {

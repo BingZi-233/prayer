@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
-import { getAppContext } from "@/lib/app-context"
-import { ok, fail } from "@/lib/api"
+import { getAppContext } from "@/lib/core/app-context"
+import { ok, fail } from "@/lib/core/api"
 
 // 单条整理记录详情(before/after 全文)。列表接口只给摘要,前端展开时才来这里拉,
 // 避免每次轮询都带上整批知识条目全文。

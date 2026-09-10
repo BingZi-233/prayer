@@ -29,7 +29,7 @@ describe("buildToolPolicy", () => {
 })
 
 import { probeCapabilities, type ProbeOptions } from "@/lib/agent/introspect"
-import type { AppConfig } from "@/lib/config-store"
+import type { AppConfig } from "@/lib/core/config-store"
 
 type QueryFn = NonNullable<ProbeOptions["queryFn"]>
 type QueryParams = Parameters<QueryFn>[0]

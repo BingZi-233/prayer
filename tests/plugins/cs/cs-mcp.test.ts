@@ -2,11 +2,11 @@ import { execFileSync } from "node:child_process"
 import { dirname, join } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import { describe, expect, it } from "vitest"
-import { openDb } from "@/lib/db/index"
-import { Repo } from "@/lib/db/repo"
-import { KB_SEARCH_SQL } from "@/lib/db/kb-sql"
+import { openDb } from "@/lib/core/db/index"
+import { Repo } from "@/lib/core/db/repo"
+import { KB_SEARCH_SQL } from "@/lib/core/db/kb-sql"
 
-// cs 插件子进程的 kb_search 用 KB_SEARCH_SQL 直接查库(lib/db/kb-sql.ts 唯一事实源)。
+// cs 插件子进程的 kb_search 用 KB_SEARCH_SQL 直接查库(lib/core/db/kb-sql.ts 唯一事实源)。
 // 本组验证:插件路径与 repo.searchKb 行为一致——驳回/升格条目不外漏。
 const vec = () => new Float32Array([1, 0, 0])
 
@@ -77,7 +77,7 @@ const REPO_ROOT = dirname(
 const CS_SUBPROCESS_MODULES = [
   "lib/tools/embed.ts",
   "lib/tools/kb.ts",
-  "lib/db/kb-sql.ts",
+  "lib/core/db/kb-sql.ts",
 ]
 
 describe("cs 子进程按路径加载的模块必须 strip-only 可加载", () => {

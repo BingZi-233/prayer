@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server"
-import { getAppContext } from "@/lib/app-context"
+import { getAppContext } from "@/lib/core/app-context"
 import { collectAdmins } from "@/lib/channels/qq/admins"
 import { getRuntime } from "@/lib/runtime"
 import {
   loadGroupMembers,
   toAdminMemberShape,
 } from "@/lib/channels/qq/members-fetch"
-import { ok, fail } from "@/lib/api"
+import { ok, fail } from "@/lib/core/api"
 
 /** 解析 ?groups=1,2,3;非法项丢弃 */
 function parseGroupsParam(raw: string | null): number[] | null {

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { ok, fail } from "@/lib/api"
+import { ok, fail } from "@/lib/core/api"
 import { loadGroupMembers } from "@/lib/channels/qq/members-fetch"
 import { getRuntime } from "@/lib/runtime"
 

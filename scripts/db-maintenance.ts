@@ -1,7 +1,7 @@
 import Database from "better-sqlite3"
 import * as sqliteVec from "sqlite-vec"
 import { resolve } from "node:path"
-import { backupDatabase, verifyDatabaseFile } from "../lib/db/backup.ts"
+import { backupDatabase, verifyDatabaseFile } from "../lib/core/db/backup.ts"
 
 function sourcePath(value?: string): string {
   return resolve(value ?? process.env.DB_PATH ?? "./data/agent.db")

@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach } from "vitest"
 import { WebSocketServer, type WebSocket } from "ws"
 import type { AddressInfo } from "node:net"
-import { bus } from "@/lib/bus"
+import { bus } from "@/lib/core/bus"
 import { ChannelRegistry } from "@/lib/channels/registry"
 import { QqChannel, formatQqDetail } from "@/lib/channels/qq"
 

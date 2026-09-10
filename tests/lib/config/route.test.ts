@@ -1,15 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { NextRequest } from "next/server"
-import { openDb } from "@/lib/db"
-import { Repo } from "@/lib/db/repo"
-import { getConfig, setConfig } from "@/lib/config-store"
+import { openDb } from "@/lib/core/db"
+import { Repo } from "@/lib/core/db/repo"
+import { getConfig, setConfig } from "@/lib/core/config-store"
 
 let db: ReturnType<typeof openDb>
 const { reconfigure, defaultBuilders } = vi.hoisted(() => ({
   reconfigure: vi.fn(),
   defaultBuilders: vi.fn(async () => ({})),
 }))
-vi.mock("@/lib/db/shared", () => ({
+vi.mock("@/lib/core/db/shared", () => ({
   sharedDb: () => db,
   sharedRepo: () => new Repo(db),
 }))

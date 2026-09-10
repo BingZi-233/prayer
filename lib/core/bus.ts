@@ -1,5 +1,5 @@
 import { EventEmitter } from "node:events"
-import type { EventMap } from "./events"
+import type { EventMap } from "../events"
 
 class TypedBus extends EventEmitter {
   emit<K extends keyof EventMap>(type: K, payload: EventMap[K]): boolean {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
-import { appConfigSchema } from "@/lib/config/schema"
-import { configPatchSchema, mergeConfigPatch } from "@/lib/config/patch"
+import { appConfigSchema } from "@/lib/core/config/schema"
+import { configPatchSchema, mergeConfigPatch } from "@/lib/core/config/patch"
 
 function currentConfig() {
   return appConfigSchema.parse({

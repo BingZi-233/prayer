@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest"
-import { openDb } from "@/lib/db/index"
-import { Repo } from "@/lib/db/repo"
+import { openDb } from "@/lib/core/db/index"
+import { Repo } from "@/lib/core/db/repo"
 import { SessionStore } from "@/lib/agent/session"
 
 let db: ReturnType<typeof openDb>
