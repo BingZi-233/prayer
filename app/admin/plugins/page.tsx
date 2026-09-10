@@ -8,13 +8,14 @@ import { Switch } from "@/components/ui/switch"
 import { Badge } from "@/components/ui/badge"
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field"
 import {
-  Table,
   TableBody,
   TableCell,
   TableHead,
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { TableShell } from "@/components/admin/table-shell"
+import { RowActions } from "@/components/admin/row-actions"
 import {
   Select,
   SelectContent,
@@ -184,14 +185,14 @@ export default function PluginsPage() {
             description="使用上方表单安装插件。"
           />
         ) : (
-          <Table>
+          <TableShell minWidth="min-w-[640px]">
             <TableHeader>
               <TableRow>
                 <TableHead>ID</TableHead>
                 <TableHead>版本</TableHead>
                 <TableHead>scope</TableHead>
                 <TableHead>启用</TableHead>
-                <TableHead className="text-right">操作</TableHead>
+                <TableHead className="w-12 text-right">操作</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -210,35 +211,31 @@ export default function PluginsPage() {
                     />
                   </TableCell>
                   <TableCell className="text-right">
-                    <div className="flex justify-end gap-2">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        disabled={busy}
-                        onClick={() => update(p)}
-                        aria-label="更新插件"
-                        title="更新"
-                      >
-                        <RotateCw data-icon="inline-start" />
-                        更新
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        disabled={busy}
-                        onClick={() => remove(p)}
-                        aria-label="卸载插件"
-                        title="卸载"
-                      >
-                        <Trash2 data-icon="inline-start" />
-                        卸载
-                      </Button>
-                    </div>
+                    <RowActions
+                      items={[
+                        {
+                          key: "update",
+                          label: "更新",
+                          icon: <RotateCw />,
+                          disabled: busy,
+                          onSelect: () => void update(p),
+                        },
+                        {
+                          key: "remove",
+                          label: "卸载",
+                          icon: <Trash2 />,
+                          variant: "destructive",
+                          disabled: busy,
+                          separatorBefore: true,
+                          onSelect: () => void remove(p),
+                        },
+                      ]}
+                    />
                   </TableCell>
                 </TableRow>
               ))}
             </TableBody>
-          </Table>
+          </TableShell>
         )}
       </SectionCard>
     </PageShell>

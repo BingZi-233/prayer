@@ -31,13 +31,14 @@ import {
   FieldLabel,
 } from "@/components/ui/field"
 import {
-  Table,
   TableBody,
   TableCell,
   TableHead,
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { TableShell } from "@/components/admin/table-shell"
+import { RowActions } from "@/components/admin/row-actions"
 import { RelativeTime } from "@/components/relative-time"
 import { PageShell } from "@/components/admin/page-shell"
 import { PageHeader } from "@/components/admin/page-header"
@@ -337,7 +338,7 @@ export default function GroupsPage() {
           emptyDescription="生效会话有消息后会出现在这里。也可先在配置页勾选生效会话。"
           skeleton={<Skeleton className="h-40 w-full" />}
         >
-          <Table>
+          <TableShell minWidth="min-w-[880px]">
             <TableHeader>
               <TableRow>
                 <TableHead>会话</TableHead>
@@ -347,7 +348,7 @@ export default function GroupsPage() {
                 <TableHead>转人工通知</TableHead>
                 <TableHead className="text-right">消息量</TableHead>
                 <TableHead>最近活动</TableHead>
-                <TableHead className="w-28">策略</TableHead>
+                <TableHead className="w-12 text-right">操作</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -458,36 +459,38 @@ export default function GroupsPage() {
                   <TableCell className="text-muted-foreground">
                     {r.lastTs ? <RelativeTime ts={r.lastTs} /> : "—"}
                   </TableCell>
-                  <TableCell>
-                    <div className="flex gap-1">
-                      {!r.isAdmin && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => openEditor(r)}
-                        >
-                          <Settings2 data-icon="inline-start" />
-                          编辑
-                        </Button>
-                      )}
-                      {r.hasOverride && (
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          disabled={busyKey === r.policyKey}
-                          title="清除覆盖，跟随全局"
-                          onClick={() => clearPolicy(r)}
-                        >
-                          <RotateCcw data-icon="inline-start" />
-                          清除
-                        </Button>
-                      )}
-                    </div>
+                  <TableCell className="text-right">
+                    {r.isAdmin ? (
+                      <span className="text-muted-foreground">—</span>
+                    ) : (
+                      <RowActions
+                        items={[
+                          {
+                            key: "edit",
+                            label: "编辑策略",
+                            icon: <Settings2 />,
+                            onSelect: () => openEditor(r),
+                          },
+                          ...(r.hasOverride
+                            ? [
+                                {
+                                  key: "clear",
+                                  label: "清除覆盖",
+                                  icon: <RotateCcw />,
+                                  separatorBefore: true,
+                                  disabled: busyKey === r.policyKey,
+                                  onSelect: () => void clearPolicy(r),
+                                },
+                              ]
+                            : []),
+                        ]}
+                      />
+                    )}
                   </TableCell>
                 </TableRow>
               ))}
             </TableBody>
-          </Table>
+          </TableShell>
         </DataState>
       </SectionCard>
 
