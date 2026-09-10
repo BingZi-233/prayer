@@ -45,7 +45,6 @@ channels   knowledge    # 通道实现 / 知识库与反思(同级,互不依赖)
 
 | 条目 | 作废阶段 |
 | --- | --- |
-| `CLAUDE.md` 的「仓库结构」一节里的 `onebot/` 项 | 1 |
 | 「模块边界」中 `lib/core/config-store.ts` 条目引用的 `lib/channels/enabled-chats.ts`（迁往 `lib/core/chat/`） | 2b |
 | `CLAUDE.md` 的「仓库结构」一节里的 `tools/`、`plugins/` 项 | 3 |
 | `CLAUDE.md` 的「仓库结构」一节里的 `agent/` 项（拆为 `conversation/` 与 `knowledge/`），与「命令」一节举例的 `tests/lib/agent/session.test.ts` 路径 | 4 |
