@@ -26,6 +26,10 @@ const LIB_DIR = join(REPO_ROOT, "lib")
  * channels/ 下,但它最终去 lib/core/chat/,这里就记 core。搬迁中途的
  * 物理位置不一致不算违规,只有最终归属错位才算。
  * 顺序敏感:具体文件规则必须排在目录通配之前。
+ *
+ * 目录规则必须以 `/` 结尾,精确文件规则不带尾斜杠。`layerOf` 与
+ * 「每条精确文件规则都命中真实存在的文件」这条断言都靠这个约定区分两者,
+ * 所以谁漏写或多写尾斜杠,断言语义就悄悄变了。
  */
 const PREFIX_RULES: Array<[string, Layer]> = [
   ["lib/runtime.ts", "composition"],
