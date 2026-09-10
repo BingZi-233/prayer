@@ -1,3 +1,6 @@
+// 注意:cs 子进程(plugins/cs/scripts/cs-mcp.ts)以 Node strip-only 模式按路径
+// 直接加载本文件。本文件只允许 import type——一旦对 repo.ts 改成值 import
+// (该文件用了参数属性),子进程加载即失败。
 import type { KnowledgeRepository } from "../db/repositories/knowledge.ts"
 
 type EmbedFn = (text: string) => Promise<Float32Array>
