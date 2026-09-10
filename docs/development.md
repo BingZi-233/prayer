@@ -16,7 +16,7 @@ GitHub Actions 会在 PR 和 main 推送时执行检查与构建。
 
 ## 分层结构
 
-`lib/` 按能力分五层,单向依赖,只准从上往下:
+`lib/` 按能力分五层，单向依赖，只准从上往下：
 
 ```
     runtime.ts          # 组合根,接通道 + agent + 后台循环
@@ -32,22 +32,22 @@ channels   knowledge    # 通道实现 / 知识库与反思(同级,互不依赖)
        core             # 地基:db、config、日志、总线、通道词汇
 ```
 
-- 新增消息通道写 `lib/channels/<通道>/`;新增 Agent 能力写 `lib/conversation/`;
+- 新增消息通道写 `lib/channels/<通道>/`；新增 Agent 能力写 `lib/conversation/`；
   新增知识库能力写 `lib/knowledge/`。
-- `app/` 可依赖全部;`components/` 只可依赖 `core`。
-- 规则由 `tests/architecture/layering.test.ts` 执行,不靠自觉。跨层依赖会直接让测试失败。
+- `app/` 可依赖全部；`components/` 只可依赖 `core`。
+- 规则由 `tests/architecture/layering.test.ts` 执行，不靠自觉。跨层依赖会直接让测试失败。
 
-### 搬迁中:待改写条目
+### 搬迁中：待改写条目
 
-`lib/` 正分阶段搬到上述结构。以下条目描述的路径在搬迁完成后不再存在,
-**由对应阶段负责改写,不是遗留说明**:
+`lib/` 正分阶段搬到上述结构。以下条目描述的路径在搬迁完成后不再存在，
+**由对应阶段负责改写，不是遗留说明**：
 
 | 条目 | 作废阶段 |
 | --- | --- |
 | 本节下方「模块边界」中提到 `lib/config/schema.ts`、`lib/config/{env,migrate,chats,patch}.ts`、`lib/config-store.ts`、`lib/db/repositories/`、`lib/db/migrations/` 的位置 | 2a |
 | 「模块边界」中涉及 `channels/` 承载类型与词汇的表述 | 2b |
 | `lib/tools/`、`lib/plugins/` 两个目录的存在 | 3 |
-| `lib/agent/` 目录的存在(拆为 `conversation/` 与 `knowledge/`) | 4 |
+| `lib/agent/` 目录的存在（拆为 `conversation/` 与 `knowledge/`） | 4 |
 
 ## 模块边界
 
