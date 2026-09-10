@@ -219,6 +219,12 @@ lib/agent/reflection-promoter.ts:7   knowledge → conversation  ./agent
 也是行为不变，它是本次唯一触碰函数签名与常量归属的地方，单独成一个分支便于评审。
 阶段 5 与它们互相独立，顺序可调。
 
+**每个搬迁阶段（1、2a、2b、3、4）的隐含必做项，同样进验收：** 同步
+`tests/architecture/layering.test.ts` —— 改 `PREFIX_RULES` 里搬家文件的前缀、把旧前缀登记进
+`RETIRED_PREFIXES`、按需下调 `TOLERATED` 并 bump `CURRENT_STAGE`。漏登记不会让核心的
+「逆向依赖精确一致」失败，但会让「退役前缀已被清空」这条防线**静默失效**——那正是「旧路径
+真的删干净了」的机器检查，靠人记得登记才生效。
+
 代价如实说明：阶段 1–4 合计约 90 个源文件及对应测试需要改 import 路径。改动机械但量大，
 所以拆成 7 个分支，使每刀评审只需看一个概念。
 
@@ -240,15 +246,17 @@ main 构建。这个成本是拆细的代价，接受。
 | 阶段 | 须同步的文档条目 |
 | --- | --- |
 | 0 | `docs/development.md` 增补分层规则；把阶段 1–4 将作废的条目**逐条列出并标注**「由阶段 N 改写」；`CLAUDE.md` 的 Git 约定增补 `refactor/*` 前缀 |
-| 1 | `CLAUDE.md:39` 仓库结构中的 `onebot/` 一项（该目录消失） |
-| 2a | `docs/development.md:17-32` 中 `lib/config/schema.ts`、`lib/config/{env,migrate,chats,patch}.ts`、`lib/config-store.ts`、`lib/db/repositories/`、`lib/db/migrations/` 五条路径；`docs/data-access.md:21`「以上路径相对于 `lib/db/`」与 `:82` 的 `lib/db/index.ts`；`docs/database-operations.md:4` 的 `lib/db/migrations/registry.ts` 与 `lib/db/index.ts`；`CLAUDE.md:39` 的 `db/` 路径 |
+| 1 | `CLAUDE.md` 的「仓库结构」一节中的 `onebot/` 一项（该目录消失） |
+| 2a | `docs/development.md` 的「模块边界」一节中 `lib/config/schema.ts`、`lib/config/{env,migrate,chats,patch}.ts`、`lib/config-store.ts`、`lib/db/repositories/`、`lib/db/migrations/` 五条路径；`docs/data-access.md` 里「以上路径相对于 `lib/db/`」与 `lib/db/index.ts` 的引用；`docs/database-operations.md` 里 `lib/db/migrations/registry.ts` 与 `lib/db/index.ts` 的引用；`CLAUDE.md` 的「仓库结构」一节中的 `db/` 项 |
 | 2b | `docs/development.md` 的「模块边界」中 `lib/config-store.ts` 条目引用的 `lib/channels/enabled-chats.ts`（迁往 `lib/core/chat/`）。注意 `channels/types.ts`、`channels/ids.ts` 目前在文档中**没有任何引用**，2b 只需搬文件、无需改文档 |
-| 3 | `CLAUDE.md:39` 的 `tools/`、`plugins/` 两项（两个目录消失） |
-| 4 | `CLAUDE.md:39` 的 `agent/` 一项（拆为 `conversation/` 与 `knowledge/`）；`CLAUDE.md:13` 举例的 `tests/lib/agent/session.test.ts`（该测试镜像 `lib/agent/session.ts`，随 `agent/` 一起迁） |
+| 3 | `CLAUDE.md` 的「仓库结构」一节中的 `tools/`、`plugins/` 两项（两个目录消失） |
+| 4 | `CLAUDE.md` 的「仓库结构」一节中的 `agent/` 一项（拆为 `conversation/` 与 `knowledge/`）；`CLAUDE.md` 的「命令」一节举例的 `tests/lib/agent/session.test.ts`（该测试镜像 `lib/agent/session.ts`，随 `agent/` 一起迁） |
 
-`docs/development.md:27` 现有的一句「`lib/config-store.ts` …… 只依赖存储的两个键值操作」
-在本设计取证时已被证伪（它运行时 import `channels/enabled-chats`），这句要连同路径一起
-修正，而不是照搬。
+**不要在这些条目里写字面行号。** 行号会随任何一次编辑而腐烂，而腐烂的锚点会让施工者 grep 扑空、进而以为「已经改过了」。用章节名与文件名定位。
+
+`docs/development.md` 的「模块边界」一节里有一句「`lib/config-store.ts` …… 只依赖存储的
+两个键值操作」。该句在本设计取证时已被证伪（它运行时 import `channels/enabled-chats`），
+要连同路径一起修正而不是照搬。阶段 0 已处理。
 
 **二、代码里的硬路径，比文档危险。** 这些不是注释、不是类型导入，是**运行时才会解析的
 字符串路径**，typecheck 与分层测试都抓不到，漏了就是线上故障：
@@ -335,15 +343,15 @@ main 构建。这个成本是拆细的代价，接受。
 2. `layering.test.ts` 从阶段 0 起就是空基线（无白名单）；阶段 4 结束时其临时边集合
    亦清空，只剩精确条数 0。
 3. `lib/` 根目录只剩 `runtime.ts`。
-4. 阶段 5 每页行为不变——按 `docs/development.md:12-15` 的浏览器验证配方真机检查：
+4. 阶段 5 每页行为不变——按 `docs/development.md` 的「环境与验证」一节的浏览器验证配方真机检查：
    临时数据库、独立 Claude 配置目录、清空 QQ/TG 连接参数、关闭知识库预热与主动回复。
    后四项是防止开发检查触发真实客服应答的，不可省略。
-5. **页面行数是手段，不是指标。** `docs/development.md:60` 明写「优先保护用户可感知行为，
+5. **页面行数是手段，不是指标。** `docs/development.md` 明写「优先保护用户可感知行为，
    而非组件数量、函数调用细节或文件行数」。行数只用于判断「是否仍有职责混杂」，
    不作验收门槛，验收看行为不变与契约测试。
 6. 涉及页面与打包边界时另跑生产构建：本机有实例在跑时用
    `NEXT_DIST_DIR=.next-verify pnpm build`，避免覆盖正在服务的 `.next`
-   （`docs/development.md:9-10`）。
+   （见 `docs/development.md` 的「环境与验证」一节）。
 7. 不把 `data/`、凭证或运行时产物纳入提交。
 
 ## 风险
