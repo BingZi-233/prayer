@@ -142,31 +142,30 @@ function layerAt(rel: string): Layer | null {
   return null
 }
 
-/** 给定两个仓库内相对路径,判断是否构成逆向依赖。 */
-function isViolation(fromRel: string, toRel: string): boolean {
-  const from = layerOf(fromRel)
-  const to = layerOf(toRel)
-  if (!from || !to) throw new Error(`未归层: ${fromRel} 或 ${toRel}`)
-  return RANK[to] > RANK[from]
-}
+const IMPORT_RE = /(?:from\s+|import\s*\(\s*|require\s*\(\s*)["']([^"']+)["']/g
 
-const IMPORT_RE = /(?:from\s+|import\s*\(\s*)["']([^"']+)["']/g
+/** 扫描单个文件的源码,产出它引发的逆向依赖边。 */
+function collectViolations(fromRel: string, source: string): string[] {
+  const from = layerOf(fromRel)
+  if (!from) return []
+  const abs = join(REPO_ROOT, fromRel)
+  const out: string[] = []
+  for (const match of source.matchAll(IMPORT_RE)) {
+    const resolved = resolveSpecifier(abs, match[1])
+    if (!resolved) continue
+    const to = layerAt(resolved)
+    if (!to) continue
+    if (RANK[to] > RANK[from])
+      out.push(`${fromRel.replace(/\.tsx?$/, "")} -> ${resolved}`)
+  }
+  return out
+}
 
 function scanLib(): string[] {
   const found: string[] = []
   for (const abs of listFiles(LIB_DIR)) {
     const rel = relative(REPO_ROOT, abs)
-    const from = layerOf(rel)
-    if (!from) continue
-    const src = readFileSync(abs, "utf8")
-    for (const match of src.matchAll(IMPORT_RE)) {
-      const resolved = resolveSpecifier(abs, match[1])
-      if (!resolved) continue
-      const to = layerAt(resolved)
-      if (!to) continue
-      if (RANK[to] > RANK[from])
-        found.push(`${rel.replace(/\.tsx?$/, "")} -> ${resolved}`)
-    }
+    found.push(...collectViolations(rel, readFileSync(abs, "utf8")))
   }
   return [...new Set(found)].sort()
 }
@@ -198,20 +197,43 @@ describe("分层结构契约", () => {
     expect(stale).toEqual([])
   })
 
-  it("扫描器能识别逆向依赖(防止护栏因失灵而空过)", () => {
-    // 合法的向下依赖
+  it("扫描管线能识别逆向依赖(防止护栏因失灵而空过)", () => {
+    const expectEdge = "lib/config/chats -> lib/channels/qq/client"
+    // 静态 import
     expect(
-      isViolation("lib/agent/reflection-poller.ts", "lib/tools/embed.ts")
-    ).toBe(false)
-    expect(isViolation("lib/tools/kb.ts", "lib/db/kb-sql.ts")).toBe(false)
-    // 逆向:core 文件引传输实现
+      collectViolations(
+        "lib/config/chats.ts",
+        `import { OneBotClient } from "../channels/qq/client"`
+      )
+    ).toEqual([expectEdge])
+    // 动态 import
     expect(
-      isViolation("lib/config/chats.ts", "lib/channels/tg/client.ts")
-    ).toBe(true)
-    // 逆向:知识层引会话层
+      collectViolations(
+        "lib/config/chats.ts",
+        `const m = await import("../channels/qq/client")`
+      )
+    ).toEqual([expectEdge])
+    // require
     expect(
-      isViolation("lib/agent/reflection-poller.ts", "lib/agent/agent.ts")
-    ).toBe(true)
+      collectViolations(
+        "lib/config/chats.ts",
+        `const m = require("../channels/qq/client")`
+      )
+    ).toEqual([expectEdge])
+    // 合法方向不报
+    expect(
+      collectViolations("lib/tools/kb.ts", `import { x } from "../db/kb-sql"`)
+    ).toEqual([])
+  })
+
+  it("关键路径的分类符合目标层", () => {
+    expect(layerOf("lib/config/chats.ts")).toBe("core")
+    expect(layerOf("lib/channels/types.ts")).toBe("core") // 目标 core/chat,非 channels
+    expect(layerOf("lib/onebot/members-fetch.ts")).toBe("channels")
+    expect(layerOf("lib/tools/embed.ts")).toBe("model")
+    expect(layerOf("lib/tools/kb.ts")).toBe("knowledge")
+    expect(layerOf("lib/agent/agent.ts")).toBe("conversation")
+    expect(layerOf("lib/runtime.ts")).toBe("composition")
   })
 
   it("components/ 只依赖 core", () => {
