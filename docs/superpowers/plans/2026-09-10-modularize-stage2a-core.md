@@ -255,7 +255,57 @@ const CURRENT_STAGE = "2a"
 
 `STAGE_ORDER` 里已有 `"2a"` 这一项，无需改动。
 
-- [ ] **Step 6: 跑测试并做反向验证**
+- [ ] **Step 6: 改掉自检用例与分类钉子里会失效的路径**
+
+**这一步不做的话测试会红。** 那个「扫描管线能识别逆向依赖」的自检用例用**合成路径**当输入，而这些路径本身也受本次搬迁影响：
+
+`collectViolations(fromRel, source)` 的第一件事是 `layerOf(fromRel)`，取不到层就直接返回 `[]`。删掉 `["lib/config/", "core"]` 之后，`layerOf("lib/config/chats.ts")` 返回 `null`，于是三条 `toEqual([expectEdge])` 断言全部**误红**（拿到 `[]`）。同理，分类钉子用例里的 `expect(layerOf("lib/config/chats.ts")).toBe("core")` 也会红。
+
+改法（注意：改了源路径，**相对 import 也要跟着改**，否则解析到的目标会变）：
+
+```ts
+    const expectEdge = "lib/core/config/chats -> lib/channels/qq/client"
+    // 静态 import
+    expect(
+      collectViolations(
+        "lib/core/config/chats.ts",
+        `import { OneBotClient } from "../../channels/qq/client"`
+      )
+    ).toEqual([expectEdge])
+    // 动态 import
+    expect(
+      collectViolations(
+        "lib/core/config/chats.ts",
+        `const m = await import("../../channels/qq/client")`
+      )
+    ).toEqual([expectEdge])
+    // require
+    expect(
+      collectViolations(
+        "lib/core/config/chats.ts",
+        `const m = require("../../channels/qq/client")`
+      )
+    ).toEqual([expectEdge])
+    // 合法方向不报
+    expect(
+      collectViolations(
+        "lib/tools/kb.ts",
+        `import { x } from "../core/db/kb-sql"`
+      )
+    ).toEqual([])
+```
+
+要点：`lib/core/config/chats.ts` 的目录是 `lib/core/config`，所以到 `lib/channels/qq/client` 要上**两层**（`../../`）。改完后 `../../channels/qq/client` 解析为 `lib/channels/qq/client` → channels 层，core → channels 判为逆向 ✓。
+
+分类钉子用例里那一条改为：
+
+```ts
+    expect(layerOf("lib/core/config/chats.ts")).toBe("core")
+```
+
+**其余 6 条钉子不动**（`lib/channels/types.ts`、`lib/channels/qq/members-fetch.ts`、`lib/tools/embed.ts`、`lib/tools/kb.ts`、`lib/agent/agent.ts`、`lib/runtime.ts` 都不受本阶段影响）。
+
+- [ ] **Step 7: 跑测试并做反向验证**
 
 ```bash
 pnpm vitest run tests/architecture/layering.test.ts
@@ -265,7 +315,7 @@ Expected: 8 个用例全绿（原 7 个 + 新增 1 个）。
 
 **反向验证新增的那条断言不是摆设**：临时在 `PREFIX_RULES` 里加一条指向不存在文件的精确规则（例如 `["lib/nonexistent.ts", "core"]`），跑测试，应看到「每条精确文件规则都命中真实存在的文件」**失败**并列出该路径；然后删掉它，复跑恢复全绿，确认 `git status` 干净。
 
-- [ ] **Step 7: 更新 `docs/development.md`**
+- [ ] **Step 8: 更新 `docs/development.md`**
 
 `docs/development.md` 的「模块边界」一节与「待改写条目」表都提到 `lib/config/schema.ts`、`lib/config/{env,migrate,chats,patch}.ts`、`lib/config-store.ts`、`lib/db/repositories/`、`lib/db/migrations/` 这些路径，以及 `docs/data-access.md`、`docs/database-operations.md` 里的对应引用。
 
@@ -277,7 +327,7 @@ Expected: 8 个用例全绿（原 7 个 + 新增 1 个）。
 
 **不要写字面行号**（设计文档已明令）。改完后把「待改写条目」表里已完成的 2a 那一行**删除**——它的使命结束了，留着就是新的腐烂源。
 
-- [ ] **Step 8: 提交**
+- [ ] **Step 9: 提交**
 
 ```bash
 git add tests/architecture/layering.test.ts docs/development.md docs/data-access.md docs/database-operations.md CLAUDE.md
