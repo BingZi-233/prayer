@@ -3,7 +3,6 @@
 // 并发冷 miss 按群 inflight 合并。新写入的快照含 role,供「额外监听 AT」筛 owner/admin。
 
 import { getNameCache, type UserNameRow } from "@/lib/name-cache"
-import { getRuntime } from "@/lib/runtime"
 
 // 群友名最长 9 字,超出截断加省略号。Array.from 按码点切,避免截断 emoji / CJK。
 function clamp(name: string): string {
@@ -55,12 +54,13 @@ const membersInflight = new Map<number, Promise<UserNameRow[] | null>>()
 export type FetchMembers = (groupId: number) => Promise<unknown[] | undefined>
 
 export type LoadGroupMembersOpts = {
+  /** 拉取原始成员列表的实现。必填:由调用方注入,避免本模块向上依赖组合根 */
+  fetchFn: FetchMembers
   /** 强制绕过缓存 */
   refresh?: boolean
   /** 为 true 时:缓存命中但无 role 字段 → 视为 miss(admins 需要 role) */
   requireRoles?: boolean
   /** 测试注入 */
-  fetchFn?: FetchMembers
   cache?: ReturnType<typeof getNameCache>
 }
 
@@ -70,7 +70,7 @@ export type LoadGroupMembersOpts = {
  */
 export async function loadGroupMembers(
   groupId: number,
-  opts: LoadGroupMembersOpts = {}
+  opts: LoadGroupMembersOpts
 ): Promise<UserNameRow[] | null> {
   const cache = opts.cache ?? getNameCache()
 
@@ -84,11 +84,8 @@ export async function loadGroupMembers(
   const pending = membersInflight.get(groupId)
   if (pending) return pending
 
-  const fetchFn =
-    opts.fetchFn ?? ((gid: number) => getRuntime().getGroupMembers(gid))
-
   const p = (async () => {
-    const raw = await fetchFn(groupId)
+    const raw = await opts.fetchFn(groupId)
     if (!Array.isArray(raw)) return null
     const list = parseGroupMembers(raw)
     cache.setMembersList(groupId, list)

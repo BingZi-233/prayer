@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getAppContext } from "@/lib/app-context"
 import { collectAdmins } from "@/lib/onebot/admins"
+import { getRuntime } from "@/lib/runtime"
 import {
   loadGroupMembers,
   toAdminMemberShape,
@@ -49,6 +50,7 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       const members = await loadGroupMembers(groupId, {
         refresh,
         requireRoles: true,
+        fetchFn: (gid) => getRuntime().getGroupMembers(gid),
       })
       return { groupId, members }
     })

@@ -42,4 +42,5 @@ GitHub Actions 在 PR 与 main 推送时运行 `pnpm check` 和生产构建。�
 
 - 提交用 Conventional Commits(`feat/fix(scope): …`)+ 中文正文,与现有 git log 一致。
 - 功能分支开发(`feat/*`),不直接提交 main。
+- 纯结构性重构用 `refactor/*` 前缀（目录重组、文件搬迁、切分等不改变行为的改动）。
 - 改 agent 核心 / db schema / 后台反思循环前,先出方案再动手。
