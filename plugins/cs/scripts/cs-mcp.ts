@@ -5,9 +5,11 @@
  *
  * 依赖解析:SDK / better-sqlite3 / sqlite-vec / zod 从 repo 根 node_modules 解析
  *   —— 本 plugin 装入 cache 后仍在 prayer repo 目录内,Node 向上走查命中根 node_modules。
- * 业务复用:embed(模型/向量)与 runKbSearch(检索+格式)复用 repo 的 lib,经 repo 根绝对路径 dynamic import。
+ * 业务复用:embed(模型/向量)、runKbSearch(检索+格式)与 KB_SEARCH_SQL(向量近邻 SQL)
+ *   复用 repo 的 lib,经 repo 根绝对路径 dynamic import。
  *   注意:Node strip-only 不支持 TS「参数属性」,故不导入 lib/db/repo.ts(其 constructor(private db) 会报错);
- *   向量近邻 SQL 在此内联,以 repo-like { searchKb } 传给 runKbSearch(kb.ts 仅 import type Repo,运行时不加载 repo.ts)。
+ *   向量近邻 SQL 从 lib/db/kb-sql.ts 导入(唯一事实源),以 repo-like { searchKb } 传给 runKbSearch
+ *   (kb.ts 仅 import type Repo,运行时不加载 repo.ts)。
  * DB 路径:父进程 env DB_PATH 传入(runtime.start / introspect 已绝对化),只读打开,不建表/迁移。
  */
 import { existsSync, readFileSync, realpathSync } from "node:fs"

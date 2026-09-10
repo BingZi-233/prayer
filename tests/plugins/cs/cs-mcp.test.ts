@@ -1,3 +1,6 @@
+import { execFileSync } from "node:child_process"
+import { dirname, join } from "node:path"
+import { fileURLToPath, pathToFileURL } from "node:url"
 import { describe, expect, it } from "vitest"
 import { openDb } from "@/lib/db/index"
 import { Repo } from "@/lib/db/repo"
@@ -60,5 +63,31 @@ describe("cs-mcp KB_SEARCH_SQL(插件路径检索过滤)", () => {
     expect(pluginHits.map((h) => h.id)).toEqual(repoHits.map((h) => h.id))
     expect(base).toBeGreaterThan(0)
     db.close()
+  })
+})
+
+const REPO_ROOT = dirname(
+  dirname(dirname(dirname(fileURLToPath(import.meta.url))))
+)
+
+// cs 子进程以 Node 原生 strip 模式按绝对路径加载这些模块。
+// 它们一旦引入非可擦除语法(参数属性/enum/namespace)或值导入 repo.ts
+// 这类含参数属性的模块,子进程会在运行时静默加载失败——typecheck 与
+// 其它测试都抓不到,所以在这里用真实加载来守。
+const CS_SUBPROCESS_MODULES = [
+  "lib/tools/embed.ts",
+  "lib/tools/kb.ts",
+  "lib/db/kb-sql.ts",
+]
+
+describe("cs 子进程按路径加载的模块必须 strip-only 可加载", () => {
+  it.each(CS_SUBPROCESS_MODULES)("%s", (rel) => {
+    const url = pathToFileURL(join(REPO_ROOT, rel)).href
+    const out = execFileSync(
+      process.execPath,
+      ["--input-type=module", "--eval", `await import(${JSON.stringify(url)})`],
+      { encoding: "utf8" }
+    )
+    expect(out).toBe("")
   })
 })
