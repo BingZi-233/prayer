@@ -398,6 +398,16 @@ grep -rn "tests/lib/" docs/*.md CLAUDE.md
 
 把指向**本次搬走的**测试文件路径改到新位置（例如 `tests/lib/db/repo.test.ts` → `tests/lib/core/db/repo.test.ts`）。**注意**：`docs/data-access.md` 里的 `tests/lib/db/transactions.test.ts` 也要一并改——之前 implementer 因为本阶段不含测试搬迁而保留了它，现在搬迁做了，它就过时了。
 
+顺带清掉 `docs/development.md`「待改写条目」表里**阶段 1 遗留的那一行**（`CLAUDE.md` 的「仓库结构」一节里的 `onebot/` 项 | 1）。阶段 1 已经改了 `CLAUDE.md` 的这一项，但那行还留在表里 —— 使命结束的行留着就是新的腐烂源。
+
+改完复核：
+
+```bash
+grep -n "onebot" docs/development.md
+```
+
+Expected: 「待改写条目」表里不再有阶段 1 那一行。
+
 - [ ] **Step 5: 确认没有旧目录残留**
 
 ```bash
