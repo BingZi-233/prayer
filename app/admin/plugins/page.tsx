@@ -111,7 +111,6 @@ export default function PluginsPage() {
 
       <SectionCard
         title="添加插件"
-        icon={Plus}
         description="GitHub 填写 owner/repo，本地填写绝对路径；市场名与插件名见 marketplace.json。"
       >
         <FieldGroup className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">

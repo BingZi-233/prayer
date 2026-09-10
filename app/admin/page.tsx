@@ -3,14 +3,7 @@
 import { useState } from "react"
 import Link from "next/link"
 import { toast } from "sonner"
-import {
-  RotateCw,
-  TriangleAlert,
-  LifeBuoy,
-  Gauge,
-  Target,
-  Wrench,
-} from "lucide-react"
+import { RotateCw, TriangleAlert, LifeBuoy, Gauge } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { Spinner } from "@/components/ui/spinner"
@@ -338,7 +331,6 @@ export default function StatusPage() {
       <SectionCard
         className="shrink-0"
         title="今日结果"
-        icon={Target}
         description="今日 0 点起累计,按业务结果分类。"
       >
         {!m ? (
@@ -384,7 +376,6 @@ export default function StatusPage() {
 
       <SectionCard
         title="模型用量"
-        icon={Gauge}
         description={
           usage?.daily
             ? `本次运行累计（token 列下方为单次调用均值）；今日已记账 $${usage.daily.costUsd.toFixed(4)}${usage.daily.budgetUsd > 0 ? ` / 预算 $${usage.daily.budgetUsd}` : ""}。`
@@ -524,7 +515,6 @@ export default function StatusPage() {
 
       <SectionCard
         title="工具调用"
-        icon={Wrench}
         description={
           usage?.tools
             ? `主客服本次运行的工具使用；今日已记账 ${usage.tools.daily.coverage.totalRuns} 轮。`

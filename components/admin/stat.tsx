@@ -26,7 +26,7 @@ export function StatCard({
   className?: string
 }) {
   return (
-    <Card className={cn("gap-3 py-3", className)}>
+    <Card className={cn("gap-3", className)}>
       <CardHeader className="gap-1">
         <CardDescription>{label}</CardDescription>
         <CardTitle className={cn("text-2xl tabular-nums", warn && "text-destructive")}>

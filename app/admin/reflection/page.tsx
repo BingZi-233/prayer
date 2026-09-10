@@ -642,7 +642,6 @@ export default function ReflectionPage() {
       </SectionCard>
 
       <SectionCard
-        icon={GitCompareArrows}
         title={`整理记录${d ? ` (${d.compactions.length})` : ""}`}
         description="每次整理的时间与条目变化。"
       >
@@ -665,7 +664,6 @@ export default function ReflectionPage() {
       </SectionCard>
 
       <SectionCard
-        icon={Brain}
         title={`知识条目${d ? ` (${d.entries.length})` : ""}`}
         description="自动入库的自学习知识，Agent 检索可直接命中；可驳回，或升格为正式文档。"
       >

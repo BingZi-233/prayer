@@ -774,7 +774,6 @@ export default function KbPage() {
                   )}
                 </span>
               }
-              icon={FileText}
               className="flex min-h-0 min-w-0 flex-col overflow-hidden"
               contentClassName="flex min-h-0 min-w-0 flex-1 flex-col gap-2"
               action={

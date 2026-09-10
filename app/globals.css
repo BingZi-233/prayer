@@ -165,7 +165,11 @@
     box-shadow: inset 0 -1px 0 var(--border);
   }
 
-  [data-slot="table-shell"] [data-slot="table-head"] {
-    color: var(--muted-foreground);
-  }
+}
+
+/* 表头文字用 muted。这条必须放在 @layer 之外:CSS 层顺序优先于选择器权重,
+   放在 components 层会被 Tailwind 的 utilities 层(TableHead 自带的
+   text-foreground)盖掉。 */
+[data-slot="table-shell"] [data-slot="table-head"] {
+  color: var(--muted-foreground);
 }

@@ -225,7 +225,6 @@ export default function ProactivePage() {
       </SectionCard>
 
       <SectionCard
-        icon={MessageSquareReply}
         title={`最近主动回复${d ? ` (${d.total})` : ""}`}
         description="可标记回复是否恰当，便于后续优化。"
       >

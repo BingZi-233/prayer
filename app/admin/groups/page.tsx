@@ -371,16 +371,12 @@ export default function GroupsPage() {
                         仅管理命令
                       </span>
                     ) : (
-                      <div className="flex items-center gap-2">
-                        <Switch
-                          checked={r.enabled}
-                          disabled={busyKey === r.policyKey}
-                          onCheckedChange={(v) => toggle(r, v)}
-                        />
-                        <Badge variant={r.enabled ? "default" : "secondary"}>
-                          {r.enabled ? "生效" : "未生效"}
-                        </Badge>
-                      </div>
+                      <Switch
+                        checked={r.enabled}
+                        disabled={busyKey === r.policyKey}
+                        onCheckedChange={(v) => toggle(r, v)}
+                        aria-label={`${r.enabled ? "关闭" : "开启"} ${rowLabel(r, name)} 的自动应答`}
+                      />
                     )}
                   </TableCell>
                   <TableCell>
