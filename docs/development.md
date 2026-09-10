@@ -48,10 +48,10 @@ channels   knowledge    # 通道实现 / 知识库与反思(同级,互不依赖)
 | `CLAUDE.md` 的「仓库结构」一节里的 `onebot/` 项 | 1 |
 | 本节下方「模块边界」中 `lib/config/schema.ts`、`lib/config/{env,migrate,chats,patch}.ts`、`lib/config-store.ts`、`lib/db/repositories/`、`lib/db/migrations/` 的位置 | 2a |
 | `docs/data-access.md` 里「以上路径相对于 `lib/db/`」与 `lib/db/index.ts` 的引用；`docs/database-operations.md` 里 `lib/db/migrations/registry.ts` 与 `lib/db/index.ts` 的引用 | 2a |
-| `CLAUDE.md` 的「仓库结构」一节里的 `db/` 项，与「命令」一节举例的 `tests/lib/agent/session.test.ts` 路径 | 2a |
-| 本节与 `CLAUDE.md` 中提到 `lib/channels/types.ts`、`lib/channels/ids.ts`、`lib/channels/enabled-chats.ts` 的位置（它们迁往 `lib/core/chat/`） | 2b |
+| `CLAUDE.md` 的「仓库结构」一节里的 `db/` 项 | 2a |
+| 「模块边界」中 `lib/config-store.ts` 条目引用的 `lib/channels/enabled-chats.ts`（迁往 `lib/core/chat/`） | 2b |
 | `CLAUDE.md` 的「仓库结构」一节里的 `tools/`、`plugins/` 项 | 3 |
-| `CLAUDE.md` 的「仓库结构」一节里的 `agent/` 项（拆为 `conversation/` 与 `knowledge/`） | 4 |
+| `CLAUDE.md` 的「仓库结构」一节里的 `agent/` 项（拆为 `conversation/` 与 `knowledge/`），与「命令」一节举例的 `tests/lib/agent/session.test.ts` 路径 | 4 |
 
 ## 模块边界
 
