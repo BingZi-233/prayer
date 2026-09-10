@@ -569,7 +569,6 @@ export default function ReflectionPage() {
           loading={loading}
           value={d ? `${approvedCount}/${d.config.compactMinEntries}` : "—"}
           hint="已入库条目数与触发整理的门槛。"
-          warn={Boolean(d && willCompact)}
         />
         <StatCard
           label="升格周期"
@@ -584,7 +583,6 @@ export default function ReflectionPage() {
           loading={loading}
           value={d ? `${approvedCount}/${d.config.promoteMinEntries}` : "—"}
           hint="已入库条目数与升格评审门槛。"
-          warn={Boolean(d && willPromote)}
         />
       </StatGrid>
 
