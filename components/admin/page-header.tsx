@@ -2,7 +2,7 @@ import type { ReactNode } from "react"
 import { cn } from "@/lib/utils"
 
 // 全站统一页头:标题 + 可选描述 + 可选右上操作位。
-// 取代各页手写的 h1+p 块,消除操作位有无/位置不一致。
+// 不加分隔线,操作位与标题块顶端对齐。
 export function PageHeader({
   title,
   description,
@@ -17,18 +17,20 @@ export function PageHeader({
   return (
     <div
       className={cn(
-        "flex flex-col gap-3 border-b border-border/70 pb-4 sm:flex-row sm:items-end sm:justify-between sm:gap-4",
+        "flex flex-col gap-4 md:flex-row md:items-start md:justify-between",
         className
       )}
     >
       <div className="flex min-w-0 flex-col gap-1">
-        <h1 className="text-2xl font-semibold tracking-tight sm:text-[26px]">{title}</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
         {description && (
           <p className="text-sm text-muted-foreground">{description}</p>
         )}
       </div>
       {actions && (
-        <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div>
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
+          {actions}
+        </div>
       )}
     </div>
   )

@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react"
 import { toast } from "sonner"
-import { Users, Settings2, RotateCcw, Bell, Timer, Zap } from "lucide-react"
+import { Users, Settings2, RotateCcw } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -42,8 +42,7 @@ import { RowActions } from "@/components/admin/row-actions"
 import { RelativeTime } from "@/components/relative-time"
 import { PageShell } from "@/components/admin/page-shell"
 import { PageHeader } from "@/components/admin/page-header"
-import { SectionCard } from "@/components/admin/section-card"
-import { MetricBadge, MetricBadgeRow } from "@/components/admin/stat"
+import { StatCard, StatGrid } from "@/components/admin/stat"
 import { DataState } from "@/components/admin/data-state"
 import { usePolling } from "@/components/admin/use-polling"
 import { useGroupNames } from "@/lib/group-name"
@@ -291,44 +290,35 @@ export default function GroupsPage() {
     <PageShell>
       <PageHeader
         title="生效会话"
-        description={`按会话开关机器人应答，并覆盖主动补位 / 转人工通知策略。${overrideCount ? `当前 ${overrideCount} 个会话有独立策略。` : "未设置覆盖时全部跟随全局配置。"}`}
+        description="按会话开关机器人应答，并覆盖主动补位 / 转人工通知策略；未覆盖的项跟随全局，管理群只处理 !reset / !resume，不参与客服问答。"
       />
 
       {globals && (
-        <MetricBadgeRow>
-          <MetricBadge
-            icon={Zap}
-            label="主动补位"
+        <StatGrid>
+          <StatCard
+            label="全局主动补位"
             value={globals.proactiveEnabled ? "开" : "关"}
-            tone={globals.proactiveEnabled ? "primary" : undefined}
+            hint="可在配置页修改默认；单群可在此覆盖。"
           />
-          <MetricBadge
-            icon={Timer}
-            label="静默阈值"
+          <StatCard
+            label="全局静默阈值"
             value={min(globals.proactiveSilenceMs)}
+            hint="无人应答超过此时长才补位。"
           />
-          <MetricBadge
-            icon={Bell}
+          <StatCard
             label="转人工通知"
             value="开"
-            tone="primary"
+            hint="转人工时向管理面发消息提醒。"
           />
-          {overrideCount > 0 && (
-            <MetricBadge
-              icon={Settings2}
-              label="独立策略"
-              value={`${overrideCount} 会话`}
-            />
-          )}
-        </MetricBadgeRow>
+          <StatCard
+            label="独立策略"
+            value={overrideCount}
+            hint="覆盖了全局默认的会话数量。"
+          />
+        </StatGrid>
       )}
 
-      <SectionCard
-        title="会话活动与策略"
-        icon={Users}
-        description="可在配置页修改全局默认；表格内可按会话覆盖。管理群只处理 !reset / !resume，不参与客服问答。"
-      >
-        <DataState
+      <DataState
           loading={loading}
           error={error}
           empty={rows.length === 0}
@@ -492,7 +482,6 @@ export default function GroupsPage() {
             </TableBody>
           </TableShell>
         </DataState>
-      </SectionCard>
 
       <Sheet
         open={editing !== null}

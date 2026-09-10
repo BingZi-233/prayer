@@ -23,7 +23,6 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { cn } from "@/lib/utils"
 import { PageShell } from "@/components/admin/page-shell"
 import { PageHeader } from "@/components/admin/page-header"
-import { SectionCard } from "@/components/admin/section-card"
 import { DataState, EmptyState } from "@/components/admin/data-state"
 import { usePolling } from "@/components/admin/use-polling"
 
@@ -194,61 +193,50 @@ export default function LogsPage() {
     <PageShell>
       <PageHeader
         title="运行日志"
-        description="按时间线逐条输出运行日志。内存保留最近 2000 条，重启后清空。"
+        description={`按时间线逐条输出运行日志，内存保留最近 2000 条，重启后清空。当前 ${shown.length} / ${logs.length} 条。`}
       />
 
-      <SectionCard
-        icon={ScrollText}
-        title="日志"
-        description={`${shown.length} / ${logs.length} 条`}
-        action={
-          <div className="flex flex-wrap items-center gap-2">
-            {(["info", "warn", "error"] as const).map((lv) => {
-              const on = levels.has(lv)
-              return (
-                <Badge
-                  key={lv}
-                  variant={on ? levelStyle(lv).badge : "outline"}
-                  className={cn(
-                    "cursor-pointer select-none",
-                    !on && "opacity-45"
-                  )}
-                  onClick={() => toggleLevel(lv)}
-                >
-                  {LEVEL_LABEL[lv]}
-                </Badge>
-              )
-            })}
-            <InputGroup className="h-8 w-full sm:w-52">
-              <InputGroupAddon>
-                <Search />
-              </InputGroupAddon>
-              <InputGroupInput
-                placeholder="搜索 scope / 群 / 文案…"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-              />
-            </InputGroup>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setPaused((p) => !p)}
+      <div className="flex flex-wrap items-center gap-2">
+        <InputGroup className="w-full sm:w-64">
+          <InputGroupAddon>
+            <Search />
+          </InputGroupAddon>
+          <InputGroupInput
+            placeholder="搜索 scope / 群 / 文案…"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+        </InputGroup>
+        {(["info", "warn", "error"] as const).map((lv) => {
+          const on = levels.has(lv)
+          return (
+            <Badge
+              key={lv}
+              variant={on ? levelStyle(lv).badge : "outline"}
+              className={cn("cursor-pointer select-none", !on && "opacity-45")}
+              onClick={() => toggleLevel(lv)}
             >
-              {paused ? (
-                <Play data-icon="inline-start" />
-              ) : (
-                <Pause data-icon="inline-start" />
-              )}
-              {paused ? "继续滚动" : "暂停滚动"}
-            </Button>
-            <Button variant="ghost" size="sm" onClick={copyAll}>
-              <Copy data-icon="inline-start" />
-              复制
-            </Button>
-          </div>
-        }
-      >
-        <DataState
+              {LEVEL_LABEL[lv]}
+            </Badge>
+          )
+        })}
+        <div className="ml-auto flex flex-wrap items-center gap-2">
+          <Button variant="ghost" size="sm" onClick={() => setPaused((p) => !p)}>
+            {paused ? (
+              <Play data-icon="inline-start" />
+            ) : (
+              <Pause data-icon="inline-start" />
+            )}
+            {paused ? "继续滚动" : "暂停滚动"}
+          </Button>
+          <Button variant="ghost" size="sm" onClick={copyAll}>
+            <Copy data-icon="inline-start" />
+            复制
+          </Button>
+        </div>
+      </div>
+
+      <DataState
           loading={loading}
           error={error}
           empty={logs.length === 0}
@@ -403,8 +391,7 @@ export default function LogsPage() {
               </div>
             </div>
           )}
-        </DataState>
-      </SectionCard>
+      </DataState>
     </PageShell>
   )
 }

@@ -29,6 +29,7 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/sidebar"
+import { NavLinkIcon } from "@/components/nav-link-icon"
 import { useLive } from "@/components/live-provider"
 import { DEFAULT_BRAND } from "@/lib/brand"
 
@@ -78,23 +79,25 @@ export function AppSidebar() {
   const brandName = overview?.brandName?.trim() || DEFAULT_BRAND.name
   return (
     <Sidebar variant="inset">
-      <SidebarHeader className="border-b border-sidebar-border/60 px-3 py-3">
-        <div className="flex items-center gap-2 px-2 py-1.5">
-          <div className="flex size-9 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-sm">
-            <Bot className="size-5" />
-          </div>
-          <div className="flex flex-col leading-tight">
-            <span className="text-sm font-semibold">{brandName}</span>
-            <span className="text-xs text-muted-foreground">客服中台</span>
-          </div>
-        </div>
+      <SidebarHeader>
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton size="lg" render={<Link href="/admin" />}>
+              <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
+                <Bot className="size-4" />
+              </div>
+              <div className="grid flex-1 text-left text-sm leading-tight">
+                <span className="truncate font-medium">{brandName}</span>
+                <span className="truncate text-xs">客服中台</span>
+              </div>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
       </SidebarHeader>
-      <SidebarContent className="px-2 py-3">
+      <SidebarContent>
         {navGroups.map((group) => (
-          <SidebarGroup key={group.label} className="py-1">
-            <SidebarGroupLabel className="px-2 text-[11px] font-semibold tracking-wide text-sidebar-foreground/60">
-              {group.label}
-            </SidebarGroupLabel>
+          <SidebarGroup key={group.label}>
+            <SidebarGroupLabel>{group.label}</SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
                 {group.items.map((n) => {
@@ -110,7 +113,7 @@ export function AppSidebar() {
                         isActive={active}
                         tooltip={n.label}
                       >
-                        <n.icon />
+                        <NavLinkIcon icon={n.icon} />
                         <span>{n.label}</span>
                       </SidebarMenuButton>
                       {badge === "human" &&

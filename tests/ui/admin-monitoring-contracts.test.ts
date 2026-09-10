@@ -7,8 +7,8 @@ describe("admin monitoring render contracts", () => {
 
     expect(source).toContain('fetch("/api/auth/login"')
     expect(source).toContain("aria-busy={busy}")
-    expect(source).toContain("<CardFooter")
-    expect(source).toContain("bg-muted/40")
+    expect(source).toContain('className="text-center"')
+    expect(source).toContain("bg-muted p-6 md:p-10")
   })
 
   it("gives runtime usage loading, error, and empty states a shared contract", async () => {
@@ -28,7 +28,7 @@ describe("admin monitoring render contracts", () => {
     expect(source).toContain('info: "信息"')
     expect(source).toContain('warn: "警告"')
     expect(source).toContain('error: "错误"')
-    expect(source).toContain("w-full sm:w-52")
+    expect(source).toContain("w-full sm:w-64")
   })
 
   it("announces shared data states to assistive technology", async () => {

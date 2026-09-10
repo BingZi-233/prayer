@@ -16,7 +16,6 @@ import {
   Card,
   CardContent,
   CardDescription,
-  CardFooter,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
@@ -53,21 +52,18 @@ function LoginForm() {
   }
 
   return (
-    <main className="flex min-h-svh flex-col items-center justify-center gap-6 bg-muted/40 p-4 sm:p-6 md:p-10">
-      <div className="flex w-full max-w-sm flex-col items-center gap-6">
-        <div className="flex flex-col items-center gap-3 text-center">
-          <div className="flex size-10 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm ring-1 ring-primary/20">
-            <Bot className="size-5" />
+    <main className="flex min-h-svh flex-col items-center justify-center gap-6 bg-muted p-6 md:p-10">
+      <div className="flex w-full max-w-sm flex-col gap-6">
+        <div className="flex items-center gap-2 self-center font-medium">
+          <div className="flex size-8 items-center justify-center rounded-md bg-primary text-primary-foreground">
+            <Bot className="size-4" />
           </div>
-          <div className="flex flex-col items-center gap-0.5">
-            <span className="text-sm font-semibold">{DEFAULT_BRAND.name}</span>
-            <span className="text-xs text-muted-foreground">客服中台</span>
-          </div>
+          {DEFAULT_BRAND.name} 客服中台
         </div>
 
-        <Card className="w-full rounded-xl shadow-sm ring-1 ring-foreground/5">
-          <CardHeader className="gap-2">
-            <CardTitle>登录后台</CardTitle>
+        <Card>
+          <CardHeader className="text-center">
+            <CardTitle className="text-xl">登录后台</CardTitle>
             <CardDescription>
               输入 ADMIN_TOKEN 口令。未配置环境变量时无需登录。
             </CardDescription>
@@ -100,10 +96,10 @@ function LoginForm() {
               </FieldGroup>
             </form>
           </CardContent>
-          <CardFooter className="border-t bg-muted/20 text-xs text-muted-foreground">
-            管理口令仅用于本地后台访问，请勿分享给他人。
-          </CardFooter>
         </Card>
+        <p className="self-center text-xs text-muted-foreground">
+          管理口令仅用于本地后台访问，请勿分享给他人。
+        </p>
       </div>
     </main>
   )

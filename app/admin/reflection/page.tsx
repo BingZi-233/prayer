@@ -4,11 +4,7 @@ import { useMemo, useState } from "react"
 import { toast } from "sonner"
 import {
   Brain,
-  Clock,
-  Layers,
   GitCompareArrows,
-  Timer,
-  Gauge,
   Wand2,
   Check,
   X,
@@ -41,7 +37,7 @@ import {
 import { RelativeTime } from "@/components/relative-time"
 import { PageShell } from "@/components/admin/page-shell"
 import { PageHeader } from "@/components/admin/page-header"
-import { MetricBadge, MetricBadgeRow } from "@/components/admin/stat"
+import { StatCard, StatGrid } from "@/components/admin/stat"
 import { SectionCard } from "@/components/admin/section-card"
 import { ItemCard } from "@/components/admin/item-card"
 import { DataState } from "@/components/admin/data-state"
@@ -537,60 +533,60 @@ export default function ReflectionPage() {
         }
       />
 
-      <MetricBadgeRow>
-        <MetricBadge
-          icon={Clock}
+      <StatGrid>
+        <StatCard
           label="扫描周期"
           value={d ? min(d.config.scanMs) : "—"}
+          hint="后台扫描生效会话的间隔。"
           loading={loading}
         />
-        <MetricBadge
-          icon={Clock}
+        <StatCard
           label="静置等待"
           value={d ? min(d.config.settleMs) : "—"}
+          hint="人工答复后静置多久才提炼,避免打断进行中的对话。"
           loading={loading}
         />
-        <MetricBadge
-          icon={Layers}
+        <StatCard
           label="回溯范围"
           value={d ? min(d.config.lookbackMs) : "—"}
+          hint="最多回看多久内的对话。"
           loading={loading}
         />
-        <MetricBadge
-          icon={Layers}
+        <StatCard
           label="窗口上限"
           value={d ? d.config.windowMax : "—"}
+          hint="单轮提炼的对话条数上限。"
           loading={loading}
         />
-        <MetricBadge
-          icon={Timer}
+        <StatCard
           label="整理周期"
           value={d ? hr(d.config.compactMs) : "—"}
+          hint="近义去重合并的自动执行周期。"
           loading={loading}
         />
-        <MetricBadge
-          icon={Gauge}
-          label="可整理/门槛"
+        <StatCard
+          label="可整理 / 门槛"
           loading={loading}
           value={d ? `${approvedCount}/${d.config.compactMinEntries}` : "—"}
-          tone={willCompact ? "primary" : undefined}
+          hint="已入库条目数与触发整理的门槛。"
+          warn={Boolean(d && willCompact)}
         />
-        <MetricBadge
-          icon={Sparkles}
+        <StatCard
           label="升格周期"
           value={
             d ? (d.config.promoteMs > 0 ? hr(d.config.promoteMs) : "关") : "—"
           }
+          hint="正式文档升格评审的周期;「关」表示停用。"
           loading={loading}
         />
-        <MetricBadge
-          icon={FileUp}
+        <StatCard
           label="待升格候选"
           loading={loading}
           value={d ? `${approvedCount}/${d.config.promoteMinEntries}` : "—"}
-          tone={willPromote ? "primary" : undefined}
+          hint="已入库条目数与升格评审门槛。"
+          warn={Boolean(d && willPromote)}
         />
-      </MetricBadgeRow>
+      </StatGrid>
 
       <SectionCard
         title="每群反思进度"

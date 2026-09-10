@@ -104,7 +104,7 @@ export default function PluginsPage() {
     <PageShell>
       <PageHeader
         title="插件"
-        description="安装、更新与启停插件，操作后自动生效。"
+        description="安装、更新与启停插件，操作后自动生效；已装插件可启停、更新或卸载。"
       />
 
       {err && <ErrorState description={err} onRetry={load} />}
@@ -174,10 +174,7 @@ export default function PluginsPage() {
         </FieldGroup>
       </SectionCard>
 
-      <SectionCard
-        title="已装插件"
-        description="已安装的插件，可启停、更新或卸载。"
-      >
+      <div className="flex flex-col gap-3">
         {plugins.length === 0 ? (
           <EmptyState
             icon={Puzzle}
@@ -237,7 +234,7 @@ export default function PluginsPage() {
             </TableBody>
           </TableShell>
         )}
-      </SectionCard>
+      </div>
     </PageShell>
   )
 }
