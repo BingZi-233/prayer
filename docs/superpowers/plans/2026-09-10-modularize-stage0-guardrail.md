@@ -126,7 +126,16 @@ import { KB_SEARCH_SQL } from "../kb-sql.ts"
 
 - [ ] **Step 7: 从 lib/tools/kb.ts 删除常量**
 
-删掉 `lib/tools/kb.ts` 中 L17-32 整段（`/** 知识检索的向量近邻 SQL(唯一事实源)。…*/` 注释块 + `export const KB_SEARCH_SQL = …` 语句）。保留文件开头的 strip-only 说明注释、`KB_TOOL_DESC`、`runKbSearch` 及其余内容不变。
+删掉 `lib/tools/kb.ts` 中 L17-32 整段（`/** 知识检索的向量近邻 SQL(唯一事实源)。…*/` 注释块 + `export const KB_SEARCH_SQL = …` 语句）。保留 `KB_TOOL_DESC`、`runKbSearch` 及其余内容不变。
+
+那段待删块里有一句「本文件只允许 import type,保持可被子进程安全加载」——它约束的是 **`kb.ts` 自身**（该文件也被 cs 子进程按路径动态 import），不是那个常量。删块会把它一起删掉，所以要在文件顶部补回：
+
+```ts
+// 注意:cs 子进程(plugins/cs/scripts/cs-mcp.ts)以 Node strip-only 模式按路径
+// 直接加载本文件。本文件只允许 import type——一旦对 repo.ts 改成值 import
+// (该文件用了参数属性),子进程加载即失败。
+import type { KnowledgeRepository } from "../db/repositories/knowledge.ts"
+```
 
 - [ ] **Step 8: 确认没有残留引用**
 
