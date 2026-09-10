@@ -149,9 +149,11 @@ channels   knowledge
   `config/chats`、`channels/types` 各 1 处，搬迁后全部落在 `core` 内，无需破例。
 
 **规则由测试执行，不靠自觉。** 新增 `tests/architecture/layering.test.ts`：扫描 `lib/**`
-与 `app/**`，解析 import specifier，按路径映射表判定所在层，断言不存在逆向依赖，违规时
-报出「文件 → 目标」与两侧层级。不引入新依赖，与仓库既有 `tests/ui/*-contracts.test.ts`
-的结构契约测试风格一致。
+的每个文件，解析 import specifier，按映射表判定所在层，断言不存在逆向依赖，违规时报出
+「文件 → 目标」。`app/` 无层约束（可依赖全部），无需扫描；受约束的是 `components/`，
+由一条独立用例断言它只依赖 `core`。测试还需包含扫描器自检用例——用合成样例断言它确实
+能识别逆向依赖，否则扫描器一旦失灵，护栏会静默空过。不引入新依赖，与仓库既有
+`tests/ui/*-contracts.test.ts` 的结构契约测试风格一致。
 
 **先清永久违规，再以空基线落地。** 按目标结构扫描全部 `lib/**` 的跨层依赖后，实际的
 永久违规（即阶段全做完后依然存在）只有两条，其余都是阶段间的临时边。因为永久违规数量
@@ -187,11 +189,16 @@ lib/agent/reflection-promoter.ts:7   knowledge → conversation  ./agent
 
 这三条正是「反思链路反向依赖 Agent 类」的实例化。阶段 3 把 `reflection-*` 的引用改指
 `model/` 之后，`knowledge → model` 合法，边消失。它们的 `removedBy` 是 `"3"`。
+**除此之外不应再有容忍条目**——容忍集合从阶段 0 的 3 条单调递减到阶段 4 的 0 条。
 
-另有一组只在**搬迁中途**出现的边，须预先登记：阶段 2a 把 `db/ config/` 移入 `core/` 时，
-`channels/types.ts` 还没动（它在 2b），于是 `lib/config/{chats,env,migrate,schema}.ts` 对它的
-4 处引用暂时变成 `core → channels`。这 4 条 `removedBy` 是 `"2b"`。2b 一完成，`core/chat/`
-就位，边自动消失。
+**映射表按文件的「目标层」判定，不按磁盘当前物理位置。** 这一点很关键：`channels/types.ts`
+虽仍在 `lib/channels/` 下，映射表就把它当 `core`，因为它最终要去 `core/chat/`。于是
+`lib/config/*` 对它的 4 处引用在任何阶段都不算逆向——即便阶段 2a 已把 `config/` 移入
+`core/` 而 2b 还没搬 `types.ts`。中途的物理不一致不是违规，只有「最终归属」错位才是。
+这样容忍集合里就不会出现随阶段生灭的噪声条目，它是一条单调递减的曲线。
+
+同理，映射表按前缀匹配，搬迁完成时把旧前缀移入 `RETIRED` 列表，并断言**没有任何文件命中
+已退役前缀**——这条断言免费换来「旧路径真的删干净了」的检查，比人肉 grep 可靠。
 
 ## 迁移阶段
 
