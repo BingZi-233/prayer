@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** 参考 `BingZi-233/check-cx-admin`，完成 prayer 管理端全部页面的统一视觉、布局和响应式改造。
+**Goal:** 统一 prayer 管理端全部页面的视觉、布局与响应式形态，向既有管理台范式看齐。
 
 **Architecture:** 保留现有 Next.js 路由、服务端数据读取、客户端轮询和业务交互；以共享后台壳层和页面状态组件承载统一设计令牌，再按监控、运营、知识、系统四组逐页迁移。页面只消费 semantic shadcn tokens 和既有 UI primitives，不新增重复的页面级视觉系统。
 
