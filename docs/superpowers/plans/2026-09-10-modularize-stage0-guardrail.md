@@ -267,6 +267,14 @@ git commit -m "refactor(onebot): members-fetch 改为注入 fetchFn
 **Files:**
 - Create: `tests/architecture/layering.test.ts`
 
+> **实施后记（勿照抄下方 Step 1 的代码，以仓库实际文件为准）：** 交付时对下方代码做了四处补强，均由代码质量审查发现：
+> 1. `IMPORT_RE` 增加 `require` 分支——仓库确有合法的延迟 require（`lib/name-cache.ts:312`），原正则对它全盲。
+> 2. 从 `scanLib` 抽出 `collectViolations(fromRel, source)`，让自检用例对合成源码走**完整扫描管线**。原自检只测 rank 纯函数，而容忍集合在阶段 4 清空后，正则一旦坏掉就是 `[] === []` 静默空过。
+> 3. 因上一条，`isViolation` 变成零引用死代码并删除。**不要把它加回来**：它用 `layerOf` 判目标层，对 `@/lib/db` 这类裸目录 specifier 会返回 `null` 抛异常，而目标层必须用 `layerAt`（兼容 `lib/x/index.ts`）。
+> 4. 新增用例「关键路径的分类符合目标层」，钉住「按目标层而非物理位置判定」这条最易被误改的语义。
+>
+> 实际交付为 **7 个用例**（原 6 条中自检被替换不增不减，再加新增 1 条）。
+
 - [ ] **Step 1: 新建测试文件**
 
 ```ts
