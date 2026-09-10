@@ -34,7 +34,8 @@ channels   knowledge    # 通道实现 / 知识库与反思(同级,互不依赖)
 
 - 新增消息通道写 `lib/channels/<通道>/`；新增 Agent 能力写 `lib/conversation/`；
   新增知识库能力写 `lib/knowledge/`。
-- `app/` 可依赖全部；`components/` 只可依赖 `core`。
+- 后台运营与商业化页面写 `app/admin/`；鉴权、品牌、存储等横切能力进 `core/`。
+- `app/` 可依赖全部；`components/` 只可依赖 `core` 与 `components/` 自身。
 - 规则由 `tests/architecture/layering.test.ts` 执行，不靠自觉。跨层依赖会直接让测试失败。
 
 ### 搬迁中：待改写条目
@@ -44,10 +45,13 @@ channels   knowledge    # 通道实现 / 知识库与反思(同级,互不依赖)
 
 | 条目 | 作废阶段 |
 | --- | --- |
-| 本节下方「模块边界」中提到 `lib/config/schema.ts`、`lib/config/{env,migrate,chats,patch}.ts`、`lib/config-store.ts`、`lib/db/repositories/`、`lib/db/migrations/` 的位置 | 2a |
-| 「模块边界」中涉及 `channels/` 承载类型与词汇的表述 | 2b |
-| `lib/tools/`、`lib/plugins/` 两个目录的存在 | 3 |
-| `lib/agent/` 目录的存在（拆为 `conversation/` 与 `knowledge/`） | 4 |
+| `CLAUDE.md` 的「仓库结构」一节里的 `onebot/` 项 | 1 |
+| 本节下方「模块边界」中 `lib/config/schema.ts`、`lib/config/{env,migrate,chats,patch}.ts`、`lib/config-store.ts`、`lib/db/repositories/`、`lib/db/migrations/` 的位置 | 2a |
+| `docs/data-access.md` 里「以上路径相对于 `lib/db/`」与 `lib/db/index.ts` 的引用；`docs/database-operations.md` 里 `lib/db/migrations/registry.ts` 与 `lib/db/index.ts` 的引用 | 2a |
+| `CLAUDE.md` 的「仓库结构」一节里的 `db/` 项，与「命令」一节举例的 `tests/lib/agent/session.test.ts` 路径 | 2a |
+| 本节与 `CLAUDE.md` 中提到 `lib/channels/types.ts`、`lib/channels/ids.ts`、`lib/channels/enabled-chats.ts` 的位置（它们迁往 `lib/core/chat/`） | 2b |
+| `CLAUDE.md` 的「仓库结构」一节里的 `tools/`、`plugins/` 项 | 3 |
+| `CLAUDE.md` 的「仓库结构」一节里的 `agent/` 项（拆为 `conversation/` 与 `knowledge/`） | 4 |
 
 ## 模块边界
 
@@ -59,8 +63,9 @@ channels   knowledge    # 通道实现 / 知识库与反思(同级,互不依赖)
   从 schema 推导。页面使用类型导入，避免把数据库和运行时依赖带入浏览器。
 - `lib/config/env.ts` 将环境变量转换为种子，`migrate.ts` 处理旧格式兼容，
   `chats.ts` 维护通道引用规范化，`patch.ts` 定义接口更新语义。
-- `lib/config-store.ts` 负责配置读写及存量导入兼容，依赖 `lib/db/repositories/config.ts` 与
-  `lib/channels/enabled-chats.ts`。新增纯业务规则应放在专门模块，便于脱离 Next.js 与数据库测试。
+- `lib/config-store.ts` 负责配置读写及存量导入兼容，依赖 `lib/config/` 下的各模块、
+  `lib/db/repositories/config.ts`，以及 `lib/channels/enabled-chats.ts`。新增纯业务规则应放在
+  专门模块，便于脱离 Next.js 与数据库测试。
 - `lib/db/repositories/` 按领域维护 SQL，`Repo` 保留兼容转发，各领域共享连接与事务。
   类型、事务边界和扩展方式见 [数据访问层](data-access.md)。
 - `lib/db/migrations/` 集中注册并按版本执行结构升级；发布前检查、备份与恢复流程见
