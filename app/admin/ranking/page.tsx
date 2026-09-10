@@ -9,13 +9,13 @@ import { MetricBadge, MetricBadgeRow } from "@/components/admin/stat"
 import { DataState } from "@/components/admin/data-state"
 import { usePolling } from "@/components/admin/use-polling"
 import {
-  Table,
   TableBody,
   TableCell,
   TableHead,
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { TableShell } from "@/components/admin/table-shell"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -110,7 +110,7 @@ export default function RankingPage() {
           emptyDescription="用户提问经归类后会出现在这里(随运行逐步积累)。"
           skeleton={<Skeleton className="h-60 w-full" />}
         >
-          <Table>
+          <TableShell minWidth="min-w-[560px]">
             <TableHeader>
               <TableRow>
                 <TableHead className="w-12">#</TableHead>
@@ -164,7 +164,7 @@ export default function RankingPage() {
                 </TableRow>
               ))}
             </TableBody>
-          </Table>
+          </TableShell>
         </DataState>
       </SectionCard>
     </PageShell>

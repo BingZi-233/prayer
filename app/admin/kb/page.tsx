@@ -34,6 +34,12 @@ import {
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Input } from "@/components/ui/input"
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupButton,
+  InputGroupInput,
+} from "@/components/ui/input-group"
 import { Spinner } from "@/components/ui/spinner"
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -722,25 +728,28 @@ export default function KbPage() {
             className="flex min-h-0 min-w-0 flex-col overflow-hidden"
             contentClassName="flex min-h-0 min-w-0 flex-1 flex-col gap-2"
           >
-            <div className="relative shrink-0">
-              <Search className="pointer-events-none absolute top-1/2 left-2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-              <Input
+            <InputGroup className="shrink-0 bg-background">
+              <InputGroupAddon>
+                <Search />
+              </InputGroupAddon>
+              <InputGroupInput
                 placeholder="搜索路径…"
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                className="h-8 pr-8 pl-8 text-xs"
+                aria-label="搜索路径"
               />
               {query && (
-                <button
-                  type="button"
-                  className="absolute top-1/2 right-2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                  onClick={() => setQuery("")}
-                  aria-label="清除"
-                >
-                  <X className="size-3.5" />
-                </button>
+                <InputGroupAddon align="inline-end">
+                  <InputGroupButton
+                    size="icon-xs"
+                    onClick={() => setQuery("")}
+                    aria-label="清除"
+                  >
+                    <X />
+                  </InputGroupButton>
+                </InputGroupAddon>
               )}
-            </div>
+            </InputGroup>
 
             <DataState
               loading={files === null}

@@ -21,13 +21,13 @@ import { Spinner } from "@/components/ui/spinner"
 import { VirtualList } from "@/components/admin/virtual-list"
 import { Skeleton } from "@/components/ui/skeleton"
 import {
-  Table,
   TableBody,
   TableCell,
   TableHead,
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { TableShell } from "@/components/admin/table-shell"
 import {
   Dialog,
   DialogClose,
@@ -606,7 +606,7 @@ export default function ReflectionPage() {
           emptyDescription="生效群出现人工答复后，进度会显示在这里。"
           skeleton={<Skeleton className="h-40 w-full" />}
         >
-          <Table>
+          <TableShell minWidth="min-w-[560px]">
             <TableHeader>
               <TableRow>
                 <TableHead>群</TableHead>
@@ -641,7 +641,7 @@ export default function ReflectionPage() {
                 </TableRow>
               ))}
             </TableBody>
-          </Table>
+          </TableShell>
         </DataState>
       </SectionCard>
 
