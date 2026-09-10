@@ -71,24 +71,19 @@ const PREFIX_RULES: Array<[string, Layer]> = [
 ]
 
 /**
- * 已退役的前缀。阶段 N 完成搬迁后,把该阶段的旧前缀填进来,
- * 「退役前缀已清空」用例会断言没有任何文件命中它。
+ * 已退役的**目录**前缀。搬迁完成后把该阶段的旧目录前缀填进来,
+ * 「退役前缀没有任何文件命中」用例会断言没有文件命中它。
+ *
+ * 为什么只登记目录前缀:退休的精确文件规则不需要登记——
+ * 「每条精确文件规则都命中真实存在的文件」断言能抓住忘记删除的死规则,
+ * 而「lib 下每个文件都归属于某一层」能抓住旧路径上复活的文件。
+ * 目录前缀则多扛一个场景:死目录规则未删时,它会静默地把旧路径下的
+ * 新文件归成错误的层,那两条断言都盖不住。
  */
 const RETIRED_PREFIXES: string[] = [
   "lib/onebot/",
   "lib/db/",
   "lib/config/",
-  "lib/bus.ts",
-  "lib/logger.ts",
-  "lib/log-context.ts",
-  "lib/app-context.ts",
-  "lib/config-store.ts",
-  "lib/auth.ts",
-  "lib/settings-writer.ts",
-  "lib/concurrency.ts",
-  "lib/utils.ts",
-  "lib/brand.ts",
-  "lib/api.ts",
 ]
 
 /**
