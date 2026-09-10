@@ -133,9 +133,9 @@ grep -rn "lib/onebot" --include='*.ts' --include='*.tsx' app lib components test
 ls lib/onebot tests/lib/onebot
 ```
 
-Expected: grep **无输出**；两个 `ls` 都报 `No such file or directory`。
+Expected: grep 只剩 `tests/architecture/layering.test.ts` 的两处（第 79 行的前缀映射与第 232 行的断言），那是 **Task 2 的范围**，本任务不动；`app/`、`lib/`、`components/`、`plugins/`、`scripts/` 下应零命中。两个 `ls` 都报 `No such file or directory`。
 
-**注意**：`grep "onebot/"` 会有输出，那是 `/api/onebot/...` 这类 HTTP 路径，正常。要 grep 的是带 `lib/` 前缀的目录引用。
+**注意**：`grep "onebot/"`（不带 `lib/`）会有大量输出，那是 `/api/onebot/...` 这类 HTTP 路径，正常，不要改。要 grep 的是带 `lib/` 前缀的目录引用。
 
 - [ ] **Step 9: 跑测试**
 

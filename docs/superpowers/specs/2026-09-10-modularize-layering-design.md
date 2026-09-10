@@ -336,6 +336,10 @@ main 构建。这个成本是拆细的代价，接受。
 - 不处理认证模型与 Cloud 多租户架构（沿用 phase 1 的推迟决定）。
 - 不删不建 `lib/channels/discord/`。它目前只是 README 占位（`factory.ts:62` 注明二期），
   随 `channels/` 保留原位。
+- **不改错误事件的 `scope` 标签。** `lib/channels/qq/client.ts` 里有一处
+  `scope: "onebot.enrich"`，它会经 `lib/logger.ts` 格式化成 `[onebot.enrich]` 出现在日志里，
+  属**可观察输出**，改名就是行为变更。按通道前缀命名它该是 `qq.enrich`（TG 侧对应值是
+  `tg.enrich`），但那是独立的行为变更，不属于任何一次「纯搬迁」，另行处理。
 
 ## 验收标准
 
