@@ -25,10 +25,10 @@
 - Modify: `components/app-sidebar.tsx`, `components/admin/page-header.tsx`, `components/admin/page-shell.tsx`, `components/admin/section-card.tsx`
 - Test: existing UI/admin tests discovered under `tests/` and `__tests__/`
 
-- [ ] Review the current diff and preserve unrelated user changes.
-- [ ] Normalize global surface tokens, typography, focus treatment, inset shell spacing, header alignment, sidebar groups and mobile collapse using existing Base/Mira primitives.
-- [ ] Run `pnpm typecheck` and the affected tests; fix only regressions caused by the shell migration.
-- [ ] Commit only the shared-shell files and their tests with `feat(ui): establish admin workspace shell` after verification.
+- [x] Review the current diff and preserve unrelated user changes.
+- [x] Normalize global surface tokens, typography, focus treatment, inset shell spacing, header alignment, sidebar groups and mobile collapse using existing Base/Mira primitives.
+- [x] Run `pnpm typecheck` and the affected tests; fix only regressions caused by the shell migration.
+- [x] Commit only the shared-shell files and their tests with `feat(ui): establish admin workspace shell` after verification.
 
 ### Task 2: Refresh login and monitoring pages
 
@@ -37,10 +37,10 @@
 - Modify: `components/admin/stat.tsx`, `components/admin/data-state.tsx` when needed for these pages
 - Test: existing admin/login tests; add focused tests beside current test conventions for state labels and empty/error rendering
 
-- [ ] Write focused failing tests for the changed render contracts before implementation.
-- [ ] Recompose login, runtime status and logs with shared header/card/table/status patterns; keep token submission and restart behavior unchanged.
-- [ ] Verify the focused tests, then `pnpm typecheck`.
-- [ ] Commit as `feat(ui): redesign login and monitoring pages`.
+- [x] Write focused failing tests for the changed render contracts before implementation.
+- [x] Recompose login, runtime status and logs with shared header/card/table/status patterns; keep token submission and restart behavior unchanged.
+- [x] Verify the focused tests, then `pnpm typecheck`.
+- [x] Commit as `feat(ui): redesign login and monitoring pages`.
 
 ### Task 3: Refresh customer-operations pages
 
@@ -49,10 +49,10 @@
 - Modify: `components/admin/master-detail.tsx`, `components/admin/item-card.tsx` when needed
 - Test: existing sessions/handoff/proactive tests; add focused tests for mobile master-detail visibility and action states
 
-- [ ] Write and run failing tests for the desired list/detail and action-state contracts.
-- [ ] Migrate the three pages to the shared workbench layout, preserving live polling, selection, handoff and mutation semantics.
-- [ ] Verify focused tests and `pnpm typecheck`.
-- [ ] Commit as `feat(ui): redesign operations workbench`.
+- [x] Write and run failing tests for the desired list/detail and action-state contracts.
+- [x] Migrate the three pages to the shared workbench layout, preserving live polling, selection, handoff and mutation semantics.
+- [x] Verify focused tests and `pnpm typecheck`.
+- [x] Commit as `feat(ui): redesign operations workbench`.
 
 ### Task 4: Refresh knowledge pages
 
@@ -61,10 +61,10 @@
 - Modify: relevant admin shared components only when a reusable state/layout defect is found
 - Test: existing knowledge/reflection/ranking tests; add focused tests for table/empty/error state contracts
 
-- [ ] Add failing tests for the page-level states and table grouping that change.
-- [ ] Apply the shared content-page layout, semantic badges, table overflow boundaries and consistent empty/error/loading treatment.
-- [ ] Verify focused tests and `pnpm typecheck`.
-- [ ] Commit as `feat(ui): redesign knowledge pages`.
+- [x] Add failing tests for the page-level states and table grouping that change.
+- [x] Apply the shared content-page layout, semantic badges, table overflow boundaries and consistent empty/error/loading treatment.
+- [x] Verify focused tests and `pnpm typecheck`.
+- [x] Commit as `feat(ui): redesign knowledge pages`.
 
 ### Task 5: Refresh system pages
 
@@ -73,10 +73,10 @@
 - Modify: `components/admin/config/*.tsx` only where required to align shared form composition
 - Test: existing configuration/groups/capabilities/plugins tests; add focused tests for tab/form/error contracts
 
-- [ ] Add failing tests for changed tab, form, status and empty-state contracts.
-- [ ] Migrate system pages to consistent settings sections, master-detail/list surfaces and semantic status treatments without changing save/reload behavior.
-- [ ] Verify focused tests and `pnpm typecheck`.
-- [ ] Commit as `feat(ui): redesign system pages`.
+- [x] Add failing tests for changed tab, form, status and empty-state contracts.
+- [x] Migrate system pages to consistent settings sections, master-detail/list surfaces and semantic status treatments without changing save/reload behavior.
+- [x] Verify focused tests and `pnpm typecheck`.
+- [x] Commit as `feat(ui): redesign system pages`.
 
 ### Task 6: Cross-page responsive and runtime verification
 
@@ -84,8 +84,8 @@
 - Modify: any page or shared component exposed by verification, limited to concrete defects
 - Test: browser checks for every `/admin*` route and `/login`
 
-- [ ] Start the development server using the project script and enumerate all routes from the current app tree.
-- [ ] At 320px, 390px, 768px, 1024px and 1440px verify navigation, content width, table scroll boundaries, dialogs/sheets, dark mode and no unintended horizontal overflow.
-- [ ] Run `pnpm check`, `NEXT_DIST_DIR=.next-verify pnpm build`, and `git diff --check`.
-- [ ] Review the complete diff, explicitly list preserved unrelated files, and commit the final verification fixes as `fix(ui): close responsive admin gaps`.
+- [x] Start the development server using the project script and enumerate all routes from the current app tree.
+- [x] At 320px, 390px, 768px, 1024px and 1440px verify navigation, content width, table scroll boundaries, dialogs/sheets, dark mode and no unintended horizontal overflow.
+- [x] Run `pnpm check`, `NEXT_DIST_DIR=.next-verify pnpm build`, and `git diff --check`.
+- [x] Review the complete diff, explicitly list preserved unrelated files, and commit the final verification fixes as `fix(ui): close responsive admin gaps`.
 
