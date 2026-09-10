@@ -4,7 +4,7 @@ import { useState } from "react"
 import { TrendingUp, ShieldCheck, ShieldAlert } from "lucide-react"
 import { PageShell } from "@/components/admin/page-shell"
 import { PageHeader } from "@/components/admin/page-header"
-import { StatCard, StatGrid } from "@/components/admin/stat"
+import { MetricRows } from "@/components/admin/stat"
 import { DataState } from "@/components/admin/data-state"
 import { usePolling } from "@/components/admin/use-polling"
 import {
@@ -72,27 +72,26 @@ export default function RankingPage() {
         }
       />
 
-      <StatGrid className="xl:grid-cols-3">
-        <StatCard
-          label="主题数"
-          value={d ? d.totals.topics : "—"}
-          hint="窗口内提问归并后的主题数量。"
-          loading={loading}
-        />
-        <StatCard
-          label="窗口内提问"
-          value={d ? d.totals.questions : "—"}
-          hint="归并前的原始提问总数。"
-          loading={loading}
-        />
-        <StatCard
-          label="疑似盲区"
-          value={d ? d.totals.gaps : "—"}
-          hint="知识库未覆盖的高频问题,优先补文档。"
-          warn={Boolean(d && d.totals.gaps > 0)}
-          loading={loading}
-        />
-      </StatGrid>
+      <MetricRows
+        items={[
+          {
+            label: "主题数",
+            value: d ? d.totals.topics : "—",
+            hint: "窗口内提问归并后的主题数量。",
+          },
+          {
+            label: "窗口内提问",
+            value: d ? d.totals.questions : "—",
+            hint: "归并前的原始提问总数。",
+          },
+          {
+            label: "疑似盲区",
+            value: d ? d.totals.gaps : "—",
+            hint: "知识库未覆盖的高频问题,优先补文档。",
+            warn: Boolean(d && d.totals.gaps > 0),
+          },
+        ]}
+      />
 
       <DataState
         loading={loading}

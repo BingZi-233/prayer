@@ -42,7 +42,7 @@ import { RowActions } from "@/components/admin/row-actions"
 import { RelativeTime } from "@/components/relative-time"
 import { PageShell } from "@/components/admin/page-shell"
 import { PageHeader } from "@/components/admin/page-header"
-import { StatCard, StatGrid } from "@/components/admin/stat"
+import { MetricRows } from "@/components/admin/stat"
 import { DataState } from "@/components/admin/data-state"
 import { usePolling } from "@/components/admin/use-polling"
 import { useGroupNames } from "@/lib/group-name"
@@ -294,28 +294,30 @@ export default function GroupsPage() {
       />
 
       {globals && (
-        <StatGrid>
-          <StatCard
-            label="全局主动补位"
-            value={globals.proactiveEnabled ? "开" : "关"}
-            hint="可在配置页修改默认；单群可在此覆盖。"
-          />
-          <StatCard
-            label="全局静默阈值"
-            value={min(globals.proactiveSilenceMs)}
-            hint="无人应答超过此时长才补位。"
-          />
-          <StatCard
-            label="转人工通知"
-            value="开"
-            hint="转人工时向管理面发消息提醒。"
-          />
-          <StatCard
-            label="独立策略"
-            value={overrideCount}
-            hint="覆盖了全局默认的会话数量。"
-          />
-        </StatGrid>
+        <MetricRows
+          items={[
+            {
+              label: "全局主动补位",
+              value: globals.proactiveEnabled ? "开" : "关",
+              hint: "可在配置页修改默认;单群可在此覆盖。",
+            },
+            {
+              label: "全局静默阈值",
+              value: min(globals.proactiveSilenceMs),
+              hint: "无人应答超过此时长才补位。",
+            },
+            {
+              label: "转人工通知",
+              value: "开",
+              hint: "转人工时向管理面发消息提醒。",
+            },
+            {
+              label: "独立策略",
+              value: overrideCount,
+              hint: "覆盖了全局默认的会话数量。",
+            },
+          ]}
+        />
       )}
 
       <DataState
@@ -344,25 +346,25 @@ export default function GroupsPage() {
             <TableBody>
               {rows.map((r) => (
                 <TableRow key={r.policyKey}>
-                  <TableCell className="font-medium">
-                    <div className="flex flex-col gap-0.5">
-                      <div className="flex items-center gap-1.5">
-                        <Badge variant="outline" className="px-1.5 text-[10px]">
-                          {channelLabel(r.channel)}
+                  <TableCell className="max-w-[320px] font-medium">
+                    <div className="flex items-center gap-1.5">
+                      <Badge variant="outline" className="px-1.5 text-[10px]">
+                        {channelLabel(r.channel)}
+                      </Badge>
+                      <span className="truncate">{rowLabel(r, name)}</span>
+                      {rowLabel(r, name) !== r.chatId && (
+                        <span className="truncate font-mono text-[11px] text-muted-foreground">
+                          {r.chatId}
+                        </span>
+                      )}
+                      {r.isAdmin && (
+                        <Badge
+                          variant="secondary"
+                          className="px-1.5 text-[10px]"
+                        >
+                          管理群
                         </Badge>
-                        <span>{rowLabel(r, name)}</span>
-                        {r.isAdmin && (
-                          <Badge
-                            variant="secondary"
-                            className="px-1.5 text-[10px]"
-                          >
-                            管理群
-                          </Badge>
-                        )}
-                      </div>
-                      <span className="font-mono text-xs text-muted-foreground">
-                        {r.chatId}
-                      </span>
+                      )}
                     </div>
                   </TableCell>
                   <TableCell>

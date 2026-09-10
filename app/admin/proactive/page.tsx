@@ -25,7 +25,7 @@ import { TableShell } from "@/components/admin/table-shell"
 import { RelativeTime } from "@/components/relative-time"
 import { PageShell } from "@/components/admin/page-shell"
 import { PageHeader } from "@/components/admin/page-header"
-import { StatCard, StatGrid } from "@/components/admin/stat"
+import { MetricRows } from "@/components/admin/stat"
 import { SectionCard } from "@/components/admin/section-card"
 import { ItemCard } from "@/components/admin/item-card"
 import { DataState } from "@/components/admin/data-state"
@@ -132,32 +132,30 @@ export default function ProactivePage() {
         }
       />
 
-      <StatGrid>
-        <StatCard
-          label="状态"
-          loading={loading}
-          value={!d ? "—" : d.config.enabled ? "已启用" : "已关闭"}
-          hint="全局开关,可在右上角切换;单群可在生效会话页覆盖。"
-        />
-        <StatCard
-          label="静默阈值"
-          value={d ? min(d.config.silenceMs) : "—"}
-          hint="群内无人应答超过此时长,机器人才会补位。"
-          loading={loading}
-        />
-        <StatCard
-          label="扫描周期"
-          value={d ? min(d.config.scanMs) : "—"}
-          hint="后台扫描未应答消息的间隔。"
-          loading={loading}
-        />
-        <StatCard
-          label="单次上限"
-          value={d ? d.config.maxPerScan : "—"}
-          hint="每轮扫描最多补位的条数,防止刷屏。"
-          loading={loading}
-        />
-      </StatGrid>
+      <MetricRows
+        items={[
+          {
+            label: "状态",
+            value: !d ? "—" : d.config.enabled ? "已启用" : "已关闭",
+            hint: "全局开关,可在右上角切换;单群可在生效会话页覆盖。",
+          },
+          {
+            label: "静默阈值",
+            value: d ? min(d.config.silenceMs) : "—",
+            hint: "群内无人应答超过此时长,机器人才会补位。",
+          },
+          {
+            label: "扫描周期",
+            value: d ? min(d.config.scanMs) : "—",
+            hint: "后台扫描未应答消息的间隔。",
+          },
+          {
+            label: "单次上限",
+            value: d ? d.config.maxPerScan : "—",
+            hint: "每轮扫描最多补位的条数,防止刷屏。",
+          },
+        ]}
+      />
 
       <SectionCard
         title="每群进度"

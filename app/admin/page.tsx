@@ -31,7 +31,7 @@ import { PageHeader } from "@/components/admin/page-header"
 import { SectionCard } from "@/components/admin/section-card"
 import { TableShell } from "@/components/admin/table-shell"
 import { Notice } from "@/components/admin/notice"
-import { StatCard, StatGrid } from "@/components/admin/stat"
+import { MetricRows, StatCard, StatGrid } from "@/components/admin/stat"
 import { DataState, EmptyState } from "@/components/admin/data-state"
 import { usePolling } from "@/components/admin/use-polling"
 import {
@@ -84,14 +84,14 @@ const kfmt = (n: number) =>
       ? `${(n / 1000).toFixed(1)}k`
       : String(Math.round(n))
 
-/** 单元格:上为本次运行累计,下为单次调用均值(防把进程累计误读成单次量) */
+/** 单元格:累计值 + 同行 muted 的单次均值(防把进程累计误读成单次量) */
 function TokenCell({ total, count }: { total: number; count: number }) {
   return (
     <>
       {kfmt(total)}
-      <div className="text-xs text-muted-foreground">
+      <span className="ml-1 text-[11px] text-muted-foreground">
         均 {kfmt(total / Math.max(count, 1))}
-      </div>
+      </span>
     </>
   )
 }
@@ -257,30 +257,6 @@ export default function StatusPage() {
           warn={s?.state === "error"}
         />
         <StatCard
-          label="QQ 通道"
-          loading={!s}
-          value={s ? (channelConnected(s, "qq") ? "已连接" : "断开") : "—"}
-          hint="NapCat 正向 WebSocket 连接。"
-          warn={!!s && !channelConnected(s, "qq")}
-        />
-        <StatCard
-          label="TG 通道"
-          loading={!s}
-          value={
-            !s
-              ? "—"
-              : !channelPresent(s, "tg")
-                ? "未配置"
-                : channelConnected(s, "tg")
-                  ? "已连接"
-                  : channelError(s, "tg")
-                    ? "异常"
-                    : "断开"
-          }
-          hint="Telegram 长轮询通道,未配置则不启动。"
-          warn={!!s && channelPresent(s, "tg") && !channelConnected(s, "tg")}
-        />
-        <StatCard
           label="活动会话"
           loading={!s}
           value={s?.sessionCount ?? "—"}
@@ -293,12 +269,6 @@ export default function StatusPage() {
           hint="启用机器人应答的会话数量。"
         />
         <StatCard
-          label="知识条目"
-          loading={!ov}
-          value={ov?.reflectionCount ?? "—"}
-          hint="自动入库的自学习知识。"
-        />
-        <StatCard
           label="自动解决率"
           loading={!ov}
           value={
@@ -306,73 +276,57 @@ export default function StatusPage() {
           }
           hint="自动答 ÷ (自动答 + 主动补位 + 转人工 + 错误)。"
         />
-        <StatCard
-          label="今日成本"
-          loading={!ov}
-          value={
-            m ? (
-              <>
-                ${m.usageCostUsd.toFixed(4)}
-                {m.usageBudgetUsd > 0 && (
-                  <span className="text-sm font-normal text-muted-foreground">
-                    {" "}
-                    / ${m.usageBudgetUsd}
-                  </span>
-                )}
-              </>
-            ) : (
-              "—"
-            )
-          }
-          hint="今日 0 点起累计的模型调用费用。"
-        />
       </StatGrid>
 
-      <SectionCard
-        className="shrink-0"
-        title="今日结果"
-        description="今日 0 点起累计,按业务结果分类。"
-      >
-        {!m ? (
-          <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-            {Array.from({ length: 7 }).map((_, i) => (
-              <Skeleton key={i} className="h-12 w-full" />
-            ))}
-          </div>
-        ) : (
-          <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-            {[
-              { label: "自动答", value: m.auto },
-              { label: "主动补位", value: m.proactive },
-              { label: "转人工", value: m.handoff, warn: m.handoff > 0 },
-              { label: "错误", value: m.error, warn: m.error > 0 },
-              { label: "意图拦截", value: m.blocked },
-              { label: "主动跳过", value: m.proactiveSilent },
-              {
-                label: "标为不当",
-                value: m.proactiveBad,
-                warn: m.proactiveBad > 0,
-              },
-            ].map((row) => (
-              <div
-                key={row.label}
-                className="flex items-center justify-between gap-3 rounded-lg border p-2.5 text-xs"
-              >
-                <span className="text-muted-foreground">{row.label}</span>
-                <span
-                  className={
-                    row.warn
-                      ? "font-medium text-destructive tabular-nums"
-                      : "font-medium tabular-nums"
-                  }
-                >
-                  {row.value}
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
-      </SectionCard>
+      <p className="text-xs text-muted-foreground">通道与今日结果(今日 0 点起累计)</p>
+
+      <MetricRows
+        items={[
+          {
+            label: "QQ 通道",
+            value: s ? (channelConnected(s, "qq") ? "已连接" : "断开") : "—",
+            hint: "NapCat 正向 WebSocket 连接。",
+            warn: !!s && !channelConnected(s, "qq"),
+          },
+          {
+            label: "TG 通道",
+            value: !s
+              ? "—"
+              : !channelPresent(s, "tg")
+                ? "未配置"
+                : channelConnected(s, "tg")
+                  ? "已连接"
+                  : channelError(s, "tg")
+                    ? "异常"
+                    : "断开",
+            hint: "Telegram 长轮询通道,未配置则不启动。",
+            warn: !!s && channelPresent(s, "tg") && !channelConnected(s, "tg"),
+          },
+          {
+            label: "知识条目",
+            value: ov?.reflectionCount ?? "—",
+            hint: "自动入库的自学习知识。",
+          },
+          {
+            label: "今日成本",
+            value: m ? `$${m.usageCostUsd.toFixed(4)}` : "—",
+            hint: m?.usageBudgetUsd
+              ? `预算 $${m.usageBudgetUsd}。`
+              : "今日 0 点起累计的模型调用费用。",
+          },
+          { label: "自动答", value: m?.auto ?? "—" },
+          { label: "主动补位", value: m?.proactive ?? "—" },
+          { label: "转人工", value: m?.handoff ?? "—", warn: (m?.handoff ?? 0) > 0 },
+          { label: "错误", value: m?.error ?? "—", warn: (m?.error ?? 0) > 0 },
+          { label: "意图拦截", value: m?.blocked ?? "—" },
+          { label: "主动跳过", value: m?.proactiveSilent ?? "—" },
+          {
+            label: "标为不当",
+            value: m?.proactiveBad ?? "—",
+            warn: (m?.proactiveBad ?? 0) > 0,
+          },
+        ]}
+      />
 
       <SectionCard
         title="模型用量"
