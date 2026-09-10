@@ -76,7 +76,6 @@ const PREFIX_RULES: Array<[string, Layer]> = [
 
   // channels
   ["lib/channels/", "channels"],
-  ["lib/onebot/", "channels"],
 
   // conversation(其余 agent/* 与两个装配模块)
   ["lib/agent/", "conversation"],
@@ -88,7 +87,7 @@ const PREFIX_RULES: Array<[string, Layer]> = [
  * 已退役的前缀。阶段 N 完成搬迁后,把该阶段的旧前缀填进来,
  * 「退役前缀已清空」用例会断言没有任何文件命中它。
  */
-const RETIRED_PREFIXES: string[] = []
+const RETIRED_PREFIXES: string[] = ["lib/onebot/"]
 
 /**
  * 阶段间容忍的逆向依赖。removedBy 是消掉它的阶段标签。
@@ -102,7 +101,7 @@ const TOLERATED: Array<{ edge: string; removedBy: string }> = [
 ]
 
 /** 当前所处阶段。每阶段 PR 更新此常量。 */
-const CURRENT_STAGE = "0"
+const CURRENT_STAGE = "1"
 const STAGE_ORDER = ["0", "1", "2a", "2b", "3", "4", "5", "6"]
 
 function layerOf(rel: string): Layer | null {
@@ -229,7 +228,7 @@ describe("分层结构契约", () => {
   it("关键路径的分类符合目标层", () => {
     expect(layerOf("lib/config/chats.ts")).toBe("core")
     expect(layerOf("lib/channels/types.ts")).toBe("core") // 目标 core/chat,非 channels
-    expect(layerOf("lib/onebot/members-fetch.ts")).toBe("channels")
+    expect(layerOf("lib/channels/qq/members-fetch.ts")).toBe("channels")
     expect(layerOf("lib/tools/embed.ts")).toBe("model")
     expect(layerOf("lib/tools/kb.ts")).toBe("knowledge")
     expect(layerOf("lib/agent/agent.ts")).toBe("conversation")
