@@ -16,6 +16,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { SectionCard } from "@/components/admin/section-card"
+import { SearchSelect } from "@/components/admin/search-select"
 import { ConfigTabContent } from "./config-tab-content"
 
 import type { ConfigForm } from "./use-config-form"
@@ -81,31 +82,19 @@ export function AdminSettings({
             <Field>
               <FieldLabel htmlFor="adminSurfaceQq">管理群</FieldLabel>
               {groups ? (
-                <Select
-                  items={Object.fromEntries(
-                    adminGroupOptions().map((g) => [
-                      String(g.groupId),
-                      `${g.groupName} (${g.groupId})`,
-                    ])
-                  )}
+                <SearchSelect
+                  id="adminSurfaceQq"
                   value={adminQq ? String(adminQq) : ""}
-                  onValueChange={(v) => {
-                    if (v !== null) setAdminChatId(v)
-                  }}
-                >
-                  <SelectTrigger id="adminSurfaceQq">
-                    <SelectValue placeholder="选择管理群" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectGroup>
-                      {adminGroupOptions().map((g) => (
-                        <SelectItem key={g.groupId} value={String(g.groupId)}>
-                          {g.groupName} ({g.groupId})
-                        </SelectItem>
-                      ))}
-                    </SelectGroup>
-                  </SelectContent>
-                </Select>
+                  onChange={setAdminChatId}
+                  placeholder="选择管理群"
+                  searchPlaceholder="搜索群名 / 群号…"
+                  emptyText="无匹配群"
+                  options={adminGroupOptions().map((g) => ({
+                    value: String(g.groupId),
+                    label: g.groupName,
+                    hint: String(g.groupId),
+                  }))}
+                />
               ) : (
                 <FieldDescription>
                   {groupsLoading
@@ -120,33 +109,23 @@ export function AdminSettings({
             <Field>
               <FieldLabel htmlFor="adminSurfaceTg">管理 Chat ID</FieldLabel>
               {adminTgOptions().length > 0 && (
-                <Select
-                  items={Object.fromEntries(
-                    adminTgOptions().map((id) => [id, id])
-                  )}
+                <SearchSelect
+                  id="adminSurfaceTgSelect"
                   value={
                     cfg.adminSurface.chatId &&
                     adminTgOptions().includes(cfg.adminSurface.chatId)
                       ? cfg.adminSurface.chatId
                       : ""
                   }
-                  onValueChange={(v) => {
-                    if (v !== null) setAdminChatId(v)
-                  }}
-                >
-                  <SelectTrigger id="adminSurfaceTgSelect">
-                    <SelectValue placeholder="从生效 Chat 中选择" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectGroup>
-                      {adminTgOptions().map((id) => (
-                        <SelectItem key={id} value={id}>
-                          {id}
-                        </SelectItem>
-                      ))}
-                    </SelectGroup>
-                  </SelectContent>
-                </Select>
+                  onChange={setAdminChatId}
+                  placeholder="从生效 Chat 中选择"
+                  searchPlaceholder="搜索 Chat ID…"
+                  emptyText="无匹配 Chat"
+                  options={adminTgOptions().map((id) => ({
+                    value: id,
+                    label: id,
+                  }))}
+                />
               )}
               <Input
                 id="adminSurfaceTg"

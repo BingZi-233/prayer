@@ -69,7 +69,7 @@ function SelectContent({
   sideOffset = 0,
   align = "center",
   alignOffset = 0,
-  collisionPadding = 0,
+  collisionPadding = 8,
   ...props
 }: SelectContentProps) {
   return (
