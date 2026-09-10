@@ -552,6 +552,13 @@ git commit -m "test(arch): 加分层结构契约测试
 - Modify: `docs/development.md`
 - Modify: `CLAUDE.md`
 
+> **实施后记（勿照抄下方 Step 1/2 的文本，以仓库实际文件为准）：** 交付时经代码质量审查改了五处，均属下方文本本身的缺陷：
+> 1. **待改写表必须覆盖跨文件条目。** 下方表只列了 `development.md` 自身，照它工作会漏改 `docs/data-access.md`、`docs/database-operations.md` 与 `CLAUDE.md` 的仓库结构。实际交付为按阶段排序的 7 行表，逐行点明文件。
+> 2. **不要写字面行号**（如 `:21`、`:82`）——行号会腐烂，用章节名与文件名。
+> 3. 下方 Step 2 的 config-store 句子只列两个依赖，而该文件实际 import 六个模块，构成「虚假完整」。实际改为不排他的：「依赖 `lib/config/` 下的各模块、`lib/db/repositories/config.ts`，以及 `lib/channels/enabled-chats.ts`」。
+> 4. `components/` 那句要写「只可依赖 `core` 与 `components/` 自身」，否则会被读成组件之间也不许互引。
+> 5. 四条未来路线里「后台运营与商业化」原本没有落点，需补一条：「后台运营与商业化页面写 `app/admin/`；鉴权、品牌、存储等横切能力进 `core/`。」
+
 - [ ] **Step 1: 在 docs/development.md 的「模块边界」章节前插入分层规则**
 
 在 `## 模块边界`（约 L19）之前插入：

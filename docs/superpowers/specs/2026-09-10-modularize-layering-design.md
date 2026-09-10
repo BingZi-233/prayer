@@ -241,10 +241,10 @@ main 构建。这个成本是拆细的代价，接受。
 | --- | --- |
 | 0 | `docs/development.md` 增补分层规则；把阶段 1–4 将作废的条目**逐条列出并标注**「由阶段 N 改写」；`CLAUDE.md` 的 Git 约定增补 `refactor/*` 前缀 |
 | 1 | `CLAUDE.md:39` 仓库结构中的 `onebot/` 一项（该目录消失） |
-| 2a | `docs/development.md:17-32` 中 `lib/config/schema.ts`、`lib/config/{env,migrate,chats,patch}.ts`、`lib/config-store.ts`、`lib/db/repositories/`、`lib/db/migrations/` 五条路径；`docs/data-access.md:21`「以上路径相对于 `lib/db/`」与 `:82` 的 `lib/db/index.ts`；`docs/database-operations.md:4` 的 `lib/db/migrations/registry.ts` 与 `lib/db/index.ts`；`CLAUDE.md:39` 的 `db/` 路径与 `:13` 举例的 `tests/lib/agent/session.test.ts` |
-| 2b | `CLAUDE.md:39` 与 `docs/development.md` 中涉及 `channels/` 承载「类型与词汇」的表述 |
+| 2a | `docs/development.md:17-32` 中 `lib/config/schema.ts`、`lib/config/{env,migrate,chats,patch}.ts`、`lib/config-store.ts`、`lib/db/repositories/`、`lib/db/migrations/` 五条路径；`docs/data-access.md:21`「以上路径相对于 `lib/db/`」与 `:82` 的 `lib/db/index.ts`；`docs/database-operations.md:4` 的 `lib/db/migrations/registry.ts` 与 `lib/db/index.ts`；`CLAUDE.md:39` 的 `db/` 路径 |
+| 2b | `docs/development.md` 的「模块边界」中 `lib/config-store.ts` 条目引用的 `lib/channels/enabled-chats.ts`（迁往 `lib/core/chat/`）。注意 `channels/types.ts`、`channels/ids.ts` 目前在文档中**没有任何引用**，2b 只需搬文件、无需改文档 |
 | 3 | `CLAUDE.md:39` 的 `tools/`、`plugins/` 两项（两个目录消失） |
-| 4 | `CLAUDE.md:39` 的 `agent/` 一项（拆为 `conversation/` 与 `knowledge/`） |
+| 4 | `CLAUDE.md:39` 的 `agent/` 一项（拆为 `conversation/` 与 `knowledge/`）；`CLAUDE.md:13` 举例的 `tests/lib/agent/session.test.ts`（该测试镜像 `lib/agent/session.ts`，随 `agent/` 一起迁） |
 
 `docs/development.md:27` 现有的一句「`lib/config-store.ts` …… 只依赖存储的两个键值操作」
 在本设计取证时已被证伪（它运行时 import `channels/enabled-chats`），这句要连同路径一起
