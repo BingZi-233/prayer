@@ -1,7 +1,7 @@
 # 数据库迁移与备份
 
 项目使用 SQLite `user_version` 管理结构版本。当前版本与迁移顺序集中在
-`lib/db/migrations/registry.ts`，应用启动只通过 `lib/db/index.ts` 打开数据库。
+`lib/core/db/migrations/registry.ts`，应用启动只通过 `lib/core/db/index.ts` 打开数据库。
 
 ## 迁移结构
 
