@@ -627,7 +627,6 @@ export default function KbPage() {
           <div className="flex flex-wrap gap-2">
             <Button
               variant="outline"
-              size="sm"
               onClick={() => {
                 setCreatePath(
                   active?.includes("/")
@@ -642,7 +641,6 @@ export default function KbPage() {
             </Button>
             <Button
               variant="secondary"
-              size="sm"
               onClick={() => void ingest()}
               disabled={ingesting}
             >

@@ -7,7 +7,6 @@ import {
 import { Separator } from "@/components/ui/separator"
 import { LiveProvider } from "@/components/live-provider"
 import { HeaderStatus } from "@/components/header-status"
-import { BrandTitle } from "@/components/admin/brand-title"
 
 // 壳层:inset 侧栏 + 白底无缝内容区。
 // 不要给 SidebarProvider 加 bg-muted、不要给 SidebarInset 加 ring/shadow、
@@ -28,7 +27,6 @@ export default function AdminLayout({
               orientation="vertical"
               className="mr-2 h-4 data-vertical:self-center"
             />
-            <BrandTitle />
             <HeaderStatus />
           </header>
           <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-auto p-4 md:p-6">

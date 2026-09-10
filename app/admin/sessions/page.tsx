@@ -569,7 +569,6 @@ function SessionsInner() {
           <>
             <Button
               variant="destructive"
-              size="sm"
               onClick={() => setConfirmStep(1)}
               disabled={resetting || !sessions?.length}
             >
@@ -582,7 +581,6 @@ function SessionsInner() {
             </Button>
             <Button
               variant="secondary"
-              size="sm"
               onClick={() => void refresh()}
               disabled={refreshing}
             >

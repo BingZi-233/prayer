@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { SectionCard } from "@/components/admin/section-card"
-import { ChannelDot } from "@/components/channel-status-lights"
+import { ChannelDot } from "@/components/channel-dot"
 import { ConfigTabContent } from "./config-tab-content"
 
 import type { ConfigForm } from "./use-config-form"
