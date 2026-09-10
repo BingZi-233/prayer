@@ -75,6 +75,7 @@ export default function ConfigPage() {
     adminGroupOptions,
     adminTgOptions,
     busy,
+    dirty,
     save,
     error,
     reload,
@@ -179,7 +180,7 @@ export default function ConfigPage() {
           </div>
 
           {/* 设置项列限宽:输入框铺满整行既难读也难扫,限宽后接近表单卡的阅读宽度 */}
-          <div className="min-w-0 max-w-3xl">
+          <div className="max-w-3xl min-w-0">
             <TabsContent value="base" className="m-0 flex flex-col gap-4">
               <CategoryHeader
                 title="基础与管理"
@@ -238,7 +239,10 @@ export default function ConfigPage() {
               />
             </TabsContent>
 
-            <TabsContent value="conversation" className="m-0 flex flex-col gap-4">
+            <TabsContent
+              value="conversation"
+              className="m-0 flex flex-col gap-4"
+            >
               <CategoryHeader
                 title="对话与自动化"
                 description="调整回复呈现、会话生命周期和无人应答时的主动补位策略。"
@@ -292,6 +296,22 @@ export default function ConfigPage() {
             </TabsContent>
           </div>
         </Tabs>
+      )}
+
+      {dirty && (
+        <div className="sticky bottom-0 z-10 flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card px-3 py-2 text-xs shadow-sm">
+          <span className="text-muted-foreground">
+            有未保存的改动,保存后立即生效。
+          </span>
+          <Button size="sm" onClick={save} disabled={busy || !cfg}>
+            {busy ? (
+              <Spinner data-icon="inline-start" />
+            ) : (
+              <Save data-icon="inline-start" />
+            )}
+            {busy ? "保存中…" : "保存并生效"}
+          </Button>
+        </div>
       )}
     </PageShell>
   )
