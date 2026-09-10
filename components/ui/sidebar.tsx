@@ -199,7 +199,17 @@ function Sidebar({
             <SheetTitle>Sidebar</SheetTitle>
             <SheetDescription>Displays the mobile sidebar.</SheetDescription>
           </SheetHeader>
-          <div className="flex h-full w-full flex-col">{children}</div>
+          {/* 关抽屉靠事件委托:Link 的跳转在子元素先冒泡触发,此处再关不会打断它 */}
+          <div
+            className="flex h-full w-full flex-col"
+            onClick={(event) => {
+              if ((event.target as Element).closest("a[href]")) {
+                setOpenMobile(false)
+              }
+            }}
+          >
+            {children}
+          </div>
         </SheetContent>
       </Sheet>
     )
