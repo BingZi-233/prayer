@@ -265,12 +265,44 @@ git diff main..HEAD -- lib/channels/qq/ | head -60
 
 Expected: 改动集中在文件增删与 import 行。**逐行扫一遍 `git diff` 里带 `+`/`-` 的行**：除 `import` / `from` / 注释外，不应有任何逻辑行被改动。若发现逻辑行变化，停下报告，不要自行修正。
 
-- [ ] **Step 4: 确认工作区干净**
+核对方法建议：用 `git diff -M main..HEAD | grep -E '^[+-]' | grep -vE '^(\+\+\+|---) '` 把全部增删行过滤出来逐行分类，而不是通读整个 diff。
+
+**注意**：`lib/channels/qq/client.ts` 里有一处 `scope: "onebot.enrich"` 字符串**有意未改**（可观察的日志标签，改名属行为变更，已记为遗留）。它出现在 diff 的上下文行里属正常，不要报成问题。
+
+- [ ] **Step 4: 确认没有 `lib/onebot` 残留**
+
+```bash
+grep -rn "lib/onebot" --include='*.ts' --include='*.tsx' app lib components tests plugins scripts
+grep -rn "lib/onebot" --include='*.md' docs CLAUDE.md
+```
+
+Expected: 源码范围内只剩 **1 处** —— `tests/architecture/layering.test.ts` 里的
+`const RETIRED_PREFIXES = ["lib/onebot/"]`。那是 Step 2 要求存在的登记项，**不是残留**。
+`app/`、`lib/`、`components/`、`plugins/`、`scripts/` 下应零命中。
+
+`docs/` 范围会命中历史计划文档（如 `2026-07-05-group-picker.md`）—— 那些是**历史记录**，
+描述当时的工作，不应改写，命中它们属正常。
+
+**注意**：`grep "onebot/"`（不带 `lib/`）会有大量输出，那是 `/api/onebot/*` 这类 HTTP 路由、
+配置键 `onebotWsUrl`、协议名 OneBot，都是**合法**的，不要当成残留。
+
+- [ ] **Step 5: 确认护栏映射表已同步**
+
+```bash
+pnpm vitest run tests/architecture/layering.test.ts
+grep -n "RETIRED_PREFIXES\|CURRENT_STAGE" tests/architecture/layering.test.ts
+```
+
+Expected: 7 个用例全绿；`RETIRED_PREFIXES` 为 `["lib/onebot/"]`；`CURRENT_STAGE` 为 `"1"`；
+`TOLERATED` 仍恰为 3 条。
+
+- [ ] **Step 6: 确认工作区干净**
 
 ```bash
 git status --short
+git stash list
 ```
 
-Expected: 无输出。
+Expected: `git status` 无输出。`git stash list` 里有一条既有残留（分支 `codex/perf-maintainability`），与本阶段无关，**不要动它**。
 
-本任务不产生新提交 —— 它是验证步骤。若 Step 1–4 全部符合 Expected，阶段 1 即可收口。
+本任务不产生新提交 —— 它是验证步骤。若 Step 1–6 全部符合 Expected，阶段 1 即可收口。
