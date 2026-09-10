@@ -55,6 +55,7 @@ export function AdminSettings({
           <Field>
             <FieldLabel htmlFor="adminChannel">通道</FieldLabel>
             <Select
+              items={{ none: "无", qq: "QQ", tg: "Telegram" }}
               value={cfg.adminSurface?.channel ?? "none"}
               onValueChange={(v) => {
                 if (v !== null) setAdminChannel(v as "none" | "qq" | "tg")
@@ -81,6 +82,12 @@ export function AdminSettings({
               <FieldLabel htmlFor="adminSurfaceQq">管理群</FieldLabel>
               {groups ? (
                 <Select
+                  items={Object.fromEntries(
+                    adminGroupOptions().map((g) => [
+                      String(g.groupId),
+                      `${g.groupName} (${g.groupId})`,
+                    ])
+                  )}
                   value={adminQq ? String(adminQq) : ""}
                   onValueChange={(v) => {
                     if (v !== null) setAdminChatId(v)
@@ -114,6 +121,9 @@ export function AdminSettings({
               <FieldLabel htmlFor="adminSurfaceTg">管理 Chat ID</FieldLabel>
               {adminTgOptions().length > 0 && (
                 <Select
+                  items={Object.fromEntries(
+                    adminTgOptions().map((id) => [id, id])
+                  )}
                   value={
                     cfg.adminSurface.chatId &&
                     adminTgOptions().includes(cfg.adminSurface.chatId)

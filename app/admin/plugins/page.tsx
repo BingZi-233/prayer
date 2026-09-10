@@ -117,6 +117,7 @@ export default function PluginsPage() {
           <Field>
             <FieldLabel>来源</FieldLabel>
             <Select
+              items={{ github: "GitHub", directory: "本地目录" }}
               value={form.source}
               onValueChange={(v) => {
                 if (v !== null) setForm({ ...form, source: v })

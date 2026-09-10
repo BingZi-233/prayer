@@ -164,7 +164,7 @@ export default function StatusPage() {
   const hasAlerts = (ov?.humanSessions ?? 0) > 0 || channelDown
 
   return (
-    <PageShell className="min-w-0 gap-4 lg:gap-6">
+    <PageShell className="min-w-0">
       <PageHeader
         className="shrink-0"
         title="运行状态"

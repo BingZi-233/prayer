@@ -514,6 +514,11 @@ export default function GroupsPage() {
               <Field>
                 <FieldLabel>主动补位</FieldLabel>
                 <Select
+                  items={{
+                    inherit: "跟随全局",
+                    on: "强制开启",
+                    off: "强制关闭",
+                  }}
                   value={proactiveTri}
                   onValueChange={(v) => {
                     if (v !== null) setProactiveTri(v as Tri)
@@ -536,6 +541,10 @@ export default function GroupsPage() {
               <Field>
                 <FieldLabel>静默阈值</FieldLabel>
                 <Select
+                  items={{
+                    inherit: "跟随全局",
+                    custom: "自定义(分钟)",
+                  }}
                   value={silenceMode}
                   onValueChange={(v) => {
                     if (v !== null) setSilenceMode(v as "inherit" | "custom")
@@ -569,6 +578,11 @@ export default function GroupsPage() {
               <Field>
                 <FieldLabel>转人工时通知管理面</FieldLabel>
                 <Select
+                  items={{
+                    inherit: "跟随默认(通知)",
+                    on: "通知",
+                    off: "不通知",
+                  }}
                   value={handoffTri}
                   onValueChange={(v) => {
                     if (v !== null) setHandoffTri(v as Tri)
