@@ -8,7 +8,6 @@ import {
 } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { SectionCard } from "@/components/admin/section-card"
-import { ConfigTabContent } from "./config-tab-content"
 
 import type { ConfigForm } from "./use-config-form"
 
@@ -16,41 +15,38 @@ import type { ConfigForm } from "./use-config-form"
 export function BrandSettings({
   cfg,
   updateField,
-  embedded = false,
-}: Pick<ConfigForm, "cfg" | "updateField"> & { embedded?: boolean }) {
+}: Pick<ConfigForm, "cfg" | "updateField"> ) {
   return (
-    <ConfigTabContent value="brand" embedded={embedded}>
-      <SectionCard
-        title="品牌"
-        description="设置对外名称与客服身份。保存后会同步到管理后台和 Agent。"
-      >
-        <FieldGroup>
-          <Field>
-            <FieldLabel htmlFor="brandName">品牌名称</FieldLabel>
-            <Input
-              id="brandName"
-              value={cfg.brandName ?? "Prayer"}
-              maxLength={80}
-              onChange={(e) => updateField("brandName", e.target.value)}
-            />
-            <FieldDescription>
-              默认是 Prayer，也可以填写团队或产品的白标名称。
-            </FieldDescription>
-          </Field>
-          <Field>
-            <FieldLabel htmlFor="brandDescription">品牌简介</FieldLabel>
-            <Input
-              id="brandDescription"
-              value={cfg.brandDescription ?? "多渠道 AI 客服中台"}
-              maxLength={500}
-              onChange={(e) => updateField("brandDescription", e.target.value)}
-            />
-            <FieldDescription>
-              用一句话说明客服所服务的产品或业务；具体事实仍以知识库和业务插件为准。
-            </FieldDescription>
-          </Field>
-        </FieldGroup>
-      </SectionCard>
-    </ConfigTabContent>
+    <SectionCard
+      title="品牌"
+      description="设置对外名称与客服身份。保存后会同步到管理后台和 Agent。"
+    >
+      <FieldGroup>
+        <Field>
+          <FieldLabel htmlFor="brandName">品牌名称</FieldLabel>
+          <Input
+            id="brandName"
+            value={cfg.brandName ?? "Prayer"}
+            maxLength={80}
+            onChange={(e) => updateField("brandName", e.target.value)}
+          />
+          <FieldDescription>
+            默认是 Prayer，也可以填写团队或产品的白标名称。
+          </FieldDescription>
+        </Field>
+        <Field>
+          <FieldLabel htmlFor="brandDescription">品牌简介</FieldLabel>
+          <Input
+            id="brandDescription"
+            value={cfg.brandDescription ?? "多渠道 AI 客服中台"}
+            maxLength={500}
+            onChange={(e) => updateField("brandDescription", e.target.value)}
+          />
+          <FieldDescription>
+            用一句话说明客服所服务的产品或业务；具体事实仍以知识库和业务插件为准。
+          </FieldDescription>
+        </Field>
+      </FieldGroup>
+    </SectionCard>
   )
 }

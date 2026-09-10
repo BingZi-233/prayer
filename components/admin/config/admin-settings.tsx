@@ -17,7 +17,6 @@ import {
 } from "@/components/ui/select"
 import { SectionCard } from "@/components/admin/section-card"
 import { SearchSelect } from "@/components/admin/search-select"
-import { ConfigTabContent } from "./config-tab-content"
 
 import type { ConfigForm } from "./use-config-form"
 
@@ -32,7 +31,6 @@ export function AdminSettings({
   setAdminChatId,
   adminGroupOptions,
   adminTgOptions,
-  embedded = false,
 }: Pick<
   ConfigForm,
   | "cfg"
@@ -45,118 +43,116 @@ export function AdminSettings({
   | "setAdminChatId"
   | "adminGroupOptions"
   | "adminTgOptions"
-> & { embedded?: boolean }) {
+> ) {
   return (
-    <ConfigTabContent value="admin" embedded={embedded}>
-      <SectionCard
-        title="管理面"
-        description="转人工/反思/用量告警抄送与 !reset / !resume 落点。可与生效白名单无关。"
-      >
-        <FieldGroup>
+    <SectionCard
+      title="管理面"
+      description="转人工/反思/用量告警抄送与 !reset / !resume 落点。可与生效白名单无关。"
+    >
+      <FieldGroup>
+        <Field>
+          <FieldLabel htmlFor="adminChannel">通道</FieldLabel>
+          <Select
+            items={{ none: "无", qq: "QQ", tg: "Telegram" }}
+            value={cfg.adminSurface?.channel ?? "none"}
+            onValueChange={(v) => {
+              if (v !== null) setAdminChannel(v as "none" | "qq" | "tg")
+            }}
+          >
+            <SelectTrigger id="adminChannel">
+              <SelectValue placeholder="选择管理面通道" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectGroup>
+                <SelectItem value="none">无</SelectItem>
+                <SelectItem value="qq">QQ</SelectItem>
+                <SelectItem value="tg">Telegram</SelectItem>
+              </SelectGroup>
+            </SelectContent>
+          </Select>
+          <FieldDescription>
+            选择通知与管理命令落点通道；选「无」关闭管理面。
+          </FieldDescription>
+        </Field>
+
+        {cfg.adminSurface?.channel === "qq" && (
           <Field>
-            <FieldLabel htmlFor="adminChannel">通道</FieldLabel>
-            <Select
-              items={{ none: "无", qq: "QQ", tg: "Telegram" }}
-              value={cfg.adminSurface?.channel ?? "none"}
-              onValueChange={(v) => {
-                if (v !== null) setAdminChannel(v as "none" | "qq" | "tg")
-              }}
-            >
-              <SelectTrigger id="adminChannel">
-                <SelectValue placeholder="选择管理面通道" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectGroup>
-                  <SelectItem value="none">无</SelectItem>
-                  <SelectItem value="qq">QQ</SelectItem>
-                  <SelectItem value="tg">Telegram</SelectItem>
-                </SelectGroup>
-              </SelectContent>
-            </Select>
-            <FieldDescription>
-              选择通知与管理命令落点通道；选「无」关闭管理面。
-            </FieldDescription>
-          </Field>
-
-          {cfg.adminSurface?.channel === "qq" && (
-            <Field>
-              <FieldLabel htmlFor="adminSurfaceQq">管理群</FieldLabel>
-              {groups ? (
-                <SearchSelect
-                  id="adminSurfaceQq"
-                  value={adminQq ? String(adminQq) : ""}
-                  onChange={setAdminChatId}
-                  placeholder="选择管理群"
-                  searchPlaceholder="搜索群名 / 群号…"
-                  emptyText="无匹配群"
-                  options={adminGroupOptions().map((g) => ({
-                    value: String(g.groupId),
-                    label: g.groupName,
-                    hint: String(g.groupId),
-                  }))}
-                />
-              ) : (
-                <FieldDescription>
-                  {groupsLoading
-                    ? "正在获取群列表…"
-                    : "bot 未连接,无法获取群列表。请先填写 QQ 通道连接并启动 bot。"}
-                </FieldDescription>
-              )}
-            </Field>
-          )}
-
-          {cfg.adminSurface?.channel === "tg" && (
-            <Field>
-              <FieldLabel htmlFor="adminSurfaceTg">管理 Chat ID</FieldLabel>
-              {adminTgOptions().length > 0 && (
-                <SearchSelect
-                  id="adminSurfaceTgSelect"
-                  value={
-                    cfg.adminSurface.chatId &&
-                    adminTgOptions().includes(cfg.adminSurface.chatId)
-                      ? cfg.adminSurface.chatId
-                      : ""
-                  }
-                  onChange={setAdminChatId}
-                  placeholder="从生效 Chat 中选择"
-                  searchPlaceholder="搜索 Chat ID…"
-                  emptyText="无匹配 Chat"
-                  options={adminTgOptions().map((id) => ({
-                    value: id,
-                    label: id,
-                  }))}
-                />
-              )}
-              <Input
-                id="adminSurfaceTg"
-                className="mt-2 font-mono"
-                value={cfg.adminSurface.chatId}
-                placeholder="如 -1001234567890（可负号，字符串原样）"
-                onChange={(e) => setAdminChatId(e.target.value)}
+            <FieldLabel htmlFor="adminSurfaceQq">管理群</FieldLabel>
+            {groups ? (
+              <SearchSelect
+                id="adminSurfaceQq"
+                value={adminQq ? String(adminQq) : ""}
+                onChange={setAdminChatId}
+                placeholder="选择管理群"
+                searchPlaceholder="搜索群名 / 群号…"
+                emptyText="无匹配群"
+                options={adminGroupOptions().map((g) => ({
+                  value: String(g.groupId),
+                  label: g.groupName,
+                  hint: String(g.groupId),
+                }))}
               />
+            ) : (
               <FieldDescription>
-                可从已生效 TG Chat 选择，或直接输入任意 chat
-                id（不必在白名单内）。
+                {groupsLoading
+                  ? "正在获取群列表…"
+                  : "bot 未连接,无法获取群列表。请先填写 QQ 通道连接并启动 bot。"}
               </FieldDescription>
-            </Field>
-          )}
+            )}
+          </Field>
+        )}
 
+        {cfg.adminSurface?.channel === "tg" && (
           <Field>
-            <FieldLabel htmlFor="handoffTimeoutMin">
-              转人工超时(分钟)
-            </FieldLabel>
+            <FieldLabel htmlFor="adminSurfaceTg">管理 Chat ID</FieldLabel>
+            {adminTgOptions().length > 0 && (
+              <SearchSelect
+                id="adminSurfaceTgSelect"
+                value={
+                  cfg.adminSurface.chatId &&
+                  adminTgOptions().includes(cfg.adminSurface.chatId)
+                    ? cfg.adminSurface.chatId
+                    : ""
+                }
+                onChange={setAdminChatId}
+                placeholder="从生效 Chat 中选择"
+                searchPlaceholder="搜索 Chat ID…"
+                emptyText="无匹配 Chat"
+                options={adminTgOptions().map((id) => ({
+                  value: id,
+                  label: id,
+                }))}
+              />
+            )}
             <Input
-              id="handoffTimeoutMin"
-              inputMode="numeric"
-              value={fieldValue("handoffTimeoutMin")}
-              onChange={(e) => updateField("handoffTimeoutMin", e.target.value)}
+              id="adminSurfaceTg"
+              className="mt-2 font-mono"
+              value={cfg.adminSurface.chatId}
+              placeholder="如 -1001234567890（可负号，字符串原样）"
+              onChange={(e) => setAdminChatId(e.target.value)}
             />
             <FieldDescription>
-              转人工后无人处理超过此时长自动恢复自动答。默认 30 分钟。
+              可从已生效 TG Chat 选择，或直接输入任意 chat
+              id（不必在白名单内）。
             </FieldDescription>
           </Field>
-        </FieldGroup>
-      </SectionCard>
-    </ConfigTabContent>
+        )}
+
+        <Field>
+          <FieldLabel htmlFor="handoffTimeoutMin">
+            转人工超时(分钟)
+          </FieldLabel>
+          <Input
+            id="handoffTimeoutMin"
+            inputMode="numeric"
+            value={fieldValue("handoffTimeoutMin")}
+            onChange={(e) => updateField("handoffTimeoutMin", e.target.value)}
+          />
+          <FieldDescription>
+            转人工后无人处理超过此时长自动恢复自动答。默认 30 分钟。
+          </FieldDescription>
+        </Field>
+      </FieldGroup>
+    </SectionCard>
   )
 }

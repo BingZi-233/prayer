@@ -45,11 +45,14 @@ describe("admin system page contracts", () => {
     expect(source).toContain('method: "DELETE"')
   })
 
-  it("keeps configuration categories on the vertical settings tabs", async () => {
+  it("keeps configuration categories on the shared horizontal tabs", async () => {
     const source = await read("app/admin/config/page.tsx")
 
-    expect(source).toContain("orientation=\"vertical\"")
-    expect(source).toContain("<CategoryHeader")
+    // 与其余页面同一套标签语言:横向 TabsList + 卡片网格
+    expect(source).toContain("CATEGORIES.map")
+    expect(source).toContain("<TabsList")
+    expect(source).toContain("<SettingsGrid>")
+    expect(source).not.toContain("orientation=\"vertical\"")
     expect(source).toContain("保存并生效")
   })
 })
