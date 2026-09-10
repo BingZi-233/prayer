@@ -6,7 +6,7 @@
 
 **Architecture:** 两处行为不变的依赖调整——把 `KB_SEARCH_SQL` 从工具层下沉到独立的纯常量模块（避开 cs 子进程 strip-only 不能加载参数属性的限制），把 `loadGroupMembers` 对 `getRuntime()` 的向上依赖反转成由调用方注入 `fetchFn`。随后建立结构契约测试：按「目标层」给每个 `lib/` 文件归层，断言不存在未登记的逆向依赖，并用合成样例自检扫描器不会因失灵而空过。
 
-**Tech Stack:** TypeScript 5.9、Node 20（ESM）、Vitest 4、pnpm、Next.js 16.3 App Router。
+**Tech Stack:** TypeScript 5.9、Node 24（`.node-version` = 24.16.0，原生 TS strip）、Vitest 4、pnpm、Next.js 16.3 App Router。
 
 **Spec:** `docs/superpowers/specs/2026-09-10-modularize-layering-design.md`
 
