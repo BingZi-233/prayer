@@ -64,6 +64,11 @@ const LEVEL_STYLE = {
     text: "text-muted-foreground",
   },
 }
+const LEVEL_LABEL = {
+  info: "信息",
+  warn: "警告",
+  error: "错误",
+} as const
 const levelStyle = (lv: string) =>
   LEVEL_STYLE[lv as keyof typeof LEVEL_STYLE] ?? LEVEL_STYLE.info
 
@@ -205,16 +210,16 @@ export default function LogsPage() {
                   key={lv}
                   variant={on ? levelStyle(lv).badge : "outline"}
                   className={cn(
-                    "cursor-pointer uppercase select-none",
+                    "cursor-pointer select-none",
                     !on && "opacity-45"
                   )}
                   onClick={() => toggleLevel(lv)}
                 >
-                  {lv}
+                  {LEVEL_LABEL[lv]}
                 </Badge>
               )
             })}
-            <InputGroup className="h-8 w-52">
+            <InputGroup className="h-8 w-full sm:w-52">
               <InputGroupAddon>
                 <Search />
               </InputGroupAddon>
@@ -329,7 +334,7 @@ export default function LogsPage() {
                             s.text
                           )}
                         >
-                          {l.level}
+                          {LEVEL_LABEL[l.level as keyof typeof LEVEL_LABEL] ?? l.level}
                         </span>
 
                         <span

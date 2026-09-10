@@ -46,6 +46,7 @@ import { PageShell } from "@/components/admin/page-shell"
 import { PageHeader } from "@/components/admin/page-header"
 import { SectionCard } from "@/components/admin/section-card"
 import { MetricBadge, MetricBadgeRow } from "@/components/admin/stat"
+import { DataState, EmptyState } from "@/components/admin/data-state"
 import { usePolling } from "@/components/admin/use-polling"
 import {
   useLive,
@@ -116,6 +117,10 @@ const STATE_LABEL: Record<string, string> = {
   error: "错误",
 }
 
+function statusLabel(state: string): string {
+  return STATE_LABEL[state] ?? "未知"
+}
+
 function channelOf(s: Status, id: string): ChannelStatusView | undefined {
   return s.channels?.find((c) => c.id === id)
 }
@@ -137,7 +142,12 @@ export default function StatusPage() {
   // status/overview 来自全局 LiveProvider(单份轮询,本页不再重复打 /api/status、/api/overview);
   // usage 只在本页需要,走带 in-flight 闸门的 usePolling
   const { status: s, overview: ov, refresh: refreshLive } = useLive()
-  const { data: usage } = usePolling<Usage>("/api/usage", 30_000)
+  const {
+    data: usage,
+    error: usageError,
+    loading: usageLoading,
+    refresh: refreshUsage,
+  } = usePolling<Usage>("/api/usage", 30_000)
   const [busy, setBusy] = useState(false)
 
   async function restart() {
@@ -236,7 +246,7 @@ export default function StatusPage() {
                 <Badge
                   key={c.id}
                   variant="destructive"
-                  className="h-auto max-w-full justify-start whitespace-normal break-words py-1 text-left"
+                  className="h-auto max-w-full justify-start py-1 text-left break-words whitespace-normal"
                 >
                   {c.id.toUpperCase()} {c.lastError ? "异常" : "未连接"}
                   {c.lastError ? ` · ${c.lastError.slice(0, 40)}` : ""}
@@ -254,7 +264,7 @@ export default function StatusPage() {
           icon={Activity}
           label="状态"
           loading={!s}
-          value={s ? (STATE_LABEL[s.state] ?? s.state) : "—"}
+          value={s ? statusLabel(s.state) : "—"}
           warn={s?.state === "error"}
           tone={s?.state === "running" ? "primary" : undefined}
         />
@@ -400,101 +410,122 @@ export default function StatusPage() {
           ) : undefined
         }
       >
-        {!usage ? (
-          <div className="flex flex-wrap gap-2">
-            {Array.from({ length: 4 }).map((_, i) => (
-              <Skeleton key={i} className="h-8 w-24" />
-            ))}
-          </div>
-        ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>调用点</TableHead>
-                <TableHead className="text-right">次数</TableHead>
-                <TableHead className="text-right">命中率</TableHead>
-                <TableHead className="hidden text-right sm:table-cell">
-                  缓存命中/写入
-                </TableHead>
-                <TableHead className="hidden text-right md:table-cell">
-                  未缓存输入
-                </TableHead>
-                <TableHead className="hidden text-right md:table-cell">
-                  输出
-                </TableHead>
-                <TableHead className="text-right">成本($)</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {usage.rows.map((r) => (
-                <TableRow key={r.site}>
-                  <TableCell className="font-medium whitespace-nowrap">
-                    {r.label}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {r.count}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <Badge
-                      variant={r.hitRatio >= 0.8 ? "default" : "secondary"}
-                    >
-                      {pct(r.hitRatio)}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="hidden text-right tabular-nums sm:table-cell">
-                    {kfmt(r.cacheRead)} / {kfmt(r.cacheCreation)}
-                    <div className="text-xs text-muted-foreground">
-                      均 {kfmt(r.cacheRead / Math.max(r.count, 1))}
-                    </div>
-                  </TableCell>
-                  <TableCell className="hidden text-right tabular-nums md:table-cell">
-                    <TokenCell total={r.input} count={r.count} />
-                  </TableCell>
-                  <TableCell className="hidden text-right tabular-nums md:table-cell">
-                    <TokenCell total={r.output} count={r.count} />
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {r.costUsd.toFixed(4)}
-                  </TableCell>
-                </TableRow>
+        <DataState
+          loading={usageLoading}
+          error={usageError}
+          empty={usage?.rows.length === 0}
+          onRetry={refreshUsage}
+          emptyIcon={Gauge}
+          emptyTitle="暂无模型用量"
+          emptyDescription="服务产生模型调用后，这里会显示按调用点汇总的用量。"
+          skeleton={
+            <div className="flex flex-wrap gap-2">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <Skeleton key={i} className="h-8 w-24" />
               ))}
-              <TableRow className="font-medium">
-                <TableCell>合计</TableCell>
-                <TableCell className="text-right tabular-nums">
-                  {usage.total.count}
-                </TableCell>
-                <TableCell className="text-right">
-                  <Badge variant="secondary">{pct(usage.total.hitRatio)}</Badge>
-                </TableCell>
-                <TableCell className="hidden text-right tabular-nums sm:table-cell">
-                  {kfmt(usage.total.cacheRead)} /{" "}
-                  {kfmt(usage.total.cacheCreation)}
-                  <div className="text-xs font-normal text-muted-foreground">
-                    均{" "}
-                    {kfmt(
-                      usage.total.cacheRead / Math.max(usage.total.count, 1)
-                    )}
-                  </div>
-                </TableCell>
-                <TableCell className="hidden text-right tabular-nums md:table-cell">
-                  <TokenCell
-                    total={usage.total.input}
-                    count={usage.total.count}
-                  />
-                </TableCell>
-                <TableCell className="hidden text-right tabular-nums md:table-cell">
-                  <TokenCell
-                    total={usage.total.output}
-                    count={usage.total.count}
-                  />
-                </TableCell>
-                <TableCell className="text-right tabular-nums">
-                  {usage.total.costUsd.toFixed(4)}
-                </TableCell>
-              </TableRow>
-            </TableBody>
-          </Table>
-        )}
+            </div>
+          }
+        >
+          {usage ? (
+            <div className="overflow-x-auto">
+              <Table className="min-w-[44rem]">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>调用点</TableHead>
+                    <TableHead className="text-right">次数</TableHead>
+                    <TableHead className="text-right">命中率</TableHead>
+                    <TableHead className="hidden text-right sm:table-cell">
+                      缓存命中/写入
+                    </TableHead>
+                    <TableHead className="hidden text-right md:table-cell">
+                      未缓存输入
+                    </TableHead>
+                    <TableHead className="hidden text-right md:table-cell">
+                      输出
+                    </TableHead>
+                    <TableHead className="text-right">成本($)</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {usage.rows.map((r) => (
+                    <TableRow key={r.site}>
+                      <TableCell className="font-medium whitespace-nowrap">
+                        {r.label}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {r.count}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Badge
+                          variant={r.hitRatio >= 0.8 ? "default" : "secondary"}
+                        >
+                          {pct(r.hitRatio)}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="hidden text-right tabular-nums sm:table-cell">
+                        {kfmt(r.cacheRead)} / {kfmt(r.cacheCreation)}
+                        <div className="text-xs text-muted-foreground">
+                          均 {kfmt(r.cacheRead / Math.max(r.count, 1))}
+                        </div>
+                      </TableCell>
+                      <TableCell className="hidden text-right tabular-nums md:table-cell">
+                        <TokenCell total={r.input} count={r.count} />
+                      </TableCell>
+                      <TableCell className="hidden text-right tabular-nums md:table-cell">
+                        <TokenCell total={r.output} count={r.count} />
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {r.costUsd.toFixed(4)}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                  <TableRow className="font-medium">
+                    <TableCell>合计</TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {usage.total.count}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Badge variant="secondary">
+                        {pct(usage.total.hitRatio)}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="hidden text-right tabular-nums sm:table-cell">
+                      {kfmt(usage.total.cacheRead)} /{" "}
+                      {kfmt(usage.total.cacheCreation)}
+                      <div className="text-xs font-normal text-muted-foreground">
+                        均{" "}
+                        {kfmt(
+                          usage.total.cacheRead / Math.max(usage.total.count, 1)
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell className="hidden text-right tabular-nums md:table-cell">
+                      <TokenCell
+                        total={usage.total.input}
+                        count={usage.total.count}
+                      />
+                    </TableCell>
+                    <TableCell className="hidden text-right tabular-nums md:table-cell">
+                      <TokenCell
+                        total={usage.total.output}
+                        count={usage.total.count}
+                      />
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {usage.total.costUsd.toFixed(4)}
+                    </TableCell>
+                  </TableRow>
+                </TableBody>
+              </Table>
+            </div>
+          ) : (
+            <EmptyState
+              icon={Gauge}
+              title="暂无模型用量"
+              description="服务产生模型调用后，这里会显示按调用点汇总的用量。"
+            />
+          )}
+        </DataState>
       </SectionCard>
 
       <SectionCard
