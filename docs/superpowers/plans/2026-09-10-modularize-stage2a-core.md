@@ -2,7 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 把 `lib/db/`、`lib/config/` 与 11 个根目录设施文件迁入新建的 `lib/core/`，让 `lib/` 根目录只剩 `runtime.ts` 一个文件。
+**Goal:** 把 `lib/db/`、`lib/config/` 与 11 个**设施类**根文件迁入新建的 `lib/core/`，使 `lib/` 根目录的设施文件清空。
+
+**注意终态与中间态的差别**：本阶段结束后 `lib/` 根目录仍会有 `events.ts`、`name-cache.ts`、`name-cache-store.ts`、`group-name.ts`、`kb-path.ts`、`reflect-promote.ts`、`reflect-stats.ts`、`tool-stats.ts`、`usage-stats.ts`、`transcript.ts`、`assemble.ts` 与 `runtime.ts`。「根目录只剩 `runtime.ts`」是整个重构（阶段 4 结束）的终态，**不是本阶段的验收标准**。
 
 **Architecture:** 大规模机械路径改写：约 198 行 import 需要改。与阶段 1 不同，本阶段**不手写替换清单**——先 `git mv` 全部文件，再让 `pnpm typecheck` 逐条报出失效引用并修正。理由：漏改的引用 typecheck 一定会报，而手写 198 条替换的错误率更高。零行为改动：除 import 语句外不改任何内容。
 
@@ -52,7 +54,9 @@
 | `lib/settings-writer` | 3 |
 | `lib/concurrency` / `lib/auth` | 各 2 |
 
-引用形式混用：仓库里有 351 处 `@/lib/...` 别名导入与 328 处相对路径导入。**两种都要改**——别名要插入 `core/`，相对路径要按新深度调整。
+引用形式混用：别名导入（`@/lib/...`）与相对路径导入（`./`、`../`）都有，**两种都要改**——别名要插入 `core/`，相对路径要按新深度重新计算。
+
+上方那张表的数字是**按目标路径分组的出现次数**，含少量非 import 的命中（注释、字符串、JSON 别名），用于估计规模。**实际被改写的 import 行数是 304**（阶段 2a 实测）。别把上表求和当成必须改的行数，否则会误判「漏改」。
 
 **代码之外还有两类引用，typecheck 抓不到，必须手工检查**（详见 Task 1 Step 4）：
 - `instrumentation.ts`：6 处 `await import("./lib/...")` 相对路径
