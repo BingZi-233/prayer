@@ -177,6 +177,22 @@ channels   knowledge
 两处修法都是行为不变：一处是把依赖反转成注入，一处是搬一个字符串常量。
 `plugins/cs` 也按硬编码路径引 `KB_SEARCH_SQL`，必须与上一条同一阶段改（见「既有引用同步」）。
 
+**初始边集合共 5 条**，除上面两条永久违规外，另有 3 条由阶段 3 消掉：
+
+```
+lib/agent/reflection-compactor.ts:6  knowledge → conversation  ./agent
+lib/agent/reflection-poller.ts:7     knowledge → conversation  ./agent
+lib/agent/reflection-promoter.ts:7   knowledge → conversation  ./agent
+```
+
+这三条正是「反思链路反向依赖 Agent 类」的实例化。阶段 3 把 `reflection-*` 的引用改指
+`model/` 之后，`knowledge → model` 合法，边消失。它们的 `removedBy` 是 `"3"`。
+
+另有一组只在**搬迁中途**出现的边，须预先登记：阶段 2a 把 `db/ config/` 移入 `core/` 时，
+`channels/types.ts` 还没动（它在 2b），于是 `lib/config/{chats,env,migrate,schema}.ts` 对它的
+4 处引用暂时变成 `core → channels`。这 4 条 `removedBy` 是 `"2b"`。2b 一完成，`core/chat/`
+就位，边自动消失。
+
 ## 迁移阶段
 
 每阶段一个独立分支，合入 main 后再开下一阶段，main 全程保持绿色。不建长命分支。
