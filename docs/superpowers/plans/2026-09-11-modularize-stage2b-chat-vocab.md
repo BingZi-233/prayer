@@ -240,14 +240,24 @@ Expected: 全过。（分层测试不受影响：两条边都在 `core` 层内�
 
 **必须改**：删掉那三条精确规则后，`layerOf("lib/channels/types.ts")` 会命中 `["lib/channels/", "channels"]` 返回 `"channels"`，断言会红。其余 6 条钉子不动。
 
-- [ ] **Step 4: 刷新 `PREFIX_RULES` 文档注释里已过期的示例**
+- [ ] **Step 4: 更新 `CURRENT_STAGE`**
+
+```ts
+const CURRENT_STAGE = "2b"
+```
+
+`STAGE_ORDER` 里已有 `"2b"` 这一项，无需改动。
+
+（它在当前时点仍是 no-op —— `TOLERATED` 三条的 `removedBy` 都是 `"3"`，而 `"3"` 排在 `"2b"` 之后，所以「没有早该消失的容忍条目」恒空。bump 是记账，真正的牙齿在阶段 3。但计划与验收都以此为状态标记，不 bump 就会自相矛盾。）
+
+- [ ] **Step 5: 刷新 `PREFIX_RULES` 文档注释里已过期的示例**
 
 注释里有两处举例已随本次搬迁失效：
 
 - 「`lib/channels/types.ts` 眼下仍在 `channels/` 下，但最终去 `lib/core/chat/`」——它已经搬过去了，这个例子讲不通了。换成一个**仍然成立**的例子（例如阶段 3 会把 `lib/tools/embed.ts` 迁往 `lib/model/`，而它现在映射到的层是 `model`）。
 - 「例如 2b 之后 `["lib/channels/", "channels"]` 仍在，重建 `lib/channels/types.ts` 会被悄悄算作 channels」——这正是**现在**的情形。改成一般化表述（「父目录规则仍存活时」），不点名具体阶段。
 
-- [ ] **Step 5: 跑测试并做反向验证**
+- [ ] **Step 6: 跑测试并做反向验证**
 
 ```bash
 pnpm vitest run tests/architecture/layering.test.ts
@@ -259,7 +269,7 @@ Expected: **8 个用例全绿**。
 
 **这一步是本阶段最关键的验证** —— 它证明「父目录规则仍存活」那个盲区真的被退役登记堵住了。若没红，说明登记漏了，回头检查 Step 2。
 
-- [ ] **Step 6: 修掉一处陈旧的测试标签（非 import 的例外，理由如下）**
+- [ ] **Step 7: 修掉一处陈旧的测试标签（非 import 的例外，理由如下）**
 
 `tests/lib/core/chat/ids.test.ts:9` 的标签仍是 `describe("channels/ids", …)`，而该目录已不存在。
 
@@ -273,7 +283,7 @@ describe("session key 编解码", () => {
 
 改完复跑该文件确认仍通过：`pnpm vitest run tests/lib/core/chat/ids.test.ts`
 
-- [ ] **Step 7: 更新 `docs/development.md`**
+- [ ] **Step 8: 更新 `docs/development.md`**
 
 - 「模块边界」里 `lib/core/config-store.ts` 那条结尾的 `lib/channels/enabled-chats.ts` → `lib/core/chat/enabled-chats.ts`
 - **删掉「待改写条目」表里标 `2b` 的那一行**（使命结束）
@@ -287,7 +297,7 @@ grep -n "channels/types\|channels/ids\|channels/enabled-chats\|lib/events\|name-
 
 Expected: 无输出。
 
-- [ ] **Step 8: 提交**
+- [ ] **Step 9: 提交**
 
 ```bash
 git add tests/architecture/layering.test.ts docs/development.md
