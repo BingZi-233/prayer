@@ -191,9 +191,14 @@ lib/agent/reflection-poller.ts:7     knowledge → conversation  ./agent
 lib/agent/reflection-promoter.ts:7   knowledge → conversation  ./agent
 ```
 
-这三条正是「反思链路反向依赖 Agent 类」的实例化。阶段 3 把 `reflection-*` 的引用改指
-`model/` 之后，`knowledge → model` 合法，边消失。它们的 `removedBy` 是 `"3"`。
+这三条正是「反思链路反向依赖 Agent 类」的实例化。**阶段 3b** 把 `reflection-*` 的引用改指
+`model/` 之后，`knowledge → model` 合法，边消失。它们的 `removedBy` 是 `"3b"`。
 **除此之外不应再有容忍条目**——容忍集合从阶段 0 的 3 条单调递减到阶段 4 的 0 条。
+
+**3b 的硬性验收项：把 `lib/agent/reflection-{poller,compactor,promoter}.ts` 里对 `./agent` 的
+`noToolQueryOptions` / `drainQuery` 引用改指 `@/lib/model/…`，并删掉这 3 条 `TOLERATED`。**
+切分若留下了 re-export shim（本项目明令禁止），边不会消失、`removedBy` 会误报；
+好在「到点自红」会在 `CURRENT_STAGE = "3b"` 时把这件事变成一个红灯，而不是静默漏过。
 
 **映射表按文件的「目标层」判定，不按磁盘当前物理位置。** 这一点很关键：`channels/types.ts`
 虽仍在 `lib/channels/` 下，映射表就把它当 `core`，因为它最终要去 `core/chat/`。于是
@@ -214,7 +219,8 @@ lib/agent/reflection-promoter.ts:7   knowledge → conversation  ./agent
 | 1 QQ 归并 | `lib/onebot/*` 并入 `channels/qq/`，删 shim；`tests/lib/onebot/*` 搬至 `tests/lib/channels/qq/` 并整目录删除 | 纯搬路径 | 6 个测试搬完仍绿；`lib/onebot/` 与 `tests/lib/onebot/` 均消失 |
 | 2a core 地基 | `db/ config/` 与根目录设施迁入 `core/` | 纯搬路径 | 临时边条数只减不增 |
 | 2b 共享词汇 | `channels/{types,ids,enabled-chats}`、`events.ts`、`name-cache*`、`group-name` 迁入 `core/chat/` | 纯搬路径 | `core/chat` 相关临时边清空 |
-| 3 model 层 | 从 `agent.ts` 切出 `sdk-env`/`query-options`/`drain`/`system-prompt`/`tool-policy`/`prompt`；`sanitize-input`/`json-output`/`timeout` 迁入；`tools/embed` → `model/embed`；`usage-stats`/`tool-stats` → `model/stats/`；`plugins/manager` → `model/plugins/`；`reflection-*` 改指 `model/` | 切分 + 搬 | `agent.ts` 降至约 300 行，测试绿；`lib/tools/`、`lib/plugins/` 目录消失 |
+| 3a model 搬迁 | `sanitize-input`/`json-output`/`timeout` 迁入；`tools/embed` → `model/embed`；`usage-stats`/`tool-stats` → `model/stats/`；`plugins/manager` → `model/plugins/` | 纯搬路径 | 纯搬迁完成；`lib/plugins/` 目录消失（`lib/tools/` 要等 4，因为 `kb.ts` 还在） |
+| 3b model 切分 | 从 `agent.ts` 切出 `sdk-env`/`query-options`/`drain`/`system-prompt`/`tool-policy`/`prompt`；**`reflection-*` 改指 `model/` 并删掉 3 条 `TOLERATED`** | 切分 | `agent.ts` 降至约 300 行，测试绿；容忍集合清空 |
 | 4 知识/会话分层 | `tools/kb`、`kb-path`、`kb-prefetch`、`reflection-*`、`reflect-promote`、`reflect-stats` → `knowledge/`；其余 `agent/*` → `conversation/`（含 `resolution-recorder.ts`） | 纯搬路径 | **临时边集合清空** |
 | 5 后台大文件 | 见下节 | 有设计 | 行为不变 + 真机验证；行数仅作手段 |
 | 6 收尾文档 | 落位指南：新通道 / 新 Agent 能力 / 新知识库能力分别写哪 | 只加 | — |
@@ -263,8 +269,8 @@ main 构建。这个成本是拆细的代价，接受。
 | 1 | `CLAUDE.md` 的「仓库结构」一节中的 `onebot/` 一项（该目录消失） |
 | 2a | `docs/development.md` 的「模块边界」一节中 `lib/config/schema.ts`、`lib/config/{env,migrate,chats,patch}.ts`、`lib/config-store.ts`、`lib/db/repositories/`、`lib/db/migrations/` 五条路径；`docs/data-access.md` 里「以上路径相对于 `lib/db/`」与 `lib/db/index.ts` 的引用；`docs/database-operations.md` 里 `lib/db/migrations/registry.ts` 与 `lib/db/index.ts` 的引用；`CLAUDE.md` 的「仓库结构」一节中的 `db/` 项 |
 | 2b | `docs/development.md` 的「模块边界」中 `lib/core/config-store.ts` 条目引用的 `lib/channels/enabled-chats.ts`（迁往 `lib/core/chat/`）。注意 `channels/types.ts`、`channels/ids.ts` 目前在文档中**没有任何引用**，2b 只需搬文件、无需改文档 |
-| 3 | `CLAUDE.md` 的「仓库结构」一节中的 `tools/`、`plugins/` 两项（两个目录消失） |
-| 4 | `CLAUDE.md` 的「仓库结构」一节中的 `agent/` 一项（拆为 `conversation/` 与 `knowledge/`）；`CLAUDE.md` 的「命令」一节举例的 `tests/lib/agent/session.test.ts`（该测试镜像 `lib/agent/session.ts`，随 `agent/` 一起迁） |
+| 3a | `CLAUDE.md` 的「仓库结构」一节中的 `plugins/` 项（`lib/plugins/` 消失；**顶层 `plugins/` 是另一个东西，不动**）——**已完成** |
+| 4 | `CLAUDE.md` 的「仓库结构」一节中的 `tools/` 项（`lib/tools/` 迁往 `lib/model/` 与 `lib/knowledge/`）；`agent/` 一项（拆为 `conversation/` 与 `knowledge/`）；`CLAUDE.md` 的「命令」一节举例的 `tests/lib/agent/session.test.ts`（该测试镜像 `lib/agent/session.ts`，随 `agent/` 一起迁） |
 
 **不要在这些条目里写字面行号。** 行号会随任何一次编辑而腐烂，而腐烂的锚点会让施工者 grep 扑空、进而以为「已经改过了」。用章节名与文件名定位。
 
