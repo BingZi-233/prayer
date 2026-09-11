@@ -36,7 +36,7 @@ GitHub Actions 在 PR 与 main 推送时运行 `pnpm check` 和生产构建。�
 
 ## 仓库结构
 
-`app/`（App Router:`/admin/*` 页面 + `/api/*` 路由）、`lib/`（五层:`core/` 地基（SQLite 数据访问与迁移、配置、日志、事件总线、通道词汇）、`channels/` 通道（QQ/TG）、`model/` 模型基座（SDK 环境与 query options、工具白名单、prompt 构造与 system prompt、drain、嵌入、JSON 输出、超时、用量计量）、`knowledge/` 知识库与反思、`conversation/` 会话与编排（Agent、网关、缓冲区、人工接管、后台循环）、以及组合根 `runtime.ts`）、`plugins/`（`cs`/`packyapi` 本地 MCP server）、`scripts/`（ingest）、`docs/kb/`（知识库源,gitignore）、`data/`+`logs/`（gitignore)。
+`app/`（App Router:`/admin/*` 页面 + `/api/*` 路由）、`lib/`（五层:`core/` 无依赖的纯工具与地基（SQLite 数据访问与迁移、配置、日志、事件总线、通道词汇、UI 展示纯函数）、`channels/` 通道（QQ/TG）、`model/` 模型基座（SDK 环境与 query options、工具白名单、prompt 构造与 system prompt、drain、嵌入、JSON 输出、超时、用量计量）、`knowledge/` 知识库与反思、`conversation/` 会话与编排（Agent、网关、缓冲区、人工接管、后台循环）、以及组合根 `runtime.ts`）、`plugins/`（`cs`/`packyapi` 本地 MCP server）、`scripts/`（ingest）、`docs/kb/`（知识库源,gitignore）、`data/`+`logs/`（gitignore)。
 
 ## Git 约定
 

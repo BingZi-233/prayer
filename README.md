@@ -287,7 +287,7 @@ NEXT_DIST_DIR=.next-verify pnpm build
 ```text
 app/                    管理后台页面与 API 路由
 components/             管理后台与通用 UI 组件
-lib/core/               地基：SQLite 数据访问与迁移、配置、日志、事件总线、通道词汇
+lib/core/               无依赖的纯工具与地基：SQLite 数据访问与迁移、配置、日志、事件总线、通道词汇、UI 展示纯函数
 lib/model/              模型基座：SDK 环境与 query options、工具白名单、prompt、用量计量
 lib/channels/           QQ / Telegram 通道抽象与适配器
 lib/knowledge/          知识库检索与反思链路（反思、压缩、升格）

@@ -29,11 +29,15 @@ channels   knowledge    # 通道实现 / 知识库与反思(同级,互不依赖)
         ↓
       model             # SDK 调用与模型 I/O
         ↓
-       core             # 地基:db、config、日志、总线、通道词汇
+       core             # 无依赖的纯工具与地基:db、config、日志、总线、通道词汇、UI 展示纯函数
 ```
 
 - 新增消息通道写 `lib/channels/<通道>/`；新增 Agent 能力写 `lib/conversation/`；
   新增知识库能力写 `lib/knowledge/`。
+- `core` 是无依赖的纯工具与地基：除 db、config、日志、总线、通道词汇外，还含
+  UI 展示所需的纯函数（`cn()`、`brand`、`channel-labels`、`format-duration`、
+  `group-name` hook），这是「`components/` 只可依赖 `core`」这条约束的落点。
+  展示工具多到 5 个以上再考虑另立 `lib/format/`（需同步 `layering.test.ts` 映射表）。
 - 后台运营与商业化页面写 `app/admin/`；鉴权、品牌、存储等横切能力进 `core/`。
 - `app/` 可依赖全部；`components/` 只可依赖 `core` 与 `components/` 自身。
 - 规则由 `tests/architecture/layering.test.ts` 执行，不靠自觉。跨层依赖会直接让测试失败。
@@ -86,10 +90,10 @@ SQLite；HTTP 测试只替换外部运行时，不替换正在验证的配置持
 
 ## 后续工程重点
 
-已完成配置链路、数据访问层拆分、事务化迁移与数据库备份校验。商业发布前还需逐项
+已完成配置链路、数据访问层拆分、事务化迁移、数据库备份校验，以及后台四页
+（reflection/groups/sessions/kb）的独立区块与状态管理拆分。商业发布前还需逐项
 推进并验证：
 
-- 对知识库和会话等大型页面沿用独立区块与状态管理分离的方式。
 - 配置热重载目前先保存再重启，尚需设计失败回滚、并发更新控制和操作审计。
 - 将自动备份保留策略、部署回滚和鉴权策略纳入发布验证。
 

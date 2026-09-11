@@ -135,7 +135,7 @@ const TOLERATED_INTRA_CYCLES = [
 ]
 
 /** 当前所处阶段。每阶段 PR 更新此常量。 */
-const CURRENT_STAGE = "4b"
+const CURRENT_STAGE = "6"
 const STAGE_ORDER = ["0", "1", "2a", "2b", "3a", "3b", "4a", "4b", "5", "6"]
 
 function layerOf(rel: string): Layer | null {
