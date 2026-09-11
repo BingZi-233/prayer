@@ -287,10 +287,12 @@ NEXT_DIST_DIR=.next-verify pnpm build
 ```text
 app/                    管理后台页面与 API 路由
 components/             管理后台与通用 UI 组件
-lib/agent/              Agent、会话编排、人工接管与后台循环
+lib/core/               地基：SQLite 数据访问与迁移、配置、日志、事件总线、通道词汇
+lib/model/              模型基座：SDK 环境与 query options、工具白名单、prompt、用量计量
 lib/channels/           QQ / Telegram 通道抽象与适配器
-lib/db/                 SQLite 数据访问、迁移与领域仓储
-lib/plugins/            插件生命周期管理
+lib/knowledge/          知识库检索与反思链路（反思、压缩、升格）
+lib/conversation/       会话与编排：Agent、网关、缓冲区、人工接管、后台循环
+lib/runtime.ts          组合根：装配通道、Agent 与后台循环
 plugins/                本地插件、Skill 与 MCP server
 scripts/                知识库摄入、数据库维护脚本
 docs/kb/                业务知识源文件（默认不入 Git）

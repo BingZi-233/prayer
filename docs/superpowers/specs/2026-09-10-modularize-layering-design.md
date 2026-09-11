@@ -76,7 +76,7 @@ lib/
       types.ts events.ts ids.ts enabled-chats.ts name-cache.ts name-cache-store.ts group-name.ts
   model/              # L1 模型基座：SDK 调用与模型 I/O
     sdk-env.ts query-options.ts drain.ts system-prompt.ts tool-policy.ts prompt.ts
-    sanitize-input.ts json-output.ts timeout.ts embed.ts
+    sanitize-input.ts json-output.ts timeout.ts embed.ts introspect.ts
     stats/            # 模型与工具的用量计量
       usage.ts tool.ts
     plugins/
@@ -92,7 +92,7 @@ lib/
   conversation/       # L3 会话与编排
     agent.ts orchestrator.ts session.ts gateway.ts message-buffer.ts reply-mapper.ts
     intent.ts answerability.ts handoff-handler.ts prior-context.ts error-handler.ts
-    introspect.ts command-keywords.ts transcript.ts assemble.ts resolution-recorder.ts
+    command-keywords.ts transcript.ts assemble.ts resolution-recorder.ts
     pollers/
       topic.ts unanswered.ts
 ```

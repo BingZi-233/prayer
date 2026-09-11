@@ -1,19 +1,19 @@
-import { bus } from "../core/bus"
-import { logger } from "../core/logger"
-import type { Repo } from "../core/db/repo"
-import type { Agent } from "./agent"
-import { AGENT_FALLBACK_TEXT } from "./agent"
-import { isNoAnswerText, PROACTIVE_SUFFIX } from "../model/prompt"
-import type { SessionStore } from "./session"
-import type { AnswerabilityClassifier } from "./answerability"
-import type { GroupPolicy } from "../core/config-store"
-import type { ChannelId } from "../core/chat/types"
-import { makeSessionKey } from "../core/chat/ids"
+import { bus } from "../../core/bus"
+import { logger } from "../../core/logger"
+import type { Repo } from "../../core/db/repo"
+import type { Agent } from "../agent"
+import { AGENT_FALLBACK_TEXT } from "../agent"
+import { isNoAnswerText, PROACTIVE_SUFFIX } from "../../model/prompt"
+import type { SessionStore } from "../session"
+import type { AnswerabilityClassifier } from "../answerability"
+import type { GroupPolicy } from "../../core/config-store"
+import type { ChannelId } from "../../core/chat/types"
+import { makeSessionKey } from "../../core/chat/ids"
 import {
   getGroupPolicy,
   isAdminSurface,
   type ChatRef,
-} from "../core/chat/enabled-chats"
+} from "../../core/chat/enabled-chats"
 
 // 主动模式指令定义在 model/prompt.ts:预检索要按它剥前缀才能拿到干净的检索
 // query(见同模块 kbProbeText),这边只消费。

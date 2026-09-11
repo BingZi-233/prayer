@@ -22,9 +22,9 @@ const LIB_DIR = join(REPO_ROOT, "lib")
 
 /**
  * 前缀 -> 该文件最终归属的层。
- * 按「目标层」判定,不按磁盘当前位置:阶段 4b 会把 lib/agent/agent.ts 迁往
- * lib/conversation/,而规则现在就把它归为 conversation。搬迁中途的物理位置
- * 不一致不算违规,只有最终归属错位才算。
+ * 按「目标层」判定,不按磁盘当前位置:搬迁中途文件的物理落点与目标层可能不一致,
+ * 规则以目标层为准 —— 位置不一致不算违规,只有最终归属错位才算。当前树已搬完,
+ * 物理位置与目标层一一对应,这条规则为搬迁中途与未来预留。
  * 顺序敏感:具体文件规则必须排在目录通配之前。
  *
  * 目录规则必须以 `/` 结尾,精确文件规则不带尾斜杠。`layerOf` 与
@@ -46,10 +46,8 @@ const PREFIX_RULES: Array<[string, Layer]> = [
   // channels
   ["lib/channels/", "channels"],
 
-  // conversation(其余 agent/* 与两个装配模块)
-  ["lib/agent/", "conversation"],
-  ["lib/transcript.ts", "conversation"],
-  ["lib/assemble.ts", "conversation"],
+  // conversation
+  ["lib/conversation/", "conversation"],
 ]
 
 /**
@@ -116,6 +114,10 @@ const RETIRED_PREFIXES: string[] = [
   "lib/agent/reflection-promoter.ts",
   "lib/reflect-promote.ts",
   "lib/reflect-stats.ts",
+  "lib/agent/",
+  "lib/agent/introspect.ts",
+  "lib/assemble.ts",
+  "lib/transcript.ts",
 ]
 
 /**
@@ -125,8 +127,13 @@ const RETIRED_PREFIXES: string[] = [
  */
 const TOLERATED: Array<{ edge: string; removedBy: string }> = []
 
+// 已知的无害层内环:两侧都是 import type、编译期擦除;列出是为了让新增的环无处藏身
+const TOLERATED_INTRA_CYCLES = [
+  "core: lib/core/chat/types -> lib/core/chat/events -> lib/core/chat/types",
+]
+
 /** 当前所处阶段。每阶段 PR 更新此常量。 */
-const CURRENT_STAGE = "4a"
+const CURRENT_STAGE = "4b"
 const STAGE_ORDER = ["0", "1", "2a", "2b", "3a", "3b", "4a", "4b", "5", "6"]
 
 function layerOf(rel: string): Layer | null {
@@ -275,9 +282,54 @@ describe("分层结构契约", () => {
     expect(layerOf("lib/core/chat/types.ts")).toBe("core")
     expect(layerOf("lib/channels/qq/members-fetch.ts")).toBe("channels")
     expect(layerOf("lib/model/embed.ts")).toBe("model")
+    expect(layerOf("lib/model/introspect.ts")).toBe("model")
     expect(layerOf("lib/knowledge/kb.ts")).toBe("knowledge")
-    expect(layerOf("lib/agent/agent.ts")).toBe("conversation")
+    expect(layerOf("lib/conversation/agent.ts")).toBe("conversation")
     expect(layerOf("lib/runtime.ts")).toBe("composition")
+  })
+
+  it("每层内部无循环 import", () => {
+    const byLayer = new Map<Layer, Array<{ rel: string; deps: string[] }>>()
+    for (const abs of listFiles(LIB_DIR)) {
+      const rel = relative(REPO_ROOT, abs)
+      const layer = layerOf(rel)
+      if (!layer) continue
+      const deps: string[] = []
+      for (const m of readFileSync(abs, "utf8").matchAll(IMPORT_RE)) {
+        const resolved = resolveSpecifier(abs, m[1])
+        if (!resolved) continue
+        if (layerAt(resolved) !== layer) continue
+        deps.push(resolved)
+      }
+      const bucket = byLayer.get(layer) ?? []
+      bucket.push({ rel: rel.replace(/\.tsx?$/, ""), deps })
+      byLayer.set(layer, bucket)
+    }
+
+    const cycles: string[] = []
+    for (const [layer, nodes] of byLayer) {
+      const edges = new Map(nodes.map((n) => [n.rel, n.deps]))
+      const state = new Map<string, 0 | 1 | 2>()
+      const walk = (node: string, stack: string[]): void => {
+        const st = state.get(node) ?? 0
+        if (st === 2) return
+        if (st === 1) {
+          cycles.push(
+            `${layer}: ${[...stack.slice(stack.indexOf(node)), node].join(" -> ")}`
+          )
+          return
+        }
+        state.set(node, 1)
+        for (const next of edges.get(node) ?? []) {
+          if (edges.has(next)) walk(next, [...stack, node])
+        }
+        state.set(node, 2)
+      }
+      for (const n of edges.keys()) walk(n, [])
+    }
+    expect(
+      cycles.filter((c) => !TOLERATED_INTRA_CYCLES.some((t) => c.includes(t)))
+    ).toEqual([])
   })
 
   it("components/ 只依赖 core", () => {
