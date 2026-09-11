@@ -59,7 +59,7 @@ beforeEach(() => {
   repo = new Repo(openDb(":memory:"))
 })
 
-describe("unanswered-poller runScan", () => {
+describe("unanswered poller runScan", () => {
   it("happy path:沉降未应答问题 → 发 reply + 写回 session + 推进游标", async () => {
     repo.setGroupProactiveCursor("qq", "100", 1) // 非冷启动
     seed(100, 200, "member", "claude 价格?", NOW - 5000)

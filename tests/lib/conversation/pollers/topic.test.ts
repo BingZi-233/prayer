@@ -115,7 +115,7 @@ const opts = (repo: Repo, over: Record<string, unknown> = {}) => ({
   ...over,
 })
 
-describe("topic-poller runScan", () => {
+describe("topic poller runScan", () => {
   let repo: Repo
   beforeEach(() => {
     bus.removeAllListeners()

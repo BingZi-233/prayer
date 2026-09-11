@@ -70,10 +70,9 @@ const PREFIX_RULES: Array<[string, Layer]> = [
  * 把文件挪回重构前的位置,那个位置在层级规则里已被有意作废。
  *
  * **它有一个无法自证的盲区:没人能检测出「你忘了登记某条墓碑」。** 若搬走的
- * 旧路径其父目录规则仍存活(例如 `lib/agent/reflection-poller.ts` 落在活的
- * `lib/agent/`→conversation 之下),漏登记就是真洞 —— 文件被放回去会被静默
- * 归成父目录那一层。父目录已死的漏登记则由「每文件归层」兜住。任何墓碑方案
- * 都有这个盲区,只能靠搬迁时逐条核对,写在这里是为了防后手误判。
+ * 旧路径其**父目录规则仍存活**,漏登记就是真洞 —— 文件被放回去会被静默归成
+ * 父目录那一层。父目录已死的漏登记则由「每文件归层」兜住。任何墓碑方案都有
+ * 这个盲区,只能靠搬迁时逐条核对,写在这里是为了防后手误判。
  */
 const RETIRED_PREFIXES: string[] = [
   "lib/onebot/",
@@ -127,9 +126,12 @@ const RETIRED_PREFIXES: string[] = [
  */
 const TOLERATED: Array<{ edge: string; removedBy: string }> = []
 
-// 已知的无害层内环:两侧都是 import type、编译期擦除;列出是为了让新增的环无处藏身
+// 已知的无害层内环:两侧都是 import type、编译期擦除;列出是为了让新增的环无处藏身。
+// 条目按 canonicalCycle 归一化后的形式书写(字典序最小旋转,末项不再重复起点)。
+// 阈值:若清单长到 3~5 条,说明 `import type` 边已多到成了噪声,届时应改成正则排除
+// `import type` 的 value-import 匹配,让清单归空,而不是无限堆容忍条目。
 const TOLERATED_INTRA_CYCLES = [
-  "core: lib/core/chat/types -> lib/core/chat/events -> lib/core/chat/types",
+  "core: lib/core/chat/events -> lib/core/chat/types",
 ]
 
 /** 当前所处阶段。每阶段 PR 更新此常量。 */
@@ -171,6 +173,27 @@ function layerAt(rel: string): Layer | null {
     if (layer) return layer
   }
   return null
+}
+
+/**
+ * 把环串归一化到字典序最小的旋转再比较。
+ * 环串的起点由 DFS 进入环的那条前置依赖链决定,不是环本身的属性;而 readdirSync
+ * 的顺序在 APFS(近似字母序)与 ext4(哈希序)下不同,同一个环可能被表示成不同旋转,
+ * 字符串相等/`includes` 匹配会在 CI 上无辜失效。
+ */
+function canonicalCycle(cycle: string): string {
+  const sep = cycle.indexOf(": ")
+  const layer = cycle.slice(0, sep)
+  const nodes = cycle.slice(sep + 2).split(" -> ")
+  nodes.pop() // 末项是起点的重复
+  const rotations = nodes.map((_, i) => [
+    ...nodes.slice(i),
+    ...nodes.slice(0, i),
+  ])
+  const best = rotations.sort((a, b) =>
+    a.join(" -> ").localeCompare(b.join(" -> "))
+  )[0]
+  return `${layer}: ${best.join(" -> ")}`
 }
 
 const IMPORT_RE = /(?:from\s+|import\s*\(\s*|require\s*\(\s*)["']([^"']+)["']/g
@@ -289,26 +312,38 @@ describe("分层结构契约", () => {
   })
 
   it("每层内部无循环 import", () => {
-    const byLayer = new Map<Layer, Array<{ rel: string; deps: string[] }>>()
+    // 第一遍:收齐节点,key 用真实文件路径(去扩展名),以便目录型 import 能对上。
+    const byLayer = new Map<Layer, Array<{ rel: string; rawDeps: string[] }>>()
     for (const abs of listFiles(LIB_DIR)) {
       const rel = relative(REPO_ROOT, abs)
       const layer = layerOf(rel)
       if (!layer) continue
-      const deps: string[] = []
+      const rawDeps: string[] = []
       for (const m of readFileSync(abs, "utf8").matchAll(IMPORT_RE)) {
         const resolved = resolveSpecifier(abs, m[1])
-        if (!resolved) continue
-        if (layerAt(resolved) !== layer) continue
-        deps.push(resolved)
+        if (resolved) rawDeps.push(resolved)
       }
       const bucket = byLayer.get(layer) ?? []
-      bucket.push({ rel: rel.replace(/\.tsx?$/, ""), deps })
+      bucket.push({ rel: rel.replace(/\.tsx?$/, ""), rawDeps })
       byLayer.set(layer, bucket)
     }
 
     const cycles: string[] = []
     for (const [layer, nodes] of byLayer) {
-      const edges = new Map(nodes.map((n) => [n.rel, n.deps]))
+      // 第二遍:把 import 目标规范化到节点 key。resolveSpecifier 对目录型 import
+      // 返回目录路径(如 lib/core/db),而节点 key 是 lib/core/db/index —— 直接比对
+      // 会静默丢掉这条边,故补一次 `/index` 匹配。规范化后同层过滤由 key 集合保证。
+      const keys = new Set(nodes.map((n) => n.rel))
+      const edges = new Map<string, string[]>()
+      for (const n of nodes) {
+        const deps = new Set<string>()
+        for (const r of n.rawDeps) {
+          const hit = keys.has(r) ? r : keys.has(`${r}/index`) ? `${r}/index` : null
+          if (hit) deps.add(hit)
+        }
+        edges.set(n.rel, [...deps])
+      }
+
       const state = new Map<string, 0 | 1 | 2>()
       const walk = (node: string, stack: string[]): void => {
         const st = state.get(node) ?? 0
@@ -320,16 +355,13 @@ describe("分层结构契约", () => {
           return
         }
         state.set(node, 1)
-        for (const next of edges.get(node) ?? []) {
-          if (edges.has(next)) walk(next, [...stack, node])
-        }
+        for (const next of edges.get(node) ?? []) walk(next, [...stack, node])
         state.set(node, 2)
       }
       for (const n of edges.keys()) walk(n, [])
     }
-    expect(
-      cycles.filter((c) => !TOLERATED_INTRA_CYCLES.some((t) => c.includes(t)))
-    ).toEqual([])
+    const found = [...new Set(cycles.map(canonicalCycle))].sort()
+    expect(found.filter((c) => !TOLERATED_INTRA_CYCLES.includes(c))).toEqual([])
   })
 
   it("components/ 只依赖 core", () => {
