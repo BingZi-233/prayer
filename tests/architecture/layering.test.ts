@@ -22,9 +22,9 @@ const LIB_DIR = join(REPO_ROOT, "lib")
 
 /**
  * 前缀 -> 该文件最终归属的层。
- * 按「目标层」判定,不按磁盘当前位置:阶段 4 会把 lib/tools/kb.ts 迁往
- * lib/knowledge/,它现在映射到的层就是 knowledge。搬迁中途的物理位置不一致
- * 不算违规,只有最终归属错位才算。
+ * 按「目标层」判定,不按磁盘当前位置:阶段 4b 会把 lib/agent/agent.ts 迁往
+ * lib/conversation/,而规则现在就把它归为 conversation。搬迁中途的物理位置
+ * 不一致不算违规,只有最终归属错位才算。
  * 顺序敏感:具体文件规则必须排在目录通配之前。
  *
  * 目录规则必须以 `/` 结尾,精确文件规则不带尾斜杠。`layerOf` 与
