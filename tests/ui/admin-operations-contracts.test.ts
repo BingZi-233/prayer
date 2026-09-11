@@ -25,7 +25,11 @@ describe("admin operations workbench contracts", () => {
   })
 
   it("preserves the sessions workbench layout and handoff semantics", async () => {
-    const source = await read("app/admin/sessions/page.tsx")
+    const [page, hook] = await Promise.all([
+      read("app/admin/sessions/page.tsx"),
+      read("components/admin/sessions/use-session-selection.ts"),
+    ])
+    const source = page + "\n" + hook
 
     expect(source).toContain("<MasterDetail")
     expect(source).toContain('backLabel="返回会话列表"')
