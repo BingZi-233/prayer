@@ -104,13 +104,15 @@ pnpm typecheck 2>&1 | head -50
 - [ ] **Step 4: 手工检查 typecheck 抓不到的引用**
 
 ```bash
-grep -rn "channels/types\|channels/ids\|channels/enabled-chats\|lib/events\|name-cache\|group-name" \
+grep -rnE "(channels/(types|ids|enabled-chats)|\"@/lib/events|/lib/events\"|lib/name-cache|lib/group-name)" \
   --include='*.ts' --include='*.tsx' --include='*.json' --include='*.cjs' --include='*.js' \
   app lib components tests plugins scripts instrumentation.ts proxy.ts next.config.ts ecosystem.config.cjs components.json \
   | grep -v "core/chat/"
 ```
 
 Expected: 无输出。逐个修正发现的问题。
+
+**注意模式要带引号或 `lib/` 前缀**：裸的 `name-cache` 会命中散文注释里的词（如 `// 命中 name-cache 则…`），那不是路径引用，不该改。实现时踩过这个坑。
 
 同时查注释里的路径引用（不报错，只会腐烂）：
 
@@ -183,6 +185,48 @@ types/ids/enabled-chats 此前栖身 lib/channels/,而 lib/config 这些
 - Modify: `tests/architecture/layering.test.ts`
 - Modify: `docs/development.md`
 
+> **实施后记（三处，勿照抄下方文本）：**
+>
+> 1. **追加了一条新钉子**（提交 `8df7f38`），下方步骤里没有。缘由：分类钉子里的
+>    `layerOf("lib/core/chat/types.ts")` 在 types 搬完后匹配的是 `["lib/core/", "core"]` 通配规则，
+>    与全树扫描重复、失去判别力。真正该钉的是**父目录规则与自身层别不同**的文件 ——
+>    `lib/agent/` 下那 7 个靠精确规则定 `model`/`knowledge`、父目录却指向 `conversation`。
+>    精确规则被误删时，文件会静默落回 `conversation`，而「精确规则命中真实文件」「每文件归层」
+>    「逆向依赖」三条全抓不到。新增用例枚举这 7 条并断言层别（反向验证确认能红）。
+> 2. 因此 **用例数从 8 变成 9** —— 下方 Task 2 Step 6 与 Task 3 Step 5 里写的「8 个用例全绿」
+>    应读作「9 个」。
+> 3. 同样追加了 `RETIRED_PREFIXES` 的文档注释：声明该表**有界**（上限＝重构前 `lib/` 文件数，
+>    阶段 4 后约 40~45 项封顶，是永久回归护栏而非迁移脚手架），并写明它**固有的盲区**
+>    ——「忘了登记某条墓碑」无法被机器检测。
+>
+> **给阶段 3 的提示：** 那条新钉子枚举的 7 个文件会在阶段 3（迁入 `lib/model/`）与阶段 4
+> （迁入 `lib/knowledge/`）时**全部改变落点**，届时该枚举清单必须同步维护，否则误红。
+
+- [ ] **Step 0: 顺带消除一处已登记的层内环（一行，且它本身就是 import 语句）**
+
+设计文档登记过一条 `core` 层内的环：`config-store.ts` 运行时 import `chat/enabled-chats.ts` 的
+`getGroupPolicy`，而后者反向引用 `config-store` 的**类型**。此前把它写成「调整任意一处都会
+改变初始化顺序，属行为改动」——**那是错的**。
+
+`AppConfig` 与 `GroupPolicy` 其实**定义在** `lib/core/config/schema.ts`，而 `config-store.ts:17`
+只是 `export type { AppConfig, GroupPolicy } from "./config/schema"` 的 re-export。从定义处取类型
+即可消除这条反向边：
+
+```ts
+// lib/core/chat/enabled-chats.ts:2
+import type { AppConfig, GroupPolicy } from "../config/schema"
+```
+
+**它仍是 `import type`——运行期完全擦除，零行为影响**，也不越出本阶段「只改 import」的边界。
+
+改完跑：
+
+```bash
+pnpm vitest run tests/lib/core/chat/ tests/lib/core/config-store.test.ts
+```
+
+Expected: 全过。（分层测试不受影响：两条边都在 `core` 层内，跨层检查看不到。）
+
 - [ ] **Step 1: 从 `PREFIX_RULES` 删掉 7 条已死的精确规则**
 
 ```ts
@@ -213,14 +257,24 @@ types/ids/enabled-chats 此前栖身 lib/channels/,而 lib/config 这些
 
 **必须改**：删掉那三条精确规则后，`layerOf("lib/channels/types.ts")` 会命中 `["lib/channels/", "channels"]` 返回 `"channels"`，断言会红。其余 6 条钉子不动。
 
-- [ ] **Step 4: 刷新 `PREFIX_RULES` 文档注释里已过期的示例**
+- [ ] **Step 4: 更新 `CURRENT_STAGE`**
+
+```ts
+const CURRENT_STAGE = "2b"
+```
+
+`STAGE_ORDER` 里已有 `"2b"` 这一项，无需改动。
+
+（它在当前时点仍是 no-op —— `TOLERATED` 三条的 `removedBy` 都是 `"3"`，而 `"3"` 排在 `"2b"` 之后，所以「没有早该消失的容忍条目」恒空。bump 是记账，真正的牙齿在阶段 3。但计划与验收都以此为状态标记，不 bump 就会自相矛盾。）
+
+- [ ] **Step 5: 刷新 `PREFIX_RULES` 文档注释里已过期的示例**
 
 注释里有两处举例已随本次搬迁失效：
 
 - 「`lib/channels/types.ts` 眼下仍在 `channels/` 下，但最终去 `lib/core/chat/`」——它已经搬过去了，这个例子讲不通了。换成一个**仍然成立**的例子（例如阶段 3 会把 `lib/tools/embed.ts` 迁往 `lib/model/`，而它现在映射到的层是 `model`）。
 - 「例如 2b 之后 `["lib/channels/", "channels"]` 仍在，重建 `lib/channels/types.ts` 会被悄悄算作 channels」——这正是**现在**的情形。改成一般化表述（「父目录规则仍存活时」），不点名具体阶段。
 
-- [ ] **Step 5: 跑测试并做反向验证**
+- [ ] **Step 6: 跑测试并做反向验证**
 
 ```bash
 pnpm vitest run tests/architecture/layering.test.ts
@@ -232,7 +286,21 @@ Expected: **8 个用例全绿**。
 
 **这一步是本阶段最关键的验证** —— 它证明「父目录规则仍存活」那个盲区真的被退役登记堵住了。若没红，说明登记漏了，回头检查 Step 2。
 
-- [ ] **Step 6: 更新 `docs/development.md`**
+- [ ] **Step 7: 修掉一处陈旧的测试标签（非 import 的例外，理由如下）**
+
+`tests/lib/core/chat/ids.test.ts:9` 的标签仍是 `describe("channels/ids", …)`，而该目录已不存在。
+
+**这是本阶段唯一允许改动的非 import 内容**，理由：它只影响测试输出，不进运行时、不进日志、不被任何告警规则匹配（与 `scope: "onebot.enrich"` 那种可观察输出不同），而它引用的路径已经不存在，留着只会让后来人 grep 到困惑。
+
+仓库的标签惯例是**描述主题而非路径**（同目录下 `bus.test.ts` 用 `"bus"`、`auth.test.ts` 用 `"timingSafeEqualStr"`）。该文件测的是 session key 的编解码，改为：
+
+```ts
+describe("session key 编解码", () => {
+```
+
+改完复跑该文件确认仍通过：`pnpm vitest run tests/lib/core/chat/ids.test.ts`
+
+- [ ] **Step 8: 更新 `docs/development.md`**
 
 - 「模块边界」里 `lib/core/config-store.ts` 那条结尾的 `lib/channels/enabled-chats.ts` → `lib/core/chat/enabled-chats.ts`
 - **删掉「待改写条目」表里标 `2b` 的那一行**（使命结束）
@@ -246,7 +314,7 @@ grep -n "channels/types\|channels/ids\|channels/enabled-chats\|lib/events\|name-
 
 Expected: 无输出。
 
-- [ ] **Step 7: 提交**
+- [ ] **Step 9: 提交**
 
 ```bash
 git add tests/architecture/layering.test.ts docs/development.md

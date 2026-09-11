@@ -6,7 +6,7 @@ import {
   errorMessage,
 } from "@/lib/agent/error-handler"
 import { logger } from "@/lib/core/logger"
-import type { ActionSend } from "@/lib/events"
+import type { ActionSend } from "@/lib/core/chat/events"
 
 beforeEach(() => {
   bus.removeAllListeners()

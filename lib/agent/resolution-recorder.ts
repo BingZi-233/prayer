@@ -1,6 +1,6 @@
 import { bus } from "../core/bus"
 import type { Repo } from "../core/db/repo"
-import type { ResolutionRecorded } from "../events"
+import type { ResolutionRecorded } from "../core/chat/events"
 
 /** 把 resolution.recorded 事件落库,供看板统计 */
 export function registerResolutionRecorder(repo: Repo): () => void {

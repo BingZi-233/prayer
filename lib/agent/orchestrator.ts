@@ -3,7 +3,7 @@ import { logger } from "../core/logger"
 import type { Agent } from "./agent"
 import { isNoAnswerText } from "./agent"
 import type { SessionStore } from "./session"
-import type { QualifiedMessage } from "../events"
+import type { QualifiedMessage } from "../core/chat/events"
 import {
   BLOCKED_INTENTS,
   BLOCKED_REPLY,

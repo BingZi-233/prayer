@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest"
 import { RuntimeManager, type RuntimeBuilders } from "@/lib/runtime"
 import type { AppConfig } from "@/lib/core/config-store"
-import type { Channel } from "@/lib/channels/types"
+import type { Channel } from "@/lib/core/chat/types"
 
 const cfg: AppConfig = {
   onebotWsUrl: "ws://x:1",

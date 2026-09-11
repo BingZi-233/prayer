@@ -1,4 +1,4 @@
-import type { ActionSend } from "../events"
+import type { ActionSend } from "./events"
 
 /** 通道标识；discord 一期仅预留类型，不实现 */
 export const CHANNEL_IDS = ["qq", "tg", "discord"] as const

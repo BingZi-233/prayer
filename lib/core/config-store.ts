@@ -1,5 +1,5 @@
 import type { ConfigRepository } from "./db/repositories/config"
-import { getGroupPolicy } from "../channels/enabled-chats"
+import { getGroupPolicy } from "./chat/enabled-chats"
 import {
   appConfigSchema,
   isConfigRecord,

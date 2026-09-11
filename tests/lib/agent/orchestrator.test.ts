@@ -13,7 +13,7 @@ import type {
   ReplyReady,
   ActionSend,
   ResolutionRecorded,
-} from "@/lib/events"
+} from "@/lib/core/chat/events"
 
 let repo: Repo
 const SK = "qq:1:2"

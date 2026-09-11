@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { sessionKeyParts } from "@/lib/group-name"
+import { sessionKeyParts } from "@/lib/core/chat/group-name"
 
 describe("sessionKeyParts", () => {
   it("解析 tg 三元键含负 chatId", () => {

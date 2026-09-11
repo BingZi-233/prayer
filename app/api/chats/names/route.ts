@@ -2,7 +2,7 @@ import { NextResponse } from "next/server"
 import { Bot } from "grammy"
 import { getAppContext } from "@/lib/core/app-context"
 import { getRuntime } from "@/lib/runtime"
-import { getNameCache, type GroupNameRow } from "@/lib/name-cache"
+import { getNameCache, type GroupNameRow } from "@/lib/core/chat/name-cache"
 import { ok } from "@/lib/core/api"
 
 /**

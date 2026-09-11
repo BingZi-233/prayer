@@ -1,4 +1,4 @@
-import type { ChatRef } from "../../channels/types"
+import type { ChatRef } from "../chat/types"
 import { normalizeStoredConfig, type AppConfig } from "./schema"
 import {
   normalizeChatRefs,

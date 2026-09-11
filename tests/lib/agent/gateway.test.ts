@@ -10,7 +10,7 @@ import type {
   HandoffResumed,
   IncomingMessage,
   QualifiedMessage,
-} from "@/lib/events"
+} from "@/lib/core/chat/events"
 
 let repo: Repo
 const BOT = "555"

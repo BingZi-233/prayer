@@ -3,7 +3,7 @@ import { openDb } from "@/lib/core/db/index"
 import { Repo } from "@/lib/core/db/repo"
 import { bus } from "@/lib/core/bus"
 import { registerMessageBuffer } from "@/lib/agent/message-buffer"
-import type { IncomingMessage } from "@/lib/events"
+import type { IncomingMessage } from "@/lib/core/chat/events"
 
 let repo: Repo
 

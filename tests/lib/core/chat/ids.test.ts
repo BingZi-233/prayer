@@ -4,9 +4,9 @@ import {
   makeDedupeKey,
   parseSessionKey,
   legacySessionKeyToCanonical,
-} from "@/lib/channels/ids"
+} from "@/lib/core/chat/ids"
 
-describe("channels/ids", () => {
+describe("session key 编解码", () => {
   it("sessionKey 与 parse 往返（含 TG 负 chatId）", () => {
     const key = makeSessionKey("tg", "-100123", "42")
     expect(key).toBe("tg:-100123:42")

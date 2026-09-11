@@ -16,8 +16,8 @@ import { makeAnswerabilityClassifier } from "./agent/answerability"
 import { registerHandoffHandler } from "./agent/handoff-handler"
 import { registerResolutionRecorder } from "./agent/resolution-recorder"
 import type { GroupPolicy } from "./core/config-store"
-import type { ChannelId, ChatRef } from "./channels/types"
-import { getGroupPolicy } from "./channels/enabled-chats"
+import type { ChannelId, ChatRef } from "./core/chat/types"
+import { getGroupPolicy } from "./core/chat/enabled-chats"
 import type { BrandInput } from "./core/brand"
 
 export interface AssembleDeps {

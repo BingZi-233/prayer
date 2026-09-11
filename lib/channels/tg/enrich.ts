@@ -1,5 +1,5 @@
 import type { Message } from "grammy/types"
-import type { ImageInput, IncomingMessage } from "../../events"
+import type { ImageInput, IncomingMessage } from "../../core/chat/events"
 import { errorMessage } from "../../core/log-context"
 import { logger } from "../../core/logger"
 import type { SenderRole } from "./admins-cache"

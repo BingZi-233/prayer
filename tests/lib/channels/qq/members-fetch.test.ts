@@ -7,7 +7,7 @@ import {
   resetMembersInflight,
   type FetchMembers,
 } from "@/lib/channels/qq/members-fetch"
-import { NameCache, resetNameCache } from "@/lib/name-cache"
+import { NameCache, resetNameCache } from "@/lib/core/chat/name-cache"
 import { collectAdmins } from "@/lib/channels/qq/admins"
 
 describe("parseGroupMembers", () => {

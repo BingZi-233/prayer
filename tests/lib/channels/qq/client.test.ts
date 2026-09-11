@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from "vitest"
 import { WebSocketServer, type WebSocket } from "ws"
 import type { AddressInfo } from "node:net"
 import { bus } from "@/lib/core/bus"
-import type { IncomingMessage } from "@/lib/events"
+import type { IncomingMessage } from "@/lib/core/chat/events"
 import { OneBotClient } from "@/lib/channels/qq/client"
 
 // OneBot 服务端收到的 API 请求帧(测试断言用)

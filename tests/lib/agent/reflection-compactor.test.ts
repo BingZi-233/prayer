@@ -12,7 +12,7 @@ import {
   DEFAULT_COMPACT_BATCH_SIZE,
   DEFAULT_COMPACT_MS,
 } from "@/lib/agent/reflection-compactor"
-import type { ActionSend, ErrorOccurred } from "@/lib/events"
+import type { ActionSend, ErrorOccurred } from "@/lib/core/chat/events"
 
 let repo: Repo
 const vec = () => new Float32Array([1, 0, 0])

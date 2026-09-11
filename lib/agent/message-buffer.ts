@@ -1,11 +1,11 @@
 import { bus } from "../core/bus"
 import type { Repo } from "../core/db/repo"
-import type { IncomingMessage } from "../events"
+import type { IncomingMessage } from "../core/chat/events"
 import {
   isAdminSurface,
   isChatEnabled,
   type ChatRef,
-} from "../channels/enabled-chats"
+} from "../core/chat/enabled-chats"
 import { isCommandMessage } from "./command-keywords"
 import { isAtTrigger } from "./gateway"
 

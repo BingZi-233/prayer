@@ -30,7 +30,7 @@ import { SectionCard } from "@/components/admin/section-card"
 import { ItemCard } from "@/components/admin/item-card"
 import { DataState } from "@/components/admin/data-state"
 import { usePolling } from "@/components/admin/use-polling"
-import { useGroupNames } from "@/lib/group-name"
+import { useGroupNames } from "@/lib/core/chat/group-name"
 
 interface GroupRow {
   groupId: number

@@ -1,4 +1,4 @@
-import type { ChannelId } from "../channels/types"
+import type { ChannelId } from "./chat/types"
 
 export type LogLevel = "info" | "warn" | "error"
 

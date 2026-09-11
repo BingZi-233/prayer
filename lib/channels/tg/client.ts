@@ -1,10 +1,10 @@
 import { Bot, GrammyError } from "grammy"
 import type { Update } from "grammy/types"
 import { bus } from "../../core/bus"
-import type { ActionSend } from "../../events"
+import type { ActionSend } from "../../core/chat/events"
 import { logger } from "../../core/logger"
-import { getNameCache } from "../../name-cache"
-import type { Channel, ChannelCapabilities, ChannelStatus } from "../types"
+import { getNameCache } from "../../core/chat/name-cache"
+import type { Channel, ChannelCapabilities, ChannelStatus } from "../../core/chat/types"
 import { DeadlineExceededError, withDeadline } from "../keepalive"
 import {
   AdminsCache,
@@ -79,7 +79,7 @@ export interface TelegramChannelOpts {
   adminsCache?: AdminsCache
   /** 可注入图片下载；传 null 禁用下载 */
   downloadImage?:
-    | ((fileId: string) => Promise<import("../../events").ImageInput | null>)
+    | ((fileId: string) => Promise<import("../../core/chat/events").ImageInput | null>)
     | null
 }
 
@@ -125,7 +125,7 @@ export class TelegramChannel implements Channel {
   private readonly sleep: (ms: number) => Promise<void>
   private readonly adminsCache: AdminsCache
   private readonly downloadImage:
-    | ((fileId: string) => Promise<import("../../events").ImageInput | null>)
+    | ((fileId: string) => Promise<import("../../core/chat/events").ImageInput | null>)
     | null
 
   constructor(

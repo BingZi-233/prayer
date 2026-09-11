@@ -2,7 +2,7 @@
 // members / admins 共用:24h TTL 内不再打 OneBot get_group_member_list;
 // 并发冷 miss 按群 inflight 合并。新写入的快照含 role,供「额外监听 AT」筛 owner/admin。
 
-import { getNameCache, type UserNameRow } from "@/lib/name-cache"
+import { getNameCache, type UserNameRow } from "@/lib/core/chat/name-cache"
 
 // 群友名最长 9 字,超出截断加省略号。Array.from 按码点切,避免截断 emoji / CJK。
 function clamp(name: string): string {

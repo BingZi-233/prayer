@@ -1,5 +1,5 @@
 import { bus } from "../core/bus"
-import type { ReplyReady } from "../events"
+import type { ReplyReady } from "../core/chat/events"
 import { isNoAnswerText } from "./agent"
 
 export interface ReplyMapperDeps {

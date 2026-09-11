@@ -1,6 +1,6 @@
 import WebSocket from "ws"
 import { bus } from "../../core/bus"
-import type { ActionSend } from "../../events"
+import type { ActionSend } from "../../core/chat/events"
 import { logger } from "../../core/logger"
 import { enrich } from "./enrich"
 import {

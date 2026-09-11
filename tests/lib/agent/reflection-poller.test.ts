@@ -12,7 +12,7 @@ import {
   itemsFromStructured,
   REFLECT_OUTPUT_SCHEMA,
 } from "@/lib/agent/reflection-poller"
-import type { ActionSend, ErrorOccurred } from "@/lib/events"
+import type { ActionSend, ErrorOccurred } from "@/lib/core/chat/events"
 import type Database from "better-sqlite3"
 
 /** Repo.db 是 private;测试需要直写 SQL 种子数据 */

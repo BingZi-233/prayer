@@ -12,7 +12,7 @@ import {
   withTimeout,
   withTimeoutFn,
 } from "./timeout"
-import type { ChatRef } from "../channels/enabled-chats"
+import type { ChatRef } from "../core/chat/enabled-chats"
 
 export interface ReflectionCompactorDeps {
   repo: Repo

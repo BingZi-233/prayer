@@ -3,7 +3,7 @@ import { classifyItems, runScan } from "@/lib/agent/topic-poller"
 import { openDb } from "@/lib/core/db/index"
 import { Repo } from "@/lib/core/db/repo"
 import { bus } from "@/lib/core/bus"
-import type { ErrorOccurred } from "@/lib/events"
+import type { ErrorOccurred } from "@/lib/core/chat/events"
 import type Database from "better-sqlite3"
 
 /** Repo.db 是 private;测试需要直写 SQL 种子数据 */

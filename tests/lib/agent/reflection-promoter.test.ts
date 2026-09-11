@@ -13,7 +13,7 @@ import {
   PROMOTE_OUTPUT_SCHEMA,
 } from "@/lib/agent/reflection-promoter"
 import { bus } from "@/lib/core/bus"
-import type { ActionSend, ErrorOccurred } from "@/lib/events"
+import type { ActionSend, ErrorOccurred } from "@/lib/core/chat/events"
 
 let repo: Repo
 const vec = () => new Float32Array([1, 0, 0])

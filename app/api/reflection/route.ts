@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { z } from "zod"
 import { getAppContext } from "@/lib/core/app-context"
-import { listEnabledChats } from "@/lib/channels/enabled-chats"
+import { listEnabledChats } from "@/lib/core/chat/enabled-chats"
 import { ok, fail } from "@/lib/core/api"
 import { buildGroupChatStats } from "@/lib/reflect-stats"
 import { applyPromote } from "@/lib/reflect-promote"

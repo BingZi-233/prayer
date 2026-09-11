@@ -1,4 +1,4 @@
-import type { ChannelId } from "./channels/types"
+import type { ChannelId } from "./types"
 
 export interface ImageInput {
   data: string // base64

@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react"
 import { toast } from "sonner"
 import { useLive } from "@/components/live-provider"
 import type { AppConfig as Cfg } from "@/lib/core/config/schema"
-import type { ChatRef } from "@/lib/channels/types"
+import type { ChatRef } from "@/lib/core/chat/types"
 import { excludeAdminSurface } from "@/lib/core/config/chats"
 
 type ScalarConfigKey = Exclude<

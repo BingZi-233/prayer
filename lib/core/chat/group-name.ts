@@ -4,7 +4,7 @@ import { useEffect, useState } from "react"
 import {
   legacySessionKeyToCanonical,
   parseSessionKey,
-} from "@/lib/channels/ids"
+} from "@/lib/core/chat/ids"
 
 /** 与服务端 name-cache 一致:24h */
 const CLIENT_NAME_TTL_MS = 24 * 60 * 60 * 1000

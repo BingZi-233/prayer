@@ -6,13 +6,13 @@ import { AGENT_FALLBACK_TEXT, isNoAnswerText, PROACTIVE_SUFFIX } from "./agent"
 import type { SessionStore } from "./session"
 import type { AnswerabilityClassifier } from "./answerability"
 import type { GroupPolicy } from "../core/config-store"
-import type { ChannelId } from "../channels/types"
-import { makeSessionKey } from "../channels/ids"
+import type { ChannelId } from "../core/chat/types"
+import { makeSessionKey } from "../core/chat/ids"
 import {
   getGroupPolicy,
   isAdminSurface,
   type ChatRef,
-} from "../channels/enabled-chats"
+} from "../core/chat/enabled-chats"
 
 // 主动模式指令改定义在 agent.ts:预检索要按它剥前缀才能拿到干净的检索 query
 // (见 kbProbeText),常量留在这边会形成 agent → poller 的循环依赖。

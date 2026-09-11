@@ -71,7 +71,7 @@ import {
   sessionKeyParts,
   useGroupNames,
   useMemberNames,
-} from "@/lib/group-name"
+} from "@/lib/core/chat/group-name"
 
 const CHANNEL_LABEL: Record<string, string> = {
   qq: "QQ",

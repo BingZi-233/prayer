@@ -1,4 +1,4 @@
-import type { ImageInput } from "../../events"
+import type { ImageInput } from "../../core/chat/events"
 
 export const DEFAULT_MAX_BYTES = 5 * 1024 * 1024
 export const DEFAULT_TIMEOUT_MS = 15_000
