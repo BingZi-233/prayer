@@ -22,13 +22,20 @@
 
 **一、死代码。** `components/admin/nav-list-item.tsx`（866B）全仓 **0 引用**（含动态字符串），确认可删。
 
-**二、渠道中文标签散在 3 处**（设计文档写的「两处」，实测是**三处**）：
+**二、渠道中文标签散在 4 处**（设计文档写「两处」，阶段 0 的分析找到三处，**实施时又找到第四处**）：
 
-| 位置 | 内容 |
-| --- | --- |
-| `app/admin/sessions/page.tsx:76` | `CHANNEL_LABEL`，**含 `discord → "Discord"`** |
-| `app/admin/groups/page.tsx:117` | `channelLabel(c)`，**无 `discord` 映射**，非 qq/tg 直接返回原值 |
-| `components/channel-dot.tsx:6` | `CHANNEL_LABEL`（**设计文档与阶段 0 的分析都漏了这处**） |
+| 位置 | 键值 | 未知回退 |
+| --- | --- | --- |
+| `app/admin/sessions/page.tsx:76` | `qq:"QQ", tg:"TG", discord:"Discord"` | `?? channel.toUpperCase()` |
+| `app/admin/groups/page.tsx:117`（函数） | `qq→"QQ", tg→"TG"`，**discord 无映射** | `return c`（**裸值，未大写**） |
+| `components/channel-dot.tsx:6` | 同上 | `?? ch.id.toUpperCase()` |
+| **`components/header-status.tsx:15`** | 同上 | 同上 |
+
+**三处计数由 2 → 3 → 4，每次都有人以为找全了。教训同 README.md 那次：凭印象列清单必然漏，`grep` 才找得全。**
+
+⚠️ **实际值是 `"TG"` 不是 `"Telegram"`** —— 四处一致。合并时若照抄「Telegram」会改掉**所有后台页面**的可见文字。
+
+**唯一的可见变化**：`groups` 原来对 discord 落到 `return c` 显示裸小写 `"discord"`，合并后显示 `"Discord"` —— 这正是「取并集」要达到的效果（且 discord 目前只有类型、无实际数据）。
 
 **三、时长格式化散在 3 处**（设计文档写的「5 处」，实测是 **3 处**）：
 
