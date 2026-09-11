@@ -22,9 +22,9 @@ const LIB_DIR = join(REPO_ROOT, "lib")
 
 /**
  * 前缀 -> 该文件最终归属的层。
- * 按「目标层」判定,不按磁盘当前位置:lib/channels/types.ts 眼下仍在
- * channels/ 下,但它最终去 lib/core/chat/,这里就记 core。搬迁中途的
- * 物理位置不一致不算违规,只有最终归属错位才算。
+ * 按「目标层」判定,不按磁盘当前位置:阶段 3 会把 lib/tools/embed.ts 迁往
+ * lib/model/,它现在映射到的层就是 model。搬迁中途的物理位置不一致
+ * 不算违规,只有最终归属错位才算。
  * 顺序敏感:具体文件规则必须排在目录通配之前。
  *
  * 目录规则必须以 `/` 结尾,精确文件规则不带尾斜杠。`layerOf` 与
@@ -36,15 +36,6 @@ const PREFIX_RULES: Array<[string, Layer]> = [
 
   // core —— 目标位
   ["lib/core/", "core"],
-  // core —— 当前位置
-  ["lib/events.ts", "core"],
-  ["lib/name-cache.ts", "core"],
-  ["lib/name-cache-store.ts", "core"],
-  ["lib/group-name.ts", "core"],
-  // 通道词汇:目标 core/chat,当前位置仍在 channels/
-  ["lib/channels/types.ts", "core"],
-  ["lib/channels/ids.ts", "core"],
-  ["lib/channels/enabled-chats.ts", "core"],
 
   // model
   ["lib/tools/embed.ts", "model"],
@@ -81,9 +72,8 @@ const PREFIX_RULES: Array<[string, Layer]> = [
  *
  * 为什么精确文件项也不能省(曾一度只留目录项,是个错误):
  * 退役一条精确文件规则后,若它的**父目录规则仍然存活**,有人把该文件放回去
- * 会被那条目录规则**静默地**归成父目录那一层 —— 例如 2b 之后
- * `["lib/channels/", "channels"]` 仍在,重建 `lib/channels/types.ts`
- * 会被悄悄算作 channels。此时「退役前缀无命中」没有该项而放行,
+ * 会被那条目录规则**静默地**归成父目录那一层。此时「退役前缀无命中」
+ * 没有该项而放行,
  * 「每条精确规则命中真实文件」查的是规则不是文件,「lib 下每个文件都归属于
  * 某一层」又因规则命中而通过 —— 三条都拦不住,只有这份登记能。
  *
@@ -105,6 +95,13 @@ const RETIRED_PREFIXES: string[] = [
   "lib/utils.ts",
   "lib/brand.ts",
   "lib/api.ts",
+  "lib/events.ts",
+  "lib/name-cache.ts",
+  "lib/name-cache-store.ts",
+  "lib/group-name.ts",
+  "lib/channels/types.ts",
+  "lib/channels/ids.ts",
+  "lib/channels/enabled-chats.ts",
 ]
 
 /**
@@ -258,7 +255,7 @@ describe("分层结构契约", () => {
 
   it("关键路径的分类符合目标层", () => {
     expect(layerOf("lib/core/config/chats.ts")).toBe("core")
-    expect(layerOf("lib/channels/types.ts")).toBe("core") // 目标 core/chat,非 channels
+    expect(layerOf("lib/core/chat/types.ts")).toBe("core")
     expect(layerOf("lib/channels/qq/members-fetch.ts")).toBe("channels")
     expect(layerOf("lib/tools/embed.ts")).toBe("model")
     expect(layerOf("lib/tools/kb.ts")).toBe("knowledge")
