@@ -41,7 +41,11 @@ describe("Base UI dialog migration contract", () => {
   })
 
   it("keeps the sessions multi-step action open until the final step", async () => {
-    const source = await readFile("app/admin/sessions/page.tsx", "utf8")
+    const [page, dialogs] = await Promise.all([
+      readFile("app/admin/sessions/page.tsx", "utf8"),
+      readFile("components/admin/sessions/session-dialogs.tsx", "utf8"),
+    ])
+    const source = page + "\n" + dialogs
 
     expect(source).toMatch(/e\.preventDefault\(\)\s+e\.preventBaseUIHandler\(\)/)
   })
