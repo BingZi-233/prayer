@@ -231,6 +231,20 @@ model 层。零行为改动,约 23 行 import 改写,测试目录同步镜像。
 
 **保留**那 4 条 knowledge 的（`kb-prefetch`、`reflection-poller`、`reflection-compactor`、`reflection-promoter`）—— 它们仍在 `lib/agent/` 下、父目录规则仍是 `conversation`，阶段 4 才搬。
 
+- [ ] **Step 4b: 给 `lib/model/plugins/manager.ts` 补一段区分注释**
+
+**这是设计文档明确要求的，而搬迁时漏了。** spec 里写着要在该文件的文档注释里点明它与**顶层** `plugins/` 的区别 —— 两个 `plugins/` 名字相近，是 spec 自己点名的误读风险（顶层那个是 `cs`/`packyapi` 插件本体，本模块是另一回事）。
+
+在 `lib/model/plugins/manager.ts` 顶部加 2~3 行，例如：
+
+```ts
+// claude CLI 的 plugin 生命周期管理(安装/启停/状态),即「模型能用哪些工具」的来源。
+// 注意与仓库顶层的 plugins/ 区分:那个是插件本体(cs / packyapi 两个本地 MCP server),
+// 本模块管的是怎么把它们挂给模型。
+```
+
+（措辞可自行调整，但要包含两层意思：本模块干什么、与顶层 `plugins/` 的不同。）
+
 - [ ] **Step 5: 更新分类钉子用例**
 
 `expect(layerOf("lib/tools/embed.ts")).toBe("model")` 改为：
@@ -240,6 +254,10 @@ model 层。零行为改动,约 23 行 import 改写,测试目录同步镜像。
 ```
 
 **这条必须改**：`lib/tools/embed.ts` 已不存在，删掉那条精确规则后 `layerOf("lib/tools/embed.ts")` 会返回 `null`，断言会红。其余钉子逐条核对是否受影响（`lib/tools/kb.ts` 仍在 `lib/tools/`，不受影响）。
+
+- [ ] **Step 5b: 刷新 `PREFIX_RULES` 文档注释里已过期的举例**
+
+注释里那句话——「阶段 3 会把 `lib/tools/embed.ts` 迁往 `lib/model/`」——**本阶段已经做了**，这个举例不再是「将来时」。换成一个**仍然成立**的例子（阶段 4 会把 `lib/tools/kb.ts` 迁往 `lib/knowledge/`，而它现在映射到的层就是 `knowledge`），或改成一般化表述。
 
 - [ ] **Step 6: 更新 `CURRENT_STAGE` 与 `STAGE_ORDER`**
 
