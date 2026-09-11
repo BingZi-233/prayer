@@ -186,6 +186,19 @@ agent.ts 里约 400 行回答的是「怎么调模型」而非「会话怎么走
 
 搬入 `DefaultSystemOptions`、`buildDefaultSystem`、`DEFAULT_SYSTEM`。它会从 `./prompt` import 那 4 个 marker(同层,合法)。
 
+> **实施后记（Task 2 完成时记录）：**
+>
+> - `agent.ts` 实测 **229 行**（原估 240–280，偏保守；完整性由多重集比对证明：归一化 `export `
+>   前缀后，旧 `agent.ts` 的每一行都原样出现在新文件集中，`missing: {}`）。
+> - 六模块行数：`prompt` 130 / `drain` 132 / `system-prompt` 69 / `sdk-env` 15 / `tool-policy` 68 /
+>   `query-options` 94。
+> - **除点名的那条 `introspect.ts` 注释外，还修了 `lib/agent/unanswered-poller.ts` 顶部一条同类失效注释**
+>   （原写「主动模式指令定义在 agent.ts」，随 `PROACTIVE_SUFFIX` 迁走而失效）。**已确认接受** ——
+>   与 `introspect.ts` 那条同属「注释里的路径引用要一并改」。
+> - 3 处 `export ` 关键字补齐（`buildPrompt`、`DEFAULT_SYSTEM`、`PROBE_MAX_CHARS`）：跨模块引用所必需。
+> - `PROBE_MAX_CHARS` 搬到 `model/prompt.ts` 时**新增了两行说明注释**（解释为什么它归 model 而非 knowledge）——
+>   这是新增内容，不是搬移内容。
+
 - [ ] **Step 4: 从 `agent.ts` 删掉已搬走的段落,并改它的 import**
 
 `agent.ts` 改为从 model import 这些符号。**再次强调:不留 re-export。** 这一步之后 `agent.ts` 应只剩 `ToolContext`、`AgentDeps`、`AgentResult`、`DEFAULT_RUN_TIMEOUT_MS`、`AGENT_FALLBACK_TEXT` 与 `class Agent`(约 240–280 行)。
