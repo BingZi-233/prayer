@@ -12,6 +12,11 @@
 
 **Spec:** `docs/superpowers/specs/2026-09-10-modularize-layering-design.md`（「目标结构」`knowledge/` 段与「迁移阶段」表第 4 行）
 
+> **留给阶段 4b 的一个待定问题（本次不动）：** 质量审查指出 `lib/agent/introspect.ts`
+> （`probeCapabilities`，唯一消费者 `app/api/capabilities/route.ts`，不参与会话流）
+> **语义上更像 model 层** —— 它的兄弟 `tool-policy`/`sdk-env`/`plugins/manager` 都在 `model/`。
+> spec 把它归 `conversation/` 可辩护但略偏。4b 搬它时再定：跟 `conversation/` 走，还是改归 `model/`。
+
 ## Global Constraints
 
 - **零行为改动。** 除下列两类外内容一字不动：**（一）import 语句；（二）注释里指向本次搬迁路径的引用**。注释以外的任何内容都不许动。本阶段**不切分任何文件**。
@@ -181,6 +186,23 @@ import 改写,测试目录同步镜像。"
 **Files:**
 - Modify: `tests/architecture/layering.test.ts`
 - Modify: `docs/development.md`、`CLAUDE.md`
+- Rename: `lib/knowledge/reflection/promote.ts` → `apply-promote.ts`
+
+> **护栏改动清单（共 6 处，一处都不能漏）** —— 质量审查逐条开出来的。下面各 Step 分别对应：
+>
+> | # | 改动 | 对应 Step |
+> | --- | --- | --- |
+> | 1 | 新增 `["lib/knowledge/", "knowledge"]` 目录规则 | Step 1 |
+> | 2 | 删 8 条已死的精确规则 | Step 2 |
+> | 3 | 8 条旧路径 + 目录 `lib/tools/` 登记进 `RETIRED_PREFIXES` | Step 3 |
+> | 4 | 删「父目录规则与自身层别不同」里那 4 条 knowledge 项 | Step 4 |
+> | 5 | 分类钉子 `lib/tools/kb.ts` → `lib/knowledge/kb.ts` | Step 5 |
+> | 6 | `CURRENT_STAGE` `"3b"` → `"4a"`、`STAGE_ORDER` 拆 4a/4b | Step 6 |
+>
+> **一个副作用（正常）**：现在 `layerOf("lib/knowledge/*")` 返回 `null`，`collectViolations` 会早退 ——
+> 也就是说**在此之前，护栏对 knowledge 层是全盲的**。加上规则后扫描才首次覆盖这一层。
+> 已人工核对 8 个 knowledge 文件均无 `knowledge → conversation` 逆向边，但**加完规则后务必跑一次
+> 测试确认**（若有逆向边，这一刻会暴露出来）。
 
 - [ ] **Step 1: 新增 `lib/knowledge/` 的目录规则**
 
@@ -256,7 +278,21 @@ grep -n "lib/tools\|reflect-promote\|reflect-stats\|kb-prefetch\|reflection-poll
 
 Expected: 无输出。
 
-- [ ] **Step 9: 提交**
+- [ ] **Step 9: 把 `promote.ts` 改名成 `apply-promote.ts`**
+
+质量审查指出:`reflection/` 下同时有 `promote.ts`(83 行,`applyPromote` 写盘工具)与 `promoter.ts`(318 行,编排),**名字只差一个字母 `r`** —— 比旧名 `reflect-promote` / `reflection-promoter` 更易混,而且 `promote.ts` 是这一层里唯一不带 `-er` 的非调度文件。
+
+改名:
+
+```bash
+git mv lib/knowledge/reflection/promote.ts lib/knowledge/reflection/apply-promote.ts
+```
+
+同步改引用(至少 `reflection/promoter.ts` 的 `./promote` → `./apply-promote`;用 `pnpm typecheck` 找出全部)。
+
+**并同步改设计文档的目标结构树**(`docs/superpowers/specs/2026-09-10-modularize-layering-design.md` 里 `reflection/` 那行的 `promote.ts` → `apply-promote.ts`),否则 spec 与实际又不一致。
+
+- [ ] **Step 10: 提交**
 
 ```bash
 git add -A
