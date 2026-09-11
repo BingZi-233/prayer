@@ -284,15 +284,36 @@ Expected: 全绿。
 - **`CLAUDE.md`**：
   - 「仓库结构」一节：`lib/` 括号里的 `agent/` agent+编排+反思循环 → `conversation/` 会话与编排（**注意「反思循环」那半已随 4a 迁往 `knowledge/`，一并去掉**）；加上 `knowledge/`
   - 「命令」一节举例的 `tests/lib/agent/session.test.ts` → `tests/lib/conversation/session.test.ts`
+- **`README.md` 的「项目结构」一节（本阶段的意外发现，过去几个阶段一直漏改）**：
+  它那块 `text` 代码块里的 `lib/` 条目**整体停留在重构前的样子**，四条里有三条是旧路径：
+
+  ```text
+  lib/agent/              Agent、会话编排、人工接管与后台循环     ← 已迁走（4b）
+  lib/channels/           QQ / Telegram 通道抽象与适配器          ← 仍在
+  lib/db/                 SQLite 数据访问、迁移与领域仓储          ← 2a 已迁往 core/db/
+  lib/plugins/            插件生命周期管理                        ← 3a 已迁往 model/plugins/
+  ```
+
+  改成重构后的五层结构：
+
+  ```text
+  lib/core/               地基：SQLite 数据访问与迁移、配置、日志、事件总线、通道词汇
+  lib/model/              模型基座：SDK 环境与 query options、工具白名单、prompt、用量计量
+  lib/channels/           QQ / Telegram 通道抽象与适配器
+  lib/knowledge/          知识库检索与反思链路（反思、压缩、升格）
+  lib/conversation/       会话与编排：Agent、网关、缓冲区、人工接管、后台循环
+  lib/runtime.ts          组合根：装配通道、Agent 与后台循环
+  ```
 - **设计文档**：把目标结构树里 `introspect.ts` 从 `conversation/` 行挪到 `model/` 行。
 
 复核：
 
 ```bash
-grep -rn "lib/agent\|tests/lib/agent" docs/development.md CLAUDE.md docs/data-access.md docs/database-operations.md
+grep -rn "lib/agent\|lib/db/\|lib/plugins/\|lib/tools\|lib/onebot\|tests/lib/agent" \
+  docs/development.md CLAUDE.md README.md docs/data-access.md docs/database-operations.md
 ```
 
-Expected: 无输出。
+Expected: 无输出（`lib/core/db/` 与 `lib/model/plugins/` 这类**新**路径不在模式内）。
 
 - [ ] **Step 9: 提交**
 

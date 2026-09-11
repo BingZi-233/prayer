@@ -270,7 +270,12 @@ main 构建。这个成本是拆细的代价，接受。
 | 2a | `docs/development.md` 的「模块边界」一节中 `lib/config/schema.ts`、`lib/config/{env,migrate,chats,patch}.ts`、`lib/config-store.ts`、`lib/db/repositories/`、`lib/db/migrations/` 五条路径；`docs/data-access.md` 里「以上路径相对于 `lib/db/`」与 `lib/db/index.ts` 的引用；`docs/database-operations.md` 里 `lib/db/migrations/registry.ts` 与 `lib/db/index.ts` 的引用；`CLAUDE.md` 的「仓库结构」一节中的 `db/` 项 |
 | 2b | `docs/development.md` 的「模块边界」中 `lib/core/config-store.ts` 条目引用的 `lib/channels/enabled-chats.ts`（迁往 `lib/core/chat/`）。注意 `channels/types.ts`、`channels/ids.ts` 目前在文档中**没有任何引用**，2b 只需搬文件、无需改文档 |
 | 3a | `CLAUDE.md` 的「仓库结构」一节中的 `plugins/` 项（`lib/plugins/` 消失；**顶层 `plugins/` 是另一个东西，不动**）——**已完成** |
-| 4 | `CLAUDE.md` 的「仓库结构」一节中的 `tools/` 项（`lib/tools/` 迁往 `lib/model/` 与 `lib/knowledge/`）；`agent/` 一项（拆为 `conversation/` 与 `knowledge/`）；`CLAUDE.md` 的「命令」一节举例的 `tests/lib/agent/session.test.ts`（该测试镜像 `lib/agent/session.ts`，随 `agent/` 一起迁） |
+| 4 | `CLAUDE.md` 的「仓库结构」一节中的 `tools/` 项（`lib/tools/` 迁往 `lib/model/` 与 `lib/knowledge/`）；`agent/` 一项（拆为 `conversation/` 与 `knowledge/`）；`CLAUDE.md` 的「命令」一节举例的 `tests/lib/agent/session.test.ts`（该测试镜像 `lib/agent/session.ts`，随 `agent/` 一起迁）；**`README.md` 的「项目结构」一节**（`lib/` 那段整体停留在重构前，四条里三条已作废） |
+
+**这张表本身漏过一项，记此为训。** `README.md` 的「项目结构」一节从头到尾没被登记，于是
+`lib/db/`（2a 迁走）、`lib/plugins/`（3a 迁走）、`lib/agent/`（4b 迁走）三处在文档里一直是旧路径，
+直到 4b 才被实施者顺手发现。**教训:列「要同步哪些文档」时，应当扫描全仓而非凭印象列举** ——
+`grep -rn "lib/" --include='*.md'` 一遍就能发现 README 这个漏网者。
 
 **不要在这些条目里写字面行号。** 行号会随任何一次编辑而腐烂，而腐烂的锚点会让施工者 grep 扑空、进而以为「已经改过了」。用章节名与文件名定位。
 
