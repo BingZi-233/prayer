@@ -343,11 +343,15 @@ const CURRENT_STAGE = "4b"
 
 ```ts
 // 已知的无害层内环：两侧都是 import type、编译期擦除；列出是为了让新增的环无处藏身
-const TOLERATED_INTRA_CYCLES = ["core: lib/core/chat/events -> lib/core/chat/types -> lib/core/chat/events"]
+const TOLERATED_INTRA_CYCLES = ["core: lib/core/chat/types -> lib/core/chat/events -> lib/core/chat/types"]
 ```
 
 然后断言改成 `expect(cycles.filter((c) => !TOLERATED_INTRA_CYCLES.some((t) => c.includes(t)))).toEqual([])`。
 **清单里的条目要注明为什么无害**，且它**不应增长** —— 新增环先改代码而不是加清单。
+
+⚠️ **方向以实测为准。** 本行原先写的是 `events -> types -> events`，**实测报出的是
+`types -> events -> types`**（起点 `types.ts`）—— 而 `includes` 是子串匹配，**写反就漏配、
+用例直接红**。实施时照实测输出填，连跑几次确认方向稳定。
 
 - [ ] **Step 7: 跑测试并做反向验证**
 
