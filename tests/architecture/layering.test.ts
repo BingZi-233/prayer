@@ -79,6 +79,16 @@ const PREFIX_RULES: Array<[string, Layer]> = [
  *
  * 例外情形(父目录无存活规则时)确实可由那两条断言间接拦住,但这需要每次
  * 退役时判断父目录是否还活着,判断错就静默失效。**统一全登记,不做区分。**
+ *
+ * **这份清单是有界的,别当迁移脚手架删掉。** 上限就是重构前 `lib/` 的文件数,
+ * 阶段 4 之后不再增长(粗估 40~45 项封顶)。它是永久的回归护栏 —— 防止有人
+ * 把文件挪回重构前的位置,那个位置在层级规则里已被有意作废。
+ *
+ * **它有一个无法自证的盲区:没人能检测出「你忘了登记某条墓碑」。** 若搬走的
+ * 旧路径其父目录规则仍存活(例如 `lib/agent/reflection-poller.ts` 落在活的
+ * `lib/agent/`→conversation 之下),漏登记就是真洞 —— 文件被放回去会被静默
+ * 归成父目录那一层。父目录已死的漏登记则由「每文件归层」兜住。任何墓碑方案
+ * 都有这个盲区,只能靠搬迁时逐条核对,写在这里是为了防后手误判。
  */
 const RETIRED_PREFIXES: string[] = [
   "lib/onebot/",
@@ -261,6 +271,25 @@ describe("分层结构契约", () => {
     expect(layerOf("lib/tools/kb.ts")).toBe("knowledge")
     expect(layerOf("lib/agent/agent.ts")).toBe("conversation")
     expect(layerOf("lib/runtime.ts")).toBe("composition")
+  })
+
+  it("父目录规则与自身层别不同的文件,其精确规则不得被删", () => {
+    // 这些文件靠**精确规则**定层,而它们的父目录规则指向**另一个层**。
+    // 一旦精确规则被误删,文件会静默落回父目录那一层,而上面那三条检查
+    // 全都抓不到:规则没了「精确规则命中真实文件」查不到,文件仍有归属
+    // 「每文件归层」照过,层别变化又不产生逆向依赖。只有钉在这里能拦。
+    const exactUnderLiveDir: Array<[string, Layer]> = [
+      ["lib/agent/sanitize-input.ts", "model"],
+      ["lib/agent/json-output.ts", "model"],
+      ["lib/agent/timeout.ts", "model"],
+      ["lib/agent/kb-prefetch.ts", "knowledge"],
+      ["lib/agent/reflection-poller.ts", "knowledge"],
+      ["lib/agent/reflection-compactor.ts", "knowledge"],
+      ["lib/agent/reflection-promoter.ts", "knowledge"],
+    ]
+    for (const [rel, layer] of exactUnderLiveDir) {
+      expect(layerOf(rel), rel).toBe(layer)
+    }
   })
 
   it("components/ 只依赖 core", () => {
