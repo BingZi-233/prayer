@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { useLive } from "@/components/live-provider"
+import { useLive, type ChannelStatusView } from "@/components/live-provider"
 import { ThemeToggle } from "@/components/theme-toggle"
 import { DEFAULT_BRAND } from "@/lib/core/brand"
 import { channelLabel } from "@/lib/core/chat/channel-labels"
@@ -26,7 +26,7 @@ export function HeaderStatus() {
 
   const brandName = overview?.brandName?.trim() || DEFAULT_BRAND.name
 
-  const channels =
+  const channels: ChannelStatusView[] =
     status?.channels && status.channels.length > 0
       ? status.channels
       : status

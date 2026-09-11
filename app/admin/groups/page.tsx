@@ -47,10 +47,9 @@ import { DataState } from "@/components/admin/data-state"
 import { usePolling } from "@/components/admin/use-polling"
 import { useGroupNames } from "@/lib/core/chat/group-name"
 import { channelLabel } from "@/lib/core/chat/channel-labels"
+import type { ChannelId } from "@/lib/core/chat/types"
 
 type Tri = "inherit" | "on" | "off"
-
-type ChannelId = "qq" | "tg" | "discord"
 
 interface GroupPolicy {
   proactiveEnabled?: boolean

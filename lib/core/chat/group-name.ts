@@ -5,6 +5,7 @@ import {
   legacySessionKeyToCanonical,
   parseSessionKey,
 } from "@/lib/core/chat/ids"
+import type { ChannelId } from "@/lib/core/chat/types"
 
 /** 与服务端 name-cache 一致:24h */
 const CLIENT_NAME_TTL_MS = 24 * 60 * 60 * 1000
@@ -104,7 +105,7 @@ export function clearClientNameCache(): void {
 /** 解析会话键 → 群号(数字;TG 为负)与 userId */
 export function sessionKeyParts(
   key: string
-): { groupId: number; userId: string; channel: string } | null {
+): { groupId: number; userId: string; channel: ChannelId } | null {
   const parsed = parseSessionKey(legacySessionKeyToCanonical(key))
   if (parsed) {
     const groupId = Number(parsed.chatId)
@@ -168,7 +169,7 @@ function resolveMembers(joined: string): {
         key: string
         groupId: number
         userId: string
-        channel: string
+        channel: ChannelId
       } => !!x
     )
 

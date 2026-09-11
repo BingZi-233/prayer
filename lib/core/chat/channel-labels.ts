@@ -15,10 +15,7 @@ const CHANNEL_LABELS: Record<ChannelId, string> = {
   discord: "Discord",
 }
 
-/**
- * 渠道显示名;未知渠道回退成大写原值。
- * 入参放 string 是因为 sessionKeyParts().channel 是裸 string,而非闭合的 ChannelId。
- */
-export function channelLabel(channel: ChannelId | string): string {
-  return CHANNEL_LABELS[channel as ChannelId] ?? String(channel).toUpperCase()
+/** 渠道显示名。ChannelId 闭合,查表必中;保留回退只为防御越界的运行时值。 */
+export function channelLabel(channel: ChannelId): string {
+  return CHANNEL_LABELS[channel] ?? channel.toUpperCase()
 }
