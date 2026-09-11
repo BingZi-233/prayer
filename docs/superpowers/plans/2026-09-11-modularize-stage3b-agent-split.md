@@ -159,7 +159,16 @@ agent.ts 里约 400 行回答的是「怎么调模型」而非「会话怎么走
 
 **Files:**
 - Create: `lib/model/prompt.ts`、`lib/model/drain.ts`、`lib/model/system-prompt.ts`
-- Modify: `lib/agent/agent.ts`、`lib/agent/kb-prefetch.ts`、`lib/agent/{unanswered-poller,orchestrator,reply-mapper,reflection-poller,reflection-compactor,reflection-promoter}.ts`、`tests/lib/model/stats/usage.test.ts`、`tests/lib/core/brand.test.ts`
+- Modify: `lib/agent/agent.ts`、`lib/agent/kb-prefetch.ts`、`lib/agent/introspect.ts`(仅注释)、`lib/agent/{unanswered-poller,orchestrator,reply-mapper,reflection-poller,reflection-compactor,reflection-promoter}.ts`、`tests/lib/model/stats/usage.test.ts`、`tests/lib/core/brand.test.ts`
+
+> **Task 1 审查补充的两点（本任务一并处理）：**
+>
+> 1. **`lib/agent/introspect.ts` 有一处注释随搬移失效**：它写着「工具门控:唯一真源是 **agent.ts** 的
+>    `isToolAllowed`」，而 `isToolAllowed` 已搬到 `lib/model/tool-policy.ts`。改成指向新位置
+>    （纯注释，不碰行为）。这类注释漂移正是设计文档要求「注释里的路径引用要一并改」的一类。
+> 2. **`isStructuredOutputTool` 是横跨两个新模块的共享符号** —— `tool-policy.ts`（wrapper 内用）与
+>    `drain.ts`（`pickStructuredFromMessage` 内用）都要它。**`drain.ts` 必须从 `./tool-policy` import**，
+>    若误从 `../agent/agent` 引，就是 `model → conversation` 逆向，护栏会红。
 
 - [ ] **Step 1: 建 `lib/model/prompt.ts`(含风险 1 的常量搬迁)**
 
