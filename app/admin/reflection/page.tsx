@@ -43,6 +43,7 @@ import { ItemCard } from "@/components/admin/item-card"
 import { DataState } from "@/components/admin/data-state"
 import { usePolling } from "@/components/admin/use-polling"
 import { useGroupNames } from "@/lib/core/chat/group-name"
+import { formatDuration } from "@/lib/core/format-duration"
 
 interface GroupRow {
   groupId: number
@@ -97,10 +98,6 @@ interface Data {
   entries: Entry[]
   compactions: Compaction[]
 }
-
-const min = (ms: number) => `${Math.round(ms / 60000)} 分`
-const hr = (ms: number) =>
-  ms >= 3600000 ? `${(ms / 3600000).toFixed(ms % 3600000 ? 1 : 0)} 时` : min(ms)
 
 function diff(before: string[], after: string[]) {
   const a = new Set(after)
@@ -537,17 +534,17 @@ export default function ReflectionPage() {
         items={[
           {
             label: "扫描周期",
-            value: d ? min(d.config.scanMs) : "—",
+            value: d ? formatDuration(d.config.scanMs) : "—",
             hint: "后台扫描生效会话的间隔。",
           },
           {
             label: "静置等待",
-            value: d ? min(d.config.settleMs) : "—",
+            value: d ? formatDuration(d.config.settleMs) : "—",
             hint: "人工答复后静置多久才提炼,避免打断进行中的对话。",
           },
           {
             label: "回溯范围",
-            value: d ? min(d.config.lookbackMs) : "—",
+            value: d ? formatDuration(d.config.lookbackMs) : "—",
             hint: "最多回看多久内的对话。",
           },
           {
@@ -557,7 +554,7 @@ export default function ReflectionPage() {
           },
           {
             label: "整理周期",
-            value: d ? hr(d.config.compactMs) : "—",
+            value: d ? formatDuration(d.config.compactMs) : "—",
             hint: "近义去重合并的自动执行周期。",
           },
           {
@@ -569,7 +566,7 @@ export default function ReflectionPage() {
             label: "升格周期",
             value: d
               ? d.config.promoteMs > 0
-                ? hr(d.config.promoteMs)
+                ? formatDuration(d.config.promoteMs)
                 : "关"
               : "—",
             hint: "正式文档升格评审的周期;「关」表示停用。",
@@ -619,7 +616,7 @@ export default function ReflectionPage() {
                     {g.lagMs == null
                       ? "未反思"
                       : g.lagMs > 0
-                        ? min(g.lagMs)
+                        ? formatDuration(g.lagMs)
                         : "0"}
                   </TableCell>
                   <TableCell className="text-right tabular-nums">

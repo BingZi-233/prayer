@@ -72,12 +72,7 @@ import {
   useGroupNames,
   useMemberNames,
 } from "@/lib/core/chat/group-name"
-
-const CHANNEL_LABEL: Record<string, string> = {
-  qq: "QQ",
-  tg: "TG",
-  discord: "Discord",
-}
+import { channelLabel } from "@/lib/core/chat/channel-labels"
 
 /** 从来源 session key 解析渠道，展示为小徽章 */
 function ChannelBadge({
@@ -88,7 +83,7 @@ function ChannelBadge({
   className?: string
 }) {
   const channel = sessionKeyParts(sessionKey)?.channel ?? "qq"
-  const label = CHANNEL_LABEL[channel] ?? channel.toUpperCase()
+  const label = channelLabel(channel)
   return (
     <Badge
       variant="secondary"

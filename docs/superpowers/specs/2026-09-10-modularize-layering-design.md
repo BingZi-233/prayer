@@ -339,10 +339,13 @@ grep 的模式要覆盖 `.ts`、`.tsx`、`.json`、`.cjs`，且扫描范围要�
 
 **3. `sessions/page.tsx` 1077 → 约 200。** 产出
 `sessions/{channel-badge,session-list,transcript-view,session-dialogs}.tsx` 与
-`use-session-selection.ts`（约 200 行）。最硬的摩擦点：六个 ref（`activeKeyRef`、
-`sessionsRef`、`transcriptGenRef`、`mountedRef`、`writingUrlKeyRef`、`lastHandledUrlKeyRef`）
-跨 `openSession` ↔ effect ↔ poller 共享，且 URL 同步（L230–302）与三个 effect
-（L356–402）、`refresh`（L404–421）是一体的竞态治理。**必须整体进同一个 hook，拆两半即坏。**
+`use-session-selection.ts`（约 200 行）。最硬的摩擦点：**八个** ref（`activeKeyRef`、
+`activeUpdatedAtRef`、`sessionsRef`、`mountedRef`、`filterRef`、`transcriptGenRef`、
+`lastHandledUrlKeyRef`、`writingUrlKeyRef`）跨 `openSession` ↔ effect ↔ poller 共享，
+且 URL 同步与三个 effect、`refresh` 是一体的竞态治理。**必须整体进同一个 hook，拆两半即坏。**
+
+（本节原先写「六个 ref」，阶段 5a 的收尾审查实测为八个 —— 当时漏了 `activeUpdatedAtRef`
+与 `filterRef`。5b 按**八个**理解。）
 
 **4. `kb/page.tsx` 1052 → 约 150。** 产出
 `kb/{tree.ts,markdown-body.tsx,file-tree.tsx,editor-panel.tsx,file-dialogs.tsx}` 与
@@ -405,6 +408,23 @@ grep 的模式要覆盖 `.ts`、`.tsx`、`.json`、`.cjs`，且扫描范围要�
 （合计约 3400 行）拆成组件 + hook；拆出的组件若进 `components/`，会被「只依赖 `core`」那条用例锁死 ——
 任何需要 `conversation`/`knowledge`/`model` 的类型或数据都必须留在 `app/`（server component，或继续走
 `/api/*` fetch），**不能下沉到 `components/`**。这条约束目前没有任何机器检查提醒，阶段 5 要自己守住。
+
+**存量债：`ChannelId` 的类型边界有若干「信任但未校验」处（阶段 5a 审查挖出，未处理）。**
+把渠道 id 从外部数据源（API 查询串、DB 行）当 `ChannelId` 用、却不做运行时校验的地方：
+`app/api/groups/activity/route.ts`、`app/api/proactive/route.ts`、`lib/core/chat/name-cache.ts`、
+`lib/knowledge/reflection/poller.ts`（三处）、`lib/conversation/agent.ts` —— 多数写成无守卫的
+`as ChannelId`。另有 DB 行层（`lib/core/db/rows.ts`、`models.ts`、各 `repositories/*`）把
+`channel` 标成 `string`，那是 SQLite 文本列的**诚实** I/O 类型，收紧要靠运行时校验（zod）而非改注解。
+还有 `lib/conversation/agent.ts` 的 `ToolContext.channel?: string`，注释自述是旁路迁移期的过渡态。
+**本设计不处理这一类**（它们与分层无关，且不少需要引入校验而非改类型），
+记在此处以免被当作「已顺手改过」。
+
+**`core` 的定位要在阶段 6 的落位指南里写清（阶段 5a 收尾审查提出）。** 它现在装着
+`utils.ts`（含 `cn()`）、`brand.ts`、`chat/group-name.ts`（React hook），又新添了两个**展示层**模块
+（`channel-labels.ts`、`format-duration.ts`）—— 后者是因为「`components/` 只可依赖 `core`」这条约束
+被推进来的。**`core` 的定位应写成「无依赖的纯工具与地基，含 UI 展示所需的纯函数」**，
+否则「core = 地基」这句会名不副实。若展示工具多到 5 个以上，再考虑另立 `lib/format/`
+（届时需在 `layering.test.ts` 的映射表里一并归层）；现在只有两个，不值得。
 
 **阶段 5 的验收要点（4b 收尾审查给出，不必新写护栏）：**「拆出的组件若 import `conversation`/
 `knowledge`/`model` 即违规」这条要**写进阶段 5 的任务验收**，靠现有那条 components 用例兜底，

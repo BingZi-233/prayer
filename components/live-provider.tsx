@@ -10,10 +10,11 @@ import {
   useState,
 } from "react"
 import { DEFAULT_BRAND } from "@/lib/core/brand"
+import type { ChannelId } from "@/lib/core/chat/types"
 
 /** 与 RuntimeStatus.channels / ChannelStatus 对齐 */
 export interface ChannelStatusView {
-  id: string
+  id: ChannelId
   connected: boolean
   lastError?: string
   detail?: string

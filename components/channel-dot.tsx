@@ -1,13 +1,8 @@
 "use client"
 
 import { cn } from "@/lib/core/utils"
+import { channelLabel } from "@/lib/core/chat/channel-labels"
 import type { ChannelStatusView } from "@/components/live-provider"
-
-const CHANNEL_LABEL: Record<string, string> = {
-  qq: "QQ",
-  tg: "TG",
-  discord: "Discord",
-}
 
 /** 单通道状态点 + 短标签(配置页通道卡片用)。 */
 export function ChannelDot({
@@ -18,7 +13,7 @@ export function ChannelDot({
   /** 更短文案,只留通道名 */
   compact?: boolean
 }) {
-  const label = CHANNEL_LABEL[ch.id] ?? ch.id.toUpperCase()
+  const label = channelLabel(ch.id)
   const err = !!ch.lastError
   const on = ch.connected && !err
   const title = [label, on ? "已连接" : err ? "异常" : "断开", ch.detail]

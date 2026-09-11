@@ -22,13 +22,20 @@
 
 **一、死代码。** `components/admin/nav-list-item.tsx`（866B）全仓 **0 引用**（含动态字符串），确认可删。
 
-**二、渠道中文标签散在 3 处**（设计文档写的「两处」，实测是**三处**）：
+**二、渠道中文标签散在 4 处**（设计文档写「两处」，阶段 0 的分析找到三处，**实施时又找到第四处**）：
 
-| 位置 | 内容 |
-| --- | --- |
-| `app/admin/sessions/page.tsx:76` | `CHANNEL_LABEL`，**含 `discord → "Discord"`** |
-| `app/admin/groups/page.tsx:117` | `channelLabel(c)`，**无 `discord` 映射**，非 qq/tg 直接返回原值 |
-| `components/channel-dot.tsx:6` | `CHANNEL_LABEL`（**设计文档与阶段 0 的分析都漏了这处**） |
+| 位置 | 键值 | 未知回退 |
+| --- | --- | --- |
+| `app/admin/sessions/page.tsx:76` | `qq:"QQ", tg:"TG", discord:"Discord"` | `?? channel.toUpperCase()` |
+| `app/admin/groups/page.tsx:117`（函数） | `qq→"QQ", tg→"TG"`，**discord 无映射** | `return c`（**裸值，未大写**） |
+| `components/channel-dot.tsx:6` | 同上 | `?? ch.id.toUpperCase()` |
+| **`components/header-status.tsx:15`** | 同上 | 同上 |
+
+**三处计数由 2 → 3 → 4，每次都有人以为找全了。教训同 README.md 那次：凭印象列清单必然漏，`grep` 才找得全。**
+
+⚠️ **实际值是 `"TG"` 不是 `"Telegram"`** —— 四处一致。合并时若照抄「Telegram」会改掉**所有后台页面**的可见文字。
+
+**唯一的可见变化**：`groups` 原来对 discord 落到 `return c` 显示裸小写 `"discord"`，合并后显示 `"Discord"` —— 这正是「取并集」要达到的效果（且 discord 目前只有类型、无实际数据）。
 
 **三、时长格式化散在 3 处**（设计文档写的「5 处」，实测是 **3 处**）：
 
@@ -39,6 +46,14 @@
 | `app/admin/proactive/page.tsx:66-67` | **多一档「秒」粒度**：`< 60_000` 时出「N 秒」，否则「N 分」 |
 
 **注意**：`app/admin/handoff/page.tsx:38` 与 `app/admin/sessions/page.tsx:139` 里的 `const min = Math.max(0, Math.round((Date.now() - since) / 60_000))` **不是格式化函数**，是算出「已过多少分钟」的**局部数字变量**，名字撞车而已，**本阶段不要动它们**。
+
+**实施后记（三处订正，勿照抄上面的示例）：**
+
+1. **旧值示例是错的。** 上面表里写「30 秒 → 原 `0 分`」，实测旧 `min` 是 `Math.round(ms/60000)`，所以 30 秒 → `Math.round(0.5)` = **`1 分`**（不是 `0 分`）。方向不变，只是旧值不同。
+2. **`groups` 并没有传 `g.lagMs` 的调用点** —— 它那四个站点传的都是 `proactiveSilenceMs`（默认 3 分），基本无变化。上面「实测调用点」那段把 `groups:412` 错列了。
+3. **实际有三处可见变化，不是两处。** 第三处是 `reflection/page.tsx:547` 的 `lookbackMs`（默认 7_200_000 = 2 小时）：该站点**原本错用了 `min`**（同文件里明明有 `hr` 却没用），显示 `120 分`；统一后显示 `2 时`。这落在「统一用最细粒度」的既定方向上，且顺带修正了一处不一致。
+
+**三处变化清单（最终，供真机核对）：** `reflection:619` 的 `lagMs`（秒级，`0/1 分` → `N 秒`）、`reflection:547` 的 `lookbackMs`（`120 分` → `2 时`）、`proactive:209` 的 `lagMs`（仅 ≥1h 时变）。其余站点在默认配置下不变。
 
 ## Task 1: 统一渠道中文标签
 
