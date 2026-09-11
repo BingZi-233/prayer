@@ -4,8 +4,6 @@ import type {
   SDKMessage,
   SDKUserMessage,
 } from "@anthropic-ai/claude-agent-sdk"
-import { readFileSync } from "node:fs"
-import { resolve } from "node:path"
 import { usageStats, type UsageSite, type UsageDelta } from "../model/stats/usage"
 import { toolStats, KB_PREFETCH_TOOL, KB_GROUNDED_TOOL } from "../model/stats/tool"
 import { logger } from "../core/logger"
@@ -13,6 +11,13 @@ import type { ChannelId } from "../core/chat/types"
 import { resolveBrand, type BrandInput, type BrandProfile } from "../core/brand"
 import { PROBE_MAX_CHARS, type KbPrefetch } from "./kb-prefetch"
 import { sanitizeForModel } from "../model/sanitize-input"
+import { agentQueryOptions } from "../model/query-options"
+import {
+  isStructuredOutputTool,
+  isToolAllowed,
+  denyMessage,
+  CS_KB_TOOL,
+} from "../model/tool-policy"
 
 // 当前消息的会话上下文(orchestrator/poller 绑定,透传给 run;工具改由 cs 插件承载后当前未使用,保留签名)
 export interface ToolContext {
@@ -24,150 +29,6 @@ export interface ToolContext {
   userId: string | number
   /** @deprecated 用 chatId;未迁完的旁路仍传 number */
   groupId?: number
-}
-
-// 交给 SDK spawn 的 CLI 子进程环境:剥掉继承自父进程的 ANTHROPIC_*,让
-// CLAUDE_CONFIG_DIR 指定目录里 settings.json 的 env 块接管(auth token / base_url / 默认模型)。
-// 原因:真实进程环境变量优先级 > settings.json 的 env 块;若不剥,启动 runtime 的
-// shell/CC 注入的 ANTHROPIC_BASE_URL/AUTH_TOKEN 会 shadow 掉配置目录的 settings.json。
-// 保留 CLAUDE_CONFIG_DIR(非 ANTHROPIC_ 前缀)与 PATH/HOME 等必需变量。
-export function sdkEnv(
-  base: Record<string, string | undefined> = process.env
-): Record<string, string> {
-  const out: Record<string, string> = {}
-  for (const [k, v] of Object.entries(base)) {
-    if (v === undefined || k.startsWith("ANTHROPIC_")) continue
-    out[k] = v
-  }
-  return out
-}
-
-/**
- * 读取 CLAUDE_CONFIG_DIR/settings.json 的 env,供隔离型后台 LLM 调用使用。
- *
- * 后台分类/整理任务需要 auth / relay / model 配置,但不应加载 user settings 中的
- * plugins、skills 与 hooks（尤其面向用户回复的风格 hook 会干扰 JSON 输出）。
- * 这里只搬运 env 字符串,不读取或返回 settings 的其它字段,也不记录任何值。
- */
-function configuredSdkEnv(
-  base: Record<string, string | undefined> = process.env
-): Record<string, string> {
-  const out = sdkEnv(base)
-  const configDir = base.CLAUDE_CONFIG_DIR
-  if (!configDir) return out
-  try {
-    const parsed = JSON.parse(
-      readFileSync(resolve(configDir, "settings.json"), "utf8")
-    ) as { env?: unknown }
-    if (!parsed.env || typeof parsed.env !== "object") return out
-    for (const [key, value] of Object.entries(parsed.env)) {
-      if (typeof value === "string") out[key] = value
-    }
-  } catch {
-    // 配置缺失/暂时写入中时保持旧的 fail-soft 语义:让 SDK 给出认证错误,
-    // 由各后台任务既有的 fail-open / fail-closed 逻辑接管,绝不打印凭据。
-  }
-  return out
-}
-
-/**
- * SDK `outputFormat: { type: "json_schema" }` 强制路径注入的合成工具名。
- * CLI 会要求模型调用它提交结构化结果;若 canUseTool 一律 deny,强制路径失败,
- * 模型只能吐自由文本(再被多轮拼接/解析搞挂)。
- */
-export const STRUCTURED_OUTPUT_TOOL = "StructuredOutput"
-
-export function isStructuredOutputTool(name: string): boolean {
-  return name === STRUCTURED_OUTPUT_TOOL
-}
-
-type CanUseToolFn = (
-  toolName: string,
-  input: Record<string, unknown>
-) => Promise<{
-  behavior: "allow" | "deny"
-  message?: string
-  updatedInput?: Record<string, unknown>
-}>
-
-/**
- * 包一层 canUseTool:StructuredOutput 始终 allow(updatedInput 原样回传),
- * 其余工具交给 inner(默认 deny)。必须在 overrides 之后套,避免调用方
- * `canUseTool: async () => deny` 把强制路径一并掐死。
- */
-export function wrapCanUseToolForStructuredOutput(
-  inner?: CanUseToolFn
-): CanUseToolFn {
-  const deny: CanUseToolFn = async () => ({
-    behavior: "deny",
-    message: "本阶段不使用工具",
-  })
-  const base = inner ?? deny
-  return async (toolName, input) => {
-    if (isStructuredOutputTool(toolName)) {
-      return { behavior: "allow", updatedInput: input }
-    }
-    return base(toolName, input)
-  }
-}
-
-/**
- * 无工具 JSON 任务(intent / answerability / reflect / compact / topic / promote)共用的 query options 基座。
- *
- * 目标:压住 prompt cache 前缀抖动与体积 —— 这些调用点从不需要业务工具,却曾默认带上
- * Claude Code 全套内置工具 schema + enabledPlugins 的 MCP/skills,导致:
- *   1) 前缀数 k~数十 k token,每次冷启动贵;
- *   2) MCP 连接时序/工具顺序不稳 → 5 分钟 API cache 前缀字节对不上 → 命中率 20%~50%。
- * 这条优化确有实效:2026-09 实测中转端点认 Anthropic prompt cache(近 7 天主客服 370 次调用,
- * 218 次 cache_read>1k,命中侧累计 2.72M vs 未缓存 input 1.33M),别当无用功删掉。
- *
- * settingSources:[]:不加载 user settings 的 plugins / skills / hooks,避免面向用户的
- * 风格插件污染 JSON 分类与知识整理。认证、relay 与模型配置由 configuredSdkEnv
- * 只读 settings.json.env 后显式传入。
- * strictMcpConfig + 空 mcpServers:双保险,不让其它 MCP 进入 prompt。
- * tools:[] / skills:[]:内置工具与技能均不注入。
- * 例外:outputFormat.json_schema 时 CLI 注入的 StructuredOutput 必须放行(见 wrapCanUseToolForStructuredOutput)。
- */
-export function noToolQueryOptions(
-  overrides: Record<string, unknown> = {}
-): Record<string, unknown> {
-  const { canUseTool: userCanUseTool, ...rest } = overrides
-  const inner =
-    typeof userCanUseTool === "function"
-      ? (userCanUseTool as CanUseToolFn)
-      : undefined
-  return {
-    tools: [],
-    skills: [],
-    strictMcpConfig: true,
-    mcpServers: {},
-    settingSources: [],
-    permissionMode: "default",
-    env: configuredSdkEnv(),
-    ...rest,
-    // 始终最后覆盖:调用方 deny-all 也不能挡 StructuredOutput
-    canUseTool: wrapCanUseToolForStructuredOutput(inner),
-  }
-}
-
-/**
- * 主客服 agent 的 query options 基座:砍掉 Bash/Read/Web* 等内置工具 schema
- * (本就靠 canUseTool 拒绝,但 schema 仍占前缀、会抖),只留插件 MCP + skills。
- * 业务插件及其 MCP 仍由 settingSources:["user"] → enabledPlugins 加载。
- */
-export function agentQueryOptions(
-  overrides: Record<string, unknown> = {}
-): Record<string, unknown> {
-  return {
-    // 空数组 = 禁用全部内置工具 schema;MCP 工具不在此列,仍由插件注入
-    tools: [],
-    // 启用已发现 skills;skills 选项会带上 Skill 工具,无需再塞 allowedTools
-    skills: "all",
-    settingSources: ["user"],
-    permissionMode: "default",
-    env: sdkEnv(),
-    ...overrides,
-  }
 }
 
 export interface AgentDeps {
@@ -502,17 +363,6 @@ export function buildDefaultSystem(
 
 const DEFAULT_SYSTEM = buildDefaultSystem()
 
-// 工具白名单:无条件放行的工具名。
-// 插件 MCP 工具名由 SDK 拼作 mcp__plugin_<插件名>_<server名>__<工具名>(冒号→下划线)。
-// Skill 仅加载 skill 正文(markdown 指令),真实动作仍受白名单约束。
-export const CS_KB_TOOL = "mcp__plugin_cs_cs__kb_search"
-/** 兼容 PackyAPI 插件统计/旧调用方；核心客服不依赖该工具。 */
-export const PACKY_TOOL = "mcp__plugin_packyapi_packyapi__packy"
-// 所有 MCP 工具(名以 mcp__ 前缀)统一由 isToolAllowed 无条件放行 —— 插件新增 server/工具无需改此处。
-// 本 Set 只留非 MCP 的显式放行项。WebSearch / WebFetch 禁用:整页正文/检索结果塞进 context 后
-// 永久留在会话里,即便命中缓存按 0.1x 计费,每轮重发的绝对量仍显著。Bash / Read 亦禁用。
-export const TOOL_ALLOWLIST = new Set<string>(["Skill"])
-
 // Agent 降级兜底文案:maxTurns/CLI 出错且无累积文本时返回。主动路径据此判为非答案 → 沉默。
 export const AGENT_FALLBACK_TEXT =
   "(处理超出步数上限或出错,请换个说法或稍后再试)"
@@ -528,23 +378,6 @@ export const PROACTIVE_SUFFIX = `【主动模式】你是在无人应答时主�
 /** 文本是否含主动模式「不回答」哨兵(含子串,防前后缀/混排泄漏)。 */
 export function isNoAnswerText(text: string): boolean {
   return text.includes(NO_ANSWER_SENTINEL)
-}
-
-// 权限判定:所有 MCP 工具(mcp__ 前缀)无条件放行 —— 插件 MCP 均为受控只读查询,
-// 新增 server/工具免改白名单;再叠加非 MCP 的显式放行项(Skill)。Bash/Read/Web* 等宿主工具一律拒绝。
-export function isToolAllowed(
-  toolName: string,
-  // 入参占位以匹配 SDK canUseTool 回调签名;当前判定只按工具名,不看入参
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  _input: Record<string, unknown>
-): boolean {
-  return toolName.startsWith("mcp__") || TOOL_ALLOWLIST.has(toolName)
-}
-
-// 拒因 message:引导模型停止重试、改走合规路径,避免反复撞被拒工具烧光 maxTurns。
-// 允许制下被拒即「未在放行白名单」,无需逐工具区分文案;统一导向知识库或业务工具。
-export function denyMessage(toolName: string): string {
-  return `${toolName} 不可用(未在放行白名单)。改用已安装的知识库或业务工具获取信息。`
 }
 
 export class Agent {

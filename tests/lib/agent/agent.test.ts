@@ -1,10 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest"
 import {
   Agent,
-  isToolAllowed,
-  sdkEnv,
-  noToolQueryOptions,
-  agentQueryOptions,
   buildDefaultSystem,
   AGENT_FALLBACK_TEXT,
   KB_CANDIDATES_BEGIN,
@@ -12,10 +8,14 @@ import {
   PROACTIVE_SUFFIX,
   USER_MESSAGE_BEGIN,
   USER_MESSAGE_END,
-  CS_KB_TOOL,
-  PACKY_TOOL,
   type AgentDeps,
 } from "@/lib/agent/agent"
+import { isToolAllowed, CS_KB_TOOL, PACKY_TOOL } from "@/lib/model/tool-policy"
+import { sdkEnv } from "@/lib/model/sdk-env"
+import {
+  noToolQueryOptions,
+  agentQueryOptions,
+} from "@/lib/model/query-options"
 import { usageStats } from "@/lib/model/stats/usage"
 import {
   toolStats,

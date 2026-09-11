@@ -1,5 +1,6 @@
 import { query as sdkQuery } from "@anthropic-ai/claude-agent-sdk"
-import { noToolQueryOptions, drainQuery } from "./agent"
+import { noToolQueryOptions } from "../model/query-options"
+import { drainQuery } from "./agent"
 import { sanitizeForModel } from "../model/sanitize-input"
 import { withTimeout } from "../model/timeout"
 import { logger } from "../core/logger"
