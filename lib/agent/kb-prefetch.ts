@@ -15,6 +15,7 @@
 import type { KbHit, Repo } from "../core/db/repo"
 import { errorMessage } from "../core/log-context"
 import { logger } from "../core/logger"
+import { PROBE_MAX_CHARS } from "../model/prompt"
 import { sanitizeForModel } from "../model/sanitize-input"
 import { withTimeout } from "../model/timeout"
 
@@ -32,8 +33,6 @@ export const DEFAULT_MEMO_TTL_MS = 300_000
 export const DEFAULT_MEMO_MAX_SESSIONS = 500
 /** 单会话记住的 chunk id 上限;超了整体清空(宁可多注入一次,不可该注入时不注入) */
 export const DEFAULT_MEMO_MAX_IDS = 200
-/** embed 前的查询文本截断:整句语义足够,过长反而稀释向量 */
-export const PROBE_MAX_CHARS = 1000
 /** 短于此长度不检索(与 collectKbContext 的 >=4 门槛一致) */
 const PROBE_MIN_CHARS = 4
 /** 单次调用最多清扫的过期会话数,摊还成本 */

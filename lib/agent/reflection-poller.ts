@@ -5,7 +5,7 @@ import { errorMessage } from "../core/log-context"
 import type { Repo, KbHit } from "../core/db/repo"
 import { embed as defaultEmbed } from "../model/embed"
 import { noToolQueryOptions } from "../model/query-options"
-import { drainQuery } from "./agent"
+import { drainQuery } from "../model/drain"
 import { pickArrayFieldDual, previewJsonPayload } from "../model/json-output"
 import { isNewSensitiveError, sanitizeForModel } from "../model/sanitize-input"
 import {

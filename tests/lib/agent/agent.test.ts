@@ -1,15 +1,13 @@
 import { describe, it, expect, beforeEach } from "vitest"
+import { Agent, AGENT_FALLBACK_TEXT, type AgentDeps } from "@/lib/agent/agent"
+import { buildDefaultSystem } from "@/lib/model/system-prompt"
 import {
-  Agent,
-  buildDefaultSystem,
-  AGENT_FALLBACK_TEXT,
   KB_CANDIDATES_BEGIN,
   KB_CANDIDATES_END,
   PROACTIVE_SUFFIX,
   USER_MESSAGE_BEGIN,
   USER_MESSAGE_END,
-  type AgentDeps,
-} from "@/lib/agent/agent"
+} from "@/lib/model/prompt"
 import { isToolAllowed, CS_KB_TOOL, PACKY_TOOL } from "@/lib/model/tool-policy"
 import { sdkEnv } from "@/lib/model/sdk-env"
 import {

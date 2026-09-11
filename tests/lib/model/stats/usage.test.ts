@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest"
 import { usageStats, cacheHitRatio } from "@/lib/model/stats/usage"
-import { drainQuery, usageFromResult } from "@/lib/agent/agent"
+import { drainQuery, usageFromResult } from "@/lib/model/drain"
 
 beforeEach(() => usageStats.reset())
 
