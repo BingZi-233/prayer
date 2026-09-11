@@ -349,9 +349,18 @@ const TOLERATED_INTRA_CYCLES = ["core: lib/core/chat/types -> lib/core/chat/even
 然后断言改成 `expect(cycles.filter((c) => !TOLERATED_INTRA_CYCLES.some((t) => c.includes(t)))).toEqual([])`。
 **清单里的条目要注明为什么无害**，且它**不应增长** —— 新增环先改代码而不是加清单。
 
-⚠️ **方向以实测为准。** 本行原先写的是 `events -> types -> events`，**实测报出的是
-`types -> events -> types`**（起点 `types.ts`）—— 而 `includes` 是子串匹配，**写反就漏配、
-用例直接红**。实施时照实测输出填，连跑几次确认方向稳定。
+⚠️ **方向以实测为准，且清单要按「归一化后」的形式写。**
+
+实施时发现两件事，此处一并记下（详见下面的后记）：
+
+1. **原始环串的起点是不稳定的** —— 它由 DFS **进入环的前置链**决定（当时是经
+   `api → config-store → db/context → chat/enabled-chats → types` 进入），而 `readdirSync`
+   的顺序**在 APFS（本机字母序）与 ext4（CI 哈希序）下不同**，同一环会表示成不同旋转。
+   本机实测原始串是 `core: .../types -> .../events -> .../types`。
+2. 因此实现里加了 `canonicalCycle()`，**比较前先把环归一化到字典序最小的旋转**。
+   归一化后该环是 `core: lib/core/chat/events -> lib/core/chat/types`（`events` < `types`）。
+
+**容忍清单与新断言都按归一化后的形式写**，不要把上面的原始串抄进清单。
 
 - [ ] **Step 7: 跑测试并做反向验证**
 
