@@ -5,10 +5,12 @@ const read = (file: string) => readFile(file, "utf8")
 
 describe("admin system page contracts", () => {
   it("renders the enabled-chat and plugin tables on the shared table shell", async () => {
-    const [groups, plugins] = await Promise.all([
+    const [groupsPage, groupsTable, plugins] = await Promise.all([
       read("app/admin/groups/page.tsx"),
+      read("components/admin/groups/group-table.tsx"),
       read("app/admin/plugins/page.tsx"),
     ])
+    const groups = groupsPage + "\n" + groupsTable
 
     expect(groups).toContain("<TableShell")
     expect(groups).toContain("@/components/admin/table-shell")
@@ -17,10 +19,12 @@ describe("admin system page contracts", () => {
   })
 
   it("collects secondary row actions into the shared row menu", async () => {
-    const [groups, plugins] = await Promise.all([
+    const [groupsPage, groupsTable, plugins] = await Promise.all([
       read("app/admin/groups/page.tsx"),
+      read("components/admin/groups/group-table.tsx"),
       read("app/admin/plugins/page.tsx"),
     ])
+    const groups = groupsPage + "\n" + groupsTable
 
     expect(groups).toContain("<RowActions")
     expect(groups).toContain("@/components/admin/row-actions")

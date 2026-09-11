@@ -36,7 +36,11 @@ describe("admin visual contracts", () => {
   // Base UI 的 Select 只有在 Root 上给 items(值→标签)时,触发器才渲染中文标签,
   // 否则直接显示原始值(off / inherit / github)。逐个用例守着。
   it("gives every Select an items map so triggers show labels", async () => {
-    const files = [...pageFiles, "components/admin/config/admin-settings.tsx"]
+    const files = [
+      ...pageFiles,
+      "components/admin/config/admin-settings.tsx",
+      "components/admin/groups/policy-sheet.tsx",
+    ]
     const sources = await Promise.all(
       files.map((file) => readFile(file, "utf8"))
     )
