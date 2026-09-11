@@ -185,6 +185,23 @@ types/ids/enabled-chats 此前栖身 lib/channels/,而 lib/config 这些
 - Modify: `tests/architecture/layering.test.ts`
 - Modify: `docs/development.md`
 
+> **实施后记（三处，勿照抄下方文本）：**
+>
+> 1. **追加了一条新钉子**（提交 `8df7f38`），下方步骤里没有。缘由：分类钉子里的
+>    `layerOf("lib/core/chat/types.ts")` 在 types 搬完后匹配的是 `["lib/core/", "core"]` 通配规则，
+>    与全树扫描重复、失去判别力。真正该钉的是**父目录规则与自身层别不同**的文件 ——
+>    `lib/agent/` 下那 7 个靠精确规则定 `model`/`knowledge`、父目录却指向 `conversation`。
+>    精确规则被误删时，文件会静默落回 `conversation`，而「精确规则命中真实文件」「每文件归层」
+>    「逆向依赖」三条全抓不到。新增用例枚举这 7 条并断言层别（反向验证确认能红）。
+> 2. 因此 **用例数从 8 变成 9** —— 下方 Task 2 Step 6 与 Task 3 Step 5 里写的「8 个用例全绿」
+>    应读作「9 个」。
+> 3. 同样追加了 `RETIRED_PREFIXES` 的文档注释：声明该表**有界**（上限＝重构前 `lib/` 文件数，
+>    阶段 4 后约 40~45 项封顶，是永久回归护栏而非迁移脚手架），并写明它**固有的盲区**
+>    ——「忘了登记某条墓碑」无法被机器检测。
+>
+> **给阶段 3 的提示：** 那条新钉子枚举的 7 个文件会在阶段 3（迁入 `lib/model/`）与阶段 4
+> （迁入 `lib/knowledge/`）时**全部改变落点**，届时该枚举清单必须同步维护，否则误红。
+
 - [ ] **Step 0: 顺带消除一处已登记的层内环（一行，且它本身就是 import 语句）**
 
 设计文档登记过一条 `core` 层内的环：`config-store.ts` 运行时 import `chat/enabled-chats.ts` 的
