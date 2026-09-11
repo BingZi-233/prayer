@@ -1,0 +1,167 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 740" role="img" aria-labelledby="title desc">
+  <title id="title">Prayer 生产部署拓扑</title>
+  <desc id="desc">PM2 单进程中的 instrumentation.ts 与 runtime.ts 组合根，协作装配 channels、conversation、knowledge、model、core 五层，并连接 QQ、Telegram、SQLite sqlite-vec 与 claude CLI 的 Anthropic-compatible 模型端点</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#F8FAFF" />
+      <stop offset="1" stop-color="#EEF2FC" />
+    </linearGradient>
+    <linearGradient id="server" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#121D49" />
+      <stop offset="1" stop-color="#4B43B4" />
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%"><feDropShadow dx="0" dy="13" stdDeviation="15" flood-color="#1C2C61" flood-opacity="0.10" /></filter>
+    <marker id="arrow" markerWidth="14" markerHeight="14" refX="12" refY="7" orient="auto"><path d="M1 1L13 7L1 13Z" fill="#7280B3" /></marker>
+    <marker id="light-arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto"><path d="M1 1L11 6L1 11Z" fill="#AAB9FF" /></marker>
+    <style>
+      .font {
+        font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
+      }
+      .title {
+        font-size: 30px;
+        font-weight: 700;
+        fill: #14204b;
+      }
+      .subtitle {
+        font-size: 16px;
+        fill: #647096;
+      }
+      .section {
+        font-size: 20px;
+        font-weight: 700;
+        fill: #14204b;
+      }
+      .copy {
+        font-size: 14px;
+        font-weight: 500;
+        fill: #687398;
+      }
+      .server-title {
+        font-size: 23px;
+        font-weight: 700;
+        fill: #fff;
+      }
+      .server-copy {
+        font-size: 14px;
+        fill: #c9d4ff;
+      }
+      .server-item {
+        font-size: 15px;
+        font-weight: 600;
+        fill: #fff;
+      }
+      .node-title {
+        font-size: 15px;
+        font-weight: 700;
+      }
+      .node-copy {
+        font-size: 12px;
+        font-weight: 500;
+        fill: #7480a5;
+      }
+      .layer {
+        font-size: 14px;
+        font-weight: 700;
+        fill: #fff;
+      }
+      .layer-copy {
+        font-size: 11px;
+        fill: #d7deff;
+      }
+    </style>
+  </defs>
+  <rect width="1600" height="740" rx="32" fill="url(#bg)" />
+  <text x="72" y="78" class="font title">生产部署拓扑</text>
+  <text x="72" y="112" class="font subtitle">启动钩子装配单一运行时，五层能力在同一 Node.js 进程内协作</text>
+  <rect x="1278" y="58" width="250" height="38" rx="19" fill="#FFF4D7" />
+  <text x="1403" y="83" text-anchor="middle" class="font" font-size="14" font-weight="700" fill="#9B6711">单实例 · 可备份 · 易运维</text>
+  <rect x="72" y="176" width="300" height="332" rx="26" fill="#FFF" stroke="#E1E6F2" filter="url(#shadow)" />
+  <text x="110" y="226" class="font section">用户与入口</text>
+  <text x="110" y="254" class="font copy">后台访问与社区消息统一汇入</text>
+  <g transform="translate(110 286)">
+    <rect width="224" height="68" rx="16" fill="#F3F6FF" />
+    <circle cx="28" cy="34" r="21" fill="#DDE5FF" />
+    <path d="M18 29H38V43H18Z" fill="none" stroke="#3E59D3" stroke-width="2" />
+    <path d="M22 25H34M22 34H34M22 39H29" stroke="#3E59D3" stroke-width="2" stroke-linecap="round" />
+    <text x="62" y="31" class="font node-title" fill="#263A83">管理后台</text>
+    <text x="62" y="51" class="font node-copy">HTTPS / 浏览器</text>
+  </g>
+  <g transform="translate(110 386)">
+    <rect width="224" height="68" rx="16" fill="#F2FAFF" />
+    <circle cx="28" cy="34" r="21" fill="#D9F3FF" />
+    <path d="M18 33C18 27.5 22.5 23 28 23C33.5 23 38 27.5 38 33C38 38.5 33.5 43 28 43" fill="none" stroke="#2B9DD7" stroke-width="2.2" stroke-linecap="round" />
+    <path d="M36 38L41 35M36 38L41 41" stroke="#2B9DD7" stroke-width="2.2" stroke-linecap="round" />
+    <text x="62" y="31" class="font node-title" fill="#176D9F">社区用户</text>
+    <text x="62" y="51" class="font node-copy">QQ / Telegram</text>
+  </g>
+  <path d="M372 370H406" fill="none" stroke="#7280B3" stroke-width="2.5" marker-end="url(#arrow)" />
+  <rect x="420" y="150" width="700" height="370" rx="30" fill="url(#server)" filter="url(#shadow)" />
+  <text x="464" y="202" class="font server-title">PM2 · prayer · fork × 1</text>
+  <text x="464" y="228" class="font server-copy">单个 Node.js 进程，Next.js 与客服 Agent 共用一份运行时</text>
+  <rect x="464" y="252" width="612" height="50" rx="15" fill="#FFF" fill-opacity=".14" stroke="#FFF" stroke-opacity=".22" />
+  <text x="490" y="282" class="font server-item">instrumentation.ts</text>
+  <text x="738" y="282" class="font server-copy">启动钩子：读取配置并触发装配</text>
+  <path d="M770 302V318" fill="none" stroke="#AAB9FF" stroke-width="2" marker-end="url(#light-arrow)" />
+  <rect x="464" y="322" width="612" height="50" rx="15" fill="#FFF" fill-opacity=".14" stroke="#FFF" stroke-opacity=".22" />
+  <text x="490" y="352" class="font server-item">runtime.ts · 组合根</text>
+  <text x="738" y="352" class="font server-copy">装配通道、Agent、后台循环与依赖</text>
+  <g transform="translate(464 390)">
+    <rect width="116" height="76" rx="14" fill="#3B4A9B" />
+    <text x="58" y="31" text-anchor="middle" class="font layer">channels</text>
+    <text x="58" y="54" text-anchor="middle" class="font layer-copy">QQ / Telegram</text>
+  </g>
+  <g transform="translate(588 390)">
+    <rect width="116" height="76" rx="14" fill="#4653AB" />
+    <text x="58" y="31" text-anchor="middle" class="font layer">conversation</text>
+    <text x="58" y="54" text-anchor="middle" class="font layer-copy">Agent / 会话</text>
+  </g>
+  <g transform="translate(712 390)">
+    <rect width="116" height="76" rx="14" fill="#515DBA" />
+    <text x="58" y="31" text-anchor="middle" class="font layer">knowledge</text>
+    <text x="58" y="54" text-anchor="middle" class="font layer-copy">检索 / 反思</text>
+  </g>
+  <g transform="translate(836 390)">
+    <rect width="116" height="76" rx="14" fill="#6268C7" />
+    <text x="58" y="31" text-anchor="middle" class="font layer">model</text>
+    <text x="58" y="54" text-anchor="middle" class="font layer-copy">查询 / 用量</text>
+  </g>
+  <g transform="translate(960 390)">
+    <rect width="116" height="76" rx="14" fill="#7564E5" />
+    <text x="58" y="31" text-anchor="middle" class="font layer">core</text>
+    <text x="58" y="54" text-anchor="middle" class="font layer-copy">DB / 配置 / 总线</text>
+  </g>
+  <text x="464" y="492" class="font" font-size="12" fill="#C9D4FF">五层由 runtime.ts 组合；所有长连接与后台循环留在同一进程</text>
+  <path d="M1120 316H1146" fill="none" stroke="#7280B3" stroke-width="2.5" marker-end="url(#arrow)" />
+  <path d="M1120 424H1146" fill="none" stroke="#7280B3" stroke-width="2.5" marker-end="url(#arrow)" />
+  <rect x="1160" y="176" width="368" height="332" rx="26" fill="#FFF" stroke="#E1E6F2" filter="url(#shadow)" />
+  <text x="1198" y="226" class="font section">外部连接与数据</text>
+  <text x="1198" y="254" class="font copy">通道、数据与模型保持独立</text>
+  <g transform="translate(1198 282)">
+    <rect width="292" height="68" rx="16" fill="#F3F6FF" />
+    <circle cx="28" cy="34" r="21" fill="#DDE5FF" />
+    <path d="M18 30H38V42H18Z" fill="none" stroke="#3E59D3" stroke-width="2" />
+    <path d="M23 26V31M33 26V31" stroke="#3E59D3" stroke-width="2" stroke-linecap="round" />
+    <text x="62" y="31" class="font node-title" fill="#263A83">QQ / Telegram</text>
+    <text x="62" y="51" class="font node-copy">OneBot · 长连接 / long polling</text>
+  </g>
+  <g transform="translate(1198 390)">
+    <rect width="140" height="68" rx="16" fill="#F2FAFF" />
+    <circle cx="28" cy="34" r="21" fill="#D9F3FF" />
+    <path d="M18 29H38M18 37H38" stroke="#2B9DD7" stroke-width="2.2" stroke-linecap="round" />
+    <text x="58" y="30" class="font node-title" font-size="14" fill="#176D9F">SQLite</text>
+    <text x="58" y="50" class="font node-copy">+ sqlite-vec</text>
+  </g>
+  <g transform="translate(1350 390)">
+    <rect width="140" height="68" rx="16" fill="#FFF9EA" />
+    <circle cx="28" cy="34" r="21" fill="#FFE9B7" />
+    <path d="M19 29L28 24L37 29V40L28 45L19 40Z" fill="none" stroke="#D99422" stroke-width="2" />
+    <text x="58" y="30" class="font node-title" font-size="14" fill="#9B6711">模型端点</text>
+    <text x="58" y="50" class="font node-copy">claude CLI · 兼容接口</text>
+  </g>
+  <rect x="72" y="584" width="1456" height="92" rx="24" fill="#E8ECFF" />
+  <circle cx="122" cy="630" r="22" fill="#FFF" fill-opacity=".72" />
+  <path d="M112 630C112 624 116 620 122 620C128 620 132 624 132 630C132 636 128 640 122 640" fill="none" stroke="#4660D7" stroke-width="2.5" stroke-linecap="round" />
+  <path d="M132 630L137 626M132 630L137 634" stroke="#7564E5" stroke-width="2.5" stroke-linecap="round" />
+  <text x="166" y="624" class="font" font-size="17" font-weight="700" fill="#263A83">部署原则</text>
+  <text x="166" y="650" class="font" font-size="14" fill="#5D6A9A">单实例保证 SQLite 与长连接稳定；数据库、日志和配置目录独立备份，发布可回滚。</text>
+</svg>
