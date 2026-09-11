@@ -1,7 +1,7 @@
 import { query as sdkQuery } from "@anthropic-ai/claude-agent-sdk"
 import { noToolQueryOptions, drainQuery } from "./agent"
-import { sanitizeForModel } from "./sanitize-input"
-import { withTimeout } from "./timeout"
+import { sanitizeForModel } from "../model/sanitize-input"
+import { withTimeout } from "../model/timeout"
 import { logger } from "../core/logger"
 import { resolveBrand, type BrandInput } from "../core/brand"
 

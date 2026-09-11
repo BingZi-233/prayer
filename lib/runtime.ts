@@ -5,8 +5,8 @@ import type { AppConfig } from "./core/config-store"
 import type { Repo } from "./core/db/repo"
 import type { Agent } from "./agent/agent"
 import type { AssembleDeps } from "./assemble"
-import { bindUsagePersistence } from "./usage-stats"
-import { bindToolStatsPersistence } from "./tool-stats"
+import { bindUsagePersistence } from "./model/stats/usage"
+import { bindToolStatsPersistence } from "./model/stats/tool"
 import type { Channel, ChannelId, ChannelStatus } from "./core/chat/types"
 import { ChannelRegistry } from "./channels/registry"
 import { createChannels } from "./channels/factory"
@@ -57,7 +57,7 @@ async function defaultBuilders(): Promise<RuntimeBuilders> {
   const { Agent } = await import("./agent/agent")
   const { makeKbPrefetch } = await import("./agent/kb-prefetch")
   // 本地嵌入模型是 native 依赖,只在 Node runtime 动态加载,别提到模块顶层
-  const { embed } = await import("./tools/embed")
+  const { embed } = await import("./model/embed")
   const { assemble } = await import("./assemble")
   return {
     // 复用 API 路由的进程级共享连接:reconfigure 不关它,in-flight 的

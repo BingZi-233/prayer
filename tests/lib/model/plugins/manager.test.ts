@@ -5,7 +5,7 @@ vi.mock("node:child_process", () => ({
   execFile: (...a: unknown[]) => execFileMock(...a),
 }))
 
-import { PluginManager, isValidPluginRef } from "@/lib/plugins/manager"
+import { PluginManager, isValidPluginRef } from "@/lib/model/plugins/manager"
 
 function mgr() {
   return new PluginManager("/tmp/cfgdir-test")

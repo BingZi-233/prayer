@@ -1,4 +1,4 @@
-import { sanitizeForModel } from "./sanitize-input"
+import { sanitizeForModel } from "../model/sanitize-input"
 
 export const PRIOR_USER_CONTEXT_LIMIT = 10
 export const PRIOR_CONTEXT_MAX_CHARS = 2000

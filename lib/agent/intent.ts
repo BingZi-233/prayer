@@ -1,6 +1,6 @@
 import { query as sdkQuery } from "@anthropic-ai/claude-agent-sdk"
 import { noToolQueryOptions, drainQuery } from "./agent"
-import { sanitizeForModel } from "./sanitize-input"
+import { sanitizeForModel } from "../model/sanitize-input"
 import { resolveBrand, type BrandInput } from "../core/brand"
 
 // 面向多渠道客服 bot 的入站意图分类。只用于在 orchestrator 前置硬拦「套取类」滥用:

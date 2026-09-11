@@ -16,13 +16,13 @@ import {
   PACKY_TOOL,
   type AgentDeps,
 } from "@/lib/agent/agent"
-import { usageStats } from "@/lib/usage-stats"
+import { usageStats } from "@/lib/model/stats/usage"
 import {
   toolStats,
   RUN_TOTAL_TOOL,
   KB_PREFETCH_TOOL,
   KB_GROUNDED_TOOL,
-} from "@/lib/tool-stats"
+} from "@/lib/model/stats/tool"
 
 // 与 Agent 内部 queryFn 同型;spy 捕获的入参即 SDK query 的参数
 type QueryFn = NonNullable<AgentDeps["queryFn"]>

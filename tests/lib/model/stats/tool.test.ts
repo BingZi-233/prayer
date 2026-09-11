@@ -7,7 +7,7 @@ import {
   RUN_TOTAL_TOOL,
   KB_PREFETCH_TOOL,
   KB_GROUNDED_TOOL,
-} from "@/lib/tool-stats"
+} from "@/lib/model/stats/tool"
 
 const KB = "mcp__plugin_cs_cs__kb_search"
 const PACKY = "mcp__plugin_packyapi_packyapi__packy"

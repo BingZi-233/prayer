@@ -6,7 +6,7 @@ const { embedMock, batchMock, searchMock, rankedMock } = vi.hoisted(() => ({
   batchMock: vi.fn(), searchMock: vi.fn(async () => []),
   rankedMock: vi.fn(() => [{ id: 1, title: "A", count: 1, lastTs: 2 }, { id: 2, title: "B", count: 1, lastTs: 1 }]),
 }))
-vi.mock("@/lib/tools/embed", () => ({ embed: embedMock }))
+vi.mock("@/lib/model/embed", () => ({ embed: embedMock }))
 vi.mock("@/lib/agent/reflection-poller", () => ({
   isDuplicateOfHits: () => ({ duplicate: false, hit: null }),
   DEFAULT_DUP_TOP_K: 5,

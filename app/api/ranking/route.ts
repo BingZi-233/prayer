@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getAppContext } from "@/lib/core/app-context"
 import { ok, fail } from "@/lib/core/api"
-import { embed } from "@/lib/tools/embed"
+import { embed } from "@/lib/model/embed"
 import { mapWithConcurrency } from "@/lib/core/concurrency"
 import {
   isDuplicateOfHits,

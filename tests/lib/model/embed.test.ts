@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { embed } from "@/lib/tools/embed"
+import { embed } from "@/lib/model/embed"
 import { DIM } from "@/lib/core/db/index"
 
 describe("embed", () => {

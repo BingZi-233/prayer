@@ -55,7 +55,7 @@ const server = new McpServer({
 async function main(): Promise<void> {
   const root = findRepoRoot(dirname(fileURLToPath(import.meta.url)))
   const { embed } = await import(
-    pathToFileURL(join(root, "lib/tools/embed.ts")).href
+    pathToFileURL(join(root, "lib/model/embed.ts")).href
   )
   const { runKbSearch, KB_TOOL_DESC } = await import(
     pathToFileURL(join(root, "lib/tools/kb.ts")).href

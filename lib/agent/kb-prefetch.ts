@@ -15,8 +15,8 @@
 import type { KbHit, Repo } from "../core/db/repo"
 import { errorMessage } from "../core/log-context"
 import { logger } from "../core/logger"
-import { sanitizeForModel } from "./sanitize-input"
-import { withTimeout } from "./timeout"
+import { sanitizeForModel } from "../model/sanitize-input"
+import { withTimeout } from "../model/timeout"
 
 /** 每轮注入的片段条数 */
 export const DEFAULT_KB_PREFETCH_TOP_K = 5

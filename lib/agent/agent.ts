@@ -6,13 +6,13 @@ import type {
 } from "@anthropic-ai/claude-agent-sdk"
 import { readFileSync } from "node:fs"
 import { resolve } from "node:path"
-import { usageStats, type UsageSite, type UsageDelta } from "../usage-stats"
-import { toolStats, KB_PREFETCH_TOOL, KB_GROUNDED_TOOL } from "../tool-stats"
+import { usageStats, type UsageSite, type UsageDelta } from "../model/stats/usage"
+import { toolStats, KB_PREFETCH_TOOL, KB_GROUNDED_TOOL } from "../model/stats/tool"
 import { logger } from "../core/logger"
 import type { ChannelId } from "../core/chat/types"
 import { resolveBrand, type BrandInput, type BrandProfile } from "../core/brand"
 import { PROBE_MAX_CHARS, type KbPrefetch } from "./kb-prefetch"
-import { sanitizeForModel } from "./sanitize-input"
+import { sanitizeForModel } from "../model/sanitize-input"
 
 // 当前消息的会话上下文(orchestrator/poller 绑定,透传给 run;工具改由 cs 插件承载后当前未使用,保留签名)
 export interface ToolContext {

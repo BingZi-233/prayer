@@ -5,7 +5,7 @@ const installMock = vi.fn()
 const addMarketplaceMock = vi.fn()
 const reconfigureMock = vi.fn()
 
-vi.mock("@/lib/plugins/manager", () => ({
+vi.mock("@/lib/model/plugins/manager", () => ({
   // 注:mockImplementation 必须用普通 function 而非箭头函数——route.ts 用 `new PluginManager(...)`
   // 构造实例,箭头函数没有 [[Construct]],`new` 会抛 "... is not a constructor"
   PluginManager: vi.fn().mockImplementation(function () {
