@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest"
 import type { Update } from "grammy/types"
 import { bus } from "@/lib/core/bus"
-import type { ActionSend, IncomingMessage } from "@/lib/events"
+import type { ActionSend, IncomingMessage } from "@/lib/core/chat/events"
 import {
   TelegramChannel,
   splitTelegramText,

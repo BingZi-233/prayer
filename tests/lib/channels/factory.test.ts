@@ -5,7 +5,7 @@ import {
   type ChannelFactoryContext,
 } from "@/lib/channels/factory"
 import type { AppConfig } from "@/lib/core/config-store"
-import type { Channel } from "@/lib/channels/types"
+import type { Channel } from "@/lib/core/chat/types"
 
 function baseCfg(over: Partial<AppConfig> = {}): AppConfig {
   return {

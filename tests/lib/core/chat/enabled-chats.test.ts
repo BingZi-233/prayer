@@ -8,7 +8,7 @@ import {
   resolveAdminSurface,
   isAdminSurface,
   resolveRuntimeChatConfig,
-} from "@/lib/channels/enabled-chats"
+} from "@/lib/core/chat/enabled-chats"
 
 function baseCfg(over: Partial<AppConfig> = {}): AppConfig {
   return {

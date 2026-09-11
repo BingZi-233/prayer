@@ -2,7 +2,7 @@ import { NextResponse } from "next/server"
 import { getAppContext } from "@/lib/core/app-context"
 import { ok, fail } from "@/lib/core/api"
 import { runPromote } from "@/lib/agent/reflection-promoter"
-import { resolveAdminSurface } from "@/lib/channels/enabled-chats"
+import { resolveAdminSurface } from "@/lib/core/chat/enabled-chats"
 
 // 手动触发一轮自动升格评审(与定时任务同逻辑)
 export async function POST(): Promise<NextResponse> {

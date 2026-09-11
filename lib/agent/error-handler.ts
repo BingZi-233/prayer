@@ -1,7 +1,7 @@
 import { bus } from "../core/bus"
-import type { ErrorOccurred } from "../events"
-import type { ChannelId } from "../channels/types"
-import { legacySessionKeyToCanonical, parseSessionKey } from "../channels/ids"
+import type { ErrorOccurred } from "../core/chat/events"
+import type { ChannelId } from "../core/chat/types"
+import { legacySessionKeyToCanonical, parseSessionKey } from "../core/chat/ids"
 import { logger } from "../core/logger"
 import { errorMessage, chatRefFromSession } from "../core/log-context"
 

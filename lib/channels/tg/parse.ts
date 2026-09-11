@@ -4,7 +4,7 @@ import type {
   MessageOrigin,
   Update,
 } from "grammy/types"
-import type { IncomingMessage } from "@/lib/events"
+import type { IncomingMessage } from "@/lib/core/chat/events"
 import { isBotMentioned, stripBotMention } from "./trigger"
 
 export interface TelegramParseContext {

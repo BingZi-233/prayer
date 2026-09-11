@@ -13,7 +13,7 @@ import type {
   Channel,
   ChannelCapabilities,
   ChannelId,
-} from "@/lib/channels/types"
+} from "@/lib/core/chat/types"
 import type Database from "better-sqlite3"
 import {
   isTgChatBypassEnabled,

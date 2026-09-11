@@ -4,9 +4,9 @@ import {
   NAME_CACHE_TTL_MS,
   resetNameCache,
   getNameCache,
-} from "@/lib/name-cache"
+} from "@/lib/core/chat/name-cache"
 import { openDb } from "@/lib/core/db/index"
-import { createSqliteNameCachePersistence } from "@/lib/name-cache-store"
+import { createSqliteNameCachePersistence } from "@/lib/core/chat/name-cache-store"
 
 describe("NameCache", () => {
   let now = 1_000_000

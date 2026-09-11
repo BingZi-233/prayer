@@ -3,7 +3,7 @@ import { openDb } from "@/lib/core/db/index"
 import { Repo } from "@/lib/core/db/repo"
 import { bus } from "@/lib/core/bus"
 import { registerHandoffHandler } from "@/lib/agent/handoff-handler"
-import type { ActionSend } from "@/lib/events"
+import type { ActionSend } from "@/lib/core/chat/events"
 
 let repo: Repo
 const SK = "qq:1:2"

@@ -13,8 +13,8 @@ import {
   withTimeout,
   withTimeoutFn,
 } from "./timeout"
-import type { ChannelId } from "../channels/types"
-import type { ChatRef } from "../channels/enabled-chats"
+import type { ChannelId } from "../core/chat/types"
+import type { ChatRef } from "../core/chat/enabled-chats"
 
 export interface ReflectionPollerDeps {
   repo: Repo

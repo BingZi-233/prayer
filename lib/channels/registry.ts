@@ -1,7 +1,7 @@
 import { bus } from "../core/bus"
-import type { ActionSend } from "../events"
+import type { ActionSend } from "../core/chat/events"
 import { logger } from "../core/logger"
-import type { Channel, ChannelId, ChannelStatus } from "./types"
+import type { Channel, ChannelId, ChannelStatus } from "../core/chat/types"
 
 /**
  * 多通道生命周期注册表 + 唯一 action.send 分发器。

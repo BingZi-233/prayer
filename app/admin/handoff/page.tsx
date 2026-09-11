@@ -21,7 +21,7 @@ import { PageShell } from "@/components/admin/page-shell"
 import { PageHeader } from "@/components/admin/page-header"
 import { DataState } from "@/components/admin/data-state"
 import { usePolling } from "@/components/admin/use-polling"
-import { useGroupNames, useMemberNames } from "@/lib/group-name"
+import { useGroupNames, useMemberNames } from "@/lib/core/chat/group-name"
 
 interface Sess {
   key: string

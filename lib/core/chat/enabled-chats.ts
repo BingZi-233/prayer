@@ -1,5 +1,5 @@
 import type { ChannelId, ChatRef } from "./types"
-import type { AppConfig, GroupPolicy } from "../core/config-store"
+import type { AppConfig, GroupPolicy } from "../config-store"
 
 export type { ChatRef }
 

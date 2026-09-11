@@ -5,8 +5,8 @@ import {
   getGroupPolicy,
   listEnabledChats,
   policyKey,
-} from "@/lib/channels/enabled-chats"
-import type { ChannelId } from "@/lib/channels/types"
+} from "@/lib/core/chat/enabled-chats"
+import type { ChannelId } from "@/lib/core/chat/types"
 import { ok, fail } from "@/lib/core/api"
 import { buildGroupChatStats } from "@/lib/reflect-stats"
 

@@ -3,13 +3,13 @@
 // 默认挂 SQLite 持久化(agent.db),进程重启后未过期条目继续命中。
 // 磁盘层仍用 INTEGER group_id(正=QQ、负=TG 启发式);内存与 API 以 chat-ref 为准。
 
-import type { ChannelId } from "@/lib/channels/types"
+import type { ChannelId } from "@/lib/core/chat/types"
 import {
   createSqliteNameCachePersistence,
   type GroupNameRow,
   type NameCachePersistence,
   type UserNameRow,
-} from "@/lib/name-cache-store"
+} from "@/lib/core/chat/name-cache-store"
 
 export type { GroupNameRow, UserNameRow, NameCachePersistence }
 export const NAME_CACHE_TTL_MS = 24 * 60 * 60 * 1000

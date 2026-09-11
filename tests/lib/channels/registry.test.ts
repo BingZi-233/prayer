@@ -5,8 +5,8 @@ import type {
   Channel,
   ChannelCapabilities,
   ChannelId,
-} from "@/lib/channels/types"
-import type { ActionSend } from "@/lib/events"
+} from "@/lib/core/chat/types"
+import type { ActionSend } from "@/lib/core/chat/events"
 
 const caps: ChannelCapabilities = {
   canNotifyOwnAdminSurface: false,

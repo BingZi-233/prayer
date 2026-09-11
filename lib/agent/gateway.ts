@@ -1,13 +1,13 @@
 import { bus } from "../core/bus"
 import type { Repo } from "../core/db/repo"
-import type { IncomingMessage } from "../events"
-import type { ChannelId } from "../channels/types"
-import { makeDedupeKey, makeSessionKey } from "../channels/ids"
+import type { IncomingMessage } from "../core/chat/events"
+import type { ChannelId } from "../core/chat/types"
+import { makeDedupeKey, makeSessionKey } from "../core/chat/ids"
 import {
   isAdminSurface,
   isChatEnabled,
   type ChatRef,
-} from "../channels/enabled-chats"
+} from "../core/chat/enabled-chats"
 import {
   RESET_KEYWORDS,
   HANDOFF_KEYWORDS,

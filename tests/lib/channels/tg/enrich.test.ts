@@ -4,7 +4,7 @@ import {
   enrichTelegramMessage,
   isBotRelatedMessage,
 } from "@/lib/channels/tg/enrich"
-import type { IncomingMessage } from "@/lib/events"
+import type { IncomingMessage } from "@/lib/core/chat/events"
 
 function baseMsg(over: Partial<IncomingMessage> = {}): IncomingMessage {
   return {

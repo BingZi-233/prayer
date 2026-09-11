@@ -1,5 +1,5 @@
 import Database from "better-sqlite3"
-import { legacySessionKeyToCanonical } from "../../../channels/ids.ts"
+import { legacySessionKeyToCanonical } from "../../../core/chat/ids.ts"
 
 function tableExists(db: Database.Database, name: string): boolean {
   const row = db

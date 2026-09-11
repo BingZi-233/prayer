@@ -9,8 +9,8 @@ import { noToolQueryOptions, drainQuery } from "./agent"
 import { pickArrayFieldDual, previewJsonPayload } from "./json-output"
 import { textNearlySame } from "./reflection-poller"
 import { isNewSensitiveError, sanitizeForModel } from "./sanitize-input"
-import type { ChannelId } from "../channels/types"
-import type { ChatRef } from "../channels/enabled-chats"
+import type { ChannelId } from "../core/chat/types"
+import type { ChatRef } from "../core/chat/enabled-chats"
 import { resolveBrand, type BrandInput, type BrandProfile } from "../core/brand"
 
 // LLM 每条问题的归类结果:归入已有 topicId / 新建 newTitle / 噪声 noise。

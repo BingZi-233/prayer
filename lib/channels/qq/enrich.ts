@@ -1,4 +1,4 @@
-import type { IncomingMessage, ImageInput } from "../../events"
+import type { IncomingMessage, ImageInput } from "../../core/chat/events"
 import type { ParsedMessage } from "./parse"
 import { extractSegments, fetchImageBase64, type ImageData } from "./media"
 import { errorMessage } from "../../core/log-context"

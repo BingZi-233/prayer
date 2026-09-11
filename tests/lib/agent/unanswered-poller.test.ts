@@ -5,7 +5,7 @@ import { bus } from "@/lib/core/bus"
 import { SessionStore } from "@/lib/agent/session"
 import { runScan } from "@/lib/agent/unanswered-poller"
 import { AGENT_FALLBACK_TEXT } from "@/lib/agent/agent"
-import type { ErrorOccurred, ReplyReady } from "@/lib/events"
+import type { ErrorOccurred, ReplyReady } from "@/lib/core/chat/events"
 import type Database from "better-sqlite3"
 
 /** Repo.db 是 private;测试需要直写 SQL 种子数据 */

@@ -45,7 +45,7 @@ import { PageHeader } from "@/components/admin/page-header"
 import { MetricRows } from "@/components/admin/stat"
 import { DataState } from "@/components/admin/data-state"
 import { usePolling } from "@/components/admin/use-polling"
-import { useGroupNames } from "@/lib/group-name"
+import { useGroupNames } from "@/lib/core/chat/group-name"
 
 type Tri = "inherit" | "on" | "off"
 
