@@ -258,7 +258,7 @@ main 构建。这个成本是拆细的代价，接受。
 | 0 | `docs/development.md` 增补分层规则；把阶段 1–4 将作废的条目**逐条列出并标注**「由阶段 N 改写」；`CLAUDE.md` 的 Git 约定增补 `refactor/*` 前缀 |
 | 1 | `CLAUDE.md` 的「仓库结构」一节中的 `onebot/` 一项（该目录消失） |
 | 2a | `docs/development.md` 的「模块边界」一节中 `lib/config/schema.ts`、`lib/config/{env,migrate,chats,patch}.ts`、`lib/config-store.ts`、`lib/db/repositories/`、`lib/db/migrations/` 五条路径；`docs/data-access.md` 里「以上路径相对于 `lib/db/`」与 `lib/db/index.ts` 的引用；`docs/database-operations.md` 里 `lib/db/migrations/registry.ts` 与 `lib/db/index.ts` 的引用；`CLAUDE.md` 的「仓库结构」一节中的 `db/` 项 |
-| 2b | `docs/development.md` 的「模块边界」中 `lib/config-store.ts` 条目引用的 `lib/channels/enabled-chats.ts`（迁往 `lib/core/chat/`）。注意 `channels/types.ts`、`channels/ids.ts` 目前在文档中**没有任何引用**，2b 只需搬文件、无需改文档 |
+| 2b | `docs/development.md` 的「模块边界」中 `lib/core/config-store.ts` 条目引用的 `lib/channels/enabled-chats.ts`（迁往 `lib/core/chat/`）。注意 `channels/types.ts`、`channels/ids.ts` 目前在文档中**没有任何引用**，2b 只需搬文件、无需改文档 |
 | 3 | `CLAUDE.md` 的「仓库结构」一节中的 `tools/`、`plugins/` 两项（两个目录消失） |
 | 4 | `CLAUDE.md` 的「仓库结构」一节中的 `agent/` 一项（拆为 `conversation/` 与 `knowledge/`）；`CLAUDE.md` 的「命令」一节举例的 `tests/lib/agent/session.test.ts`（该测试镜像 `lib/agent/session.ts`，随 `agent/` 一起迁） |
 
@@ -409,7 +409,16 @@ grep 的模式要覆盖 `.ts`、`.tsx`、`.json`、`.cjs`，且扫描范围要�
 廉价堵法（约 10 行、零依赖）：断言**每条精确文件规则**（前缀不以 `/` 结尾）必须命中一个
 真实存在的文件。它堵不住目录规则（`lib/onebot/` 这类——目录可以合法地空着），但阶段 2a、3
 会大量新增精确文件规则（`lib/agent/reflection-poller.ts`、`lib/tools/embed.ts` 之类），
-那正是这条断言的目标。**尚未实施，留给下一个改动护栏映射表的阶段顺带补上。**
+那正是这条断言的目标。**阶段 2a 已实施。**
+
+**`RETIRED_PREFIXES` 必须全登记，不要试图只留目录项。** 阶段 2a 一度把退休清单从 14 项
+缩到 3 条目录项，理由是「退休的精确文件项已被上面那条断言与「每文件归层」覆盖」。**该简化
+被证伪并回滚**：退役一条精确文件规则后，若它的**父目录规则仍然存活**，把文件放回去会被
+那条目录规则**静默地**归成父目录那一层。例如 2b 之后 `["lib/channels/", "channels"]` 仍在，
+重建 `lib/channels/types.ts` 会被悄悄算作 `channels` —— 此时「退役前缀无命中」没有该项而放行、
+「精确规则命中真实文件」查的是规则不是文件、「每文件归层」又因规则命中而通过，三条全拦不住。
+例外情形（父目录无存活规则）确实能被那两条间接拦住，但那要求每次退役判断「父目录是否还活着」，
+判断错即静默失效。**统一全登记**。
 
 **分层测试只守跨层方向，层内方向无人管。** 现存两处层内互引：
 `lib/config-store.ts` 运行时 import `channels/enabled-chats`，而后者以 `import type` 反向
