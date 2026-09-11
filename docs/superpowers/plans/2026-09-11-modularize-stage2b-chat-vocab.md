@@ -104,13 +104,15 @@ pnpm typecheck 2>&1 | head -50
 - [ ] **Step 4: 手工检查 typecheck 抓不到的引用**
 
 ```bash
-grep -rn "channels/types\|channels/ids\|channels/enabled-chats\|lib/events\|name-cache\|group-name" \
+grep -rnE "(channels/(types|ids|enabled-chats)|\"@/lib/events|/lib/events\"|lib/name-cache|lib/group-name)" \
   --include='*.ts' --include='*.tsx' --include='*.json' --include='*.cjs' --include='*.js' \
   app lib components tests plugins scripts instrumentation.ts proxy.ts next.config.ts ecosystem.config.cjs components.json \
   | grep -v "core/chat/"
 ```
 
 Expected: 无输出。逐个修正发现的问题。
+
+**注意模式要带引号或 `lib/` 前缀**：裸的 `name-cache` 会命中散文注释里的词（如 `// 命中 name-cache 则…`），那不是路径引用，不该改。实现时踩过这个坑。
 
 同时查注释里的路径引用（不报错，只会腐烂）：
 
@@ -232,7 +234,21 @@ Expected: **8 个用例全绿**。
 
 **这一步是本阶段最关键的验证** —— 它证明「父目录规则仍存活」那个盲区真的被退役登记堵住了。若没红，说明登记漏了，回头检查 Step 2。
 
-- [ ] **Step 6: 更新 `docs/development.md`**
+- [ ] **Step 6: 修掉一处陈旧的测试标签（非 import 的例外，理由如下）**
+
+`tests/lib/core/chat/ids.test.ts:9` 的标签仍是 `describe("channels/ids", …)`，而该目录已不存在。
+
+**这是本阶段唯一允许改动的非 import 内容**，理由：它只影响测试输出，不进运行时、不进日志、不被任何告警规则匹配（与 `scope: "onebot.enrich"` 那种可观察输出不同），而它引用的路径已经不存在，留着只会让后来人 grep 到困惑。
+
+仓库的标签惯例是**描述主题而非路径**（同目录下 `bus.test.ts` 用 `"bus"`、`auth.test.ts` 用 `"timingSafeEqualStr"`）。该文件测的是 session key 的编解码，改为：
+
+```ts
+describe("session key 编解码", () => {
+```
+
+改完复跑该文件确认仍通过：`pnpm vitest run tests/lib/core/chat/ids.test.ts`
+
+- [ ] **Step 7: 更新 `docs/development.md`**
 
 - 「模块边界」里 `lib/core/config-store.ts` 那条结尾的 `lib/channels/enabled-chats.ts` → `lib/core/chat/enabled-chats.ts`
 - **删掉「待改写条目」表里标 `2b` 的那一行**（使命结束）
@@ -246,7 +262,7 @@ grep -n "channels/types\|channels/ids\|channels/enabled-chats\|lib/events\|name-
 
 Expected: 无输出。
 
-- [ ] **Step 7: 提交**
+- [ ] **Step 8: 提交**
 
 ```bash
 git add tests/architecture/layering.test.ts docs/development.md
