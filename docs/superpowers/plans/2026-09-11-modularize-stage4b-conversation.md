@@ -215,6 +215,32 @@ model 的 tool-policy 与 sdk-env,与 conversation 的编排无关(设计文档�
 > | 5 | 刷新 `PREFIX_RULES` 注释里那条过期举例（4b 已在本次完成） |
 > | 6 | `CURRENT_STAGE` → `"4b"` |
 
+> **Task 1 质量审查开出的两处追加工作（本任务一并做）：**
+>
+> 1. **spec 的目标树还有一处被静默丢弃：`conversation/pollers/`。** spec 写的是
+>    `pollers/{topic.ts,unanswered.ts}`（子目录 + 去掉 `-poller` 后缀），而实现与计划都平铺成了
+>    `topic-poller.ts` / `unanswered-poller.ts`，**此前无人提及**。**选择实现它**（而非改 spec 删掉）：
+>    spec 是已批准的设计，且 `model/stats/`（2 文件）与 `knowledge/reflection/`（5 文件）都用了子目录，
+>    没有理由 2 个 poller 不配；`conversation/` 已有 17 个文件，划出一个内聚子组有帮助。
+> 2. **补一条「层内环」检测。** 现有护栏只查**跨层**方向（比较 RANK），**层内环完全看不见** ——
+>    而 `conversation/` 现在有 17 个文件。见下面的 Step 0。
+
+- [ ] **Step 0: 把两个 poller 挪进子目录并改名**
+
+```bash
+mkdir -p lib/conversation/pollers
+git mv lib/conversation/topic-poller.ts lib/conversation/pollers/topic.ts
+git mv lib/conversation/unanswered-poller.ts lib/conversation/pollers/unanswered.ts
+mkdir -p tests/lib/conversation/pollers
+git mv tests/lib/conversation/topic-poller.test.ts tests/lib/conversation/pollers/topic.test.ts
+git mv tests/lib/conversation/unanswered-poller.test.ts tests/lib/conversation/pollers/unanswered.test.ts
+```
+
+改引用（`pnpm typecheck` 会全找出来；大约 4~6 处，含 `lib/conversation/assemble.ts` 与 `lib/runtime.ts`）。
+
+**并订正设计文档的目标结构树**：`conversation/` 段里 `pollers/{topic,unanswered}.ts` 保留（它本来就这么写），
+但要把 `introspect.ts` 从 `conversation/` 行挪到 `model/` 行 —— **两处订正一起做**。
+
 - [ ] **Step 1: 新增 `lib/conversation/` 的目录规则**
 
 ```ts
@@ -266,6 +292,62 @@ const CURRENT_STAGE = "4b"
 ```
 
 `STAGE_ORDER` 已经含 `"4b"`，不需改。
+
+- [ ] **Step 6b: 补一条「层内环」检测**
+
+现有护栏只比较 `RANK` 判**跨层**方向,**同层内的互相 import 形成环它看不见**。`conversation/` 现已有 17 个文件，未来引入环不会有任何信号。补一个用例：
+
+```ts
+  it("每层内部无循环 import", () => {
+    const byLayer = new Map<Layer, Array<{ rel: string; deps: string[] }>>()
+    for (const abs of listFiles(LIB_DIR)) {
+      const rel = relative(REPO_ROOT, abs)
+      const layer = layerOf(rel)
+      if (!layer) continue
+      const deps: string[] = []
+      for (const m of readFileSync(abs, "utf8").matchAll(IMPORT_RE)) {
+        const resolved = resolveSpecifier(abs, m[1])
+        if (!resolved) continue
+        if (layerAt(resolved) !== layer) continue
+        deps.push(resolved)
+      }
+      const bucket = byLayer.get(layer) ?? []
+      bucket.push({ rel: rel.replace(/\.tsx?$/, ""), deps })
+      byLayer.set(layer, bucket)
+    }
+
+    const cycles: string[] = []
+    for (const [layer, nodes] of byLayer) {
+      const edges = new Map(nodes.map((n) => [n.rel, n.deps]))
+      const state = new Map<string, 0 | 1 | 2>()
+      const walk = (node: string, stack: string[]): void => {
+        const st = state.get(node) ?? 0
+        if (st === 2) return
+        if (st === 1) {
+          cycles.push(`${layer}: ${[...stack.slice(stack.indexOf(node)), node].join(" -> ")}`)
+          return
+        }
+        state.set(node, 1)
+        for (const next of edges.get(node) ?? []) {
+          if (edges.has(next)) walk(next, [...stack, node])
+        }
+        state.set(node, 2)
+      }
+      for (const n of edges.keys()) walk(n, [])
+    }
+    expect(cycles).toEqual([])
+  })
+```
+
+**注意**：`import type` 形成的边也算在内 —— 这是刻意的，因为**类型层双向引用同样会让后人误判依赖方向**（本项目已有一例：`core/chat/types.ts ↔ events.ts`）。**若这条新用例现在就是红的**，说明 `lib/` 里确有层内环：`core/chat/types.ts ↔ events.ts` 那一对是**已知且无害**的（两侧都是 `import type`，编译期擦除），把它记进一个如下的容忍清单后再跑：
+
+```ts
+// 已知的无害层内环：两侧都是 import type、编译期擦除；列出是为了让新增的环无处藏身
+const TOLERATED_INTRA_CYCLES = ["core: lib/core/chat/events -> lib/core/chat/types -> lib/core/chat/events"]
+```
+
+然后断言改成 `expect(cycles.filter((c) => !TOLERATED_INTRA_CYCLES.some((t) => c.includes(t)))).toEqual([])`。
+**清单里的条目要注明为什么无害**，且它**不应增长** —— 新增环先改代码而不是加清单。
 
 - [ ] **Step 7: 跑测试并做反向验证**
 
