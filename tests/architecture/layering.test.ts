@@ -116,7 +116,7 @@ const TOLERATED: Array<{ edge: string; removedBy: string }> = [
 ]
 
 /** 当前所处阶段。每阶段 PR 更新此常量。 */
-const CURRENT_STAGE = "2a"
+const CURRENT_STAGE = "2b"
 const STAGE_ORDER = ["0", "1", "2a", "2b", "3", "4", "5", "6"]
 
 function layerOf(rel: string): Layer | null {
