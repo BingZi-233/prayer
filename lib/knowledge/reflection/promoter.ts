@@ -1,20 +1,20 @@
 import { query as sdkQuery } from "@anthropic-ai/claude-agent-sdk"
-import { bus } from "../core/bus"
-import { logger } from "../core/logger"
-import type { Repo } from "../core/db/repo"
-import { embed as defaultEmbed } from "../model/embed"
-import { applyPromote } from "../reflect-promote"
-import { noToolQueryOptions } from "../model/query-options"
-import { drainQuery } from "../model/drain"
-import { pickArrayFieldDual, previewJsonPayload } from "../model/json-output"
-import { sanitizeForModel } from "../model/sanitize-input"
+import { bus } from "../../core/bus"
+import { logger } from "../../core/logger"
+import type { Repo } from "../../core/db/repo"
+import { embed as defaultEmbed } from "../../model/embed"
+import { applyPromote } from "./promote"
+import { noToolQueryOptions } from "../../model/query-options"
+import { drainQuery } from "../../model/drain"
+import { pickArrayFieldDual, previewJsonPayload } from "../../model/json-output"
+import { sanitizeForModel } from "../../model/sanitize-input"
 import {
   DEFAULT_EMBED_TIMEOUT_MS,
   DEFAULT_QUERY_TIMEOUT_MS,
   withTimeout,
   withTimeoutFn,
-} from "../model/timeout"
-import type { ChatRef } from "../core/chat/enabled-chats"
+} from "../../model/timeout"
+import type { ChatRef } from "../../core/chat/enabled-chats"
 
 export interface ReflectionPromoterDeps {
   repo: Repo

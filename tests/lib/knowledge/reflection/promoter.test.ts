@@ -5,13 +5,13 @@ import {
   applyPromote,
   promotedDocRel,
   promotedMarkdown,
-} from "@/lib/reflect-promote"
+} from "@/lib/knowledge/reflection/promote"
 import {
   runPromote,
   selectPromoteIds,
   registerReflectionPromoter,
   PROMOTE_OUTPUT_SCHEMA,
-} from "@/lib/agent/reflection-promoter"
+} from "@/lib/knowledge/reflection/promoter"
 import { bus } from "@/lib/core/bus"
 import type { ActionSend, ErrorOccurred } from "@/lib/core/chat/events"
 

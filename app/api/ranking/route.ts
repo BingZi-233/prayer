@@ -7,7 +7,7 @@ import {
   isDuplicateOfHits,
   DEFAULT_DUP_TOP_K,
   DEFAULT_DUP_MAX_DISTANCE,
-} from "@/lib/agent/reflection-poller"
+} from "@/lib/knowledge/reflection/poller"
 
 // 窗口 → 起始时间戳(ms)。all → 0。
 function sinceTs(window: string, now: number): number {

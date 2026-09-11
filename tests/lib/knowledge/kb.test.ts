@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from "vitest"
 import { openDb } from "@/lib/core/db/index"
 import { Repo } from "@/lib/core/db/repo"
 import { bus } from "@/lib/core/bus"
-import { KB_TOOL_DESC, runKbSearch } from "@/lib/tools/kb"
+import { KB_TOOL_DESC, runKbSearch } from "@/lib/knowledge/kb"
 
 let repo: Repo
 

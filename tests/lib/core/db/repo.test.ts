@@ -1302,7 +1302,7 @@ describe("v7 数据保留 prune", () => {
 
 describe("反思循环数据保留窗口常量", () => {
   it("消费方口径:resolution/proactive 90 天,seen 7 天", async () => {
-    const m = await import("@/lib/agent/reflection-poller")
+    const m = await import("@/lib/knowledge/reflection/poller")
     expect(m.RETENTION_RESOLUTION_MS).toBe(90 * 24 * 3600_000)
     expect(m.RETENTION_PROACTIVE_MS).toBe(90 * 24 * 3600_000)
     expect(m.RETENTION_SEEN_MS).toBe(7 * 24 * 3600_000)

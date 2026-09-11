@@ -1,6 +1,6 @@
 import { mkdir, writeFile } from "node:fs/promises"
 import { dirname, join } from "node:path"
-import type { Repo } from "./core/db/repo"
+import type { Repo } from "../../core/db/repo"
 
 /** 升格后正式文档相对路径(相对 docs/kb) */
 export function promotedDocRel(chunkId: number): string {

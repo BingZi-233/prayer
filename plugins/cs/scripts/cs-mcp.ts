@@ -58,7 +58,7 @@ async function main(): Promise<void> {
     pathToFileURL(join(root, "lib/model/embed.ts")).href
   )
   const { runKbSearch, KB_TOOL_DESC } = await import(
-    pathToFileURL(join(root, "lib/tools/kb.ts")).href
+    pathToFileURL(join(root, "lib/knowledge/kb.ts")).href
   )
   const { KB_SEARCH_SQL } = await import(
     pathToFileURL(join(root, "lib/core/db/kb-sql.ts")).href

@@ -5,7 +5,7 @@ import {
   applyPromote,
   promotedDocRel,
   promotedMarkdown,
-} from "@/lib/reflect-promote"
+} from "@/lib/knowledge/reflection/promote"
 
 const vec = () => new Float32Array([1, 0, 0])
 const asyncVec = async () => vec()

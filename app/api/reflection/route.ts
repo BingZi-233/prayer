@@ -3,8 +3,8 @@ import { z } from "zod"
 import { getAppContext } from "@/lib/core/app-context"
 import { listEnabledChats } from "@/lib/core/chat/enabled-chats"
 import { ok, fail } from "@/lib/core/api"
-import { buildGroupChatStats } from "@/lib/reflect-stats"
-import { applyPromote } from "@/lib/reflect-promote"
+import { buildGroupChatStats } from "@/lib/knowledge/reflection/stats"
+import { applyPromote } from "@/lib/knowledge/reflection/promote"
 import { embed } from "@/lib/model/embed"
 
 function chatKey(channel: string, chatId: string): string {

@@ -8,7 +8,7 @@ import type { Repo } from "../../core/db/repo"
 
 /** 总 run 数特殊行:覆盖率的分母 */
 export const RUN_TOTAL_TOOL = "__run__"
-/** 伪工具行:本 run 注入过预检索 KB 块(见 lib/agent/kb-prefetch.ts) */
+/** 伪工具行:本 run 注入过预检索 KB 块(见 lib/knowledge/kb-prefetch.ts) */
 export const KB_PREFETCH_TOOL = "__kb_prefetch__"
 /**
  * 伪工具行:本 run「有知识库依据」—— 注入过 或 调过 kb_search。

@@ -8,7 +8,7 @@ import {
 } from "@/lib/core/chat/enabled-chats"
 import type { ChannelId } from "@/lib/core/chat/types"
 import { ok, fail } from "@/lib/core/api"
-import { buildGroupChatStats } from "@/lib/reflect-stats"
+import { buildGroupChatStats } from "@/lib/knowledge/reflection/stats"
 
 function chatKey(channel: string, chatId: string): string {
   return `${channel}:${chatId}`

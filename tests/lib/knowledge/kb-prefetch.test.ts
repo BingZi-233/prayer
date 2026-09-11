@@ -3,7 +3,7 @@ import {
   makeKbPrefetch,
   formatKbBlock,
   InjectedChunkMemo,
-} from "@/lib/agent/kb-prefetch"
+} from "@/lib/knowledge/kb-prefetch"
 import type { KbHit } from "@/lib/core/db/repo"
 
 const hit = (id: number, content: string, distance: number): KbHit => ({
