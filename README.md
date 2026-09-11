@@ -73,19 +73,9 @@ Prayer 的关键不是让模型“尽量回答”，而是让每一次回答都�
 
 运行架构图展示的是代码边界，而不是进程数量。Prayer 的 `lib/` 只有一个组合根；其余模块按职责分层，依赖方向固定为“上层使用下层”：
 
-```text
-lib/runtime.ts                         组合根（L4）
-       ↓
-lib/conversation/                      会话与编排（L3）
-       ↓
-┌──────────────────────┴──────────────────────┐
-lib/channels/                         lib/knowledge/
-通道实现（L2）                           知识库与反思（L2）
-       └──────────────────────┬──────────────────────┘
-                         lib/model/              模型 I/O（L1）
-                               ↓
-                         lib/core/               共享地基（L0）
-```
+<p align="center">
+  <img src="docs/assets/prayer-code-layers.svg" alt="Prayer 代码分层与依赖方向" width="100%" />
+</p>
 
 `channels` 与 `knowledge` 是同级模块，互不依赖；`conversation` 可以组合所有下层能力，`runtime.ts` 负责装配生命周期。`app/` 页面和 API 可以依赖全部层，`components/` 只依赖 `components/` 自身与 `lib/core/`。这些边界由 [`tests/architecture/layering.test.ts`](tests/architecture/layering.test.ts) 自动检查，旧的 `lib/agent`、`lib/db`、`lib/config`、`lib/tools` 和 `lib/onebot` 路径已退役。
 
