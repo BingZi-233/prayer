@@ -190,10 +190,11 @@ function canonicalCycle(cycle: string): string {
     ...nodes.slice(i),
     ...nodes.slice(0, i),
   ])
-  const best = rotations.sort((a, b) =>
-    a.join(" -> ").localeCompare(b.join(" -> "))
-  )[0]
-  return `${layer}: ${best.join(" -> ")}`
+  // 用码点序比较,不用 localeCompare —— 后者的结果依赖 ICU locale,
+  // 而本函数存在的意义恰恰是消除环境差异。
+  const joined = rotations.map((r) => r.join(" -> "))
+  const best = joined.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))[0]
+  return `${layer}: ${best}`
 }
 
 const IMPORT_RE = /(?:from\s+|import\s*\(\s*|require\s*\(\s*)["']([^"']+)["']/g
