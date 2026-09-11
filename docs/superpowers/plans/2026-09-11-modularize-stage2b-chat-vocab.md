@@ -185,6 +185,31 @@ types/ids/enabled-chats 此前栖身 lib/channels/,而 lib/config 这些
 - Modify: `tests/architecture/layering.test.ts`
 - Modify: `docs/development.md`
 
+- [ ] **Step 0: 顺带消除一处已登记的层内环（一行，且它本身就是 import 语句）**
+
+设计文档登记过一条 `core` 层内的环：`config-store.ts` 运行时 import `chat/enabled-chats.ts` 的
+`getGroupPolicy`，而后者反向引用 `config-store` 的**类型**。此前把它写成「调整任意一处都会
+改变初始化顺序，属行为改动」——**那是错的**。
+
+`AppConfig` 与 `GroupPolicy` 其实**定义在** `lib/core/config/schema.ts`，而 `config-store.ts:17`
+只是 `export type { AppConfig, GroupPolicy } from "./config/schema"` 的 re-export。从定义处取类型
+即可消除这条反向边：
+
+```ts
+// lib/core/chat/enabled-chats.ts:2
+import type { AppConfig, GroupPolicy } from "../config/schema"
+```
+
+**它仍是 `import type`——运行期完全擦除，零行为影响**，也不越出本阶段「只改 import」的边界。
+
+改完跑：
+
+```bash
+pnpm vitest run tests/lib/core/chat/ tests/lib/core/config-store.test.ts
+```
+
+Expected: 全过。（分层测试不受影响：两条边都在 `core` 层内，跨层检查看不到。）
+
 - [ ] **Step 1: 从 `PREFIX_RULES` 删掉 7 条已死的精确规则**
 
 ```ts

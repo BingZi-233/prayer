@@ -138,7 +138,11 @@ channels   knowledge
        core
 ```
 
-- `core` 只依赖 `core`。
+- `core` 只依赖 `core`（外加外部运行时依赖）。**「外加外部运行时依赖」不是废话**：
+  `lib/core/chat/group-name.ts` 是个 `"use client"` 的 React hook（`useState`/`useEffect`），
+  它必须留在 `core` 才能被 `app/admin/*` 的页面用——因为 `components/` 只可依赖 `core`。
+  这也是 `core` 层里唯一的客户端模块。后人若因「地基层不该有 react」而想把它挪走，
+  先读这条：**挪走会破坏 `components/` 的依赖规则**。
 - `model` 只依赖 `core`。
 - `channels`、`knowledge` 只依赖 `core` 与 `model`，两者是同级兄弟，互不依赖
   （已核实：零交叉 import）。
@@ -420,9 +424,15 @@ grep 的模式要覆盖 `.ts`、`.tsx`、`.json`、`.cjs`，且扫描范围要�
 例外情形（父目录无存活规则）确实能被那两条间接拦住，但那要求每次退役判断「父目录是否还活着」，
 判断错即静默失效。**统一全登记**。
 
-**分层测试只守跨层方向，层内方向无人管。** 现存两处层内互引：
-`lib/config-store.ts` 运行时 import `channels/enabled-chats`，而后者以 `import type` 反向
-引用 `config-store`——**编译期擦除，不构成运行时循环**；`lib/events.ts` 与
-`lib/channels/types.ts` 同样以 `import type` 互引。搬迁后它们同属 `core`，按层规则合法，
-测试不会报。本次不动——调整任意一处都会改变配置读取的初始化顺序，属行为改动。
-登记为已知债务、另开事项。这也说明 `layering.test.ts` 不能当唯一防线。
+**分层测试只守跨层方向，层内方向无人管。** 阶段 2b 之后，`core` 层内有这样一条边：
+`lib/core/config-store.ts` 运行时 import `lib/core/chat/enabled-chats.ts` 的 `getGroupPolicy`，
+而后者反向引用 `config-store` 的**类型**。反向那条是 `import type`，**编译期擦除，
+不构成运行时循环**；两者同属 `core`，按层规则合法，测试不会报。
+
+**这条类型边已被阶段 2b 消除**：`enabled-chats.ts` 原先 `import type { AppConfig, GroupPolicy }
+from "../config-store"`，而这两个类型其实**定义在** `lib/core/config/schema.ts`，`config-store`
+只是 re-export。改成从定义处导入即可，且它仍是 `import type`——运行期擦除，零行为影响。
+
+**教训**：层内环未必要靠「调整初始化顺序」才能解，先看那条边引的是不是**定义处**。
+一开始把这条债务写成「调整任意一处都会改变初始化顺序，属行为改动」，是错的，会让后人
+把它当成难解的包袱永久搁置。
