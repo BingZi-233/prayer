@@ -12,6 +12,12 @@
 
 **Spec:** `docs/superpowers/specs/2026-09-10-modularize-layering-design.md`（「目标结构」`knowledge/` 段与「迁移阶段」表第 4 行）
 
+> **已知限制（最终审查记录，4b 需留意）：** 本阶段删掉的「父目录规则与自身层别不同」用例，是
+> `PREFIX_RULES` 注释里宣称的「顺序敏感：具体文件规则必须排在目录通配之前」这条**查找语义的唯一
+> 断言**。删掉后，该语义在树内已无任何用例覆盖 —— 当前也没有这种情形（所以无实际风险），但
+> **4b 若引入一个「位于某目录规则之下、层级却不同」的具体规则**（例如把 `introspect.ts` 归去
+> `model/` 而它仍留在 `lib/agent/` 下），误分类会**静默漏过**。届时需要补一条能真红的断言。
+>
 > **留给阶段 4b 的一个待定问题（本次不动）：** 质量审查指出 `lib/agent/introspect.ts`
 > （`probeCapabilities`，唯一消费者 `app/api/capabilities/route.ts`，不参与会话流）
 > **语义上更像 model 层** —— 它的兄弟 `tool-policy`/`sdk-env`/`plugins/manager` 都在 `model/`。
