@@ -88,7 +88,7 @@ lib/
   knowledge/          # L2 知识库与反思
     kb.ts kb-path.ts kb-prefetch.ts
     reflection/
-      poller.ts compactor.ts promoter.ts promote.ts stats.ts
+      poller.ts compactor.ts promoter.ts apply-promote.ts stats.ts
   conversation/       # L3 会话与编排
     agent.ts orchestrator.ts session.ts gateway.ts message-buffer.ts reply-mapper.ts
     intent.ts answerability.ts handoff-handler.ts prior-context.ts error-handler.ts

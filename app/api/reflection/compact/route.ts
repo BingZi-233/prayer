@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 import { getAppContext } from "@/lib/core/app-context"
-import { runCompact } from "@/lib/agent/reflection-compactor"
+import { runCompact } from "@/lib/knowledge/reflection/compactor"
 import { ok, fail } from "@/lib/core/api"
 import { resolveAdminSurface } from "@/lib/core/chat/enabled-chats"
 

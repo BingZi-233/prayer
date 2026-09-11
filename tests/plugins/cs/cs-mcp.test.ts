@@ -76,7 +76,7 @@ const REPO_ROOT = dirname(
 // 其它测试都抓不到,所以在这里用真实加载来守。
 const CS_SUBPROCESS_MODULES = [
   "lib/model/embed.ts",
-  "lib/tools/kb.ts",
+  "lib/knowledge/kb.ts",
   "lib/core/db/kb-sql.ts",
 ]
 

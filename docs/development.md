@@ -45,8 +45,7 @@ channels   knowledge    # 通道实现 / 知识库与反思(同级,互不依赖)
 
 | 条目 | 作废阶段 |
 | --- | --- |
-| `CLAUDE.md` 的「仓库结构」一节里的 `tools/` 项（`lib/tools/` 迁往 `lib/model/` 与 `lib/knowledge/`） | 4 |
-| `CLAUDE.md` 的「仓库结构」一节里的 `agent/` 项（拆为 `conversation/` 与 `knowledge/`），与「命令」一节举例的 `tests/lib/agent/session.test.ts` 路径 | 4 |
+| `CLAUDE.md` 的「仓库结构」一节里的 `agent/` 项（`agent/` → `conversation/`；其中「反思循环」那半已随 4a 迁往 `knowledge/`，改时一并去掉），与「命令」一节举例的 `tests/lib/agent/session.test.ts` 路径 | 4b |
 
 ## 模块边界
 

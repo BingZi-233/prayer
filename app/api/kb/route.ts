@@ -3,7 +3,7 @@ import { readdirSync, writeFileSync, mkdirSync, existsSync } from "node:fs"
 import { dirname, sep } from "node:path"
 import { z } from "zod"
 import { ok, fail } from "@/lib/core/api"
-import { KB_DIR, isKbRelPath, safeKbAbs } from "@/lib/kb-path"
+import { KB_DIR, isKbRelPath, safeKbAbs } from "@/lib/knowledge/kb-path"
 
 export async function GET(): Promise<NextResponse> {
   let files: string[] = []

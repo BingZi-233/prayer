@@ -55,7 +55,7 @@ async function defaultBuilders(): Promise<RuntimeBuilders> {
   const { sharedDb } = await import("./core/db/shared")
   const { Repo } = await import("./core/db/repo")
   const { Agent } = await import("./agent/agent")
-  const { makeKbPrefetch } = await import("./agent/kb-prefetch")
+  const { makeKbPrefetch } = await import("./knowledge/kb-prefetch")
   // 本地嵌入模型是 native 依赖,只在 Node runtime 动态加载,别提到模块顶层
   const { embed } = await import("./model/embed")
   const { assemble } = await import("./assemble")

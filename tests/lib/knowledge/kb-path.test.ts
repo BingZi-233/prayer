@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest"
-import { isKbRelPath, safeKbAbs, KB_ROOT } from "@/lib/kb-path"
+import { isKbRelPath, safeKbAbs, KB_ROOT } from "@/lib/knowledge/kb-path"
 import { openDb } from "@/lib/core/db/index"
 import { Repo } from "@/lib/core/db/repo"
 

@@ -11,7 +11,7 @@ import {
   collectKbContext,
   itemsFromStructured,
   REFLECT_OUTPUT_SCHEMA,
-} from "@/lib/agent/reflection-poller"
+} from "@/lib/knowledge/reflection/poller"
 import type { ActionSend, ErrorOccurred } from "@/lib/core/chat/events"
 import type Database from "better-sqlite3"
 

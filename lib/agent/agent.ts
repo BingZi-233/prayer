@@ -5,7 +5,7 @@ import { toolStats, KB_PREFETCH_TOOL, KB_GROUNDED_TOOL } from "../model/stats/to
 import { logger } from "../core/logger"
 import type { ChannelId } from "../core/chat/types"
 import type { BrandProfile } from "../core/brand"
-import type { KbPrefetch } from "./kb-prefetch"
+import type { KbPrefetch } from "../knowledge/kb-prefetch"
 import { agentQueryOptions } from "../model/query-options"
 import { buildPrompt, kbProbeText, type AgentMedia } from "../model/prompt"
 import { usageFromResult } from "../model/drain"

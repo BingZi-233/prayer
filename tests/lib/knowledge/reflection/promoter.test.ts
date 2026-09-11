@@ -5,13 +5,13 @@ import {
   applyPromote,
   promotedDocRel,
   promotedMarkdown,
-} from "@/lib/reflect-promote"
+} from "@/lib/knowledge/reflection/apply-promote"
 import {
   runPromote,
   selectPromoteIds,
   registerReflectionPromoter,
   PROMOTE_OUTPUT_SCHEMA,
-} from "@/lib/agent/reflection-promoter"
+} from "@/lib/knowledge/reflection/promoter"
 import { bus } from "@/lib/core/bus"
 import type { ActionSend, ErrorOccurred } from "@/lib/core/chat/events"
 
@@ -54,7 +54,7 @@ beforeEach(() => {
   repo = new Repo(openDb(":memory:", 3))
 })
 
-describe("reflect-promote helpers", () => {
+describe("apply-promote helpers", () => {
   it("promotedDocRel / promotedMarkdown 格式稳定", () => {
     expect(promotedDocRel(42)).toBe("promoted/reflection-42.md")
     expect(promotedMarkdown(42, "  正文  ")).toBe("# 升格反思 #42\n\n正文\n")

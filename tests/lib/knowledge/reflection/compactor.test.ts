@@ -11,7 +11,7 @@ import {
   COMPLETE_MIN_RATIO,
   DEFAULT_COMPACT_BATCH_SIZE,
   DEFAULT_COMPACT_MS,
-} from "@/lib/agent/reflection-compactor"
+} from "@/lib/knowledge/reflection/compactor"
 import type { ActionSend, ErrorOccurred } from "@/lib/core/chat/events"
 
 let repo: Repo
@@ -423,7 +423,7 @@ describe("defaults", () => {
 describe("registerReflectionCompactor 防重入", () => {
   it("上一轮未结束时下一 tick 跳过", async () => {
     const { registerReflectionCompactor } =
-      await import("@/lib/agent/reflection-compactor")
+      await import("@/lib/knowledge/reflection/compactor")
     vi.useFakeTimers()
     try {
       seedReflections(5)
@@ -458,7 +458,7 @@ describe("registerReflectionCompactor 防重入", () => {
 describe("registerReflectionCompactor 到期判定 + 持久游标(修复重启清零)", () => {
   it("首刷:装配后延迟 firstDelayMs 到期即跑一次(不必等满 scanMs)", async () => {
     const { registerReflectionCompactor } =
-      await import("@/lib/agent/reflection-compactor")
+      await import("@/lib/knowledge/reflection/compactor")
     vi.useFakeTimers()
     try {
       seedReflections(5)
@@ -482,7 +482,7 @@ describe("registerReflectionCompactor 到期判定 + 持久游标(修复重启�
 
   it("未到期:now-compactAt < compactMs → 跳过不跑", async () => {
     const { registerReflectionCompactor } =
-      await import("@/lib/agent/reflection-compactor")
+      await import("@/lib/knowledge/reflection/compactor")
     vi.useFakeTimers()
     try {
       seedReflections(5)
@@ -506,7 +506,7 @@ describe("registerReflectionCompactor 到期判定 + 持久游标(修复重启�
 
   it("重启补跑:游标陈旧(距 now ≥ compactMs)→ 到期跑,并推进游标到 now", async () => {
     const { registerReflectionCompactor } =
-      await import("@/lib/agent/reflection-compactor")
+      await import("@/lib/knowledge/reflection/compactor")
     vi.useFakeTimers()
     try {
       seedReflections(5)

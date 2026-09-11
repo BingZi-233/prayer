@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
 import { getAppContext } from "@/lib/core/app-context"
 import { ok, fail } from "@/lib/core/api"
-import { runPromote } from "@/lib/agent/reflection-promoter"
+import { runPromote } from "@/lib/knowledge/reflection/promoter"
 import { resolveAdminSurface } from "@/lib/core/chat/enabled-chats"
 
 // 手动触发一轮自动升格评审(与定时任务同逻辑)
