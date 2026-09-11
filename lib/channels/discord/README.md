@@ -15,4 +15,4 @@
 - 不要在本目录放可运行 client / poll 代码（避免半成品进生产路径）
 - 不要在 `runtime.ts` 无配置时强行 `register`
 
-参考：`docs/superpowers/specs/2026-07-17-channel-plugin-telegram-design.md`、`lib/channels/types.ts`。
+参考：`docs/superpowers/specs/2026-07-17-channel-plugin-telegram-design.md`、`lib/core/chat/types.ts`。

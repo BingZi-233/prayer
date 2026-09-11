@@ -1,0 +1,138 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 920" role="img" aria-labelledby="title desc">
+  <title id="title">Prayer 代码分层图</title>
+  <desc id="desc">Prayer 的代码按 L4 到 L0 分层：runtime 组合根依赖 conversation，会话层依赖同级并列且互不依赖的 channels 与 knowledge，随后依赖 model，最后依赖 core。app 可以依赖全部层，components 只依赖 core。</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#F8FAFF" />
+      <stop offset="1" stop-color="#EEF2FC" />
+    </linearGradient>
+    <linearGradient id="root" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#111D4A" />
+      <stop offset="0.58" stop-color="#273D91" />
+      <stop offset="1" stop-color="#6A59D9" />
+    </linearGradient>
+    <linearGradient id="conversation" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#4F62D8" />
+      <stop offset="1" stop-color="#7568E8" />
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#1C2C61" flood-opacity="0.10" />
+    </filter>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M1 1L11 6L1 11Z" fill="#7180B4" />
+    </marker>
+    <marker id="arrowLight" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M1 1L11 6L1 11Z" fill="#A5B0D2" />
+    </marker>
+    <style>
+      .font { font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; }
+      .title { font-size: 30px; font-weight: 700; fill: #14204b; }
+      .subtitle { font-size: 16px; fill: #647096; }
+      .section { font-size: 17px; font-weight: 700; fill: #14204b; }
+      .body { font-size: 13px; font-weight: 500; fill: #687398; }
+      .small { font-size: 12px; font-weight: 500; fill: #7480a5; }
+      .note { font-size: 12px; font-weight: 600; fill: #6b78a9; }
+      .root-title { font-size: 21px; font-weight: 700; fill: #fff; }
+      .root-copy { font-size: 14px; fill: #c9d4ff; }
+      .layer-title { font-size: 19px; font-weight: 700; fill: #fff; }
+      .layer-copy { font-size: 13px; font-weight: 500; fill: #e6e9ff; }
+      .card-title { font-size: 17px; font-weight: 700; }
+      .card-copy { font-size: 13px; font-weight: 500; }
+      .rank { font-size: 12px; font-weight: 700; }
+    </style>
+  </defs>
+
+  <rect width="1600" height="920" rx="32" fill="url(#bg)" />
+  <text x="64" y="68" class="font title">代码分层</text>
+  <text x="64" y="99" class="font subtitle">Prayer lib/ 的五层边界 · 依赖方向固定为“上层使用下层”</text>
+  <rect x="1282" y="48" width="254" height="34" rx="17" fill="#E7EBFF" />
+  <text x="1409" y="70" text-anchor="middle" class="font" font-size="12" font-weight="700" fill="#4156B8">L4 → L0 / 单向依赖</text>
+
+  <rect x="64" y="170" width="178" height="610" rx="22" fill="#FFF" stroke="#E1E6F2" />
+  <text x="94" y="211" class="font section">阅读方式</text>
+  <text x="94" y="242" class="font body">代码层级由上至下</text>
+  <path d="M112 272V344" fill="none" stroke="#7180B4" stroke-width="2.5" marker-end="url(#arrow)" />
+  <text x="132" y="294" class="font note">依赖</text>
+  <text x="94" y="380" class="font small">L4 组合与装配</text>
+  <text x="94" y="414" class="font small">L3 会话与编排</text>
+  <text x="94" y="448" class="font small">L2 适配与知识</text>
+  <text x="94" y="482" class="font small">L1 模型 I/O</text>
+  <text x="94" y="516" class="font small">L0 共享地基</text>
+  <line x1="94" y1="548" x2="212" y2="548" stroke="#E1E6F2" />
+  <text x="94" y="584" class="font note">边界原则</text>
+  <text x="94" y="616" class="font small">同级模块不互相调用</text>
+  <text x="94" y="642" class="font small">底层不反向依赖上层</text>
+  <text x="94" y="668" class="font small">架构测试持续守护</text>
+  <text x="94" y="729" class="font note">组合根只有一个</text>
+  <text x="94" y="752" class="font small">lib/runtime.ts</text>
+
+  <rect x="290" y="140" width="960" height="100" rx="24" fill="url(#root)" filter="url(#shadow)" />
+  <circle cx="334" cy="190" r="20" fill="#FFF" fill-opacity=".13" />
+  <path d="M325 190L331 196L343 183" fill="none" stroke="#77E1C1" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" />
+  <text x="370" y="183" class="font root-title">L4 · 组合根</text>
+  <text x="370" y="211" class="font root-copy">lib/runtime.ts · 装配依赖、管理生命周期、启动运行时</text>
+  <text x="1212" y="183" text-anchor="end" class="font rank" fill="#AFC0FF">composition root</text>
+  <path d="M770 240V268" fill="none" stroke="#7180B4" stroke-width="2.5" marker-end="url(#arrow)" />
+
+  <rect x="290" y="268" width="960" height="86" rx="21" fill="url(#conversation)" filter="url(#shadow)" />
+  <text x="328" y="302" class="font layer-title">L3 · conversation / 会话与编排</text>
+  <text x="328" y="329" class="font layer-copy">Agent、网关、缓冲区、人工接管与会话轮询</text>
+  <text x="1212" y="302" text-anchor="end" class="font rank" fill="#DDE2FF">L3</text>
+  <path d="M770 354V382" fill="none" stroke="#7180B4" stroke-width="2.5" marker-end="url(#arrow)" />
+
+  <rect x="290" y="382" width="458" height="124" rx="21" fill="#FFF" stroke="#D9DFF0" filter="url(#shadow)" />
+  <rect x="290" y="382" width="9" height="124" rx="4" fill="#59BDEB" />
+  <text x="327" y="420" class="font card-title" fill="#176D9F">L2 · channels / 通道</text>
+  <text x="327" y="448" class="font card-copy" fill="#687398">QQ / OneBot、Telegram、通道注册与状态</text>
+  <text x="327" y="477" class="font small">只依赖 core；与 knowledge 同级</text>
+  <text x="708" y="420" text-anchor="end" class="font rank" fill="#2B9DD7">L2</text>
+
+  <rect x="792" y="382" width="458" height="124" rx="21" fill="#FFF" stroke="#D9DFF0" filter="url(#shadow)" />
+  <rect x="792" y="382" width="9" height="124" rx="4" fill="#C49AF4" />
+  <text x="829" y="420" class="font card-title" fill="#6042A8">L2 · knowledge / 知识</text>
+  <text x="829" y="448" class="font card-copy" fill="#687398">知识库检索、反思整理与内容升格</text>
+  <text x="829" y="477" class="font small">只依赖 core；与 channels 互不依赖</text>
+  <text x="1212" y="420" text-anchor="end" class="font rank" fill="#8A64D6">L2</text>
+  <path d="M519 506V532M1021 506V532" fill="none" stroke="#7180B4" stroke-width="2.5" marker-end="url(#arrow)" />
+  <text x="770" y="523" text-anchor="middle" class="font note">同级并列 · 无相互依赖</text>
+
+  <rect x="290" y="532" width="960" height="88" rx="21" fill="#4456A7" filter="url(#shadow)" />
+  <text x="328" y="567" class="font layer-title">L1 · model / 模型 I/O</text>
+  <text x="328" y="595" class="font layer-copy">SDK 环境、prompt、工具策略、嵌入与用量计量</text>
+  <text x="1212" y="567" text-anchor="end" class="font rank" fill="#CFD7FF">L1</text>
+  <path d="M770 620V648" fill="none" stroke="#7180B4" stroke-width="2.5" marker-end="url(#arrow)" />
+
+  <rect x="290" y="648" width="960" height="88" rx="21" fill="#1F3478" filter="url(#shadow)" />
+  <text x="328" y="683" class="font layer-title">L0 · core / 核心地基</text>
+  <text x="328" y="711" class="font layer-copy">SQLite 数据访问与迁移、配置、日志、事件总线、纯函数</text>
+  <text x="1212" y="683" text-anchor="end" class="font rank" fill="#B9C8FF">L0</text>
+
+  <rect x="1280" y="140" width="256" height="346" rx="22" fill="#FFF" stroke="#E1E6F2" filter="url(#shadow)" />
+  <text x="1312" y="181" class="font section">上层消费者</text>
+  <text x="1312" y="211" class="font body">可按边界使用分层能力</text>
+  <rect x="1312" y="241" width="192" height="86" rx="16" fill="#F3F6FF" />
+  <text x="1332" y="276" class="font card-title" font-size="15" fill="#263A83">app/</text>
+  <text x="1332" y="302" class="font card-copy" fill="#687398">页面与 API</text>
+  <text x="1332" y="321" class="font small">可依赖全部五层</text>
+  <rect x="1312" y="351" width="192" height="86" rx="16" fill="#F7F3FF" />
+  <text x="1332" y="386" class="font card-title" font-size="15" fill="#6042A8">components/</text>
+  <text x="1332" y="412" class="font card-copy" fill="#687398">展示组件</text>
+  <text x="1332" y="431" class="font small">只依赖 core</text>
+  <path d="M1280 282H1259" fill="none" stroke="#A5B0D2" stroke-width="2" stroke-dasharray="6 6" marker-end="url(#arrowLight)" />
+  <path d="M1280 392H1259" fill="none" stroke="#A5B0D2" stroke-width="2" stroke-dasharray="6 6" marker-end="url(#arrowLight)" />
+  <text x="1410" y="466" text-anchor="middle" class="font note">应用边界 · 不改变 lib 分层</text>
+
+  <rect x="1280" y="532" width="256" height="204" rx="22" fill="#FFF" stroke="#E1E6F2" />
+  <text x="1312" y="573" class="font section">维护提示</text>
+  <text x="1312" y="608" class="font small">新增通道 → channels/</text>
+  <text x="1312" y="638" class="font small">新增知识能力 → knowledge/</text>
+  <text x="1312" y="668" class="font small">新增模型 I/O → model/</text>
+  <text x="1312" y="698" class="font small">共享基础设施 → core/</text>
+
+  <rect x="64" y="824" width="1472" height="52" rx="18" fill="#FFF" stroke="#E1E6F2" />
+  <circle cx="96" cy="850" r="6" fill="#7180B4" />
+  <text x="112" y="855" class="font body">实线箭头：代码层级依赖</text>
+  <line x1="365" y1="850" x2="407" y2="850" stroke="#A5B0D2" stroke-width="2" stroke-dasharray="6 6" />
+  <text x="421" y="855" class="font body">虚线箭头：应用边界说明</text>
+  <text x="1504" y="855" text-anchor="end" class="font small">边界由 tests/architecture/layering.test.ts 自动检查</text>
+</svg>

@@ -5,7 +5,7 @@
 > 把重复问答交给 AI，把复杂问题交给人工，把每一次服务沉淀成下一次更好的答案。
 
 <p align="center">
-  <img src="docs/assets/qiyuan-mark.png" alt="Prayer 品牌标志" width="92" />
+  <img src="docs/assets/prayer-mark.png" alt="Prayer 品牌标志" width="92" />
   <br />
   <strong>Prayer</strong>
 </p>
@@ -15,7 +15,7 @@ Prayer 面向需要在 QQ、Telegram 等社区场景持续提供产品咨询的�
 ## 产品价值
 
 <p align="center">
-  <img src="docs/assets/qiyuan-value.svg" alt="Prayer 产品价值概览" width="100%" />
+  <img src="docs/assets/prayer-value.svg" alt="Prayer 产品价值概览" width="100%" />
 </p>
 
 <p align="center">
@@ -58,7 +58,7 @@ Prayer 是默认平台品牌，不预设部署方一定经营某个产品。品�
 ## 一次咨询如何被处理
 
 <p align="center">
-  <img src="docs/assets/qiyuan-response-flow.svg" alt="Prayer 一次咨询的处理流程" width="100%" />
+  <img src="docs/assets/prayer-response-flow.svg" alt="Prayer 一次咨询的处理流程" width="100%" />
 </p>
 
 Prayer 的关键不是让模型“尽量回答”，而是让每一次回答都经过依据判断：有依据就自动解决，需要业务数据就调用工具，不确定就安全转人工，最终把结果沉淀下来。
@@ -66,8 +66,29 @@ Prayer 的关键不是让模型“尽量回答”，而是让每一次回答都�
 ## 运行架构
 
 <p align="center">
-  <img src="docs/assets/qiyuan-architecture.svg" alt="Prayer 运行架构图" width="100%" />
+  <img src="docs/assets/prayer-architecture.svg" alt="Prayer 运行架构图" width="100%" />
 </p>
+
+### 代码分层
+
+运行架构图展示的是代码边界，而不是进程数量。Prayer 的 `lib/` 只有一个组合根；其余模块按职责分层，依赖方向固定为“上层使用下层”：
+
+<p align="center">
+  <img src="docs/assets/prayer-code-layers.svg" alt="Prayer 代码分层与依赖方向" width="100%" />
+</p>
+
+`channels` 与 `knowledge` 是同级模块，互不依赖；`conversation` 可以组合所有下层能力，`runtime.ts` 负责装配生命周期。`app/` 页面和 API 可以依赖全部层，`components/` 只依赖 `components/` 自身与 `lib/core/`。这些边界由 [`tests/architecture/layering.test.ts`](tests/architecture/layering.test.ts) 自动检查，旧的 `lib/agent`、`lib/db`、`lib/config`、`lib/tools` 和 `lib/onebot` 路径已退役。
+
+新增能力按下面的落位规则放置：
+
+| 需求 | 落位 |
+| --- | --- |
+| 新消息通道 | `lib/channels/<channel>/`，并在 `registry` / `factory` 中注册 |
+| Agent、会话与编排 | `lib/conversation/` |
+| 知识库、反思与知识升格 | `lib/knowledge/` |
+| SDK 调用、embedding、工具策略与用量 | `lib/model/` |
+| 数据库、配置、事件总线与共享展示纯函数 | `lib/core/` |
+| 进程启动与运行时装配 | `lib/runtime.ts` |
 
 ### 客服闭环
 
@@ -99,14 +120,14 @@ Prayer 的关键不是让模型“尽量回答”，而是让每一次回答都�
 | `/admin/plugins` | 插件安装、更新、启停和重载 |
 
 <p align="center">
-  <img src="docs/assets/qiyuan-operations.svg" alt="Prayer 管理后台能力图" width="100%" />
+  <img src="docs/assets/prayer-operations.svg" alt="Prayer 管理后台能力图" width="100%" />
 </p>
 
 建议在生产环境设置 `ADMIN_TOKEN`，为管理后台和 `/api` 开启口令保护。
 
 ## 技术底座
 
-Prayer 以单个 Node.js 进程运行 Next.js 管理后台和客服 Agent。`instrumentation.ts` 在 Node runtime 启动时装配运行时，因此启动一个生产服务进程即可同时获得：
+Prayer 以单个 Node.js 进程运行 Next.js 管理后台和客服 Agent。`instrumentation.ts` 仅在 Node runtime 启动时加载数据库、配置和 `lib/runtime.ts`，由组合根装配通道、会话编排、知识循环与模型能力；因此启动一个生产服务进程即可同时获得：
 
 - QQ / Telegram 通道连接与消息分发
 - Agent 会话编排、知识检索、工具调用与人工接管
@@ -242,7 +263,7 @@ pnpm pm:delete    # 从 PM2 移除
 ```
 
 <p align="center">
-  <img src="docs/assets/qiyuan-deployment.svg" alt="Prayer 生产部署拓扑" width="100%" />
+  <img src="docs/assets/prayer-deployment.svg" alt="Prayer 生产部署拓扑" width="100%" />
 </p>
 
 Linux 上可使用 systemd 配置开机自启：
@@ -287,18 +308,19 @@ NEXT_DIST_DIR=.next-verify pnpm build
 ```text
 app/                    管理后台页面与 API 路由
 components/             管理后台与通用 UI 组件
-lib/core/               无依赖的纯工具与地基：SQLite 数据访问与迁移、配置、日志、事件总线、通道词汇、UI 展示纯函数
-lib/model/              模型基座：SDK 环境与 query options、工具白名单、prompt、用量计量
-lib/channels/           QQ / Telegram 通道抽象与适配器
-lib/knowledge/          知识库检索与反思链路（反思、压缩、升格）
-lib/conversation/       会话与编排：Agent、网关、缓冲区、人工接管、后台循环
-lib/runtime.ts          组合根：装配通道、Agent 与后台循环
-plugins/                本地插件、Skill 与 MCP server
+lib/core/               L0 共享地基：db、config、chat 词汇、日志、总线与展示纯函数
+lib/model/              L1 模型基座：SDK、embedding、工具策略、prompt 与用量
+lib/channels/           L2 QQ / Telegram 通道实现、registry 与生命周期
+lib/knowledge/          L2 知识库与反思：检索、压缩、升格
+lib/conversation/       L3 会话与编排：Agent、网关、缓冲区、人工接管与后台循环
+lib/runtime.ts          L4 组合根：装配全部运行时能力
+plugins/                本地业务插件、Skill 与 MCP server
 scripts/                知识库摄入、数据库维护脚本
 docs/kb/                业务知识源文件（默认不入 Git）
 docs/assets/            README 与产品文档视觉素材
 data/                   运行时数据库与 SDK 配置（默认不入 Git）
 logs/                   PM2 与运行日志（默认不入 Git）
+tests/architecture/     分层与旧路径退役护栏
 ```
 
 ## 当前边界
