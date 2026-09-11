@@ -84,6 +84,21 @@
 - Create: `lib/model/sdk-env.ts`、`lib/model/tool-policy.ts`、`lib/model/query-options.ts`
 - Modify: `lib/agent/agent.ts`、`lib/agent/introspect.ts`、`lib/agent/answerability.ts`、`lib/agent/intent.ts`、`lib/agent/topic-poller.ts`、`lib/agent/reflection-{poller,compactor,promoter}.ts`
 
+> **实施后记（三处与原计划不同，均已确认合理）：**
+>
+> 1. **`CanUseToolFn` 由私有改为 `export type`**（`lib/model/tool-policy.ts`）。搬走的
+>    `noToolQueryOptions` 里有 `(userCanUseTool as CanUseToolFn)` 的 cast，跨文件必须可见。
+>    纯类型、运行期零影响；不导出就得改写搬移的代码，更糟。
+> 2. **import 用相对 `../model/…` 而非 `@/lib/model/…`**。那些文件现有的跨层 import 一律是相对写法，
+>    用别名会在同一组 import 里混风格。护栏 `resolveSpecifier` 对两种写法等价解析。
+> 3. **消费者表漏了测试文件。** `tests/lib/agent/agent.test.ts` 也从 `@/lib/agent/agent` 取那 6 个
+>    已搬走的符号，不改则 typecheck 必红。实施时已顺带改其 import（测试体一字未动），
+>    **文件的按模块拆分仍归 Task 3**。
+>
+> 另：**不要对 `lib/agent/agent.ts`、`lib/agent/reflection-compactor.ts` 跑 `prettier --write`** ——
+> 它们在 main 上本就不合 prettier，`--write` 会顺带重排与本次无关的存量行，制造 churn。
+> 只保证新增的行本身合规即可。
+
 - [ ] **Step 1: 新建分支**
 
 ```bash
