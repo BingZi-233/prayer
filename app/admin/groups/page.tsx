@@ -47,85 +47,19 @@ import { DataState } from "@/components/admin/data-state"
 import { usePolling } from "@/components/admin/use-polling"
 import { useGroupNames } from "@/lib/core/chat/group-name"
 import { channelLabel } from "@/lib/core/chat/channel-labels"
-import type { ChannelId } from "@/lib/core/chat/types"
 import { formatDuration } from "@/lib/core/format-duration"
-
-type Tri = "inherit" | "on" | "off"
-
-interface GroupPolicy {
-  proactiveEnabled?: boolean
-  proactiveSilenceMs?: number
-  notifyAdminOnHandoff?: boolean
-}
-
-interface Row {
-  channel: ChannelId
-  chatId: string
-  /** 兼容旧字段；勿作主键 */
-  groupId: number
-  /** 管理群：只跑管理命令，不可勾生效、无策略 */
-  isAdmin?: boolean
-  enabled: boolean
-  messageCount: number
-  lastTs: number
-  cursor: number
-  sedimentedCount: number
-  policy: GroupPolicy
-  hasOverride: boolean
-  policyKey: string
-  effective: {
-    proactiveEnabled: boolean
-    proactiveSilenceMs: number
-    notifyAdminOnHandoff: boolean
-  }
-}
-
-interface Globals {
-  proactiveEnabled: boolean
-  proactiveSilenceMs: number
-  notifyAdminOnHandoff: true
-}
-
-interface ActivityData {
-  groups: Row[]
-  globals: Globals
-}
-
-function triFrom(v: boolean | undefined): Tri {
-  if (v === undefined) return "inherit"
-  return v ? "on" : "off"
-}
-
-function triToBool(t: Tri): boolean | undefined {
-  if (t === "inherit") return undefined
-  return t === "on"
-}
-
-function rowLabel(
-  r: Pick<Row, "channel" | "chatId" | "groupId">,
-  nameFn: (id: number) => string
-): string {
-  if (r.channel === "qq" && r.groupId > 0) return nameFn(r.groupId)
-  if (r.channel === "tg" && r.groupId !== 0) {
-    const n = nameFn(r.groupId)
-    if (n && n !== String(r.groupId)) return n
-  }
-  return r.chatId
-}
-
-/**
- * 策略写 payload：新键 policyKey；QQ 同时清掉历史裸群号键，避免 getGroupPolicy 回退读到旧覆盖。
- */
-function policyWritePayload(
-  row: Pick<Row, "channel" | "chatId" | "policyKey">,
-  policy: GroupPolicy | null
-): Record<string, GroupPolicy | null> {
-  const out: Record<string, GroupPolicy | null> = { [row.policyKey]: policy }
-  if (row.channel === "qq" && row.chatId) {
-    out[row.chatId] = null
-  }
-  return out
-}
+import type {
+  Tri,
+  GroupPolicy,
+  Row,
+  ActivityData,
+} from "@/components/admin/groups/types"
+import {
+  triFrom,
+  triToBool,
+  rowLabel,
+  policyWritePayload,
+} from "@/components/admin/groups/policy-payload"
 
 export default function GroupsPage() {
   const { data, error, loading, refresh } = usePolling<ActivityData>(
