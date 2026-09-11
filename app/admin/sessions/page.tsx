@@ -67,81 +67,16 @@ import {
   createSessionListCoordinator,
   postSessionAction,
 } from "@/components/admin/session-polling"
+import { useGroupNames, useMemberNames } from "@/lib/core/chat/group-name"
+import type { Sess, Msg, Filter } from "@/components/admin/sessions/types"
 import {
-  sessionKeyParts,
-  useGroupNames,
-  useMemberNames,
-} from "@/lib/core/chat/group-name"
-import { channelLabel } from "@/lib/core/chat/channel-labels"
-
-/** 从来源 session key 解析渠道，展示为小徽章 */
-function ChannelBadge({
-  sessionKey,
-  className,
-}: {
-  sessionKey: string
-  className?: string
-}) {
-  const channel = sessionKeyParts(sessionKey)?.channel ?? "qq"
-  const label = channelLabel(channel)
-  return (
-    <Badge
-      variant="secondary"
-      className={cn(
-        "h-4 shrink-0 border-transparent bg-foreground px-1 text-[10px] text-background",
-        className
-      )}
-      title={`来源渠道: ${label}`}
-    >
-      {label}
-    </Badge>
-  )
-}
-
-interface Sess {
-  key: string
-  sessionId: string | null
-  active: boolean
-  humanMode?: boolean
-  humanSince?: number | null
-  lastQuestion: string | null
-  updatedAt: number
-}
-interface Msg {
-  role: string
-  text?: string
-  tool?: string
-  input?: string
-  result?: string
-  ts?: number
-  model?: string
-}
-
-type Filter = "all" | "active" | "human"
+  clock,
+  hangLabel,
+  isCustomerRole,
+} from "@/components/admin/sessions/utils"
+import { ChannelBadge } from "@/components/admin/sessions/channel-badge"
 
 const POLL_MS = 4000
-
-function clock(ts: number | undefined): string {
-  if (!ts) return ""
-  return new Date(ts).toLocaleTimeString([], {
-    hour: "2-digit",
-    minute: "2-digit",
-  })
-}
-
-function hangLabel(since: number | null | undefined): string | null {
-  if (!since) return null
-  const min = Math.max(0, Math.round((Date.now() - since) / 60_000))
-  if (min < 1) return "刚转人工"
-  if (min < 60) return `挂起 ${min} 分`
-  const h = Math.floor(min / 60)
-  return `挂起 ${h} 时 ${min % 60} 分`
-}
-
-/** 仅客户(user)靠左,其余(bot / tool / …)一律靠右 */
-function isCustomerRole(role: string): boolean {
-  return role === "user"
-}
 
 export default function SessionsPage() {
   return (
