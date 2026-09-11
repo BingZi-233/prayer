@@ -195,7 +195,10 @@ agent.ts 里约 400 行回答的是「怎么调模型」而非「会话怎么走
 > - **除点名的那条 `introspect.ts` 注释外，还修了 `lib/agent/unanswered-poller.ts` 顶部一条同类失效注释**
 >   （原写「主动模式指令定义在 agent.ts」，随 `PROACTIVE_SUFFIX` 迁走而失效）。**已确认接受** ——
 >   与 `introspect.ts` 那条同属「注释里的路径引用要一并改」。
-> - 3 处 `export ` 关键字补齐（`buildPrompt`、`DEFAULT_SYSTEM`、`PROBE_MAX_CHARS`）：跨模块引用所必需。
+> - **3 处 `export ` 关键字变化，但只有 2 处是导出面扩大**（审查核实纠正）：
+>   `buildPrompt` 与 `DEFAULT_SYSTEM` 在 `agent.ts` 里原本是**私有**，搬出去后必须导出才能被
+>   `agent.ts` 引用 → **导出面扩大**（必要）；`PROBE_MAX_CHARS` 在 `kb-prefetch.ts` 里本就是
+>   `export const`，只是换了文件 → **导出面不变**。
 > - `PROBE_MAX_CHARS` 搬到 `model/prompt.ts` 时**新增了两行说明注释**（解释为什么它归 model 而非 knowledge）——
 >   这是新增内容，不是搬移内容。
 
