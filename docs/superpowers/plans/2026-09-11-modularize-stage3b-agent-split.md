@@ -244,13 +244,22 @@ agent.ts 降至约 250 行,只剩 Agent 类与它的依赖契约。"
 
 - [ ] **Step 1: 拆分 `tests/lib/agent/agent.test.ts`**
 
-它现在从 `@/lib/agent/agent` 一次导入约 15 个符号,其中约 10 个已搬走。按**目标文件**把对应测试块搬进新文件:
+它现在约 731 行、共 **40 条用例**,从 `@/lib/agent/agent` 与 model 取符号。按**目标文件**把对应测试块搬进新文件:
 
 `tests/lib/model/{sdk-env,tool-policy,query-options,prompt,drain,system-prompt}.test.ts`
 
 **同步满足「测试镜像源码目录」**的约定。原 `agent.test.ts` 只保留测 `Agent` 类与 `AgentDeps` 的用例。
 
-**只搬测试块,不改断言内容**(改 import 路径除外)。若某个测试块同时测多个模块、无法干净切分,**停下报给我**,不要强行拆。
+**这是「搬」不是「补」—— 本步的核心纪律。** 只有 14 条是纯 model 单测,拆得干净;其余 26 条是 `Agent` 集成测试。其中 **4 条是「经由 `Agent` 间接覆盖 model 逻辑」**,拆分时最易出错:
+
+- 第 ~600 行「预检索注入」里测 `kbProbeText` 剥 `PROACTIVE_SUFFIX`(→ prompt.ts 的逻辑)
+- 第 ~516 行测 `foldPreamble`/`stripAgentPromptMarkers` 的 marker 剥离(→ prompt.ts)
+- 第 ~303 行「用量记账」测内联 drain 的 `usageFromResult`(→ drain.ts)
+- 第 ~619–693 行「工具用量观测」断言 stats/tool 的伪工具常量
+
+**这 4 条必须逐条明确「留在哪」**,不能既删旧又补新等价单测(那会让计数漂移)。**若某条确实无法干净归属,停下报给我**,不要强行拆、也不要顺手补新单测。
+
+**只搬测试块,不改断言内容**(改 import 路径除外)。
 
 - [ ] **Step 2: 跑测试**
 
@@ -294,6 +303,14 @@ Expected: **全绿**,且 `TOLERATED` 为空数组。
 3. **完整删掉那一行**,复跑恢复全绿,`git status` 无输出。
 
 若第 2 步没红,说明扫描器或断言已经失效,**停下报给我**。
+
+**必须走真实文件**:那个临时 import 要加在**磁盘上的真实 `.ts` 文件**里(让 `listFiles` + `readFileSync` 全链路跑到),**不要**只在合成字符串上验证 —— 合成字符串只覆盖 `collectViolations`,覆盖不到「文件被发现与读取」这一段。
+
+- [ ] **Step 4b: 给一处常量漂移加交叉引用注释**
+
+`lib/agent/agent.ts` 的 `DEFAULT_RUN_TIMEOUT_MS` 与 `lib/model/timeout.ts` 的 `DEFAULT_QUERY_TIMEOUT_MS` **各自硬编码了同一个值**,而后者注释里宣称「对齐 `agent.run`」。两者语义不同(墙钟超时 vs LLM 查询超时),但**改了其中一个不会提醒另一个**。
+
+在 `lib/model/timeout.ts` 那个常量的注释里补一句:改动本值需同步检查 `lib/agent/agent.ts` 的 `DEFAULT_RUN_TIMEOUT_MS`(或反之)。纯注释。
 
 - [ ] **Step 5: 提交**
 
