@@ -46,6 +46,7 @@ import { MetricRows } from "@/components/admin/stat"
 import { DataState } from "@/components/admin/data-state"
 import { usePolling } from "@/components/admin/use-polling"
 import { useGroupNames } from "@/lib/core/chat/group-name"
+import { channelLabel } from "@/lib/core/chat/channel-labels"
 
 type Tri = "inherit" | "on" | "off"
 
@@ -112,12 +113,6 @@ function rowLabel(
     if (n && n !== String(r.groupId)) return n
   }
   return r.chatId
-}
-
-function channelLabel(c: ChannelId): string {
-  if (c === "qq") return "QQ"
-  if (c === "tg") return "TG"
-  return c
 }
 
 /**
