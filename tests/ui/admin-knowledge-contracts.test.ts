@@ -34,7 +34,13 @@ describe("admin knowledge page contracts", () => {
   })
 
   it("preserves reflection moderation and promotion semantics", async () => {
-    const source = await read("app/admin/reflection/page.tsx")
+    const [page, hook] = await Promise.all([
+      read("app/admin/reflection/page.tsx"),
+      read("components/admin/reflection/use-reflection-actions.ts"),
+    ])
+    // 三个动作搬进了 hook,页面只做编排 —— 断言同时读两者:守的是
+    // 「这套动作的语义仍在」,不是「必须写在某个文件里」。
+    const source = `${page}\n${hook}`
 
     expect(source).toContain('action: "approve" | "reject" | "promote"')
     expect(source).toContain('"/api/reflection/compact"')

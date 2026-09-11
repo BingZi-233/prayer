@@ -1,7 +1,5 @@
 "use client"
 
-import { useMemo, useState } from "react"
-import { toast } from "sonner"
 import { Brain, GitCompareArrows, Wand2, Sparkles } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Spinner } from "@/components/ui/spinner"
@@ -29,11 +27,10 @@ import { PageShell } from "@/components/admin/page-shell"
 import { PageHeader } from "@/components/admin/page-header"
 import { CompactionRow } from "@/components/admin/reflection/compaction-row"
 import { EntryList } from "@/components/admin/reflection/entry-list"
-import type { Data } from "@/components/admin/reflection/types"
+import { useReflectionActions } from "@/components/admin/reflection/use-reflection-actions"
 import { MetricRows } from "@/components/admin/stat"
 import { SectionCard } from "@/components/admin/section-card"
 import { DataState } from "@/components/admin/data-state"
-import { usePolling } from "@/components/admin/use-polling"
 import { useGroupNames } from "@/lib/core/chat/group-name"
 import { formatDuration } from "@/lib/core/format-duration"
 
@@ -43,91 +40,18 @@ export default function ReflectionPage() {
     error,
     loading,
     refresh,
-  } = usePolling<Data>("/api/reflection")
+    busy,
+    promoteBusy,
+    acting,
+    entryCount,
+    approvedCount,
+    willCompact,
+    willPromote,
+    compact,
+    autoPromote,
+    act,
+  } = useReflectionActions()
   const { name } = useGroupNames()
-  const [busy, setBusy] = useState(false)
-  const [promoteBusy, setPromoteBusy] = useState(false)
-  const [acting, setActing] = useState<number | null>(null)
-  // 3s 轮询 + 操作都会触发 render:计数只随数据变化重算
-  const { entryCount, approvedCount } = useMemo(() => {
-    const es = d?.entries ?? []
-    return {
-      entryCount: es.length,
-      approvedCount: es.filter((e) => (e.status ?? "approved") === "approved")
-        .length,
-    }
-  }, [d])
-  const willCompact = d ? approvedCount >= d.config.compactMinEntries : false
-  const willPromote = d
-    ? approvedCount >= d.config.promoteMinEntries && d.config.promoteMs > 0
-    : false
-
-  async function compact() {
-    setBusy(true)
-    try {
-      const r = await fetch("/api/reflection/compact", { method: "POST" }).then(
-        (x) => x.json()
-      )
-      if (r.ok) {
-        toast.success(
-          r.data.ran
-            ? `已整理:${r.data.before} → ${r.data.after} 条`
-            : "整理完成:无变化(未达阈值或结果不变)"
-        )
-      } else {
-        toast.error(`整理失败:${r.error}`)
-      }
-    } catch (e) {
-      toast.error(`整理失败:${e instanceof Error ? e.message : String(e)}`)
-    } finally {
-      await refresh({ force: true })
-      setBusy(false)
-    }
-  }
-
-  async function autoPromote() {
-    setPromoteBusy(true)
-    try {
-      const r = await fetch("/api/reflection/promote", { method: "POST" }).then(
-        (x) => x.json()
-      )
-      if (r.ok) {
-        toast.success(
-          r.data.promoted > 0
-            ? `自动升格:评审 ${r.data.considered} 条,升格 ${r.data.promoted} 条`
-            : `升格评审完成:候选 ${r.data.considered} 条,无需升格`
-        )
-      } else {
-        toast.error(`升格失败:${r.error}`)
-      }
-    } catch (e) {
-      toast.error(`升格失败:${e instanceof Error ? e.message : String(e)}`)
-    } finally {
-      await refresh({ force: true })
-      setPromoteBusy(false)
-    }
-  }
-
-  async function act(id: number, action: "approve" | "reject" | "promote") {
-    setActing(id)
-    try {
-      const r = await fetch("/api/reflection", {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ id, action }),
-      }).then((x) => x.json())
-      if (r.ok) {
-        if (action === "promote")
-          toast.success(`已升格为正式文档：${r.data.file}`)
-        else toast.success(action === "approve" ? "已恢复入库" : "已驳回")
-        await refresh({ force: true })
-      } else toast.error(r.error || "操作失败")
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : String(e))
-    } finally {
-      setActing(null)
-    }
-  }
 
   return (
     <PageShell>
