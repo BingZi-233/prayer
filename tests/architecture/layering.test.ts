@@ -252,6 +252,13 @@ describe("分层结构契约", () => {
         `const m = require("../../channels/qq/client")`
       )
     ).toEqual([expectEdge])
+    // 别名导入:`resolveSpecifier` 对 `@/` 走的是 slice(2),与相对路径是两条独立分支
+    expect(
+      collectViolations(
+        "lib/core/config/chats.ts",
+        `import { OneBotClient } from "@/lib/channels/qq/client"`
+      )
+    ).toEqual([expectEdge])
     // 合法方向不报
     expect(
       collectViolations(

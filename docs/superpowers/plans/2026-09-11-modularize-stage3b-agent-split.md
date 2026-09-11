@@ -246,13 +246,22 @@ agent.ts 降至约 250 行,只剩 Agent 类与它的依赖契约。"
 
 > **实施后记：实际只建了 4 个测试文件，不是下面列的 6 个。** 下面按**源模块**列了六个目标，
 > 但纯 model 单测只有 14 条（`sdkEnv` 2、`query-options` 4、`tool-policy` 4、`buildDefaultSystem` 4），
-> 只够四个文件；`prompt.ts`/`drain.ts` 的覆盖**全是经由 `Agent` 的间接覆盖**，且 vitest 对不含
-> 任何用例的测试文件**直接报错**，补直接单测又违反「不顺手补新单测」。故实建
-> `sdk-env`/`tool-policy`/`query-options`/`system-prompt` 四个，`prompt`/`drain` 仍由
-> `agent.test.ts` 的集成用例覆盖。**这是对的** —— 按源模块列文件名时忽略了「现有测试的分布」。
+> 只够四个文件；vitest 对不含任何用例的测试文件**直接报错**，补直接单测又违反「不顺手补新单测」。
+> 故实建 `sdk-env`/`tool-policy`/`query-options`/`system-prompt` 四个。**这是对的** ——
+> 按源模块列文件名时忽略了「现有测试的分布」。
 >
-> 另：`foldPreamble`、`stripAgentPromptMarkers` 在 `lib/model/prompt.ts` 里是**私有函数**，
-> 无法写直接单测而不动源码，这也是它们只能留在集成测试里的原因。
+> **订正一处事实错误（提交信息与本计划原先都写错了）：`drain.ts` 的覆盖不是经由 `Agent` 的。**
+> 事实相反 —— `lib/model/drain.ts` 的注释明说主 agent **不走**该助手（`Agent.run` 内联了自己的
+> 同名逻辑）；`drainQuery` 的消费者是 `reflection-*` / `topic-poller`，而它**已有 9 条直接单测**
+> （在 `tests/lib/model/stats/usage.test.ts` 里，覆盖三种 structured_output 来源、优先级覆盖、
+> 不记账、抛错上抛）。所以 `drain.ts` 覆盖充分，**不要以为它欠测而去重复补测**。
+>
+> 只有 **`prompt.ts` 是「归属未变、无直接单测」**：它的运行时逻辑由 `agent.test.ts` 的集成用例
+> 间接覆盖（`buildPrompt` 的文本/图片分支、`stripAgentPromptMarkers` 的伪造边界剥离、
+> `kbProbeText` 剥 `PROACTIVE_SUFFIX`）以及 `orchestrator.test.ts`/`unanswered-poller.test.ts`
+> 覆盖 `isNoAnswerText`。没被碰到的只有琐碎边角（`(空消息)` 兜底、超长截断）。
+> 另：`foldPreamble`、`stripAgentPromptMarkers` 在 `prompt.ts` 里是**私有函数**，无法写直接单测
+> 而不动源码。
 
 它现在约 731 行、共 **40 条用例**,从 `@/lib/agent/agent` 与 model 取符号。按**目标文件**把对应测试块搬进新文件:
 
