@@ -121,17 +121,10 @@ const RETIRED_PREFIXES: string[] = [
  * 只应存在阶段间的临时条目,不得长期驻留。
  * 边的写法由 scanLib 产出:两端都去掉扩展名,用 " -> " 连接。
  */
-const TOLERATED: Array<{ edge: string; removedBy: string }> = [
-  {
-    edge: "lib/agent/reflection-compactor -> lib/agent/agent",
-    removedBy: "3b",
-  },
-  { edge: "lib/agent/reflection-poller -> lib/agent/agent", removedBy: "3b" },
-  { edge: "lib/agent/reflection-promoter -> lib/agent/agent", removedBy: "3b" },
-]
+const TOLERATED: Array<{ edge: string; removedBy: string }> = []
 
 /** 当前所处阶段。每阶段 PR 更新此常量。 */
-const CURRENT_STAGE = "3a"
+const CURRENT_STAGE = "3b"
 const STAGE_ORDER = ["0", "1", "2a", "2b", "3a", "3b", "4", "5", "6"]
 
 function layerOf(rel: string): Layer | null {
@@ -257,6 +250,13 @@ describe("分层结构契约", () => {
       collectViolations(
         "lib/core/config/chats.ts",
         `const m = require("../../channels/qq/client")`
+      )
+    ).toEqual([expectEdge])
+    // 别名导入:`resolveSpecifier` 对 `@/` 走的是 slice(2),与相对路径是两条独立分支
+    expect(
+      collectViolations(
+        "lib/core/config/chats.ts",
+        `import { OneBotClient } from "@/lib/channels/qq/client"`
       )
     ).toEqual([expectEdge])
     // 合法方向不报

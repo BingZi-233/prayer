@@ -2,7 +2,8 @@ import { resolve } from "path"
 import { query as sdkQuery } from "@anthropic-ai/claude-agent-sdk"
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk"
 import type { AppConfig } from "../core/config-store"
-import { TOOL_ALLOWLIST, isToolAllowed, sdkEnv } from "./agent"
+import { TOOL_ALLOWLIST, isToolAllowed } from "../model/tool-policy"
+import { sdkEnv } from "../model/sdk-env"
 
 export interface CapabilityTool {
   name: string
@@ -39,7 +40,7 @@ export interface Capabilities {
   probedAt: number
 }
 
-// 工具门控:唯一真源是 agent.ts 的 isToolAllowed(允许制:mcp__ 前缀或命中 TOOL_ALLOWLIST 才放行)。
+// 工具门控:唯一真源是 lib/model/tool-policy.ts 的 isToolAllowed(允许制:mcp__ 前缀或命中 TOOL_ALLOWLIST 才放行)。
 // 不再手写枚举被禁工具 —— 把 probe 到的 Agent 实际暴露工具(liveTools)逐个跑 isToolAllowed 分区:
 //   放行的进 allowlist;被拒的进 gated,逐条列真实工具名。
 // 内建宿主工具(Bash/Read/Web* 等)需模型 turn 才被 getContextUsage 上报,零 token probe 看不到,

@@ -1,6 +1,6 @@
 import { bus } from "../core/bus"
 import type { ReplyReady } from "../core/chat/events"
-import { isNoAnswerText } from "./agent"
+import { isNoAnswerText } from "../model/prompt"
 
 export interface ReplyMapperDeps {
   /** 单条字数上限;超出按句号/换行拆条。0 = 不拆。默认 900 */

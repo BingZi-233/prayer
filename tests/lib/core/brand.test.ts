@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import { DEFAULT_BRAND, resolveBrand } from "@/lib/core/brand"
 import { appConfigSchema } from "@/lib/core/config/schema"
-import { buildDefaultSystem } from "@/lib/agent/agent"
+import { buildDefaultSystem } from "@/lib/model/system-prompt"
 import { buildIntentSystem } from "@/lib/agent/intent"
 import { buildAnswerabilitySystem } from "@/lib/agent/answerability"
 

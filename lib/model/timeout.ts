@@ -8,7 +8,11 @@
  * 都应套本函数(或 keepalive 的 withDeadline)。
  */
 
-/** 默认 LLM(drainQuery)超时:对齐 agent.run 的 DEFAULT_RUN_TIMEOUT_MS */
+/**
+ * 默认 LLM(drainQuery)超时:对齐 agent.run 的 DEFAULT_RUN_TIMEOUT_MS。
+ * 两者语义不同(墙钟超时 vs 单次 LLM 查询超时),数值相同但各自硬编码;
+ * 改动本值需同步检查 lib/agent/agent.ts 的 DEFAULT_RUN_TIMEOUT_MS。
+ */
 export const DEFAULT_QUERY_TIMEOUT_MS = 180_000
 /** 默认本地 embed 超时:冷启动加载模型实测可达 20s+,60s 只挡真挂死 */
 export const DEFAULT_EMBED_TIMEOUT_MS = 60_000

@@ -84,6 +84,21 @@
 - Create: `lib/model/sdk-env.ts`、`lib/model/tool-policy.ts`、`lib/model/query-options.ts`
 - Modify: `lib/agent/agent.ts`、`lib/agent/introspect.ts`、`lib/agent/answerability.ts`、`lib/agent/intent.ts`、`lib/agent/topic-poller.ts`、`lib/agent/reflection-{poller,compactor,promoter}.ts`
 
+> **实施后记（三处与原计划不同，均已确认合理）：**
+>
+> 1. **`CanUseToolFn` 由私有改为 `export type`**（`lib/model/tool-policy.ts`）。搬走的
+>    `noToolQueryOptions` 里有 `(userCanUseTool as CanUseToolFn)` 的 cast，跨文件必须可见。
+>    纯类型、运行期零影响；不导出就得改写搬移的代码，更糟。
+> 2. **import 用相对 `../model/…` 而非 `@/lib/model/…`**。那些文件现有的跨层 import 一律是相对写法，
+>    用别名会在同一组 import 里混风格。护栏 `resolveSpecifier` 对两种写法等价解析。
+> 3. **消费者表漏了测试文件。** `tests/lib/agent/agent.test.ts` 也从 `@/lib/agent/agent` 取那 6 个
+>    已搬走的符号，不改则 typecheck 必红。实施时已顺带改其 import（测试体一字未动），
+>    **文件的按模块拆分仍归 Task 3**。
+>
+> 另：**不要对 `lib/agent/agent.ts`、`lib/agent/reflection-compactor.ts` 跑 `prettier --write`** ——
+> 它们在 main 上本就不合 prettier，`--write` 会顺带重排与本次无关的存量行，制造 churn。
+> 只保证新增的行本身合规即可。
+
 - [ ] **Step 1: 新建分支**
 
 ```bash
@@ -144,7 +159,16 @@ agent.ts 里约 400 行回答的是「怎么调模型」而非「会话怎么走
 
 **Files:**
 - Create: `lib/model/prompt.ts`、`lib/model/drain.ts`、`lib/model/system-prompt.ts`
-- Modify: `lib/agent/agent.ts`、`lib/agent/kb-prefetch.ts`、`lib/agent/{unanswered-poller,orchestrator,reply-mapper,reflection-poller,reflection-compactor,reflection-promoter}.ts`、`tests/lib/model/stats/usage.test.ts`、`tests/lib/core/brand.test.ts`
+- Modify: `lib/agent/agent.ts`、`lib/agent/kb-prefetch.ts`、`lib/agent/introspect.ts`(仅注释)、`lib/agent/{unanswered-poller,orchestrator,reply-mapper,reflection-poller,reflection-compactor,reflection-promoter}.ts`、`tests/lib/model/stats/usage.test.ts`、`tests/lib/core/brand.test.ts`
+
+> **Task 1 审查补充的两点（本任务一并处理）：**
+>
+> 1. **`lib/agent/introspect.ts` 有一处注释随搬移失效**：它写着「工具门控:唯一真源是 **agent.ts** 的
+>    `isToolAllowed`」，而 `isToolAllowed` 已搬到 `lib/model/tool-policy.ts`。改成指向新位置
+>    （纯注释，不碰行为）。这类注释漂移正是设计文档要求「注释里的路径引用要一并改」的一类。
+> 2. **`isStructuredOutputTool` 是横跨两个新模块的共享符号** —— `tool-policy.ts`（wrapper 内用）与
+>    `drain.ts`（`pickStructuredFromMessage` 内用）都要它。**`drain.ts` 必须从 `./tool-policy` import**，
+>    若误从 `../agent/agent` 引，就是 `model → conversation` 逆向，护栏会红。
 
 - [ ] **Step 1: 建 `lib/model/prompt.ts`(含风险 1 的常量搬迁)**
 
@@ -161,6 +185,22 @@ agent.ts 里约 400 行回答的是「怎么调模型」而非「会话怎么走
 - [ ] **Step 3: 建 `lib/model/system-prompt.ts`**
 
 搬入 `DefaultSystemOptions`、`buildDefaultSystem`、`DEFAULT_SYSTEM`。它会从 `./prompt` import 那 4 个 marker(同层,合法)。
+
+> **实施后记（Task 2 完成时记录）：**
+>
+> - `agent.ts` 实测 **229 行**（原估 240–280，偏保守；完整性由多重集比对证明：归一化 `export `
+>   前缀后，旧 `agent.ts` 的每一行都原样出现在新文件集中，`missing: {}`）。
+> - 六模块行数：`prompt` 130 / `drain` 132 / `system-prompt` 69 / `sdk-env` 15 / `tool-policy` 68 /
+>   `query-options` 94。
+> - **除点名的那条 `introspect.ts` 注释外，还修了 `lib/agent/unanswered-poller.ts` 顶部一条同类失效注释**
+>   （原写「主动模式指令定义在 agent.ts」，随 `PROACTIVE_SUFFIX` 迁走而失效）。**已确认接受** ——
+>   与 `introspect.ts` 那条同属「注释里的路径引用要一并改」。
+> - **3 处 `export ` 关键字变化，但只有 2 处是导出面扩大**（审查核实纠正）：
+>   `buildPrompt` 与 `DEFAULT_SYSTEM` 在 `agent.ts` 里原本是**私有**，搬出去后必须导出才能被
+>   `agent.ts` 引用 → **导出面扩大**（必要）；`PROBE_MAX_CHARS` 在 `kb-prefetch.ts` 里本就是
+>   `export const`，只是换了文件 → **导出面不变**。
+> - `PROBE_MAX_CHARS` 搬到 `model/prompt.ts` 时**新增了两行说明注释**（解释为什么它归 model 而非 knowledge）——
+>   这是新增内容，不是搬移内容。
 
 - [ ] **Step 4: 从 `agent.ts` 删掉已搬走的段落,并改它的 import**
 
@@ -204,13 +244,41 @@ agent.ts 降至约 250 行,只剩 Agent 类与它的依赖契约。"
 
 - [ ] **Step 1: 拆分 `tests/lib/agent/agent.test.ts`**
 
-它现在从 `@/lib/agent/agent` 一次导入约 15 个符号,其中约 10 个已搬走。按**目标文件**把对应测试块搬进新文件:
+> **实施后记：实际只建了 4 个测试文件，不是下面列的 6 个。** 下面按**源模块**列了六个目标，
+> 但纯 model 单测只有 14 条（`sdkEnv` 2、`query-options` 4、`tool-policy` 4、`buildDefaultSystem` 4），
+> 只够四个文件；vitest 对不含任何用例的测试文件**直接报错**，补直接单测又违反「不顺手补新单测」。
+> 故实建 `sdk-env`/`tool-policy`/`query-options`/`system-prompt` 四个。**这是对的** ——
+> 按源模块列文件名时忽略了「现有测试的分布」。
+>
+> **订正一处事实错误（提交信息与本计划原先都写错了）：`drain.ts` 的覆盖不是经由 `Agent` 的。**
+> 事实相反 —— `lib/model/drain.ts` 的注释明说主 agent **不走**该助手（`Agent.run` 内联了自己的
+> 同名逻辑）；`drainQuery` 的消费者是 `reflection-*` / `topic-poller`，而它**已有 9 条直接单测**
+> （在 `tests/lib/model/stats/usage.test.ts` 里，覆盖三种 structured_output 来源、优先级覆盖、
+> 不记账、抛错上抛）。所以 `drain.ts` 覆盖充分，**不要以为它欠测而去重复补测**。
+>
+> 只有 **`prompt.ts` 是「归属未变、无直接单测」**：它的运行时逻辑由 `agent.test.ts` 的集成用例
+> 间接覆盖（`buildPrompt` 的文本/图片分支、`stripAgentPromptMarkers` 的伪造边界剥离、
+> `kbProbeText` 剥 `PROACTIVE_SUFFIX`）以及 `orchestrator.test.ts`/`unanswered-poller.test.ts`
+> 覆盖 `isNoAnswerText`。没被碰到的只有琐碎边角（`(空消息)` 兜底、超长截断）。
+> 另：`foldPreamble`、`stripAgentPromptMarkers` 在 `prompt.ts` 里是**私有函数**，无法写直接单测
+> 而不动源码。
+
+它现在约 731 行、共 **40 条用例**,从 `@/lib/agent/agent` 与 model 取符号。按**目标文件**把对应测试块搬进新文件:
 
 `tests/lib/model/{sdk-env,tool-policy,query-options,prompt,drain,system-prompt}.test.ts`
 
 **同步满足「测试镜像源码目录」**的约定。原 `agent.test.ts` 只保留测 `Agent` 类与 `AgentDeps` 的用例。
 
-**只搬测试块,不改断言内容**(改 import 路径除外)。若某个测试块同时测多个模块、无法干净切分,**停下报给我**,不要强行拆。
+**这是「搬」不是「补」—— 本步的核心纪律。** 只有 14 条是纯 model 单测,拆得干净;其余 26 条是 `Agent` 集成测试。其中 **4 条是「经由 `Agent` 间接覆盖 model 逻辑」**,拆分时最易出错:
+
+- 第 ~600 行「预检索注入」里测 `kbProbeText` 剥 `PROACTIVE_SUFFIX`(→ prompt.ts 的逻辑)
+- 第 ~516 行测 `foldPreamble`/`stripAgentPromptMarkers` 的 marker 剥离(→ prompt.ts)
+- 第 ~303 行「用量记账」测内联 drain 的 `usageFromResult`(→ drain.ts)
+- 第 ~619–693 行「工具用量观测」断言 stats/tool 的伪工具常量
+
+**这 4 条必须逐条明确「留在哪」**,不能既删旧又补新等价单测(那会让计数漂移)。**若某条确实无法干净归属,停下报给我**,不要强行拆、也不要顺手补新单测。
+
+**只搬测试块,不改断言内容**(改 import 路径除外)。
 
 - [ ] **Step 2: 跑测试**
 
@@ -254,6 +322,20 @@ Expected: **全绿**,且 `TOLERATED` 为空数组。
 3. **完整删掉那一行**,复跑恢复全绿,`git status` 无输出。
 
 若第 2 步没红,说明扫描器或断言已经失效,**停下报给我**。
+
+**必须走真实文件**:那个临时 import 要加在**磁盘上的真实 `.ts` 文件**里(让 `listFiles` + `readFileSync` 全链路跑到),**不要**只在合成字符串上验证 —— 合成字符串只覆盖 `collectViolations`,覆盖不到「文件被发现与读取」这一段。
+
+- [ ] **Step 4b: 给一处常量漂移加交叉引用注释**
+
+`lib/agent/agent.ts` 的 `DEFAULT_RUN_TIMEOUT_MS` 与 `lib/model/timeout.ts` 的 `DEFAULT_QUERY_TIMEOUT_MS` **各自硬编码了同一个值**,而后者注释里宣称「对齐 `agent.run`」。两者语义不同(墙钟超时 vs LLM 查询超时),但**改了其中一个不会提醒另一个**。
+
+在 `lib/model/timeout.ts` 那个常量的注释里补一句:改动本值需同步检查 `lib/agent/agent.ts` 的 `DEFAULT_RUN_TIMEOUT_MS`(或反之)。纯注释。
+
+> **遗留（非本阶段引入，记此备忘）：** `lib/model/drain.ts` 是顶层文件，但它的测试
+> （`drainQuery` 的 9 条）埋在 `tests/lib/model/stats/usage.test.ts` 里 —— 与「测试镜像源码」不符。
+> 成因是 3a 把 `usage-stats.ts` 搬成 `stats/usage.ts` 时，`usage.test.ts` 跟着进了 `stats/`，
+> 而 `drain.ts` 是 3b 才在顶层新建的。修法二选一：把 `drainQuery` 的测试挪出 `drain.test.ts`，
+> 或重新考虑 `drain.ts` 的落点。**留给后续阶段或收尾文档阶段处理。**
 
 - [ ] **Step 5: 提交**
 
