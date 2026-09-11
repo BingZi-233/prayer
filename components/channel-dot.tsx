@@ -1,6 +1,6 @@
 "use client"
 
-import { cn } from "@/lib/utils"
+import { cn } from "@/lib/core/utils"
 import type { ChannelStatusView } from "@/components/live-provider"
 
 const CHANNEL_LABEL: Record<string, string> = {

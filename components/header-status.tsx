@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react"
 import { useLive } from "@/components/live-provider"
 import { ThemeToggle } from "@/components/theme-toggle"
-import { DEFAULT_BRAND } from "@/lib/brand"
+import { DEFAULT_BRAND } from "@/lib/core/brand"
 
 const STATE_LABEL: Record<string, string> = {
   running: "运行中",

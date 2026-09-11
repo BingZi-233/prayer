@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from "next/server"
 import { z } from "zod"
-import { getAppContext } from "@/lib/app-context"
+import { getAppContext } from "@/lib/core/app-context"
 import {
   getGroupPolicy,
   listEnabledChats,
   policyKey,
 } from "@/lib/channels/enabled-chats"
 import type { ChannelId } from "@/lib/channels/types"
-import { ok, fail } from "@/lib/api"
+import { ok, fail } from "@/lib/core/api"
 
 function chatKey(channel: string, chatId: string): string {
   return `${channel}:${chatId}`

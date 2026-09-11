@@ -45,11 +45,7 @@ channels   knowledge    # 通道实现 / 知识库与反思(同级,互不依赖)
 
 | 条目 | 作废阶段 |
 | --- | --- |
-| `CLAUDE.md` 的「仓库结构」一节里的 `onebot/` 项 | 1 |
-| 本节下方「模块边界」中 `lib/config/schema.ts`、`lib/config/{env,migrate,chats,patch}.ts`、`lib/config-store.ts`、`lib/db/repositories/`、`lib/db/migrations/` 的位置 | 2a |
-| `docs/data-access.md` 里「以上路径相对于 `lib/db/`」与 `lib/db/index.ts` 的引用；`docs/database-operations.md` 里 `lib/db/migrations/registry.ts` 与 `lib/db/index.ts` 的引用 | 2a |
-| `CLAUDE.md` 的「仓库结构」一节里的 `db/` 项 | 2a |
-| 「模块边界」中 `lib/config-store.ts` 条目引用的 `lib/channels/enabled-chats.ts`（迁往 `lib/core/chat/`） | 2b |
+| 「模块边界」中 `lib/core/config-store.ts` 条目引用的 `lib/channels/enabled-chats.ts`（迁往 `lib/core/chat/`） | 2b |
 | `CLAUDE.md` 的「仓库结构」一节里的 `tools/`、`plugins/` 项 | 3 |
 | `CLAUDE.md` 的「仓库结构」一节里的 `agent/` 项（拆为 `conversation/` 与 `knowledge/`），与「命令」一节举例的 `tests/lib/agent/session.test.ts` 路径 | 4 |
 
@@ -59,16 +55,16 @@ channels   knowledge    # 通道实现 / 知识库与反思(同级,互不依赖)
   不把校验规则导出给业务模块或测试使用。
 - `components/admin/config/` 按功能维护配置区块；`use-config-form.ts` 持有唯一草稿，
   管理数据请求与保存。区块组件不自行持久化，切换标签不会丢失修改。
-- `lib/config/schema.ts` 定义完整配置、默认值和类型，`AppConfig` 与 `GroupPolicy`
+- `lib/core/config/schema.ts` 定义完整配置、默认值和类型，`AppConfig` 与 `GroupPolicy`
   从 schema 推导。页面使用类型导入，避免把数据库和运行时依赖带入浏览器。
-- `lib/config/env.ts` 将环境变量转换为种子，`migrate.ts` 处理旧格式兼容，
+- `lib/core/config/env.ts` 将环境变量转换为种子，`migrate.ts` 处理旧格式兼容，
   `chats.ts` 维护通道引用规范化，`patch.ts` 定义接口更新语义。
-- `lib/config-store.ts` 负责配置读写及存量导入兼容，依赖 `lib/config/` 下的各模块、
-  `lib/db/repositories/config.ts`，以及 `lib/channels/enabled-chats.ts`。新增纯业务规则应放在
+- `lib/core/config-store.ts` 负责配置读写及存量导入兼容，依赖 `lib/core/config/` 下的各模块、
+  `lib/core/db/repositories/config.ts`，以及 `lib/channels/enabled-chats.ts`。新增纯业务规则应放在
   专门模块，便于脱离 Next.js 与数据库测试。
-- `lib/db/repositories/` 按领域维护 SQL，`Repo` 保留兼容转发，各领域共享连接与事务。
+- `lib/core/db/repositories/` 按领域维护 SQL，`Repo` 保留兼容转发，各领域共享连接与事务。
   类型、事务边界和扩展方式见 [数据访问层](data-access.md)。
-- `lib/db/migrations/` 集中注册并按版本执行结构升级；发布前检查、备份与恢复流程见
+- `lib/core/db/migrations/` 集中注册并按版本执行结构升级；发布前检查、备份与恢复流程见
   [数据库迁移与备份](database-operations.md)。
 
 ## 扩展配置

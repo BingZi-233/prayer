@@ -1,6 +1,6 @@
 import type { ReactNode } from "react"
 import { CircleAlert, CircleCheck, Info } from "lucide-react"
-import { cn } from "@/lib/utils"
+import { cn } from "@/lib/core/utils"
 
 // 提示条:与背景同色的浅色底 + 同色描边,用于"需要注意但不是错误"的说明。
 // 页面上同类提示只有这一处实现,不要各页手写彩色横幅。

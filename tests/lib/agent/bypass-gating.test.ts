@@ -3,9 +3,9 @@
  * agent 不 import channels/tg/bypass-state。
  */
 import { describe, it, expect, beforeEach, vi } from "vitest"
-import { openDb } from "@/lib/db/index"
-import { Repo } from "@/lib/db/repo"
-import { bus } from "@/lib/bus"
+import { openDb } from "@/lib/core/db/index"
+import { Repo } from "@/lib/core/db/repo"
+import { bus } from "@/lib/core/bus"
 import { SessionStore } from "@/lib/agent/session"
 import { runScan } from "@/lib/agent/unanswered-poller"
 import { ChannelRegistry } from "@/lib/channels/registry"

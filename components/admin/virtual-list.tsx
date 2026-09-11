@@ -2,7 +2,7 @@
 
 import { useRef, type ReactNode } from "react"
 import { useVirtualizer } from "@tanstack/react-virtual"
-import { cn } from "@/lib/utils"
+import { cn } from "@/lib/core/utils"
 
 // 通用虚拟列表:只渲染可视区行,变高由 measureElement 的 ResizeObserver 自动重测
 // (展开 details、长文本换行都会触发重测)。用于条目数可能上百的后台列表,

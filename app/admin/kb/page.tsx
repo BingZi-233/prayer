@@ -68,7 +68,7 @@ import { Notice } from "@/components/admin/notice"
 import { ItemCard } from "@/components/admin/item-card"
 import { MasterDetail } from "@/components/admin/master-detail"
 import { DataState, EmptyState } from "@/components/admin/data-state"
-import { cn } from "@/lib/utils"
+import { cn } from "@/lib/core/utils"
 
 interface KbStats {
   chunks: number

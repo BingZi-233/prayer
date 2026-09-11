@@ -1,5 +1,5 @@
-import { bus } from "../bus"
-import type { Repo } from "../db/repo"
+import { bus } from "../core/bus"
+import type { Repo } from "../core/db/repo"
 import type { ResolutionRecorded } from "../events"
 
 /** 把 resolution.recorded 事件落库,供看板统计 */

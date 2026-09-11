@@ -1,9 +1,9 @@
-import { bus } from "../bus"
+import { bus } from "../core/bus"
 import type { ErrorOccurred } from "../events"
 import type { ChannelId } from "../channels/types"
 import { legacySessionKeyToCanonical, parseSessionKey } from "../channels/ids"
-import { logger } from "../logger"
-import { errorMessage, chatRefFromSession } from "../log-context"
+import { logger } from "../core/logger"
+import { errorMessage, chatRefFromSession } from "../core/log-context"
 
 export interface ErrorHandlerDeps {
   /** 自定义记录;缺省走结构化 logger.error(不经 console,避免 ring 双记) */
@@ -19,7 +19,7 @@ export function defaultFallbackText(supportUrl?: string): string {
 }
 
 // 再导出,兼容旧测试/调用方
-export { errorMessage } from "../log-context"
+export { errorMessage } from "../core/log-context"
 
 /** 从事件解析 channel + chatId(优先字段,否则 sessionKey) */
 function resolveTarget(e: {

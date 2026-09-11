@@ -1,4 +1,4 @@
-import { bus } from "../bus"
+import { bus } from "../core/bus"
 import type { ReplyReady } from "../events"
 import { isNoAnswerText } from "./agent"
 

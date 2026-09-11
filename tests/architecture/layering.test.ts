@@ -26,6 +26,10 @@ const LIB_DIR = join(REPO_ROOT, "lib")
  * channels/ 下,但它最终去 lib/core/chat/,这里就记 core。搬迁中途的
  * 物理位置不一致不算违规,只有最终归属错位才算。
  * 顺序敏感:具体文件规则必须排在目录通配之前。
+ *
+ * 目录规则必须以 `/` 结尾,精确文件规则不带尾斜杠。`layerOf` 与
+ * 「每条精确文件规则都命中真实存在的文件」这条断言都靠这个约定区分两者,
+ * 所以谁漏写或多写尾斜杠,断言语义就悄悄变了。
  */
 const PREFIX_RULES: Array<[string, Layer]> = [
   ["lib/runtime.ts", "composition"],
@@ -33,19 +37,6 @@ const PREFIX_RULES: Array<[string, Layer]> = [
   // core —— 目标位
   ["lib/core/", "core"],
   // core —— 当前位置
-  ["lib/db/", "core"],
-  ["lib/config/", "core"],
-  ["lib/bus.ts", "core"],
-  ["lib/logger.ts", "core"],
-  ["lib/log-context.ts", "core"],
-  ["lib/app-context.ts", "core"],
-  ["lib/config-store.ts", "core"],
-  ["lib/auth.ts", "core"],
-  ["lib/settings-writer.ts", "core"],
-  ["lib/concurrency.ts", "core"],
-  ["lib/utils.ts", "core"],
-  ["lib/brand.ts", "core"],
-  ["lib/api.ts", "core"],
   ["lib/events.ts", "core"],
   ["lib/name-cache.ts", "core"],
   ["lib/name-cache-store.ts", "core"],
@@ -84,10 +75,37 @@ const PREFIX_RULES: Array<[string, Layer]> = [
 ]
 
 /**
- * 已退役的前缀。阶段 N 完成搬迁后,把该阶段的旧前缀填进来,
- * 「退役前缀已清空」用例会断言没有任何文件命中它。
+ * 已退役的路径前缀。搬迁完成后把该阶段的旧前缀填进来 ——
+ * **目录前缀与精确文件前缀都要登记**,「退役前缀没有任何文件命中」用例
+ * 会断言没有文件命中它们。
+ *
+ * 为什么精确文件项也不能省(曾一度只留目录项,是个错误):
+ * 退役一条精确文件规则后,若它的**父目录规则仍然存活**,有人把该文件放回去
+ * 会被那条目录规则**静默地**归成父目录那一层 —— 例如 2b 之后
+ * `["lib/channels/", "channels"]` 仍在,重建 `lib/channels/types.ts`
+ * 会被悄悄算作 channels。此时「退役前缀无命中」没有该项而放行,
+ * 「每条精确规则命中真实文件」查的是规则不是文件,「lib 下每个文件都归属于
+ * 某一层」又因规则命中而通过 —— 三条都拦不住,只有这份登记能。
+ *
+ * 例外情形(父目录无存活规则时)确实可由那两条断言间接拦住,但这需要每次
+ * 退役时判断父目录是否还活着,判断错就静默失效。**统一全登记,不做区分。**
  */
-const RETIRED_PREFIXES: string[] = ["lib/onebot/"]
+const RETIRED_PREFIXES: string[] = [
+  "lib/onebot/",
+  "lib/db/",
+  "lib/config/",
+  "lib/bus.ts",
+  "lib/logger.ts",
+  "lib/log-context.ts",
+  "lib/app-context.ts",
+  "lib/config-store.ts",
+  "lib/auth.ts",
+  "lib/settings-writer.ts",
+  "lib/concurrency.ts",
+  "lib/utils.ts",
+  "lib/brand.ts",
+  "lib/api.ts",
+]
 
 /**
  * 阶段间容忍的逆向依赖。removedBy 是消掉它的阶段标签。
@@ -101,7 +119,7 @@ const TOLERATED: Array<{ edge: string; removedBy: string }> = [
 ]
 
 /** 当前所处阶段。每阶段 PR 更新此常量。 */
-const CURRENT_STAGE = "1"
+const CURRENT_STAGE = "2a"
 const STAGE_ORDER = ["0", "1", "2a", "2b", "3", "4", "5", "6"]
 
 function layerOf(rel: string): Layer | null {
@@ -184,6 +202,16 @@ describe("分层结构契约", () => {
     expect(hits).toEqual([])
   })
 
+  it("每条精确文件规则都命中真实存在的文件", () => {
+    const files = new Set(
+      listFiles(LIB_DIR).map((abs) => relative(REPO_ROOT, abs))
+    )
+    const dead = PREFIX_RULES.filter(([p]) => !p.endsWith("/"))
+      .map(([p]) => p)
+      .filter((p) => !files.has(p))
+    expect(dead).toEqual([])
+  })
+
   it("逆向依赖与容忍集合精确一致", () => {
     expect(scanLib()).toEqual(TOLERATED.map((t) => t.edge).sort())
   })
@@ -197,36 +225,39 @@ describe("分层结构契约", () => {
   })
 
   it("扫描管线能识别逆向依赖(防止护栏因失灵而空过)", () => {
-    const expectEdge = "lib/config/chats -> lib/channels/qq/client"
+    const expectEdge = "lib/core/config/chats -> lib/channels/qq/client"
     // 静态 import
     expect(
       collectViolations(
-        "lib/config/chats.ts",
-        `import { OneBotClient } from "../channels/qq/client"`
+        "lib/core/config/chats.ts",
+        `import { OneBotClient } from "../../channels/qq/client"`
       )
     ).toEqual([expectEdge])
     // 动态 import
     expect(
       collectViolations(
-        "lib/config/chats.ts",
-        `const m = await import("../channels/qq/client")`
+        "lib/core/config/chats.ts",
+        `const m = await import("../../channels/qq/client")`
       )
     ).toEqual([expectEdge])
     // require
     expect(
       collectViolations(
-        "lib/config/chats.ts",
-        `const m = require("../channels/qq/client")`
+        "lib/core/config/chats.ts",
+        `const m = require("../../channels/qq/client")`
       )
     ).toEqual([expectEdge])
     // 合法方向不报
     expect(
-      collectViolations("lib/tools/kb.ts", `import { x } from "../db/kb-sql"`)
+      collectViolations(
+        "lib/tools/kb.ts",
+        `import { x } from "../core/db/kb-sql"`
+      )
     ).toEqual([])
   })
 
   it("关键路径的分类符合目标层", () => {
-    expect(layerOf("lib/config/chats.ts")).toBe("core")
+    expect(layerOf("lib/core/config/chats.ts")).toBe("core")
     expect(layerOf("lib/channels/types.ts")).toBe("core") // 目标 core/chat,非 channels
     expect(layerOf("lib/channels/qq/members-fetch.ts")).toBe("channels")
     expect(layerOf("lib/tools/embed.ts")).toBe("model")

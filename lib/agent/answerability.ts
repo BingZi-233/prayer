@@ -2,8 +2,8 @@ import { query as sdkQuery } from "@anthropic-ai/claude-agent-sdk"
 import { noToolQueryOptions, drainQuery } from "./agent"
 import { sanitizeForModel } from "./sanitize-input"
 import { withTimeout } from "./timeout"
-import { logger } from "../logger"
-import { resolveBrand, type BrandInput } from "../brand"
+import { logger } from "../core/logger"
+import { resolveBrand, type BrandInput } from "../core/brand"
 
 // 主动兜底的可答性判官:判定一条群消息是否为「值得客服主动补位回答的品牌产品咨询」。
 // 与 intent.ts 相反,fail-CLOSED:出错/无法解析 → false(主动插话宁可少发)。

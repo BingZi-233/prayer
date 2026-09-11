@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest"
 import { isKbRelPath, safeKbAbs, KB_ROOT } from "@/lib/kb-path"
-import { openDb } from "@/lib/db/index"
-import { Repo } from "@/lib/db/repo"
+import { openDb } from "@/lib/core/db/index"
+import { Repo } from "@/lib/core/db/repo"
 
 describe("kb-path", () => {
   it("接受合法相对路径", () => {

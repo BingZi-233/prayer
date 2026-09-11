@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from "next/server"
-import { setConfig } from "@/lib/config-store"
-import { getAppContext } from "@/lib/app-context"
-import { configPatchSchema, mergeConfigPatch } from "@/lib/config/patch"
+import { setConfig } from "@/lib/core/config-store"
+import { getAppContext } from "@/lib/core/app-context"
+import { configPatchSchema, mergeConfigPatch } from "@/lib/core/config/patch"
 import { getRuntime, defaultBuilders } from "@/lib/runtime"
-import { ok, fail, maskConfig } from "@/lib/api"
+import { ok, fail, maskConfig } from "@/lib/core/api"
 
 export async function GET(): Promise<NextResponse> {
   const { cfg } = getAppContext()

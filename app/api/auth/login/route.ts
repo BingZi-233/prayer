@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server"
-import { ok, fail } from "@/lib/api"
+import { ok, fail } from "@/lib/core/api"
 import {
   clearLoginFails,
   clientIp,
   loginThrottleState,
   recordLoginFail,
   timingSafeEqualStr,
-} from "@/lib/auth"
+} from "@/lib/core/auth"
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
   const token = process.env.ADMIN_TOKEN

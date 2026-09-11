@@ -16,7 +16,7 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command"
-import { cn } from "@/lib/utils"
+import { cn } from "@/lib/core/utils"
 
 export interface SearchSelectOption {
   value: string

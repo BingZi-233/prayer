@@ -2,7 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 把 `lib/db/`、`lib/config/` 与 11 个根目录设施文件迁入新建的 `lib/core/`，让 `lib/` 根目录只剩 `runtime.ts` 一个文件。
+**Goal:** 把 `lib/db/`、`lib/config/` 与 11 个**设施类**根文件迁入新建的 `lib/core/`，使 `lib/` 根目录的设施文件清空。
+
+**注意终态与中间态的差别**：本阶段结束后 `lib/` 根目录仍会有 `events.ts`、`name-cache.ts`、`name-cache-store.ts`、`group-name.ts`、`kb-path.ts`、`reflect-promote.ts`、`reflect-stats.ts`、`tool-stats.ts`、`usage-stats.ts`、`transcript.ts`、`assemble.ts` 与 `runtime.ts`。「根目录只剩 `runtime.ts`」是整个重构（阶段 4 结束）的终态，**不是本阶段的验收标准**。
 
 **Architecture:** 大规模机械路径改写：约 198 行 import 需要改。与阶段 1 不同，本阶段**不手写替换清单**——先 `git mv` 全部文件，再让 `pnpm typecheck` 逐条报出失效引用并修正。理由：漏改的引用 typecheck 一定会报，而手写 198 条替换的错误率更高。零行为改动：除 import 语句外不改任何内容。
 
@@ -52,7 +54,9 @@
 | `lib/settings-writer` | 3 |
 | `lib/concurrency` / `lib/auth` | 各 2 |
 
-引用形式混用：仓库里有 351 处 `@/lib/...` 别名导入与 328 处相对路径导入。**两种都要改**——别名要插入 `core/`，相对路径要按新深度调整。
+引用形式混用：别名导入（`@/lib/...`）与相对路径导入（`./`、`../`）都有，**两种都要改**——别名要插入 `core/`，相对路径要按新深度重新计算。
+
+上方那张表的数字是**按目标路径分组的出现次数**，含少量非 import 的命中（注释、字符串、JSON 别名），用于估计规模。**实际被改写的 import 行数是 304**（阶段 2a 实测）。别把上表求和当成必须改的行数，否则会误判「漏改」。
 
 **代码之外还有两类引用，typecheck 抓不到，必须手工检查**（详见 Task 1 Step 4）：
 - `instrumentation.ts`：6 处 `await import("./lib/...")` 相对路径
@@ -135,7 +139,7 @@ grep -rn "lib/db\|lib/config-store\|lib/utils" --include='*.ts' lib app | grep -
 
 逐条修正为新的 `lib/core/...` 路径。
 
-- [ ] **Step 5: 确认 `lib/` 根目录只剩 runtime.ts**
+- [ ] **Step 5: 确认 `lib/` 根目录的设施文件已清空**
 
 ```bash
 ls lib/*.ts
@@ -255,7 +259,57 @@ const CURRENT_STAGE = "2a"
 
 `STAGE_ORDER` 里已有 `"2a"` 这一项，无需改动。
 
-- [ ] **Step 6: 跑测试并做反向验证**
+- [ ] **Step 6: 改掉自检用例与分类钉子里会失效的路径**
+
+**这一步不做的话测试会红。** 那个「扫描管线能识别逆向依赖」的自检用例用**合成路径**当输入，而这些路径本身也受本次搬迁影响：
+
+`collectViolations(fromRel, source)` 的第一件事是 `layerOf(fromRel)`，取不到层就直接返回 `[]`。删掉 `["lib/config/", "core"]` 之后，`layerOf("lib/config/chats.ts")` 返回 `null`，于是三条 `toEqual([expectEdge])` 断言全部**误红**（拿到 `[]`）。同理，分类钉子用例里的 `expect(layerOf("lib/config/chats.ts")).toBe("core")` 也会红。
+
+改法（注意：改了源路径，**相对 import 也要跟着改**，否则解析到的目标会变）：
+
+```ts
+    const expectEdge = "lib/core/config/chats -> lib/channels/qq/client"
+    // 静态 import
+    expect(
+      collectViolations(
+        "lib/core/config/chats.ts",
+        `import { OneBotClient } from "../../channels/qq/client"`
+      )
+    ).toEqual([expectEdge])
+    // 动态 import
+    expect(
+      collectViolations(
+        "lib/core/config/chats.ts",
+        `const m = await import("../../channels/qq/client")`
+      )
+    ).toEqual([expectEdge])
+    // require
+    expect(
+      collectViolations(
+        "lib/core/config/chats.ts",
+        `const m = require("../../channels/qq/client")`
+      )
+    ).toEqual([expectEdge])
+    // 合法方向不报
+    expect(
+      collectViolations(
+        "lib/tools/kb.ts",
+        `import { x } from "../core/db/kb-sql"`
+      )
+    ).toEqual([])
+```
+
+要点：`lib/core/config/chats.ts` 的目录是 `lib/core/config`，所以到 `lib/channels/qq/client` 要上**两层**（`../../`）。改完后 `../../channels/qq/client` 解析为 `lib/channels/qq/client` → channels 层，core → channels 判为逆向 ✓。
+
+分类钉子用例里那一条改为：
+
+```ts
+    expect(layerOf("lib/core/config/chats.ts")).toBe("core")
+```
+
+**其余 6 条钉子不动**（`lib/channels/types.ts`、`lib/channels/qq/members-fetch.ts`、`lib/tools/embed.ts`、`lib/tools/kb.ts`、`lib/agent/agent.ts`、`lib/runtime.ts` 都不受本阶段影响）。
+
+- [ ] **Step 7: 跑测试并做反向验证**
 
 ```bash
 pnpm vitest run tests/architecture/layering.test.ts
@@ -265,7 +319,7 @@ Expected: 8 个用例全绿（原 7 个 + 新增 1 个）。
 
 **反向验证新增的那条断言不是摆设**：临时在 `PREFIX_RULES` 里加一条指向不存在文件的精确规则（例如 `["lib/nonexistent.ts", "core"]`），跑测试，应看到「每条精确文件规则都命中真实存在的文件」**失败**并列出该路径；然后删掉它，复跑恢复全绿，确认 `git status` 干净。
 
-- [ ] **Step 7: 更新 `docs/development.md`**
+- [ ] **Step 8: 更新 `docs/development.md`**
 
 `docs/development.md` 的「模块边界」一节与「待改写条目」表都提到 `lib/config/schema.ts`、`lib/config/{env,migrate,chats,patch}.ts`、`lib/config-store.ts`、`lib/db/repositories/`、`lib/db/migrations/` 这些路径，以及 `docs/data-access.md`、`docs/database-operations.md` 里的对应引用。
 
@@ -277,7 +331,7 @@ Expected: 8 个用例全绿（原 7 个 + 新增 1 个）。
 
 **不要写字面行号**（设计文档已明令）。改完后把「待改写条目」表里已完成的 2a 那一行**删除**——它的使命结束了，留着就是新的腐烂源。
 
-- [ ] **Step 8: 提交**
+- [ ] **Step 9: 提交**
 
 ```bash
 git add tests/architecture/layering.test.ts docs/development.md docs/data-access.md docs/database-operations.md CLAUDE.md
@@ -289,7 +343,106 @@ spec 风险节记录的静默缺口。文档里的 lib/db、lib/config 引用同
 加 core/,并删除已完成的 2a 待改写条目。"
 ```
 
-## Task 3: 全量验证
+## Task 3: 测试目录对齐 + 护栏登记口径
+
+**Files:**
+- Move: `tests/lib/db/` → `tests/lib/core/db/`；`tests/lib/config/` → `tests/lib/core/config/`；以及 11 个设施文件对应的测试
+
+**为什么必须做：** `docs/development.md` 明写「测试放在 `tests/`，镜像源码目录」。Task 1 把源码搬进了 `lib/core/`，但测试还留在 `tests/lib/`，镜像关系断了 —— 那份文档立刻开始说谎，而这正是本次重构要消灭的东西。
+
+阶段 1 没暴露这条，是因为它只在同深度内搬（`lib/onebot/` → `lib/channels/qq/`），镜像恰好自动成立。本阶段新增了 `core/` 这一层，必须在测试侧同样新增。
+
+- [ ] **Step 0: 护栏登记口径 —— 全登记，不做区分**
+
+**这段记录一次被证伪又回滚的简化，后来的阶段不要再试。**
+
+实施时一度把 `RETIRED_PREFIXES` 从 14 项缩到 3 条**目录**项，理由是「退休的**精确文件**项不扛事：忘删死规则由『每条精确文件规则都命中真实存在的文件』断言抓住，旧文件复活由『lib 下每个文件都归属于某一层』抓住」。**该简化被本阶段的最终审查证伪。**
+
+漏洞在于：退役一条精确文件规则后，若它的**父目录规则仍然存活**，把文件放回去会被那条目录规则**静默地**归成父目录那一层。例如 2b 之后 `["lib/channels/", "channels"]` 仍在，重建 `lib/channels/types.ts` 会被悄悄算作 channels —— 此时「退役前缀无命中」没有该项而放行，「每条精确规则命中真实文件」查的是规则不是文件，「每文件归层」又因规则命中而通过，**三条断言一条都拦不住**。
+
+例外情形（父目录无存活规则时）确实能由那两条断言间接拦住，但那要求每次退役去判断「父目录是否还活着」，判断错就静默失效。**统一全登记，不做区分**：`RETIRED_PREFIXES` 同时收目录前缀与精确文件前缀（本阶段为 3 + 11 = 14 项）。
+
+跑一次测试确认 8 个用例全绿。
+
+- [ ] **Step 1: 搬两个目录**
+
+```bash
+mkdir -p tests/lib/core
+git mv tests/lib/db tests/lib/core/db
+git mv tests/lib/config tests/lib/core/config
+```
+
+- [ ] **Step 2: 搬 11 个设施文件对应的测试**
+
+先确认哪些存在（不是每个源文件都有测试）：
+
+```bash
+ls tests/lib/{api,app-context,auth,brand,bus,concurrency,config-store,log-context,logger,settings-writer,utils}.test.ts 2>/dev/null
+```
+
+把**存在的**逐个 `git mv` 到 `tests/lib/core/`，例如：
+
+```bash
+git mv tests/lib/api.test.ts tests/lib/core/api.test.ts
+git mv tests/lib/app-context.test.ts tests/lib/core/app-context.test.ts
+# …其余按 ls 结果逐个执行
+```
+
+- [ ] **Step 3: 跑测试并修正失效的导入**
+
+```bash
+pnpm vitest run
+```
+
+Expected: **92 文件 / 971 用例**全过。
+
+测试多数用 `@/lib/...` 别名导入，所以很可能**一条 import 都不用改**。但有少数可能用相对路径（如 `../../lib/db/...`），typecheck 与 vitest 会报出来，逐个修正。
+
+**注意**：`tests/architecture/layering.test.ts` 的「lib 下每个文件都归属于某一层」只扫 `lib/`，不受测试目录搬迁影响。
+
+- [ ] **Step 4: 更新文档里的测试路径举例**
+
+`docs/development.md` 与 `CLAUDE.md` 里可能有举例的测试路径。检查：
+
+```bash
+grep -rn "tests/lib/" docs/*.md CLAUDE.md
+```
+
+把指向**本次搬走的**测试文件路径改到新位置（例如 `tests/lib/db/repo.test.ts` → `tests/lib/core/db/repo.test.ts`）。**注意**：`docs/data-access.md` 里的 `tests/lib/db/transactions.test.ts` 也要一并改——之前 implementer 因为本阶段不含测试搬迁而保留了它，现在搬迁做了，它就过时了。
+
+顺带清掉 `docs/development.md`「待改写条目」表里**阶段 1 遗留的那一行**（`CLAUDE.md` 的「仓库结构」一节里的 `onebot/` 项 | 1）。阶段 1 已经改了 `CLAUDE.md` 的这一项，但那行还留在表里 —— 使命结束的行留着就是新的腐烂源。
+
+改完复核：
+
+```bash
+grep -n "onebot" docs/development.md
+```
+
+Expected: 「待改写条目」表里不再有阶段 1 那一行。
+
+**同时修掉一处已过期的自引用**：「待改写条目」表里剩的那条阶段 **2b** 行，行文是「『模块边界』中 `lib/config-store.ts` 条目引用的…」，但 Task 1 已把该文件改名为 `lib/core/config-store.ts`。把行文里的路径改成 `lib/core/config-store.ts`，否则 2b 落地时读这行的人要先 grep 才找得到。
+
+- [ ] **Step 5: 确认没有旧目录残留**
+
+```bash
+ls tests/lib/db tests/lib/config 2>&1
+grep -rn "tests/lib/db\|tests/lib/config" --include='*.ts' --include='*.tsx' --include='*.md' tests docs CLAUDE.md
+```
+
+Expected: 两个 `ls` 报不存在；grep 无输出。
+
+- [ ] **Step 6: 提交**
+
+```bash
+git add -A
+git commit -m "refactor(test): 测试目录镜像 lib/core 结构
+
+docs/development.md 要求测试镜像源码目录,而 Task 1 把源码搬进了
+lib/core/ 却没动测试,镜像关系断了。补上 core/ 这一层。多数测试
+用 @/ 别名导入,故以 git mv 为主。"
+```
+
+## Task 4: 全量验证
 
 - [ ] **Step 1: 完整质量门**
 

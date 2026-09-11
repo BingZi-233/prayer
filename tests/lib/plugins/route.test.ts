@@ -20,12 +20,12 @@ vi.mock("@/lib/runtime", () => ({
   getRuntime: () => ({ reconfigure: reconfigureMock }),
   defaultBuilders: async () => ({}),
 }))
-vi.mock("@/lib/db/shared", () => ({ sharedDb: () => ({}) }))
-vi.mock("@/lib/db/repo", () => ({ Repo: vi.fn() }))
-vi.mock("@/lib/app-context", () => ({
+vi.mock("@/lib/core/db/shared", () => ({ sharedDb: () => ({}) }))
+vi.mock("@/lib/core/db/repo", () => ({ Repo: vi.fn() }))
+vi.mock("@/lib/core/app-context", () => ({
   getAppContext: () => ({ cfg: { claudeConfigDir: "/tmp/x", dbPath: ":memory:" }, configRepo: {}, repo: {} }),
 }))
-vi.mock("@/lib/config-store", () => ({
+vi.mock("@/lib/core/config-store", () => ({
   getConfig: () => ({ claudeConfigDir: "/tmp/x", dbPath: ":memory:" }),
 }))
 

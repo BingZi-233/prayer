@@ -1,8 +1,8 @@
 import { resolve } from "path"
-import { bus } from "./bus"
-import { logger } from "./logger"
-import type { AppConfig } from "./config-store"
-import type { Repo } from "./db/repo"
+import { bus } from "./core/bus"
+import { logger } from "./core/logger"
+import type { AppConfig } from "./core/config-store"
+import type { Repo } from "./core/db/repo"
 import type { Agent } from "./agent/agent"
 import type { AssembleDeps } from "./assemble"
 import { bindUsagePersistence } from "./usage-stats"
@@ -11,7 +11,7 @@ import type { Channel, ChannelId, ChannelStatus } from "./channels/types"
 import { ChannelRegistry } from "./channels/registry"
 import { createChannels } from "./channels/factory"
 import { resolveRuntimeChatConfig } from "./channels/enabled-chats"
-import { resolveBrand } from "./brand"
+import { resolveBrand } from "./core/brand"
 
 export type RuntimeState = "stopped" | "starting" | "running" | "error"
 
@@ -52,8 +52,8 @@ export interface RuntimeBuilders {
 }
 
 async function defaultBuilders(): Promise<RuntimeBuilders> {
-  const { sharedDb } = await import("./db/shared")
-  const { Repo } = await import("./db/repo")
+  const { sharedDb } = await import("./core/db/shared")
+  const { Repo } = await import("./core/db/repo")
   const { Agent } = await import("./agent/agent")
   const { makeKbPrefetch } = await import("./agent/kb-prefetch")
   // 本地嵌入模型是 native 依赖,只在 Node runtime 动态加载,别提到模块顶层

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
-import { getAppContext } from "@/lib/app-context"
-import { ok, fail } from "@/lib/api"
+import { getAppContext } from "@/lib/core/app-context"
+import { ok, fail } from "@/lib/core/api"
 
 // status 页汇总卡 + 全局角标 + 结果指标
 export async function GET(): Promise<NextResponse> {

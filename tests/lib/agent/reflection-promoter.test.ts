@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest"
-import { openDb } from "@/lib/db/index"
-import { Repo } from "@/lib/db/repo"
+import { openDb } from "@/lib/core/db/index"
+import { Repo } from "@/lib/core/db/repo"
 import {
   applyPromote,
   promotedDocRel,
@@ -12,7 +12,7 @@ import {
   registerReflectionPromoter,
   PROMOTE_OUTPUT_SCHEMA,
 } from "@/lib/agent/reflection-promoter"
-import { bus } from "@/lib/bus"
+import { bus } from "@/lib/core/bus"
 import type { ActionSend, ErrorOccurred } from "@/lib/events"
 
 let repo: Repo

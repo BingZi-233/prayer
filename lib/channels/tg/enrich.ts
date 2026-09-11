@@ -1,7 +1,7 @@
 import type { Message } from "grammy/types"
 import type { ImageInput, IncomingMessage } from "../../events"
-import { errorMessage } from "../../log-context"
-import { logger } from "../../logger"
+import { errorMessage } from "../../core/log-context"
+import { logger } from "../../core/logger"
 import type { SenderRole } from "./admins-cache"
 import {
   downloadTelegramImage,

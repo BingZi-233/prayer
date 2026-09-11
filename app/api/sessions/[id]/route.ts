@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
-import { getAppContext } from "@/lib/app-context"
+import { getAppContext } from "@/lib/core/app-context"
 import { readTranscript } from "@/lib/transcript"
-import { ok } from "@/lib/api"
+import { ok } from "@/lib/core/api"
 
 export async function GET(
   _req: NextRequest,

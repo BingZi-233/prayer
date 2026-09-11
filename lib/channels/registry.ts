@@ -1,6 +1,6 @@
-import { bus } from "../bus"
+import { bus } from "../core/bus"
 import type { ActionSend } from "../events"
-import { logger } from "../logger"
+import { logger } from "../core/logger"
 import type { Channel, ChannelId, ChannelStatus } from "./types"
 
 /**

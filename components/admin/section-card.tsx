@@ -7,7 +7,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
-import { cn } from "@/lib/utils"
+import { cn } from "@/lib/core/utils"
 
 // 区块卡:标题 + 可选描述 + 可选右上操作位 + 内容。
 // 不加图标、不加底色、不加分隔线,靠间距分组。

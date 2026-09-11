@@ -3,8 +3,8 @@ import { mkdirSync, writeFileSync, rmSync } from "node:fs"
 import { join } from "node:path"
 import { tmpdir } from "node:os"
 import { chunkText, runIngest } from "@/scripts/ingest"
-import { openDb } from "@/lib/db/index"
-import { Repo } from "@/lib/db/repo"
+import { openDb } from "@/lib/core/db/index"
+import { Repo } from "@/lib/core/db/repo"
 
 vi.mock("@/lib/tools/embed", () => ({
   embed: async () => new Float32Array([0.1, 0.2, 0.3]),

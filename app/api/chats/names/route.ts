@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server"
 import { Bot } from "grammy"
-import { getAppContext } from "@/lib/app-context"
+import { getAppContext } from "@/lib/core/app-context"
 import { getRuntime } from "@/lib/runtime"
 import { getNameCache, type GroupNameRow } from "@/lib/name-cache"
-import { ok } from "@/lib/api"
+import { ok } from "@/lib/core/api"
 
 /**
  * 多通道群/会话显示名。

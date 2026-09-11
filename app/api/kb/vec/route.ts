@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
-import { getAppContext } from "@/lib/app-context"
-import { DIM } from "@/lib/db/index"
-import { ok, fail } from "@/lib/api"
+import { getAppContext } from "@/lib/core/app-context"
+import { DIM } from "@/lib/core/db/index"
+import { ok, fail } from "@/lib/core/api"
 
 // 向量库预览:无 doc → 全库统计;带 ?doc=xxx → 该 doc 的分块内容
 export async function GET(req: NextRequest): Promise<NextResponse> {

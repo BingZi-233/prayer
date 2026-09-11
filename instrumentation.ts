@@ -5,10 +5,10 @@ export async function register(): Promise<void> {
   if (g.__agentBooted) return
   g.__agentBooted = true
 
-  const { captureConsole } = await import("./lib/logger")
-  const { openDb } = await import("./lib/db/index")
-  const { Repo } = await import("./lib/db/repo")
-  const { getConfig } = await import("./lib/config-store")
+  const { captureConsole } = await import("./lib/core/logger")
+  const { openDb } = await import("./lib/core/db/index")
+  const { Repo } = await import("./lib/core/db/repo")
+  const { getConfig } = await import("./lib/core/config-store")
   const { getRuntime, defaultBuilders } = await import("./lib/runtime")
 
   captureConsole()

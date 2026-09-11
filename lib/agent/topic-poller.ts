@@ -1,8 +1,8 @@
 import { query as sdkQuery } from "@anthropic-ai/claude-agent-sdk"
-import { bus } from "../bus"
-import { logger } from "../logger"
-import { errorMessage } from "../log-context"
-import type { Repo } from "../db/repo"
+import { bus } from "../core/bus"
+import { logger } from "../core/logger"
+import { errorMessage } from "../core/log-context"
+import type { Repo } from "../core/db/repo"
 import { embed as defaultEmbed } from "../tools/embed"
 import { DEFAULT_QUERY_TIMEOUT_MS, withTimeout } from "./timeout"
 import { noToolQueryOptions, drainQuery } from "./agent"
@@ -11,7 +11,7 @@ import { textNearlySame } from "./reflection-poller"
 import { isNewSensitiveError, sanitizeForModel } from "./sanitize-input"
 import type { ChannelId } from "../channels/types"
 import type { ChatRef } from "../channels/enabled-chats"
-import { resolveBrand, type BrandInput, type BrandProfile } from "../brand"
+import { resolveBrand, type BrandInput, type BrandProfile } from "../core/brand"
 
 // LLM 每条问题的归类结果:归入已有 topicId / 新建 newTitle / 噪声 noise。
 export interface ClassifyItem {

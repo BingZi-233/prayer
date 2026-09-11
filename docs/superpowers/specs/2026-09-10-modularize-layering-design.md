@@ -219,11 +219,21 @@ lib/agent/reflection-promoter.ts:7   knowledge → conversation  ./agent
 也是行为不变，它是本次唯一触碰函数签名与常量归属的地方，单独成一个分支便于评审。
 阶段 5 与它们互相独立，顺序可调。
 
-**每个搬迁阶段（1、2a、2b、3、4）的隐含必做项，同样进验收：** 同步
-`tests/architecture/layering.test.ts` —— 改 `PREFIX_RULES` 里搬家文件的前缀、把旧前缀登记进
-`RETIRED_PREFIXES`、按需下调 `TOLERATED` 并 bump `CURRENT_STAGE`。漏登记不会让核心的
-「逆向依赖精确一致」失败，但会让「退役前缀已被清空」这条防线**静默失效**——那正是「旧路径
-真的删干净了」的机器检查，靠人记得登记才生效。
+**每个搬迁阶段（1、2a、2b、3、4）的隐含必做项，同样进验收：**
+
+1. **同步护栏映射表** —— 改 `tests/architecture/layering.test.ts` 的 `PREFIX_RULES`（删掉搬走文件的
+   规则，新位置由 `lib/core/` 这类目录规则覆盖）、把旧前缀登记进 `RETIRED_PREFIXES`、按需下调
+   `TOLERATED` 并 bump `CURRENT_STAGE`。漏登记不会让核心的「逆向依赖精确一致」失败，但会让
+   「退役前缀已被清空」这条防线**静默失效**——那正是「旧路径真的删干净了」的机器检查，
+   靠人记得登记才生效。
+2. **同步镜像测试目录** —— `docs/development.md` 明写「测试放在 `tests/`，镜像源码目录」。
+   源码搬了，对应的测试目录要跟着搬，包括新增层级（`lib/db/` → `lib/core/db/` 时，
+   `tests/lib/db/` → `tests/lib/core/db/`）。不做的话那份文档立刻开始说谎，而这正是本次重构
+   要消灭的东西。测试多用 `@/` 别名导入，所以多数情况下只需 `git mv`。
+   **阶段 1 之所以没暴露这条**，是因为它只在同深度内搬（`lib/onebot/` → `lib/channels/qq/`），
+   镜像恰好自动成立。
+3. **删掉 `docs/development.md`「待改写条目」表里自己那一行**——使命结束即删除，留着就是新的
+   腐烂源。顺带清掉更早阶段遗留下来、已经完成的死行。
 
 代价如实说明：阶段 1–4 合计约 90 个源文件及对应测试需要改 import 路径。改动机械但量大，
 所以拆成 7 个分支，使每刀评审只需看一个概念。
@@ -248,7 +258,7 @@ main 构建。这个成本是拆细的代价，接受。
 | 0 | `docs/development.md` 增补分层规则；把阶段 1–4 将作废的条目**逐条列出并标注**「由阶段 N 改写」；`CLAUDE.md` 的 Git 约定增补 `refactor/*` 前缀 |
 | 1 | `CLAUDE.md` 的「仓库结构」一节中的 `onebot/` 一项（该目录消失） |
 | 2a | `docs/development.md` 的「模块边界」一节中 `lib/config/schema.ts`、`lib/config/{env,migrate,chats,patch}.ts`、`lib/config-store.ts`、`lib/db/repositories/`、`lib/db/migrations/` 五条路径；`docs/data-access.md` 里「以上路径相对于 `lib/db/`」与 `lib/db/index.ts` 的引用；`docs/database-operations.md` 里 `lib/db/migrations/registry.ts` 与 `lib/db/index.ts` 的引用；`CLAUDE.md` 的「仓库结构」一节中的 `db/` 项 |
-| 2b | `docs/development.md` 的「模块边界」中 `lib/config-store.ts` 条目引用的 `lib/channels/enabled-chats.ts`（迁往 `lib/core/chat/`）。注意 `channels/types.ts`、`channels/ids.ts` 目前在文档中**没有任何引用**，2b 只需搬文件、无需改文档 |
+| 2b | `docs/development.md` 的「模块边界」中 `lib/core/config-store.ts` 条目引用的 `lib/channels/enabled-chats.ts`（迁往 `lib/core/chat/`）。注意 `channels/types.ts`、`channels/ids.ts` 目前在文档中**没有任何引用**，2b 只需搬文件、无需改文档 |
 | 3 | `CLAUDE.md` 的「仓库结构」一节中的 `tools/`、`plugins/` 两项（两个目录消失） |
 | 4 | `CLAUDE.md` 的「仓库结构」一节中的 `agent/` 一项（拆为 `conversation/` 与 `knowledge/`）；`CLAUDE.md` 的「命令」一节举例的 `tests/lib/agent/session.test.ts`（该测试镜像 `lib/agent/session.ts`，随 `agent/` 一起迁） |
 
@@ -272,6 +282,21 @@ main 构建。这个成本是拆细的代价，接受。
 `plugins/cs` 这一条最险：它是**独立子进程**，按硬编码路径动态 import 主仓的模块
 （`lib/tools/kb.ts:5` 的注释专门警告过该加载约束）。阶段 3 搬 `embed`、阶段 4 搬 `kb`
 时必须同步改这两行，否则 cs 插件静默加载失败，而现有测试多半不覆盖这条路径。
+
+**搬迁时 `typecheck` 覆盖不到的引用类型**（阶段 2a 实测踩出来的，每个搬迁阶段都要过一遍）：
+
+1. **`vi.mock("@/lib/...")` 的字符串目标** —— 不改则 mock **静默失效**：测试仍然绿，
+   但它不再拦截真实模块，也就不再测它声称要测的东西。这是最隐蔽的一类。
+2. **运行时拼接的路径** —— `join(root, "lib/...")`、`pathToFileURL(...)`、字符串形式的
+   动态 `import()`。改漏了是运行时故障，不报编译错。
+3. **测试里对路径的断言** —— 例如断言某子进程能加载某个路径。
+4. **配置文件里的别名** —— `components.json` 的 shadcn alias、`tsconfig.json` 的 `paths`。
+5. **代码注释里的路径引用** —— 不报错，只会腐烂。
+6. **仓库入口文件的相对导入** —— `instrumentation.ts`、`scripts/`、`proxy.ts`。
+   它们常在 `lib/` 之外，容易在只看 `lib/` 的排查中被漏掉。
+
+所以搬迁阶段的验证不能只依赖 `pnpm typecheck` 变空；**必须配合一遍按旧路径 grep 的全仓扫描**，
+grep 的模式要覆盖 `.ts`、`.tsx`、`.json`、`.cjs`，且扫描范围要包含仓库根、`scripts/`、`plugins/`。
 
 **另注命名易混**：仓库顶层有 `plugins/`（`cs`、`packyapi` 两个本地 MCP server），
 本设计又新增 `model/plugins/`。两者含义不同（前者是插件本体，后者管理插件进程），
@@ -384,7 +409,16 @@ main 构建。这个成本是拆细的代价，接受。
 廉价堵法（约 10 行、零依赖）：断言**每条精确文件规则**（前缀不以 `/` 结尾）必须命中一个
 真实存在的文件。它堵不住目录规则（`lib/onebot/` 这类——目录可以合法地空着），但阶段 2a、3
 会大量新增精确文件规则（`lib/agent/reflection-poller.ts`、`lib/tools/embed.ts` 之类），
-那正是这条断言的目标。**尚未实施，留给下一个改动护栏映射表的阶段顺带补上。**
+那正是这条断言的目标。**阶段 2a 已实施。**
+
+**`RETIRED_PREFIXES` 必须全登记，不要试图只留目录项。** 阶段 2a 一度把退休清单从 14 项
+缩到 3 条目录项，理由是「退休的精确文件项已被上面那条断言与「每文件归层」覆盖」。**该简化
+被证伪并回滚**：退役一条精确文件规则后，若它的**父目录规则仍然存活**，把文件放回去会被
+那条目录规则**静默地**归成父目录那一层。例如 2b 之后 `["lib/channels/", "channels"]` 仍在，
+重建 `lib/channels/types.ts` 会被悄悄算作 `channels` —— 此时「退役前缀无命中」没有该项而放行、
+「精确规则命中真实文件」查的是规则不是文件、「每文件归层」又因规则命中而通过，三条全拦不住。
+例外情形（父目录无存活规则）确实能被那两条间接拦住，但那要求每次退役判断「父目录是否还活着」，
+判断错即静默失效。**统一全登记**。
 
 **分层测试只守跨层方向，层内方向无人管。** 现存两处层内互引：
 `lib/config-store.ts` 运行时 import `channels/enabled-chats`，而后者以 `import type` 反向

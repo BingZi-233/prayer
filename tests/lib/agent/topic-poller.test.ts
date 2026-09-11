@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeEach, vi } from "vitest"
 import { classifyItems, runScan } from "@/lib/agent/topic-poller"
-import { openDb } from "@/lib/db/index"
-import { Repo } from "@/lib/db/repo"
-import { bus } from "@/lib/bus"
+import { openDb } from "@/lib/core/db/index"
+import { Repo } from "@/lib/core/db/repo"
+import { bus } from "@/lib/core/bus"
 import type { ErrorOccurred } from "@/lib/events"
 import type Database from "better-sqlite3"
 

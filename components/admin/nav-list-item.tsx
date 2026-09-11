@@ -1,5 +1,5 @@
 import type { ComponentType, ReactNode } from "react"
-import { cn } from "@/lib/utils"
+import { cn } from "@/lib/core/utils"
 
 // 统一左栏列表项(选中/hover 态一致)。取代 sessions / kb 各自手写的 <button>+cn。
 export function NavListItem({

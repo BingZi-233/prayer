@@ -12,9 +12,9 @@
  * sessionKey」,外加一层 distance 阈值过滤。
  */
 
-import type { KbHit, Repo } from "../db/repo"
-import { errorMessage } from "../log-context"
-import { logger } from "../logger"
+import type { KbHit, Repo } from "../core/db/repo"
+import { errorMessage } from "../core/log-context"
+import { logger } from "../core/logger"
 import { sanitizeForModel } from "./sanitize-input"
 import { withTimeout } from "./timeout"
 

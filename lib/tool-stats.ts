@@ -4,7 +4,7 @@
 //      (runs 的语义是「出现过该工具的 run 数」,每 run 每工具最多 +1)。
 // 同样是 globalThis 单例 + 可选 SQLite 日表持久化。
 
-import type { Repo } from "./db/repo"
+import type { Repo } from "./core/db/repo"
 
 /** 总 run 数特殊行:覆盖率的分母 */
 export const RUN_TOTAL_TOOL = "__run__"

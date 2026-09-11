@@ -18,7 +18,7 @@
 | `repo.tickets`    | `repositories/tickets.ts`    | 工单创建、关闭与查询           |
 | `repo.config`     | `repositories/config.ts`     | 配置键值读写                   |
 
-以上路径相对于 `lib/db/`。各仓储只依赖 `SqliteContext` 及必要的其他领域能力，
+以上路径相对于 `lib/core/db/`。各仓储只依赖 `SqliteContext` 及必要的其他领域能力，
 不反向依赖 `Repo`、Next.js 路由或 Agent。反思模块需要知识分块写入能力，
 反思、主题和主动回复模块通过配置仓储保存既有游标键。
 
@@ -75,8 +75,8 @@ undefined 返回方式。不要在纯结构重构中顺便改变这些兼容行�
 
 测试使用内存数据库，并由测试持有及关闭连接。故障注入可通过临时 SQLite
 触发器或错误向量维度制造真实写入失败，不应仅替换仓储方法来模拟回滚。
-`tests/lib/db/transactions.test.ts` 覆盖跨领域事务、嵌套保存点以及各批量操作
+`tests/lib/core/db/transactions.test.ts` 覆盖跨领域事务、嵌套保存点以及各批量操作
 的中途失败，比较原始行和向量，确认没有残留部分更新。
 
 运行 `pnpm check` 和隔离生产构建。涉及 SQL 或结构升级时，还要执行现有数据库
-迁移测试；当前拆分没有修改 `lib/db/index.ts` 的表结构和版本升级流程。
+迁移测试；当前拆分没有修改 `lib/core/db/index.ts` 的表结构和版本升级流程。

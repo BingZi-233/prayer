@@ -20,7 +20,7 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 import { Spinner } from "@/components/ui/spinner"
-import { DEFAULT_BRAND } from "@/lib/brand"
+import { DEFAULT_BRAND } from "@/lib/core/brand"
 
 function LoginForm() {
   const [token, setToken] = useState("")

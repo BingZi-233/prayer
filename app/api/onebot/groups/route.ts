@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 import { getRuntime } from "@/lib/runtime"
-import { ok, fail } from "@/lib/api"
+import { ok, fail } from "@/lib/core/api"
 import { getNameCache, type GroupNameRow } from "@/lib/name-cache"
 
 function parseGroups(raw: unknown[]): GroupNameRow[] {

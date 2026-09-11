@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { readdirSync, writeFileSync, mkdirSync, existsSync } from "node:fs"
 import { dirname, sep } from "node:path"
 import { z } from "zod"
-import { ok, fail } from "@/lib/api"
+import { ok, fail } from "@/lib/core/api"
 import { KB_DIR, isKbRelPath, safeKbAbs } from "@/lib/kb-path"
 
 export async function GET(): Promise<NextResponse> {

@@ -1,7 +1,7 @@
 import { resolve } from "path"
 import { query as sdkQuery } from "@anthropic-ai/claude-agent-sdk"
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk"
-import type { AppConfig } from "../config-store"
+import type { AppConfig } from "../core/config-store"
 import { TOOL_ALLOWLIST, isToolAllowed, sdkEnv } from "./agent"
 
 export interface CapabilityTool {

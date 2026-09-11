@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
-import { getAppContext } from "@/lib/app-context"
+import { getAppContext } from "@/lib/core/app-context"
 import { getRuntime, defaultBuilders } from "@/lib/runtime"
-import { ok } from "@/lib/api"
+import { ok } from "@/lib/core/api"
 
 export async function POST(): Promise<NextResponse> {
   const { cfg } = getAppContext()

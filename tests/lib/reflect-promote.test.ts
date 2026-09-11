@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest"
-import { openDb } from "@/lib/db/index"
-import { Repo } from "@/lib/db/repo"
+import { openDb } from "@/lib/core/db/index"
+import { Repo } from "@/lib/core/db/repo"
 import {
   applyPromote,
   promotedDocRel,

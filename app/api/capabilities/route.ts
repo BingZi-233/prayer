@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
-import { getAppContext } from "@/lib/app-context"
+import { getAppContext } from "@/lib/core/app-context"
 import { probeCapabilities } from "@/lib/agent/introspect"
-import { ok, fail } from "@/lib/api"
+import { ok, fail } from "@/lib/core/api"
 
 export async function GET(req: Request): Promise<NextResponse> {
   try {
