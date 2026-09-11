@@ -41,14 +41,7 @@ const PREFIX_RULES: Array<[string, Layer]> = [
   ["lib/model/", "model"],
 
   // knowledge
-  ["lib/tools/kb.ts", "knowledge"],
-  ["lib/kb-path.ts", "knowledge"],
-  ["lib/agent/kb-prefetch.ts", "knowledge"],
-  ["lib/agent/reflection-poller.ts", "knowledge"],
-  ["lib/agent/reflection-compactor.ts", "knowledge"],
-  ["lib/agent/reflection-promoter.ts", "knowledge"],
-  ["lib/reflect-promote.ts", "knowledge"],
-  ["lib/reflect-stats.ts", "knowledge"],
+  ["lib/knowledge/", "knowledge"],
 
   // channels
   ["lib/channels/", "channels"],
@@ -114,6 +107,15 @@ const RETIRED_PREFIXES: string[] = [
   "lib/tool-stats.ts",
   "lib/plugins/manager.ts",
   "lib/plugins/",
+  "lib/tools/",
+  "lib/tools/kb.ts",
+  "lib/kb-path.ts",
+  "lib/agent/kb-prefetch.ts",
+  "lib/agent/reflection-poller.ts",
+  "lib/agent/reflection-compactor.ts",
+  "lib/agent/reflection-promoter.ts",
+  "lib/reflect-promote.ts",
+  "lib/reflect-stats.ts",
 ]
 
 /**
@@ -124,8 +126,8 @@ const RETIRED_PREFIXES: string[] = [
 const TOLERATED: Array<{ edge: string; removedBy: string }> = []
 
 /** 当前所处阶段。每阶段 PR 更新此常量。 */
-const CURRENT_STAGE = "3b"
-const STAGE_ORDER = ["0", "1", "2a", "2b", "3a", "3b", "4", "5", "6"]
+const CURRENT_STAGE = "4a"
+const STAGE_ORDER = ["0", "1", "2a", "2b", "3a", "3b", "4a", "4b", "5", "6"]
 
 function layerOf(rel: string): Layer | null {
   for (const [prefix, layer] of PREFIX_RULES) {
@@ -262,7 +264,7 @@ describe("分层结构契约", () => {
     // 合法方向不报
     expect(
       collectViolations(
-        "lib/tools/kb.ts",
+        "lib/knowledge/kb.ts",
         `import { x } from "../core/db/kb-sql"`
       )
     ).toEqual([])
@@ -273,25 +275,9 @@ describe("分层结构契约", () => {
     expect(layerOf("lib/core/chat/types.ts")).toBe("core")
     expect(layerOf("lib/channels/qq/members-fetch.ts")).toBe("channels")
     expect(layerOf("lib/model/embed.ts")).toBe("model")
-    expect(layerOf("lib/tools/kb.ts")).toBe("knowledge")
+    expect(layerOf("lib/knowledge/kb.ts")).toBe("knowledge")
     expect(layerOf("lib/agent/agent.ts")).toBe("conversation")
     expect(layerOf("lib/runtime.ts")).toBe("composition")
-  })
-
-  it("父目录规则与自身层别不同的文件,其精确规则不得被删", () => {
-    // 这些文件靠**精确规则**定层,而它们的父目录规则指向**另一个层**。
-    // 一旦精确规则被误删,文件会静默落回父目录那一层,而上面那三条检查
-    // 全都抓不到:规则没了「精确规则命中真实文件」查不到,文件仍有归属
-    // 「每文件归层」照过,层别变化又不产生逆向依赖。只有钉在这里能拦。
-    const exactUnderLiveDir: Array<[string, Layer]> = [
-      ["lib/agent/kb-prefetch.ts", "knowledge"],
-      ["lib/agent/reflection-poller.ts", "knowledge"],
-      ["lib/agent/reflection-compactor.ts", "knowledge"],
-      ["lib/agent/reflection-promoter.ts", "knowledge"],
-    ]
-    for (const [rel, layer] of exactUnderLiveDir) {
-      expect(layerOf(rel), rel).toBe(layer)
-    }
   })
 
   it("components/ 只依赖 core", () => {

@@ -36,7 +36,7 @@ GitHub Actions 在 PR 与 main 推送时运行 `pnpm check` 和生产构建。�
 
 ## 仓库结构
 
-`app/`（App Router:`/admin/*` 页面 + `/api/*` 路由）、`lib/`（核心:`agent/` agent+编排+反思循环、`core/db/` better-sqlite3、`channels/` 通道（QQ/TG）、`model/` 模型基座（SDK 环境与 query options、工具白名单、prompt 构造与 system prompt、drain、嵌入、JSON 输出、超时、用量计量）、`tools/` KB 检索）、`plugins/`（`cs`/`packyapi` 本地 MCP server）、`scripts/`（ingest）、`docs/kb/`（知识库源,gitignore）、`data/`+`logs/`（gitignore)。
+`app/`（App Router:`/admin/*` 页面 + `/api/*` 路由）、`lib/`（核心:`agent/` agent+编排+反思循环、`core/db/` better-sqlite3、`channels/` 通道（QQ/TG）、`model/` 模型基座（SDK 环境与 query options、工具白名单、prompt 构造与 system prompt、drain、嵌入、JSON 输出、超时、用量计量）、`knowledge/` 知识库与反思）、`plugins/`（`cs`/`packyapi` 本地 MCP server）、`scripts/`（ingest）、`docs/kb/`（知识库源,gitignore）、`data/`+`logs/`（gitignore)。
 
 ## Git 约定
 

@@ -5,7 +5,7 @@ import {
   applyPromote,
   promotedDocRel,
   promotedMarkdown,
-} from "@/lib/knowledge/reflection/promote"
+} from "@/lib/knowledge/reflection/apply-promote"
 import {
   runPromote,
   selectPromoteIds,
