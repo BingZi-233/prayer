@@ -122,6 +122,31 @@ CompactionRow / EntryRow / EntryList 原本都自带状态、可独立理解,
 **Files:**
 - Create: `components/admin/reflection/use-reflection-actions.ts`
 - Modify: `app/admin/reflection/page.tsx`
+- **Modify: `tests/ui/admin-knowledge-contracts.test.ts`**（见下，Task 1 实施时才发现）
+
+> **⚠️ 会打破一条已有的契约测试（Task 1 实施者发现，原计划未提）。**
+>
+> `tests/ui/admin-knowledge-contracts.test.ts:36-43` 的
+> 「preserves reflection moderation and promotion semantics」，**直接读页面源码**并断言它含：
+>
+> ```ts
+> expect(source).toContain('action: "approve" | "reject" | "promote"')
+> expect(source).toContain('"/api/reflection/compact"')
+> expect(source).toContain('"/api/reflection/promote"')
+> expect(source).toContain('method: "PATCH"')
+> ```
+>
+> 本任务把这三个动作搬进 hook 后，这四段字符串**不再出现在页面里** → 该用例必红。
+>
+> **修法：把新 hook 文件加进那个用例的读取列表**，让它同时读页面与 hook（断言的对象是「这套动作的语义仍在」，不是「必须写在某个文件里」）：
+>
+> ```ts
+> const source = [await read("app/admin/reflection/page.tsx"), await read("components/admin/reflection/use-reflection-actions.ts")].join("\n")
+> ```
+>
+> **不要**为了让测试过而把动作留在页面里 —— 那是本末倒置。**也不要**删掉那条断言。
+>
+> 顺带核一下同一文件 `:7-17` 那条（断言页面含 `<TableShell` 与 `@/components/admin/table-shell`）—— Task 1 之后它**仍然通过**，但若本任务又搬动了相关 JSX，同样要处理。
 
 - [ ] **Step 1: 先看清页面剩下的状态是几块**
 
