@@ -119,7 +119,7 @@ export function buildPrompt(
 // 主动模式哨兵:无把握时 agent 只输出此串。任何出站路径命中都必须吞掉,绝不可发给用户。
 export const NO_ANSWER_SENTINEL = "__NO_ANSWER__"
 
-// 主动模式指令:unanswered-poller 拼在 user prompt 首段(非 system),
+// 主动模式指令:未答复轮询拼在 user prompt 首段(非 system),
 // 使主动/正常两条路径共享同一 system 前缀、TTL 内可跨路径命中缓存。
 // 定义在此而非 poller:预检索要按它剥前缀取干净 query(见 kbProbeText),放 poller 会成环。
 export const PROACTIVE_SUFFIX = `【主动模式】你是在无人应答时主动补位。仅当知识库检索到确切依据且你有把握时才作答;否则只输出 ${NO_ANSWER_SENTINEL}(不解释、不道歉、不引导人工或外链、不寒暄)。`

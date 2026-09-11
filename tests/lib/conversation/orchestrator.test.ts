@@ -2,12 +2,12 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 import { openDb } from "@/lib/core/db/index"
 import { Repo } from "@/lib/core/db/repo"
 import { bus } from "@/lib/core/bus"
-import { registerOrchestrator } from "@/lib/agent/orchestrator"
-import { registerReplyMapper, splitReply } from "@/lib/agent/reply-mapper"
-import { SessionStore } from "@/lib/agent/session"
-import { BLOCKED_REPLY } from "@/lib/agent/intent"
-import type { Agent } from "@/lib/agent/agent"
-import type { IntentClassifier } from "@/lib/agent/intent"
+import { registerOrchestrator } from "@/lib/conversation/orchestrator"
+import { registerReplyMapper, splitReply } from "@/lib/conversation/reply-mapper"
+import { SessionStore } from "@/lib/conversation/session"
+import { BLOCKED_REPLY } from "@/lib/conversation/intent"
+import type { Agent } from "@/lib/conversation/agent"
+import type { IntentClassifier } from "@/lib/conversation/intent"
 import type {
   QualifiedMessage,
   ReplyReady,

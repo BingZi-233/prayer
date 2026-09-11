@@ -22,9 +22,9 @@ const LIB_DIR = join(REPO_ROOT, "lib")
 
 /**
  * 前缀 -> 该文件最终归属的层。
- * 按「目标层」判定,不按磁盘当前位置:阶段 4b 会把 lib/agent/agent.ts 迁往
- * lib/conversation/,而规则现在就把它归为 conversation。搬迁中途的物理位置
- * 不一致不算违规,只有最终归属错位才算。
+ * 按「目标层」判定,不按磁盘当前位置:搬迁中途文件的物理落点与目标层可能不一致,
+ * 规则以目标层为准 —— 位置不一致不算违规,只有最终归属错位才算。当前树已搬完,
+ * 物理位置与目标层一一对应,这条规则为搬迁中途与未来预留。
  * 顺序敏感:具体文件规则必须排在目录通配之前。
  *
  * 目录规则必须以 `/` 结尾,精确文件规则不带尾斜杠。`layerOf` 与
@@ -46,10 +46,8 @@ const PREFIX_RULES: Array<[string, Layer]> = [
   // channels
   ["lib/channels/", "channels"],
 
-  // conversation(其余 agent/* 与两个装配模块)
-  ["lib/agent/", "conversation"],
-  ["lib/transcript.ts", "conversation"],
-  ["lib/assemble.ts", "conversation"],
+  // conversation
+  ["lib/conversation/", "conversation"],
 ]
 
 /**
@@ -72,10 +70,9 @@ const PREFIX_RULES: Array<[string, Layer]> = [
  * 把文件挪回重构前的位置,那个位置在层级规则里已被有意作废。
  *
  * **它有一个无法自证的盲区:没人能检测出「你忘了登记某条墓碑」。** 若搬走的
- * 旧路径其父目录规则仍存活(例如 `lib/agent/reflection-poller.ts` 落在活的
- * `lib/agent/`→conversation 之下),漏登记就是真洞 —— 文件被放回去会被静默
- * 归成父目录那一层。父目录已死的漏登记则由「每文件归层」兜住。任何墓碑方案
- * 都有这个盲区,只能靠搬迁时逐条核对,写在这里是为了防后手误判。
+ * 旧路径其**父目录规则仍存活**,漏登记就是真洞 —— 文件被放回去会被静默归成
+ * 父目录那一层。父目录已死的漏登记则由「每文件归层」兜住。任何墓碑方案都有
+ * 这个盲区,只能靠搬迁时逐条核对,写在这里是为了防后手误判。
  */
 const RETIRED_PREFIXES: string[] = [
   "lib/onebot/",
@@ -116,6 +113,10 @@ const RETIRED_PREFIXES: string[] = [
   "lib/agent/reflection-promoter.ts",
   "lib/reflect-promote.ts",
   "lib/reflect-stats.ts",
+  "lib/agent/",
+  "lib/agent/introspect.ts",
+  "lib/assemble.ts",
+  "lib/transcript.ts",
 ]
 
 /**
@@ -125,8 +126,16 @@ const RETIRED_PREFIXES: string[] = [
  */
 const TOLERATED: Array<{ edge: string; removedBy: string }> = []
 
+// 已知的无害层内环:两侧都是 import type、编译期擦除;列出是为了让新增的环无处藏身。
+// 条目按 canonicalCycle 归一化后的形式书写(字典序最小旋转,末项不再重复起点)。
+// 阈值:若清单长到 3~5 条,说明 `import type` 边已多到成了噪声,届时应改成正则排除
+// `import type` 的 value-import 匹配,让清单归空,而不是无限堆容忍条目。
+const TOLERATED_INTRA_CYCLES = [
+  "core: lib/core/chat/events -> lib/core/chat/types",
+]
+
 /** 当前所处阶段。每阶段 PR 更新此常量。 */
-const CURRENT_STAGE = "4a"
+const CURRENT_STAGE = "4b"
 const STAGE_ORDER = ["0", "1", "2a", "2b", "3a", "3b", "4a", "4b", "5", "6"]
 
 function layerOf(rel: string): Layer | null {
@@ -164,6 +173,28 @@ function layerAt(rel: string): Layer | null {
     if (layer) return layer
   }
   return null
+}
+
+/**
+ * 把环串归一化到字典序最小的旋转再比较。
+ * 环串的起点由 DFS 进入环的那条前置依赖链决定,不是环本身的属性;而 readdirSync
+ * 的顺序在 APFS(近似字母序)与 ext4(哈希序)下不同,同一个环可能被表示成不同旋转,
+ * 字符串相等/`includes` 匹配会在 CI 上无辜失效。
+ */
+function canonicalCycle(cycle: string): string {
+  const sep = cycle.indexOf(": ")
+  const layer = cycle.slice(0, sep)
+  const nodes = cycle.slice(sep + 2).split(" -> ")
+  nodes.pop() // 末项是起点的重复
+  const rotations = nodes.map((_, i) => [
+    ...nodes.slice(i),
+    ...nodes.slice(0, i),
+  ])
+  // 用码点序比较,不用 localeCompare —— 后者的结果依赖 ICU locale,
+  // 而本函数存在的意义恰恰是消除环境差异。
+  const joined = rotations.map((r) => r.join(" -> "))
+  const best = joined.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))[0]
+  return `${layer}: ${best}`
 }
 
 const IMPORT_RE = /(?:from\s+|import\s*\(\s*|require\s*\(\s*)["']([^"']+)["']/g
@@ -275,9 +306,63 @@ describe("分层结构契约", () => {
     expect(layerOf("lib/core/chat/types.ts")).toBe("core")
     expect(layerOf("lib/channels/qq/members-fetch.ts")).toBe("channels")
     expect(layerOf("lib/model/embed.ts")).toBe("model")
+    expect(layerOf("lib/model/introspect.ts")).toBe("model")
     expect(layerOf("lib/knowledge/kb.ts")).toBe("knowledge")
-    expect(layerOf("lib/agent/agent.ts")).toBe("conversation")
+    expect(layerOf("lib/conversation/agent.ts")).toBe("conversation")
     expect(layerOf("lib/runtime.ts")).toBe("composition")
+  })
+
+  it("每层内部无循环 import", () => {
+    // 第一遍:收齐节点,key 用真实文件路径(去扩展名),以便目录型 import 能对上。
+    const byLayer = new Map<Layer, Array<{ rel: string; rawDeps: string[] }>>()
+    for (const abs of listFiles(LIB_DIR)) {
+      const rel = relative(REPO_ROOT, abs)
+      const layer = layerOf(rel)
+      if (!layer) continue
+      const rawDeps: string[] = []
+      for (const m of readFileSync(abs, "utf8").matchAll(IMPORT_RE)) {
+        const resolved = resolveSpecifier(abs, m[1])
+        if (resolved) rawDeps.push(resolved)
+      }
+      const bucket = byLayer.get(layer) ?? []
+      bucket.push({ rel: rel.replace(/\.tsx?$/, ""), rawDeps })
+      byLayer.set(layer, bucket)
+    }
+
+    const cycles: string[] = []
+    for (const [layer, nodes] of byLayer) {
+      // 第二遍:把 import 目标规范化到节点 key。resolveSpecifier 对目录型 import
+      // 返回目录路径(如 lib/core/db),而节点 key 是 lib/core/db/index —— 直接比对
+      // 会静默丢掉这条边,故补一次 `/index` 匹配。规范化后同层过滤由 key 集合保证。
+      const keys = new Set(nodes.map((n) => n.rel))
+      const edges = new Map<string, string[]>()
+      for (const n of nodes) {
+        const deps = new Set<string>()
+        for (const r of n.rawDeps) {
+          const hit = keys.has(r) ? r : keys.has(`${r}/index`) ? `${r}/index` : null
+          if (hit) deps.add(hit)
+        }
+        edges.set(n.rel, [...deps])
+      }
+
+      const state = new Map<string, 0 | 1 | 2>()
+      const walk = (node: string, stack: string[]): void => {
+        const st = state.get(node) ?? 0
+        if (st === 2) return
+        if (st === 1) {
+          cycles.push(
+            `${layer}: ${[...stack.slice(stack.indexOf(node)), node].join(" -> ")}`
+          )
+          return
+        }
+        state.set(node, 1)
+        for (const next of edges.get(node) ?? []) walk(next, [...stack, node])
+        state.set(node, 2)
+      }
+      for (const n of edges.keys()) walk(n, [])
+    }
+    const found = [...new Set(cycles.map(canonicalCycle))].sort()
+    expect(found.filter((c) => !TOLERATED_INTRA_CYCLES.includes(c))).toEqual([])
   })
 
   it("components/ 只依赖 core", () => {

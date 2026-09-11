@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from "vitest"
 import { openDb } from "@/lib/core/db/index"
 import { Repo } from "@/lib/core/db/repo"
 import { bus } from "@/lib/core/bus"
-import { registerHandoffHandler } from "@/lib/agent/handoff-handler"
+import { registerHandoffHandler } from "@/lib/conversation/handoff-handler"
 import type { ActionSend } from "@/lib/core/chat/events"
 
 let repo: Repo

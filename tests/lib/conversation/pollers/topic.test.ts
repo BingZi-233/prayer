@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest"
-import { classifyItems, runScan } from "@/lib/agent/topic-poller"
+import { classifyItems, runScan } from "@/lib/conversation/pollers/topic"
 import { openDb } from "@/lib/core/db/index"
 import { Repo } from "@/lib/core/db/repo"
 import { bus } from "@/lib/core/bus"
@@ -115,7 +115,7 @@ const opts = (repo: Repo, over: Record<string, unknown> = {}) => ({
   ...over,
 })
 
-describe("topic-poller runScan", () => {
+describe("topic poller runScan", () => {
   let repo: Repo
   beforeEach(() => {
     bus.removeAllListeners()

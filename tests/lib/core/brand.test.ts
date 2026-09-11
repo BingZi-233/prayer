@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest"
 import { DEFAULT_BRAND, resolveBrand } from "@/lib/core/brand"
 import { appConfigSchema } from "@/lib/core/config/schema"
 import { buildDefaultSystem } from "@/lib/model/system-prompt"
-import { buildIntentSystem } from "@/lib/agent/intent"
-import { buildAnswerabilitySystem } from "@/lib/agent/answerability"
+import { buildIntentSystem } from "@/lib/conversation/intent"
+import { buildAnswerabilitySystem } from "@/lib/conversation/answerability"
 
 describe("Prayer 品牌配置", () => {
   it("默认配置使用 Prayer，且不绑定 PackyAPI 支持链接", () => {

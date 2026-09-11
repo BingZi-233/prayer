@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 import { getAppContext } from "@/lib/core/app-context"
-import { probeCapabilities } from "@/lib/agent/introspect"
+import { probeCapabilities } from "@/lib/model/introspect"
 import { ok, fail } from "@/lib/core/api"
 
 export async function GET(req: Request): Promise<NextResponse> {

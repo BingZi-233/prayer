@@ -18,7 +18,7 @@ export class SessionsRepository {
 
   // 仅刷 updated_at,不动 session_id/resume_id。
   // 主管线 handle 入口调用:处理途中就让主动补位压制②看见「已接管」,堵
-  // agent.run 窗口期(秒~数十秒)内同一消息被 unanswered-poller 抢答双发。
+  // agent.run 窗口期(秒~数十秒)内同一消息被未答复轮询抢答双发。
   touchSession(key: string): void {
     this.sql
       .prepare(

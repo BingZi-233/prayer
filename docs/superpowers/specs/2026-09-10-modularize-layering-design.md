@@ -76,7 +76,7 @@ lib/
       types.ts events.ts ids.ts enabled-chats.ts name-cache.ts name-cache-store.ts group-name.ts
   model/              # L1 模型基座：SDK 调用与模型 I/O
     sdk-env.ts query-options.ts drain.ts system-prompt.ts tool-policy.ts prompt.ts
-    sanitize-input.ts json-output.ts timeout.ts embed.ts
+    sanitize-input.ts json-output.ts timeout.ts embed.ts introspect.ts
     stats/            # 模型与工具的用量计量
       usage.ts tool.ts
     plugins/
@@ -92,7 +92,7 @@ lib/
   conversation/       # L3 会话与编排
     agent.ts orchestrator.ts session.ts gateway.ts message-buffer.ts reply-mapper.ts
     intent.ts answerability.ts handoff-handler.ts prior-context.ts error-handler.ts
-    introspect.ts command-keywords.ts transcript.ts assemble.ts resolution-recorder.ts
+    command-keywords.ts transcript.ts assemble.ts resolution-recorder.ts
     pollers/
       topic.ts unanswered.ts
 ```
@@ -270,7 +270,12 @@ main 构建。这个成本是拆细的代价，接受。
 | 2a | `docs/development.md` 的「模块边界」一节中 `lib/config/schema.ts`、`lib/config/{env,migrate,chats,patch}.ts`、`lib/config-store.ts`、`lib/db/repositories/`、`lib/db/migrations/` 五条路径；`docs/data-access.md` 里「以上路径相对于 `lib/db/`」与 `lib/db/index.ts` 的引用；`docs/database-operations.md` 里 `lib/db/migrations/registry.ts` 与 `lib/db/index.ts` 的引用；`CLAUDE.md` 的「仓库结构」一节中的 `db/` 项 |
 | 2b | `docs/development.md` 的「模块边界」中 `lib/core/config-store.ts` 条目引用的 `lib/channels/enabled-chats.ts`（迁往 `lib/core/chat/`）。注意 `channels/types.ts`、`channels/ids.ts` 目前在文档中**没有任何引用**，2b 只需搬文件、无需改文档 |
 | 3a | `CLAUDE.md` 的「仓库结构」一节中的 `plugins/` 项（`lib/plugins/` 消失；**顶层 `plugins/` 是另一个东西，不动**）——**已完成** |
-| 4 | `CLAUDE.md` 的「仓库结构」一节中的 `tools/` 项（`lib/tools/` 迁往 `lib/model/` 与 `lib/knowledge/`）；`agent/` 一项（拆为 `conversation/` 与 `knowledge/`）；`CLAUDE.md` 的「命令」一节举例的 `tests/lib/agent/session.test.ts`（该测试镜像 `lib/agent/session.ts`，随 `agent/` 一起迁） |
+| 4 | `CLAUDE.md` 的「仓库结构」一节中的 `tools/` 项（`lib/tools/` 迁往 `lib/model/` 与 `lib/knowledge/`）；`agent/` 一项（拆为 `conversation/` 与 `knowledge/`）；`CLAUDE.md` 的「命令」一节举例的 `tests/lib/agent/session.test.ts`（该测试镜像 `lib/agent/session.ts`，随 `agent/` 一起迁）；**`README.md` 的「项目结构」一节**（`lib/` 那段整体停留在重构前，四条里三条已作废） |
+
+**这张表本身漏过一项，记此为训。** `README.md` 的「项目结构」一节从头到尾没被登记，于是
+`lib/db/`（2a 迁走）、`lib/plugins/`（3a 迁走）、`lib/agent/`（4b 迁走）三处在文档里一直是旧路径，
+直到 4b 才被实施者顺手发现。**教训:列「要同步哪些文档」时，应当扫描全仓而非凭印象列举** ——
+`grep -rn "lib/" --include='*.md'` 一遍就能发现 README 这个漏网者。
 
 **不要在这些条目里写字面行号。** 行号会随任何一次编辑而腐烂，而腐烂的锚点会让施工者 grep 扑空、进而以为「已经改过了」。用章节名与文件名定位。
 
@@ -394,6 +399,12 @@ grep 的模式要覆盖 `.ts`、`.tsx`、`.json`、`.cjs`，且扫描范围要�
 7. 不把 `data/`、凭证或运行时产物纳入提交。
 
 ## 风险
+
+**护栏不守 `app/`，而阶段 5 的战场正是 `app/`。** `layering.test.ts` 只扫 `lib/**`，另有一条
+用例约束 `components/` 只能依赖 `core`。**对 `app/` 没有任何约束**。阶段 5 要把四个后台页
+（合计约 3400 行）拆成组件 + hook；拆出的组件若进 `components/`，会被「只依赖 `core`」那条用例锁死 ——
+任何需要 `conversation`/`knowledge`/`model` 的类型或数据都必须留在 `app/`（server component，或继续走
+`/api/*` fetch），**不能下沉到 `components/`**。这条约束目前没有任何机器检查提醒，阶段 5 要自己守住。
 
 **临时边集合仍可被加行。** 空基线消除了「永久例外」这个口子，但阶段间的临时边本身就是
 一份可编辑清单。缓解靠三点：`removedBy` 到点自红、精确条数断言、以及这些条目只在

@@ -2,9 +2,9 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 import { openDb } from "@/lib/core/db/index"
 import { Repo } from "@/lib/core/db/repo"
 import { bus } from "@/lib/core/bus"
-import { SessionStore } from "@/lib/agent/session"
-import { runScan } from "@/lib/agent/unanswered-poller"
-import { AGENT_FALLBACK_TEXT } from "@/lib/agent/agent"
+import { SessionStore } from "@/lib/conversation/session"
+import { runScan } from "@/lib/conversation/pollers/unanswered"
+import { AGENT_FALLBACK_TEXT } from "@/lib/conversation/agent"
 import type { ErrorOccurred, ReplyReady } from "@/lib/core/chat/events"
 import type Database from "better-sqlite3"
 
@@ -59,7 +59,7 @@ beforeEach(() => {
   repo = new Repo(openDb(":memory:"))
 })
 
-describe("unanswered-poller runScan", () => {
+describe("unanswered poller runScan", () => {
   it("happy path:沉降未应答问题 → 发 reply + 写回 session + 推进游标", async () => {
     repo.setGroupProactiveCursor("qq", "100", 1) // 非冷启动
     seed(100, 200, "member", "claude 价格?", NOW - 5000)

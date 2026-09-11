@@ -3,8 +3,8 @@ import { openDb } from "@/lib/core/db/index"
 import { Repo } from "@/lib/core/db/repo"
 import { bus } from "@/lib/core/bus"
 import type { ActionSend } from "@/lib/core/chat/events"
-import { assemble } from "@/lib/assemble"
-import type { Agent } from "@/lib/agent/agent"
+import { assemble } from "@/lib/conversation/assemble"
+import type { Agent } from "@/lib/conversation/agent"
 
 beforeEach(() => bus.removeAllListeners())
 

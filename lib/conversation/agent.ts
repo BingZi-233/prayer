@@ -130,7 +130,7 @@ export class Agent {
           // 用完整自定义 system prompt(不套 claude_code preset):preset 的编码助手人格会
           // 干扰视觉输入(实测带图时模型回"无图"),且本就需靠 prompt 抹掉编码设定 —— 直接替换更干净。
           // system prompt 恒定(无按调用方拼接的后缀)—— 主动/正常两条路径共享同一前缀,
-          // TTL 内可跨路径命中缓存;主动模式的行为指令改由 unanswered-poller 并入 user prompt。
+          // TTL 内可跨路径命中缓存;主动模式的行为指令改由未答复轮询并入 user prompt。
           systemPrompt: this.resolvedSystem(),
           // 业务插件及其 MCP server 由 enabledPlugins(settingSources:["user"])加载,不在此显式装配。
           // 仅当显式传 pluginPaths 时本地加载并开启 MCP 发现(默认发现,不设 skipMcpDiscovery)。

@@ -4,7 +4,7 @@ import {
   EMPTY_AT_PLACEHOLDER,
   clipPriorTexts,
   formatPriorContext,
-} from "@/lib/agent/prior-context"
+} from "@/lib/conversation/prior-context"
 
 describe("formatPriorContext", () => {
   it("无 prior 时原样返回 body", () => {

@@ -16,7 +16,7 @@ GitHub Actions 会在 PR 和 main 推送时执行检查与构建。
 
 ## 分层结构
 
-`lib/` 按能力分五层，单向依赖，只准从上往下：
+`lib/` 已按能力分五层，单向依赖，只准从上往下：
 
 ```
     runtime.ts          # 组合根,接通道 + agent + 后台循环
@@ -37,15 +37,6 @@ channels   knowledge    # 通道实现 / 知识库与反思(同级,互不依赖)
 - 后台运营与商业化页面写 `app/admin/`；鉴权、品牌、存储等横切能力进 `core/`。
 - `app/` 可依赖全部；`components/` 只可依赖 `core` 与 `components/` 自身。
 - 规则由 `tests/architecture/layering.test.ts` 执行，不靠自觉。跨层依赖会直接让测试失败。
-
-### 搬迁中：待改写条目
-
-`lib/` 正分阶段搬到上述结构。以下条目描述的路径在搬迁完成后不再存在，
-**由对应阶段负责改写，不是遗留说明**：
-
-| 条目 | 作废阶段 |
-| --- | --- |
-| `CLAUDE.md` 的「仓库结构」一节里的 `agent/` 项（`agent/` → `conversation/`；其中「反思循环」那半已随 4a 迁往 `knowledge/`，改时一并去掉），与「命令」一节举例的 `tests/lib/agent/session.test.ts` 路径 | 4b |
 
 ## 模块边界
 

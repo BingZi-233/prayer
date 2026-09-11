@@ -6,8 +6,8 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 import { openDb } from "@/lib/core/db/index"
 import { Repo } from "@/lib/core/db/repo"
 import { bus } from "@/lib/core/bus"
-import { SessionStore } from "@/lib/agent/session"
-import { runScan } from "@/lib/agent/unanswered-poller"
+import { SessionStore } from "@/lib/conversation/session"
+import { runScan } from "@/lib/conversation/pollers/unanswered"
 import { ChannelRegistry } from "@/lib/channels/registry"
 import type {
   Channel,
