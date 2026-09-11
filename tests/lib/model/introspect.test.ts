@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { buildToolPolicy } from "@/lib/agent/introspect"
+import { buildToolPolicy } from "@/lib/model/introspect"
 
 describe("buildToolPolicy", () => {
   it("放行规则条恒在;无 liveTools 时 gated 仅兜底规则条", () => {
@@ -28,7 +28,7 @@ describe("buildToolPolicy", () => {
   })
 })
 
-import { probeCapabilities, type ProbeOptions } from "@/lib/agent/introspect"
+import { probeCapabilities, type ProbeOptions } from "@/lib/model/introspect"
 import type { AppConfig } from "@/lib/core/config-store"
 
 type QueryFn = NonNullable<ProbeOptions["queryFn"]>

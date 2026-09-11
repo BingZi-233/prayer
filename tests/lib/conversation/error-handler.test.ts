@@ -4,7 +4,7 @@ import {
   registerErrorHandler,
   formatErrorLine,
   errorMessage,
-} from "@/lib/agent/error-handler"
+} from "@/lib/conversation/error-handler"
 import { logger } from "@/lib/core/logger"
 import type { ActionSend } from "@/lib/core/chat/events"
 

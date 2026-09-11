@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest"
-import { makeAnswerabilityClassifier } from "@/lib/agent/answerability"
+import { makeAnswerabilityClassifier } from "@/lib/conversation/answerability"
 
 // 假 query:产出单条 assistant JSON 文本
 function fakeQuery(text: string) {

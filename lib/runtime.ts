@@ -3,8 +3,8 @@ import { bus } from "./core/bus"
 import { logger } from "./core/logger"
 import type { AppConfig } from "./core/config-store"
 import type { Repo } from "./core/db/repo"
-import type { Agent } from "./agent/agent"
-import type { AssembleDeps } from "./assemble"
+import type { Agent } from "./conversation/agent"
+import type { AssembleDeps } from "./conversation/assemble"
 import { bindUsagePersistence } from "./model/stats/usage"
 import { bindToolStatsPersistence } from "./model/stats/tool"
 import type { Channel, ChannelId, ChannelStatus } from "./core/chat/types"
@@ -54,11 +54,11 @@ export interface RuntimeBuilders {
 async function defaultBuilders(): Promise<RuntimeBuilders> {
   const { sharedDb } = await import("./core/db/shared")
   const { Repo } = await import("./core/db/repo")
-  const { Agent } = await import("./agent/agent")
+  const { Agent } = await import("./conversation/agent")
   const { makeKbPrefetch } = await import("./knowledge/kb-prefetch")
   // 本地嵌入模型是 native 依赖,只在 Node runtime 动态加载,别提到模块顶层
   const { embed } = await import("./model/embed")
-  const { assemble } = await import("./assemble")
+  const { assemble } = await import("./conversation/assemble")
   return {
     // 复用 API 路由的进程级共享连接:reconfigure 不关它,in-flight 的
     // 异步 scanOnce(await agent.run 期间)不会撞到 "database connection is not open"

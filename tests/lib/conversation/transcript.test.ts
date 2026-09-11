@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest"
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { parseTranscript, findTranscript, readTranscript } from "@/lib/transcript"
+import { parseTranscript, findTranscript, readTranscript } from "@/lib/conversation/transcript"
 
 describe("parseTranscript", () => {
   it("文本与 tool_use 拆成独立条目", () => {

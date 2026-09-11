@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest"
-import { classifyItems, runScan } from "@/lib/agent/topic-poller"
+import { classifyItems, runScan } from "@/lib/conversation/topic-poller"
 import { openDb } from "@/lib/core/db/index"
 import { Repo } from "@/lib/core/db/repo"
 import { bus } from "@/lib/core/bus"

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest"
-import { Agent, AGENT_FALLBACK_TEXT, type AgentDeps } from "@/lib/agent/agent"
+import { Agent, AGENT_FALLBACK_TEXT, type AgentDeps } from "@/lib/conversation/agent"
 import {
   KB_CANDIDATES_BEGIN,
   KB_CANDIDATES_END,

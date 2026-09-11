@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 import { openDb } from "@/lib/core/db/index"
 import { Repo } from "@/lib/core/db/repo"
 import { bus } from "@/lib/core/bus"
-import { registerGateway, isAtTrigger } from "@/lib/agent/gateway"
+import { registerGateway, isAtTrigger } from "@/lib/conversation/gateway"
 import type {
   ActionSend,
   ErrorOccurred,

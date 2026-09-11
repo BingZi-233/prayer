@@ -103,7 +103,7 @@ export interface KbCoverage {
   ratio: number
 }
 
-/** cs 插件的 kb_search MCP 全名;与 lib/agent/agent.ts 的 CS_KB_TOOL 一致 */
+/** cs 插件的 kb_search MCP 全名;与 lib/conversation/agent.ts 的 CS_KB_TOOL 一致 */
 const KB_SEARCH_SUFFIX = "__kb_search"
 
 /** 知识库覆盖率:有依据的 run 数 / 总 run 数 */

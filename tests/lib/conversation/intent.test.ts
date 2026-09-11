@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest"
 import type { query as sdkQuery } from "@anthropic-ai/claude-agent-sdk"
-import { makeIntentClassifier, BLOCKED_INTENTS } from "@/lib/agent/intent"
+import { makeIntentClassifier, BLOCKED_INTENTS } from "@/lib/conversation/intent"
 
 type QueryFn = typeof sdkQuery
 type QueryParams = Parameters<QueryFn>[0]
