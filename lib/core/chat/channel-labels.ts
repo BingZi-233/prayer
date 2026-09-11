@@ -5,9 +5,9 @@ import type { ChannelId } from "./types"
  * (sessions / groups / channel-dot / header-status),且 discord 那条只有
  * groups 一处缺。
  *
- * 注意**不是**所有出现渠道名的地方都该用它:管理面通道的下拉选项用的是
- * 长名(见 `components/admin/config/admin-settings.tsx` 的 "Telegram"),
- * 与短名是两个用途,不合并。
+ * 注意**不是**所有出现渠道名的地方都该用它:管理面通道的下拉选项是
+ * **表单选项文案**(见 `components/admin/config/admin-settings.tsx`,那里 tg 写
+ * 全称 "Telegram"、qq 仍写 "QQ"),与徽标用的短名是两个用途,不合并。
  */
 const CHANNEL_LABELS: Record<ChannelId, string> = {
   qq: "QQ",

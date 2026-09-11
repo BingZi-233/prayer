@@ -339,10 +339,13 @@ grep 的模式要覆盖 `.ts`、`.tsx`、`.json`、`.cjs`，且扫描范围要�
 
 **3. `sessions/page.tsx` 1077 → 约 200。** 产出
 `sessions/{channel-badge,session-list,transcript-view,session-dialogs}.tsx` 与
-`use-session-selection.ts`（约 200 行）。最硬的摩擦点：六个 ref（`activeKeyRef`、
-`sessionsRef`、`transcriptGenRef`、`mountedRef`、`writingUrlKeyRef`、`lastHandledUrlKeyRef`）
-跨 `openSession` ↔ effect ↔ poller 共享，且 URL 同步（L230–302）与三个 effect
-（L356–402）、`refresh`（L404–421）是一体的竞态治理。**必须整体进同一个 hook，拆两半即坏。**
+`use-session-selection.ts`（约 200 行）。最硬的摩擦点：**八个** ref（`activeKeyRef`、
+`activeUpdatedAtRef`、`sessionsRef`、`mountedRef`、`filterRef`、`transcriptGenRef`、
+`lastHandledUrlKeyRef`、`writingUrlKeyRef`）跨 `openSession` ↔ effect ↔ poller 共享，
+且 URL 同步与三个 effect、`refresh` 是一体的竞态治理。**必须整体进同一个 hook，拆两半即坏。**
+
+（本节原先写「六个 ref」，阶段 5a 的收尾审查实测为八个 —— 当时漏了 `activeUpdatedAtRef`
+与 `filterRef`。5b 按**八个**理解。）
 
 **4. `kb/page.tsx` 1052 → 约 150。** 产出
 `kb/{tree.ts,markdown-body.tsx,file-tree.tsx,editor-panel.tsx,file-dialogs.tsx}` 与
@@ -415,6 +418,13 @@ grep 的模式要覆盖 `.ts`、`.tsx`、`.json`、`.cjs`，且扫描范围要�
 还有 `lib/conversation/agent.ts` 的 `ToolContext.channel?: string`，注释自述是旁路迁移期的过渡态。
 **本设计不处理这一类**（它们与分层无关，且不少需要引入校验而非改类型），
 记在此处以免被当作「已顺手改过」。
+
+**`core` 的定位要在阶段 6 的落位指南里写清（阶段 5a 收尾审查提出）。** 它现在装着
+`utils.ts`（含 `cn()`）、`brand.ts`、`chat/group-name.ts`（React hook），又新添了两个**展示层**模块
+（`channel-labels.ts`、`format-duration.ts`）—— 后者是因为「`components/` 只可依赖 `core`」这条约束
+被推进来的。**`core` 的定位应写成「无依赖的纯工具与地基，含 UI 展示所需的纯函数」**，
+否则「core = 地基」这句会名不副实。若展示工具多到 5 个以上，再考虑另立 `lib/format/`
+（届时需在 `layering.test.ts` 的映射表里一并归层）；现在只有两个，不值得。
 
 **阶段 5 的验收要点（4b 收尾审查给出，不必新写护栏）：**「拆出的组件若 import `conversation`/
 `knowledge`/`model` 即违规」这条要**写进阶段 5 的任务验收**，靠现有那条 components 用例兜底，
