@@ -3,16 +3,16 @@ import { bus } from "../core/bus"
 import { logger } from "../core/logger"
 import { errorMessage } from "../core/log-context"
 import type { Repo, KbHit } from "../core/db/repo"
-import { embed as defaultEmbed } from "../tools/embed"
+import { embed as defaultEmbed } from "../model/embed"
 import { noToolQueryOptions, drainQuery } from "./agent"
-import { pickArrayFieldDual, previewJsonPayload } from "./json-output"
-import { isNewSensitiveError, sanitizeForModel } from "./sanitize-input"
+import { pickArrayFieldDual, previewJsonPayload } from "../model/json-output"
+import { isNewSensitiveError, sanitizeForModel } from "../model/sanitize-input"
 import {
   DEFAULT_EMBED_TIMEOUT_MS,
   DEFAULT_QUERY_TIMEOUT_MS,
   withTimeout,
   withTimeoutFn,
-} from "./timeout"
+} from "../model/timeout"
 import type { ChannelId } from "../core/chat/types"
 import type { ChatRef } from "../core/chat/enabled-chats"
 

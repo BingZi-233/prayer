@@ -75,7 +75,7 @@ const REPO_ROOT = dirname(
 // 这类含参数属性的模块,子进程会在运行时静默加载失败——typecheck 与
 // 其它测试都抓不到,所以在这里用真实加载来守。
 const CS_SUBPROCESS_MODULES = [
-  "lib/tools/embed.ts",
+  "lib/model/embed.ts",
   "lib/tools/kb.ts",
   "lib/core/db/kb-sql.ts",
 ]

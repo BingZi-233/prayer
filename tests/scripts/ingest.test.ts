@@ -6,7 +6,7 @@ import { chunkText, runIngest } from "@/scripts/ingest"
 import { openDb } from "@/lib/core/db/index"
 import { Repo } from "@/lib/core/db/repo"
 
-vi.mock("@/lib/tools/embed", () => ({
+vi.mock("@/lib/model/embed", () => ({
   embed: async () => new Float32Array([0.1, 0.2, 0.3]),
 }))
 

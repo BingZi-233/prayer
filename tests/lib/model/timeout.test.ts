@@ -4,7 +4,7 @@ import {
   DEFAULT_QUERY_TIMEOUT_MS,
   withTimeout,
   withTimeoutFn,
-} from "@/lib/agent/timeout"
+} from "@/lib/model/timeout"
 
 describe("withTimeout", () => {
   it("任务先完成 → 返回其值", async () => {

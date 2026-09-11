@@ -3,7 +3,7 @@ import { z } from "zod"
 import { getAppContext } from "@/lib/core/app-context"
 import type { AppConfig } from "@/lib/core/config-store"
 import { getRuntime, defaultBuilders } from "@/lib/runtime"
-import { PluginManager, type CliResult } from "@/lib/plugins/manager"
+import { PluginManager, type CliResult } from "@/lib/model/plugins/manager"
 import { ok, fail } from "@/lib/core/api"
 
 function manager(cfg: { claudeConfigDir: string }) {

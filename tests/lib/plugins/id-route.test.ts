@@ -6,7 +6,7 @@ const updateMock = vi.fn()
 const uninstallMock = vi.fn()
 const reconfigureMock = vi.fn()
 
-vi.mock("@/lib/plugins/manager", () => ({
+vi.mock("@/lib/model/plugins/manager", () => ({
   PluginManager: vi.fn().mockImplementation(function () {
     return {
       enable: enableMock,

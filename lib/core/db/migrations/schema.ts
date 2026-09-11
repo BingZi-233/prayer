@@ -31,7 +31,7 @@ function columnType(
  * v5: 工具调用日表。
  * runs = 出现过该工具的 run 数(每 run 每工具最多 +1),calls = 总调用次数。
  * tool='__run__' 是总 run 数特殊行(覆盖率分母);
- * '__kb_prefetch__' / '__kb_grounded__' 是伪工具行(见 lib/tool-stats.ts)。
+ * '__kb_prefetch__' / '__kb_grounded__' 是伪工具行(见 lib/model/stats/tool.ts)。
  */
 function ensureToolStatsDaily(db: Database.Database): void {
   db.exec(`

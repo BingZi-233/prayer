@@ -5,7 +5,7 @@ import { listEnabledChats } from "@/lib/core/chat/enabled-chats"
 import { ok, fail } from "@/lib/core/api"
 import { buildGroupChatStats } from "@/lib/reflect-stats"
 import { applyPromote } from "@/lib/reflect-promote"
-import { embed } from "@/lib/tools/embed"
+import { embed } from "@/lib/model/embed"
 
 function chatKey(channel: string, chatId: string): string {
   return `${channel}:${chatId}`

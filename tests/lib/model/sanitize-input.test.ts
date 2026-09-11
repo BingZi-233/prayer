@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest"
 import {
   sanitizeForModel,
   isNewSensitiveError,
-} from "@/lib/agent/sanitize-input"
+} from "@/lib/model/sanitize-input"
 
 describe("sanitizeForModel", () => {
   it("空串原样返回", () => {

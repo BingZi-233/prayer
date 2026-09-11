@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { usageStats, cacheHitRatio, type UsageStat } from "@/lib/usage-stats"
+import { usageStats, cacheHitRatio, type UsageStat } from "@/lib/model/stats/usage"
 import {
   toolStats,
   kbCoverage,
@@ -9,11 +9,11 @@ import {
   KB_GROUNDED_TOOL,
   type KbCoverage,
   type ToolStat,
-} from "@/lib/tool-stats"
+} from "@/lib/model/stats/tool"
 import { getAppContext } from "@/lib/core/app-context"
 import { ok } from "@/lib/core/api"
 
-// 调用点中文名(与 lib/usage-stats.ts 的 UsageSite 对应);顺序即展示顺序
+// 调用点中文名(与 lib/model/stats/usage.ts 的 UsageSite 对应);顺序即展示顺序
 const SITE_ORDER = [
   "agent",
   "intent",

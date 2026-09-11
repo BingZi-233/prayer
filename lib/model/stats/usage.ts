@@ -4,7 +4,7 @@
 // (近 7 天主客服 370 次调用,218 次 cache_read>1k,命中侧 2.72M vs 未缓存 input 1.33M)。
 // 注意快照是「本进程启动以来」的滚动累计,不是单次调用值 —— 看绝对数请除以 count。
 
-import type { Repo } from "./core/db/repo"
+import type { Repo } from "../../core/db/repo"
 
 // 调用点标识:与 5 个 query() 站点一一对应(introspect 不产生模型调用,不计)
 export type UsageSite =

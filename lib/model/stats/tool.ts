@@ -1,10 +1,10 @@
-// 按工具名的调用统计。lib/usage-stats.ts 的姊妹模块,刻意分开:
+// 按工具名的调用统计。lib/model/stats/usage.ts 的姊妹模块,刻意分开:
 //   1) 维度不同 —— usage 是「site → 6 个累加数」,tool 是「site → tool → {runs, calls}」两层;
 //   2) 时机不同 —— usage 在末尾 result 消息即时记账,tool 必须攒完整个 run 再一次性提交
 //      (runs 的语义是「出现过该工具的 run 数」,每 run 每工具最多 +1)。
 // 同样是 globalThis 单例 + 可选 SQLite 日表持久化。
 
-import type { Repo } from "./core/db/repo"
+import type { Repo } from "../../core/db/repo"
 
 /** 总 run 数特殊行:覆盖率的分母 */
 export const RUN_TOTAL_TOOL = "__run__"

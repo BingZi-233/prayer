@@ -5,7 +5,7 @@ import {
   pickArrayFieldDual,
   previewJsonPayload,
   salvageArrayObjects,
-} from "@/lib/agent/json-output"
+} from "@/lib/model/json-output"
 
 describe("findBalancedEnd / extractJsonValues", () => {
   it("配对对象与数组", () => {
