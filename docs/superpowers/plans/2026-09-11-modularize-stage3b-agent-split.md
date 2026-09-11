@@ -331,6 +331,12 @@ Expected: **全绿**,且 `TOLERATED` 为空数组。
 
 在 `lib/model/timeout.ts` 那个常量的注释里补一句:改动本值需同步检查 `lib/agent/agent.ts` 的 `DEFAULT_RUN_TIMEOUT_MS`(或反之)。纯注释。
 
+> **遗留（非本阶段引入，记此备忘）：** `lib/model/drain.ts` 是顶层文件，但它的测试
+> （`drainQuery` 的 9 条）埋在 `tests/lib/model/stats/usage.test.ts` 里 —— 与「测试镜像源码」不符。
+> 成因是 3a 把 `usage-stats.ts` 搬成 `stats/usage.ts` 时，`usage.test.ts` 跟着进了 `stats/`，
+> 而 `drain.ts` 是 3b 才在顶层新建的。修法二选一：把 `drainQuery` 的测试挪出 `drain.test.ts`，
+> 或重新考虑 `drain.ts` 的落点。**留给后续阶段或收尾文档阶段处理。**
+
 - [ ] **Step 5: 提交**
 
 ```bash
