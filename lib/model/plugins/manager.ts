@@ -1,3 +1,6 @@
+// claude CLI 的 plugin 生命周期管理(安装/启停/状态),即「模型能用哪些工具」的来源。
+// 注意与仓库顶层的 plugins/ 区分:那个是插件本体(cs / packyapi 两个本地 MCP server),
+// 本模块管的是怎么把它们挂给模型。
 import { execFile } from "node:child_process"
 import { resolve } from "node:path"
 

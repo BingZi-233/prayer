@@ -22,8 +22,8 @@ const LIB_DIR = join(REPO_ROOT, "lib")
 
 /**
  * 前缀 -> 该文件最终归属的层。
- * 按「目标层」判定,不按磁盘当前位置:阶段 3 会把 lib/tools/embed.ts 迁往
- * lib/model/,它现在映射到的层就是 model。搬迁中途的物理位置不一致
+ * 按「目标层」判定,不按磁盘当前位置:阶段 4 会把 lib/tools/kb.ts 迁往
+ * lib/knowledge/,它现在映射到的层就是 knowledge。搬迁中途的物理位置不一致
  * 不算违规,只有最终归属错位才算。
  * 顺序敏感:具体文件规则必须排在目录通配之前。
  *
@@ -38,13 +38,7 @@ const PREFIX_RULES: Array<[string, Layer]> = [
   ["lib/core/", "core"],
 
   // model
-  ["lib/tools/embed.ts", "model"],
-  ["lib/agent/sanitize-input.ts", "model"],
-  ["lib/agent/json-output.ts", "model"],
-  ["lib/agent/timeout.ts", "model"],
-  ["lib/usage-stats.ts", "model"],
-  ["lib/tool-stats.ts", "model"],
-  ["lib/plugins/manager.ts", "model"],
+  ["lib/model/", "model"],
 
   // knowledge
   ["lib/tools/kb.ts", "knowledge"],
@@ -112,6 +106,14 @@ const RETIRED_PREFIXES: string[] = [
   "lib/channels/types.ts",
   "lib/channels/ids.ts",
   "lib/channels/enabled-chats.ts",
+  "lib/agent/sanitize-input.ts",
+  "lib/agent/json-output.ts",
+  "lib/agent/timeout.ts",
+  "lib/tools/embed.ts",
+  "lib/usage-stats.ts",
+  "lib/tool-stats.ts",
+  "lib/plugins/manager.ts",
+  "lib/plugins/",
 ]
 
 /**
@@ -120,14 +122,17 @@ const RETIRED_PREFIXES: string[] = [
  * 边的写法由 scanLib 产出:两端都去掉扩展名,用 " -> " 连接。
  */
 const TOLERATED: Array<{ edge: string; removedBy: string }> = [
-  { edge: "lib/agent/reflection-compactor -> lib/agent/agent", removedBy: "3" },
-  { edge: "lib/agent/reflection-poller -> lib/agent/agent", removedBy: "3" },
-  { edge: "lib/agent/reflection-promoter -> lib/agent/agent", removedBy: "3" },
+  {
+    edge: "lib/agent/reflection-compactor -> lib/agent/agent",
+    removedBy: "3b",
+  },
+  { edge: "lib/agent/reflection-poller -> lib/agent/agent", removedBy: "3b" },
+  { edge: "lib/agent/reflection-promoter -> lib/agent/agent", removedBy: "3b" },
 ]
 
 /** 当前所处阶段。每阶段 PR 更新此常量。 */
-const CURRENT_STAGE = "2b"
-const STAGE_ORDER = ["0", "1", "2a", "2b", "3", "4", "5", "6"]
+const CURRENT_STAGE = "3a"
+const STAGE_ORDER = ["0", "1", "2a", "2b", "3a", "3b", "4", "5", "6"]
 
 function layerOf(rel: string): Layer | null {
   for (const [prefix, layer] of PREFIX_RULES) {
@@ -267,7 +272,7 @@ describe("分层结构契约", () => {
     expect(layerOf("lib/core/config/chats.ts")).toBe("core")
     expect(layerOf("lib/core/chat/types.ts")).toBe("core")
     expect(layerOf("lib/channels/qq/members-fetch.ts")).toBe("channels")
-    expect(layerOf("lib/tools/embed.ts")).toBe("model")
+    expect(layerOf("lib/model/embed.ts")).toBe("model")
     expect(layerOf("lib/tools/kb.ts")).toBe("knowledge")
     expect(layerOf("lib/agent/agent.ts")).toBe("conversation")
     expect(layerOf("lib/runtime.ts")).toBe("composition")
@@ -279,9 +284,6 @@ describe("分层结构契约", () => {
     // 全都抓不到:规则没了「精确规则命中真实文件」查不到,文件仍有归属
     // 「每文件归层」照过,层别变化又不产生逆向依赖。只有钉在这里能拦。
     const exactUnderLiveDir: Array<[string, Layer]> = [
-      ["lib/agent/sanitize-input.ts", "model"],
-      ["lib/agent/json-output.ts", "model"],
-      ["lib/agent/timeout.ts", "model"],
       ["lib/agent/kb-prefetch.ts", "knowledge"],
       ["lib/agent/reflection-poller.ts", "knowledge"],
       ["lib/agent/reflection-compactor.ts", "knowledge"],
