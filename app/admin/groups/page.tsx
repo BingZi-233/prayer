@@ -55,11 +55,11 @@ import type {
   ActivityData,
 } from "@/components/admin/groups/types"
 import {
-  triFrom,
   triToBool,
   rowLabel,
   policyWritePayload,
 } from "@/components/admin/groups/policy-payload"
+import { useGroupPolicyForm } from "@/components/admin/groups/use-group-policy-form"
 
 export default function GroupsPage() {
   const { data, error, loading, refresh } = usePolling<ActivityData>(
@@ -67,16 +67,9 @@ export default function GroupsPage() {
   )
   const { name } = useGroupNames()
   const [busyKey, setBusyKey] = useState<string | null>(null)
-  const [editing, setEditing] = useState<Row | null>(null)
   const [savingPolicy, setSavingPolicy] = useState(false)
 
-  // 编辑表单状态
-  const [proactiveTri, setProactiveTri] = useState<Tri>("inherit")
-  const [silenceMode, setSilenceMode] = useState<"inherit" | "custom">(
-    "inherit"
-  )
-  const [silenceMin, setSilenceMin] = useState("3")
-  const [handoffTri, setHandoffTri] = useState<Tri>("inherit")
+  const form = useGroupPolicyForm()
 
   // useMemo 固定引用:data 未变时 rows 不变,下游 useMemo 依赖才稳定
   const rows = useMemo(() => data?.groups ?? [], [data?.groups])
@@ -86,21 +79,6 @@ export default function GroupsPage() {
     () => rows.filter((r) => r.hasOverride).length,
     [rows]
   )
-
-  function openEditor(r: Row) {
-    setEditing(r)
-    setProactiveTri(triFrom(r.policy.proactiveEnabled))
-    if (r.policy.proactiveSilenceMs !== undefined) {
-      setSilenceMode("custom")
-      setSilenceMin(String(Math.round(r.policy.proactiveSilenceMs / 60_000)))
-    } else {
-      setSilenceMode("inherit")
-      setSilenceMin(
-        String(Math.round((globals?.proactiveSilenceMs ?? 180_000) / 60_000))
-      )
-    }
-    setHandoffTri(triFrom(r.policy.notifyAdminOnHandoff))
-  }
 
   async function toggle(row: Row, enable: boolean) {
     setBusyKey(row.policyKey)
@@ -146,27 +124,27 @@ export default function GroupsPage() {
   }
 
   async function savePolicy() {
-    if (!editing) return
+    if (!form.editing) return
     setSavingPolicy(true)
     try {
       const policy: GroupPolicy = {}
-      const pe = triToBool(proactiveTri)
+      const pe = triToBool(form.proactiveTri)
       if (pe !== undefined) policy.proactiveEnabled = pe
-      if (silenceMode === "custom") {
-        const m = Number(silenceMin)
+      if (form.silenceMode === "custom") {
+        const m = Number(form.silenceMin)
         if (!Number.isFinite(m) || m < 0) {
           toast.error("静默阈值须为非负数字(分钟)")
           return
         }
         policy.proactiveSilenceMs = Math.round(m * 60_000)
       }
-      const nh = triToBool(handoffTri)
+      const nh = triToBool(form.handoffTri)
       if (nh !== undefined) policy.notifyAdminOnHandoff = nh
 
       const groupPolicies =
         Object.keys(policy).length === 0
-          ? policyWritePayload(editing, null)
-          : policyWritePayload(editing, policy)
+          ? policyWritePayload(form.editing, null)
+          : policyWritePayload(form.editing, policy)
 
       const r = await fetch("/api/config", {
         method: "PUT",
@@ -175,9 +153,9 @@ export default function GroupsPage() {
       }).then((x) => x.json())
       if (r.ok) {
         toast.success(
-          `已保存 ${channelLabel(editing.channel)} · ${rowLabel(editing, name)} 的策略`
+          `已保存 ${channelLabel(form.editing.channel)} · ${rowLabel(form.editing, name)} 的策略`
         )
-        setEditing(null)
+        form.closeEditor()
         await refresh({ force: true })
       } else {
         toast.error(r.error || "保存失败")
@@ -203,7 +181,7 @@ export default function GroupsPage() {
         toast.success(
           `已恢复跟随全局: ${channelLabel(row.channel)} · ${rowLabel(row, name)}`
         )
-        if (editing?.policyKey === row.policyKey) setEditing(null)
+        if (form.editing?.policyKey === row.policyKey) form.closeEditor()
         await refresh({ force: true })
       } else toast.error(r.error || "清除失败")
     } catch (e) {
@@ -384,7 +362,7 @@ export default function GroupsPage() {
                             key: "edit",
                             label: "编辑策略",
                             icon: <Settings2 />,
-                            onSelect: () => openEditor(r),
+                            onSelect: () => form.openEditor(r, globals),
                           },
                           ...(r.hasOverride
                             ? [
@@ -409,23 +387,25 @@ export default function GroupsPage() {
         </DataState>
 
       <Sheet
-        open={editing !== null}
-        onOpenChange={(o) => !o && setEditing(null)}
+        open={form.editing !== null}
+        onOpenChange={(o) => !o && form.closeEditor()}
       >
         <SheetContent className="flex w-full flex-col sm:max-w-md">
           <SheetHeader>
             <SheetTitle>
               会话策略 ·{" "}
-              {editing
-                ? `${channelLabel(editing.channel)} · ${rowLabel(editing, name)}`
+              {form.editing
+                ? `${channelLabel(form.editing.channel)} · ${rowLabel(form.editing, name)}`
                 : ""}
             </SheetTitle>
             <SheetDescription>
               未覆盖的项跟随全局配置。
-              {editing && (
+              {form.editing && (
                 <>
                   {" "}
-                  <span className="font-mono text-xs">{editing.policyKey}</span>
+                  <span className="font-mono text-xs">
+                    {form.editing.policyKey}
+                  </span>
                 </>
               )}
               {globals && (
@@ -448,9 +428,9 @@ export default function GroupsPage() {
                     on: "强制开启",
                     off: "强制关闭",
                   }}
-                  value={proactiveTri}
+                  value={form.proactiveTri}
                   onValueChange={(v) => {
-                    if (v !== null) setProactiveTri(v as Tri)
+                    if (v !== null) form.setProactiveTri(v as Tri)
                   }}
                 >
                   <SelectTrigger>
@@ -474,9 +454,10 @@ export default function GroupsPage() {
                     inherit: "跟随全局",
                     custom: "自定义(分钟)",
                   }}
-                  value={silenceMode}
+                  value={form.silenceMode}
                   onValueChange={(v) => {
-                    if (v !== null) setSilenceMode(v as "inherit" | "custom")
+                    if (v !== null)
+                      form.setSilenceMode(v as "inherit" | "custom")
                   }}
                 >
                   <SelectTrigger>
@@ -490,12 +471,12 @@ export default function GroupsPage() {
                     <SelectItem value="custom">自定义(分钟)</SelectItem>
                   </SelectContent>
                 </Select>
-                {silenceMode === "custom" && (
+                {form.silenceMode === "custom" && (
                   <Input
                     className="mt-2"
                     inputMode="numeric"
-                    value={silenceMin}
-                    onChange={(e) => setSilenceMin(e.target.value)}
+                    value={form.silenceMin}
+                    onChange={(e) => form.setSilenceMin(e.target.value)}
                     placeholder="分钟"
                   />
                 )}
@@ -512,9 +493,9 @@ export default function GroupsPage() {
                     on: "通知",
                     off: "不通知",
                   }}
-                  value={handoffTri}
+                  value={form.handoffTri}
                   onValueChange={(v) => {
-                    if (v !== null) setHandoffTri(v as Tri)
+                    if (v !== null) form.setHandoffTri(v as Tri)
                   }}
                 >
                   <SelectTrigger>
@@ -534,11 +515,11 @@ export default function GroupsPage() {
           </div>
 
           <SheetFooter className="flex-row gap-2 border-t">
-            {editing?.hasOverride && (
+            {form.editing?.hasOverride && (
               <Button
                 variant="outline"
                 disabled={savingPolicy}
-                onClick={() => editing && clearPolicy(editing)}
+                onClick={() => form.editing && clearPolicy(form.editing)}
               >
                 <RotateCcw data-icon="inline-start" />
                 全部跟随全局
