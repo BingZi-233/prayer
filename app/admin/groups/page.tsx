@@ -48,6 +48,7 @@ import { usePolling } from "@/components/admin/use-polling"
 import { useGroupNames } from "@/lib/core/chat/group-name"
 import { channelLabel } from "@/lib/core/chat/channel-labels"
 import type { ChannelId } from "@/lib/core/chat/types"
+import { formatDuration } from "@/lib/core/format-duration"
 
 type Tri = "inherit" | "on" | "off"
 
@@ -89,8 +90,6 @@ interface ActivityData {
   groups: Row[]
   globals: Globals
 }
-
-const min = (ms: number) => `${Math.round(ms / 60_000)} 分`
 
 function triFrom(v: boolean | undefined): Tri {
   if (v === undefined) return "inherit"
@@ -297,7 +296,7 @@ export default function GroupsPage() {
             },
             {
               label: "全局静默阈值",
-              value: min(globals.proactiveSilenceMs),
+              value: formatDuration(globals.proactiveSilenceMs),
               hint: "无人应答超过此时长才补位。",
             },
             {
@@ -403,7 +402,7 @@ export default function GroupsPage() {
                     ) : (
                       <div className="flex items-center gap-1.5">
                         <span className="text-sm tabular-nums">
-                          {min(r.effective.proactiveSilenceMs)}
+                          {formatDuration(r.effective.proactiveSilenceMs)}
                         </span>
                         {r.policy.proactiveSilenceMs !== undefined && (
                           <span className="text-[10px] text-muted-foreground">
@@ -499,7 +498,7 @@ export default function GroupsPage() {
                 <>
                   {" "}
                   当前全局:主动 {globals.proactiveEnabled ? "开" : "关"} · 静默{" "}
-                  {min(globals.proactiveSilenceMs)} · 转人工通知开。
+                  {formatDuration(globals.proactiveSilenceMs)} · 转人工通知开。
                 </>
               )}
             </SheetDescription>
@@ -552,7 +551,7 @@ export default function GroupsPage() {
                   <SelectContent>
                     <SelectItem value="inherit">
                       跟随全局
-                      {globals ? ` (${min(globals.proactiveSilenceMs)})` : ""}
+                      {globals ? ` (${formatDuration(globals.proactiveSilenceMs)})` : ""}
                     </SelectItem>
                     <SelectItem value="custom">自定义(分钟)</SelectItem>
                   </SelectContent>

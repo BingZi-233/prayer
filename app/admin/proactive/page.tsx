@@ -31,6 +31,7 @@ import { ItemCard } from "@/components/admin/item-card"
 import { DataState } from "@/components/admin/data-state"
 import { usePolling } from "@/components/admin/use-polling"
 import { useGroupNames } from "@/lib/core/chat/group-name"
+import { formatDuration } from "@/lib/core/format-duration"
 
 interface GroupRow {
   groupId: number
@@ -61,10 +62,6 @@ interface Data {
   groups: GroupRow[]
   replies: Reply[]
 }
-
-// 秒级配置也要可读:< 60s 显示秒,否则分
-const min = (ms: number) =>
-  ms < 60_000 ? `${Math.round(ms / 1000)} 秒` : `${Math.round(ms / 60000)} 分`
 
 export default function ProactivePage() {
   const {
@@ -141,12 +138,12 @@ export default function ProactivePage() {
           },
           {
             label: "静默阈值",
-            value: d ? min(d.config.silenceMs) : "—",
+            value: d ? formatDuration(d.config.silenceMs) : "—",
             hint: "群内无人应答超过此时长,机器人才会补位。",
           },
           {
             label: "扫描周期",
-            value: d ? min(d.config.scanMs) : "—",
+            value: d ? formatDuration(d.config.scanMs) : "—",
             hint: "后台扫描未应答消息的间隔。",
           },
           {
@@ -209,7 +206,7 @@ export default function ProactivePage() {
                     {g.lagMs == null
                       ? "未扫描"
                       : g.lagMs > 0
-                        ? min(g.lagMs)
+                        ? formatDuration(g.lagMs)
                         : "0"}
                   </TableCell>
                   <TableCell className="text-right tabular-nums">
