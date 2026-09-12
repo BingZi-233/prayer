@@ -40,7 +40,7 @@ Both completed successfully.
 - Added retry-safe classifier and Agent status branches in the proactive poller. Partial/failed Agent results and classifier errors retain the cursor and emit a sanitized `proactive_silent` detail.
 - Added a finite per-chat candidate budget, clamped to at least one and at least `maxPerScan`; candidate counting occurs before classification/Agent work.
 - Added `proactiveCandidateBudget` (schema default `12`) and threaded it through `AppConfig`, runtime, and assembly.
-- Kept poller boundary compatibility for older boolean classifier test doubles and Agent results without a status field.
+- Kept poller boundary compatibility for older boolean classifier test doubles. Successful Agent test doubles now include the explicit `status: "success"` required by the runtime contract.
 
 ## Files
 
@@ -50,8 +50,13 @@ Both completed successfully.
 
 - Existing hand-written `AppConfig` objects may omit `proactiveCandidateBudget`; the public type keeps that field optional and runtime resolution supplies the default.
 - Legacy boolean classifier doubles are accepted only at the poller dependency boundary; production classifiers return the tri-state result.
+- Agent results without an explicit `status: "success"` are retryable `agent_error` outcomes and do not advance the cursor.
 - The schema field itself defaults to `12`; the cross-field lower bound against `proactiveMaxPerScan` is enforced when the poller resolves runtime dependencies.
 
 ## Commit
 
 `3dee231` (`fix: bound proactive candidates and preserve retryable errors`)
+
+Strict-status fix commit: `c22b0ec` (`fix: require explicit proactive agent success status`).
+
+Fix-round verification: 4 focused files passed (34 tests), the broader 7-file compatibility set passed (103 tests), `pnpm exec tsc --noEmit`, and focused ESLint all completed successfully.
