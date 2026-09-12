@@ -44,7 +44,7 @@ Both completed successfully.
 
 ## Files
 
-`lib/conversation/answerability.ts`, `lib/conversation/pollers/unanswered.ts`, `lib/conversation/assemble.ts`, `lib/runtime.ts`, `lib/core/config/schema.ts`, `tests/lib/conversation/answerability.test.ts`, `tests/lib/conversation/pollers/unanswered.test.ts`, and `tests/lib/core/config/schema.test.ts`.
+`lib/conversation/answerability.ts`, `lib/conversation/pollers/unanswered.ts`, `lib/conversation/assemble.ts`, `lib/runtime.ts`, `lib/core/config/schema.ts`, `tests/lib/conversation/answerability.test.ts`, `tests/lib/conversation/pollers/unanswered.test.ts`, `tests/lib/core/config/schema.test.ts`, and `tests/lib/conversation/bypass-gating.test.ts` (successful Agent stub status compatibility).
 
 ## Risks
 
