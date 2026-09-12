@@ -115,13 +115,13 @@ export class OneBotClient {
    * 未连接时丢弃（与历史行为一致），但记 warn —— 答案/兜底句无声消失
    * 原本两侧(运维/用户)都不可见，先让运维侧看得见。
    */
-  send(a: ActionSend): void {
+  send(a: ActionSend): Promise<void> {
     if (this.ws?.readyState !== WebSocket.OPEN) {
       logger.warn(
         `[qq] send skipped: WS 未连接,丢弃出站消息 chat=${a.chatId} len=${a.text.length}`,
         { scope: "channel.qq.send", chatId: a.chatId }
       )
-      return
+      return Promise.reject(new Error("qq channel not connected"))
     }
     // 有 replyToId → 用消息段数组(reply + text),避免答案文本里的 [...] 被 CQ 误解析;
     // 无则保持纯字符串(向后兼容)。
@@ -132,12 +132,12 @@ export class OneBotClient {
             { type: "text", data: { text: a.text } },
           ]
         : a.text
-    this.ws.send(
+    return new Promise((resolve, reject) => { try { this.ws!.send(
       JSON.stringify({
         action: "send_group_msg",
         params: { group_id: Number(a.chatId), message },
-      })
-    )
+      }), (err?: Error) => err ? reject(err) : resolve())
+    } catch (e) { reject(e) } })
   }
 
   private setConnected(v: boolean): void {

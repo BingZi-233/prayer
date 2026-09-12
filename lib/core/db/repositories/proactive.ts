@@ -38,13 +38,14 @@ export class ProactiveRepository {
     chatId: string,
     userId: string,
     question: string,
-    answer: string
+    answer: string,
+    opts: { deliveryKey?: string; deliveryStatus?: string; deliveryExpected?: number } = {}
   ): number {
     const info = this.sql
       .prepare(
-        "INSERT INTO proactive_replies (channel, group_id, user_id, question, answer) VALUES (?, ?, ?, ?, ?)"
+        "INSERT INTO proactive_replies (channel, group_id, user_id, question, answer, delivery_key, delivery_status, delivery_expected) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
       )
-      .run(channel, chatId, userId, question, answer)
+      .run(channel, chatId, userId, question, answer, opts.deliveryKey ?? null, opts.deliveryStatus ?? "sent", opts.deliveryExpected ?? null)
     return Number(info.lastInsertRowid)
   }
 

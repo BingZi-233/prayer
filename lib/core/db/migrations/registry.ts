@@ -7,6 +7,7 @@ import {
   migrateToVersion6,
   migrateToVersion7,
   migrateToVersion8,
+  migrateToVersion9,
   repairVersion2,
 } from "./schema.ts"
 
@@ -57,6 +58,7 @@ export const MIGRATIONS: readonly MigrationStep[] = [
     up: migrateToVersion8,
     repair: migrateToVersion8,
   },
+  { version: 9, name: "可靠出站与投递状态", up: migrateToVersion9, repair: migrateToVersion9 },
 ]
 
 export const CURRENT_SCHEMA_VERSION = MIGRATIONS.at(-1)?.version ?? 0

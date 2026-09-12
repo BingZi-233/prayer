@@ -10,6 +10,11 @@ import type { SqliteContext } from "../context.ts"
 /** 处理结果、模型用量与工具调用的增量统计。 */
 export class StatisticsRepository {
   constructor(private readonly sql: SqliteContext) {}
+  markDelivery(key: string, status: "sent" | "failed", error?: string, at?: number, sentChunks?: number): void {
+    const finalStatus = status === "sent" && (sentChunks == null || sentChunks > 0) ? "sent" : status
+    this.sql.prepare("UPDATE resolution_events SET delivery_status=?, last_error=?, delivered_at=? WHERE delivery_key=?").run(finalStatus, error ?? null, at ?? Date.now(), key)
+    this.sql.prepare("UPDATE proactive_replies SET delivery_status=?, last_error=?, delivered_at=? WHERE delivery_key=?").run(finalStatus, error ?? null, at ?? Date.now(), key)
+  }
 
   // ── 数据保留 prune(随反思循环节奏跑;v6 索引保证按 created_at seek)──
   // resolution_events:每条消息 +1(含 ack),只服务「今日 0 点起」的看板计数
@@ -27,11 +32,14 @@ export class StatisticsRepository {
       chatId?: string
       userId?: string
       detail?: string
+      deliveryKey?: string
+      deliveryStatus?: string
+      deliveryExpected?: number
     } = {}
   ): void {
     this.sql
       .prepare(
-        "INSERT INTO resolution_events (kind, session_key, channel, group_id, user_id, detail) VALUES (?, ?, ?, ?, ?, ?)"
+        "INSERT INTO resolution_events (kind, session_key, channel, group_id, user_id, detail, delivery_key, delivery_status, delivery_expected) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
       )
       .run(
         kind,
@@ -39,7 +47,7 @@ export class StatisticsRepository {
         opts.channel ?? null,
         opts.chatId ?? null,
         opts.userId ?? null,
-        opts.detail ?? null
+        opts.detail ?? null, opts.deliveryKey ?? null, opts.deliveryStatus ?? "sent", opts.deliveryExpected ?? null
       )
   }
 
@@ -47,7 +55,7 @@ export class StatisticsRepository {
   resolutionCounts(sinceTs: number): Record<string, number> {
     const rows = this.sql
       .prepare<{ kind: string; n: number }>(
-        "SELECT kind, COUNT(*) AS n FROM resolution_events WHERE created_at >= ? GROUP BY kind"
+        "SELECT kind, COUNT(*) AS n FROM resolution_events WHERE created_at >= ? AND (kind NOT IN ('auto','proactive') OR delivery_status='sent') GROUP BY kind"
       )
       .all(sinceTs)
     const out: Record<string, number> = {}

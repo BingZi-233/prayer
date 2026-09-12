@@ -2,6 +2,7 @@ import { bus } from "../core/bus"
 import type { ActionSend } from "../core/chat/events"
 import { logger } from "../core/logger"
 import type { Channel, ChannelId, ChannelStatus } from "../core/chat/types"
+import type { OutboundStore } from "../core/chat/outbox"
 
 /**
  * 多通道生命周期注册表 + 唯一 action.send 分发器。
@@ -12,6 +13,8 @@ import type { Channel, ChannelId, ChannelStatus } from "../core/chat/types"
 export class ChannelRegistry {
   private map = new Map<ChannelId, Channel>()
   private listening = false
+  private retryTimer?: ReturnType<typeof setInterval>
+  constructor(private readonly opts: { outbox?: OutboundStore; retryMs?: number; now?: () => number } = {}) {}
 
   private readonly onAction = (a: ActionSend) => {
     void this.dispatch(a)
@@ -43,8 +46,18 @@ export class ChannelRegistry {
       })
       return
     }
+    let claimed: any = null
+    let action = a
     try {
-      await ch.send(a)
+      const key = a.deliveryKey ?? (this.opts.outbox ? `legacy:${Date.now()}:${Math.random()}` : undefined)
+      action = key && !a.deliveryKey ? { ...a, deliveryKey: key } : a
+      claimed = this.opts.outbox ? this.opts.outbox.enqueueAndClaim(action, this.now()) : null
+      if (this.opts.outbox && !claimed) return
+      await ch.send(action)
+      if (claimed) {
+        this.opts.outbox!.markSent(claimed.id, this.now())
+        bus.emit("delivery.recorded", { deliveryKey: action.deliveryKey!, resolutionKey: action.resolutionKey, status: "sent", at: this.now() })
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
       logger.log("error", `[registry] channel ${a.channel} send failed: ${msg}`)
@@ -55,6 +68,9 @@ export class ChannelRegistry {
         chatId: a.chatId,
         userVisible: a.userVisibleOnFailure ?? false,
       })
+      if (this.opts.outbox) {
+        if (claimed) this.opts.outbox.markFailed(claimed.id, msg, this.now() + 1000)
+      }
     }
   }
 
@@ -73,6 +89,7 @@ export class ChannelRegistry {
 
   async startAll(): Promise<PromiseSettledResult<void>[]> {
     this.ensureListening()
+    if (this.opts.outbox && !this.retryTimer) this.retryTimer = setInterval(() => this.retryDue(), this.opts.retryMs ?? 1000)
     const entries = [...this.map.values()]
     const results = await Promise.allSettled(entries.map((c) => c.start()))
     for (let i = 0; i < results.length; i++) {
@@ -92,7 +109,10 @@ export class ChannelRegistry {
     this.stopListening()
     await Promise.allSettled([...this.map.values()].map((c) => c.stop()))
     this.map.clear()
+    if (this.retryTimer) { clearInterval(this.retryTimer); this.retryTimer = undefined }
   }
+  private now(): number { return this.opts.now?.() ?? Date.now() }
+  private async retryDue(): Promise<void> { if (!this.opts.outbox) return; for (const r of this.opts.outbox.claimDue(20, this.now())) { const ch=this.map.get(r.action.channel); if (!ch) continue; try { await ch.send(r.action); this.opts.outbox.markSent(r.id,this.now()); bus.emit("delivery.recorded",{deliveryKey:r.action.deliveryKey!,resolutionKey:r.action.resolutionKey,status:"sent",at:this.now()}) } catch(e) { this.opts.outbox.markFailed(r.id,String(e),this.now()+Math.min(60000,1000*Math.pow(2,Math.max(0,r.attempts-1)))) } } }
 
   status(): ChannelStatus[] {
     return [...this.map.values()].map((c) => c.status())

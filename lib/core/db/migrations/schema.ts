@@ -1019,3 +1019,19 @@ export function ensureHotReadIndexes(db: Database.Database): void {
 export function migrateToVersion8(db: Database.Database): void {
   ensureHotReadIndexes(db)
 }
+
+export function migrateToVersion9(db: Database.Database): void {
+  db.exec(`CREATE TABLE IF NOT EXISTS outbox_messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, delivery_key TEXT NOT NULL UNIQUE,
+    resolution_key TEXT, action_json TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending',
+    attempts INTEGER NOT NULL DEFAULT 0, next_attempt_at INTEGER NOT NULL DEFAULT 0,
+    lease_until INTEGER, last_error TEXT, sent_at INTEGER,
+    CHECK(status IN ('pending','sending','sent','failed'))
+  ); CREATE INDEX IF NOT EXISTS idx_outbox_due ON outbox_messages(status,next_attempt_at);`)
+  for (const [table, cols] of [["resolution_events", ["delivery_key TEXT", "delivery_status TEXT NOT NULL DEFAULT 'sent'", "last_error TEXT", "delivered_at INTEGER", "delivery_expected INTEGER"]], ["proactive_replies", ["delivery_key TEXT", "delivery_status TEXT NOT NULL DEFAULT 'sent'", "last_error TEXT", "delivered_at INTEGER", "delivery_expected INTEGER"]]] as const) {
+    if (!tableExists(db, table)) continue
+    const existing = tableColumns(db, table)
+    for (const col of cols) if (!existing.has(col.split(" ")[0]!)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${col}`)
+    db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_${table}_delivery_key ON ${table}(delivery_key) WHERE delivery_key IS NOT NULL`)
+  }
+}

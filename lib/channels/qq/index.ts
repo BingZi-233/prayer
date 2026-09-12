@@ -61,7 +61,7 @@ export class QqChannel implements Channel {
   async send(action: ActionSend): Promise<void> {
     // 防御：仅本通道（registry 已过滤，双保险）
     if (action.channel !== "qq") return
-    this.client.send(action)
+    await this.client.send(action)
   }
 
   async listChats(): Promise<{ id: string; name: string }[] | undefined> {

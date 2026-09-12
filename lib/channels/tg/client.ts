@@ -450,7 +450,7 @@ export class TelegramChannel implements Channel {
   private async sendAction(a: ActionSend): Promise<void> {
     if (!this.connected && this.botId == null) {
       logger.log("warn", "[tg] send skipped: not ready")
-      return
+      throw new Error("telegram channel not ready")
     }
     const chunks = splitTelegramText(a.text, TG_MAX_TEXT)
     const replyTo =
@@ -483,7 +483,7 @@ export class TelegramChannel implements Channel {
           chatId: a.chatId,
           userVisible: a.userVisibleOnFailure,
         })
-        break
+        throw err
       }
     }
   }

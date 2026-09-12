@@ -36,6 +36,10 @@ export interface ReplyReady {
   chatId: string
   text: string
   replyToId?: string // 被引用消息 id;缺省 → 不引用(纯文本)
+  deliveryKey?: string
+  resolutionKey?: string
+  chunkIndex?: number
+  chunkCount?: number
 }
 
 export interface ActionSend {
@@ -44,6 +48,10 @@ export interface ActionSend {
   text: string
   replyToId?: string // 被引用消息 id;缺省 → 纯文本发送
   userVisibleOnFailure?: boolean
+  deliveryKey?: string
+  resolutionKey?: string
+  chunkIndex?: number
+  chunkCount?: number
 }
 
 export interface ErrorOccurred {
@@ -95,6 +103,8 @@ export interface EventMap {
   "message.qualified": QualifiedMessage
   "reply.ready": ReplyReady
   "action.send": ActionSend
+  "delivery.planned": { deliveryKey: string; resolutionKey?: string; chunkCount: number }
+  "delivery.recorded": { deliveryKey: string; resolutionKey?: string; status: "sent" | "failed"; error?: string; at: number }
   "error.occurred": ErrorOccurred
   "handoff.requested": HandoffRequested
   "handoff.resumed": HandoffResumed
