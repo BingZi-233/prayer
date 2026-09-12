@@ -301,12 +301,18 @@ async function scanOnce(d: Resolved): Promise<void> {
           continue // 哨兵/空 → 沉默
         }
         if (result.sessionId) d.store.remember(key, result.sessionId)
-        d.repo.insertProactiveReply(channel, chatId, userId, text, result.text) // 留痕供监控页
+        const deliveryKey = `proactive:${key}:${messageId ?? text.slice(0, 24)}`
+        d.repo.insertProactiveReply(channel, chatId, userId, text, result.text, {
+          deliveryKey,
+          deliveryStatus: "pending",
+        })
         bus.emit("reply.ready", {
           channel,
           chatId,
           text: result.text,
           replyToId: messageId ?? undefined,
+          deliveryKey,
+          resolutionKey: deliveryKey,
         })
         bus.emit("resolution.recorded", {
           kind: "proactive",
@@ -314,6 +320,8 @@ async function scanOnce(d: Resolved): Promise<void> {
           channel,
           chatId,
           userId,
+          deliveryKey,
+          resolutionKey: deliveryKey,
         })
         logger.log(
           "info",

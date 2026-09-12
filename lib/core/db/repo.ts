@@ -400,6 +400,8 @@ export class Repo {
     return this.statistics.resolutionCounts(...args)
   }
   markDelivery(...args: Parameters<StatisticsRepository["markDelivery"]>) { return this.statistics.markDelivery(...args) }
+  planDelivery(...args: Parameters<StatisticsRepository["planDelivery"]>) { return this.statistics.planDelivery(...args) }
+  deliveryExpected(...args: Parameters<StatisticsRepository["deliveryExpected"]>) { return this.statistics.deliveryExpected(...args) }
   addUsageDaily(...args: Parameters<StatisticsRepository["addUsageDaily"]>) {
     return this.statistics.addUsageDaily(...args)
   }

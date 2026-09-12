@@ -15,6 +15,15 @@ export class StatisticsRepository {
     this.sql.prepare("UPDATE resolution_events SET delivery_status=?, last_error=?, delivered_at=? WHERE delivery_key=?").run(finalStatus, error ?? null, at ?? Date.now(), key)
     this.sql.prepare("UPDATE proactive_replies SET delivery_status=?, last_error=?, delivered_at=? WHERE delivery_key=?").run(finalStatus, error ?? null, at ?? Date.now(), key)
   }
+  planDelivery(key: string, expected: number): void {
+    this.sql.prepare("UPDATE resolution_events SET delivery_expected=?, delivery_status='pending' WHERE delivery_key=?").run(expected, key)
+    this.sql.prepare("UPDATE proactive_replies SET delivery_expected=?, delivery_status='pending' WHERE delivery_key=?").run(expected, key)
+  }
+  deliveryExpected(key: string): number | undefined {
+    const a = this.sql.prepare<{delivery_expected:number|null}>("SELECT delivery_expected FROM resolution_events WHERE delivery_key=? LIMIT 1").get(key)
+    const b = this.sql.prepare<{delivery_expected:number|null}>("SELECT delivery_expected FROM proactive_replies WHERE delivery_key=? LIMIT 1").get(key)
+    return a?.delivery_expected ?? b?.delivery_expected ?? undefined
+  }
 
   // ── 数据保留 prune(随反思循环节奏跑;v6 索引保证按 created_at seek)──
   // resolution_events:每条消息 +1(含 ack),只服务「今日 0 点起」的看板计数

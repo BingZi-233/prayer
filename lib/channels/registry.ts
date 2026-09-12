@@ -3,6 +3,7 @@ import type { ActionSend } from "../core/chat/events"
 import { logger } from "../core/logger"
 import type { Channel, ChannelId, ChannelStatus } from "../core/chat/types"
 import type { OutboundStore } from "../core/chat/outbox"
+import type { OutboxRecord } from "../core/chat/outbox"
 
 /**
  * 多通道生命周期注册表 + 唯一 action.send 分发器。
@@ -46,7 +47,7 @@ export class ChannelRegistry {
       })
       return
     }
-    let claimed: any = null
+    let claimed: OutboxRecord | null = null
     let action = a
     try {
       const key = a.deliveryKey ?? (this.opts.outbox ? `legacy:${Date.now()}:${Math.random()}` : undefined)
@@ -68,8 +69,9 @@ export class ChannelRegistry {
         chatId: a.chatId,
         userVisible: a.userVisibleOnFailure ?? false,
       })
-      if (this.opts.outbox) {
-        if (claimed) this.opts.outbox.markFailed(claimed.id, msg, this.now() + 1000)
+      if (claimed) {
+        this.opts.outbox?.markFailed(claimed.id, msg, this.now() + 1000)
+        bus.emit("delivery.recorded", { deliveryKey: action.deliveryKey!, resolutionKey: action.resolutionKey, status: "failed", error: msg, at: this.now() })
       }
     }
   }
@@ -112,7 +114,27 @@ export class ChannelRegistry {
     if (this.retryTimer) { clearInterval(this.retryTimer); this.retryTimer = undefined }
   }
   private now(): number { return this.opts.now?.() ?? Date.now() }
-  private async retryDue(): Promise<void> { if (!this.opts.outbox) return; for (const r of this.opts.outbox.claimDue(20, this.now())) { const ch=this.map.get(r.action.channel); if (!ch) continue; try { await ch.send(r.action); this.opts.outbox.markSent(r.id,this.now()); bus.emit("delivery.recorded",{deliveryKey:r.action.deliveryKey!,resolutionKey:r.action.resolutionKey,status:"sent",at:this.now()}) } catch(e) { this.opts.outbox.markFailed(r.id,String(e),this.now()+Math.min(60000,1000*Math.pow(2,Math.max(0,r.attempts-1)))) } } }
+  private async retryDue(): Promise<void> {
+    if (!this.opts.outbox) return
+    for (const r of this.opts.outbox.claimDue(20, this.now())) {
+      const ch = this.map.get(r.action.channel)
+      if (!ch) {
+        const msg = `channel not registered: ${r.action.channel}`
+        this.opts.outbox.markFailed(r.id, msg, this.now() + 1000)
+        bus.emit("delivery.recorded", { deliveryKey: r.action.deliveryKey!, resolutionKey: r.action.resolutionKey, status: "failed", error: msg, at: this.now() })
+        continue
+      }
+      try {
+        await ch.send(r.action)
+        this.opts.outbox.markSent(r.id, this.now())
+        bus.emit("delivery.recorded", { deliveryKey: r.action.deliveryKey!, resolutionKey: r.action.resolutionKey, status: "sent", at: this.now() })
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e)
+        this.opts.outbox.markFailed(r.id, msg, this.now() + Math.min(60000, 1000 * Math.pow(2, Math.max(0, r.attempts - 1))))
+        bus.emit("delivery.recorded", { deliveryKey: r.action.deliveryKey!, resolutionKey: r.action.resolutionKey, status: "failed", error: msg, at: this.now() })
+      }
+    }
+  }
 
   status(): ChannelStatus[] {
     return [...this.map.values()].map((c) => c.status())

@@ -43,7 +43,7 @@ export class ProactiveRepository {
   ): number {
     const info = this.sql
       .prepare(
-        "INSERT INTO proactive_replies (channel, group_id, user_id, question, answer, delivery_key, delivery_status, delivery_expected) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+        "INSERT OR IGNORE INTO proactive_replies (channel, group_id, user_id, question, answer, delivery_key, delivery_status, delivery_expected) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
       )
       .run(channel, chatId, userId, question, answer, opts.deliveryKey ?? null, opts.deliveryStatus ?? "sent", opts.deliveryExpected ?? null)
     return Number(info.lastInsertRowid)
