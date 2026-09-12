@@ -5,3 +5,5 @@ Implemented durable outbox storage and delivery plumbing. Added v9 migration wit
 Validation: `pnpm exec tsc --noEmit` passes. Focused runtime tests were not available in the pre-change tree; migration expectations in the existing suite still target schema v8 and require the Task 3 test updates described in the brief.
 
 The worktree contained unrelated KB/reflection changes; they were left untouched and are excluded from the Task 3 commit. Outbox semantics are durable at-least-once: a process crash after platform acceptance can still duplicate a send, while lease expiry permits recovery from stale `sending` rows.
+
+Integration follow-up commit `f045454` wires mapper chunk metadata, orchestrator root keys, delivery recorder aggregation, assembly registration, and runtime outbox injection. Typecheck remains green. The focused Task 3 test files are supplied by the parent integration branch; this pass did not add duplicate test files where the branch lacked them.
