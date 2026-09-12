@@ -101,6 +101,147 @@ describe("ChannelRegistry", () => {
     expect(marked).toEqual({ id: 7, token: "lease-7" })
   })
 
+  it("旧 lease 的发送完成不会伪造 delivery.sent", async () => {
+    const events: unknown[] = []
+    const onDelivery = (e: unknown) => events.push(e)
+    bus.on("delivery.recorded", onDelivery as never)
+    const claimed: OutboxRecord = {
+      id: 8,
+      deliveryKey: "delivery-8",
+      action: {
+        channel: "qq",
+        chatId: "1",
+        text: "stale",
+        deliveryKey: "delivery-8",
+      },
+      status: "sending",
+      attempts: 1,
+      nextAttemptAt: 0,
+      leaseUntil: 30_000,
+      claimToken: "lease-8",
+      lastError: null,
+    }
+    const outbox: OutboundStore = {
+      enqueueAndClaim: () => claimed,
+      claimDue: () => [],
+      markSent: () => false,
+      markFailed: () => false,
+      sentChunkCount: () => 0,
+    }
+    const reg = new ChannelRegistry({ outbox })
+    reg.register(makeChannel("qq"))
+
+    await reg.dispatch(claimed.action)
+
+    bus.off("delivery.recorded", onDelivery as never)
+    expect(events).toHaveLength(0)
+  })
+
+  it("retryDue 发送成功/失败都沿用 lease token，旧 lease 写入失败时不记 delivery", async () => {
+    const action: ActionSend = {
+      channel: "tg",
+      chatId: "-100",
+      text: "retry",
+      deliveryKey: "delivery-retry",
+      resolutionKey: "resolution-retry",
+    }
+    const makeRecord = (id: number, token: string): OutboxRecord => ({
+      id,
+      deliveryKey: action.deliveryKey!,
+      action,
+      status: "sending",
+      attempts: 2,
+      nextAttemptAt: 0,
+      leaseUntil: 30_000,
+      claimToken: token,
+      lastError: null,
+    })
+
+    const sent: { id: number; token?: string | null }[] = []
+    const sentOutbox: OutboundStore = {
+      enqueueAndClaim: () => null,
+      claimDue: () => [makeRecord(11, "lease-success")],
+      markSent: (id, _at, token) => {
+        sent.push({ id, token })
+        return true
+      },
+      markFailed: () => true,
+      sentChunkCount: () => 0,
+    }
+    const successful = new ChannelRegistry({ outbox: sentOutbox })
+    const sends: ActionSend[] = []
+    successful.register(makeChannel("tg", { onSend: (a) => sends.push(a) }))
+    const successEvents: unknown[] = []
+    const onSuccess = (e: unknown) => successEvents.push(e)
+    bus.on("delivery.recorded", onSuccess as never)
+    await (successful as unknown as { retryDue: () => Promise<void> }).retryDue()
+    bus.off("delivery.recorded", onSuccess as never)
+
+    expect(sends).toEqual([action])
+    expect(sent).toEqual([{ id: 11, token: "lease-success" }])
+    expect(successEvents).toEqual([
+      expect.objectContaining({
+        deliveryKey: action.deliveryKey,
+        status: "sent",
+      }),
+    ])
+
+    const failed: { id: number; token?: string | null }[] = []
+    const failedOutbox: OutboundStore = {
+      enqueueAndClaim: () => null,
+      claimDue: () => [makeRecord(12, "lease-failure")],
+      markSent: () => true,
+      markFailed: (id, _error, _nextAttemptAt, token) => {
+        failed.push({ id, token })
+        return true
+      },
+      sentChunkCount: () => 0,
+    }
+    const failing = new ChannelRegistry({ outbox: failedOutbox })
+    failing.register(
+      makeChannel("tg", {
+        onSend: () => {
+          throw new Error("temporary send failure")
+        },
+      })
+    )
+    const failureEvents: unknown[] = []
+    const onFailure = (e: unknown) => failureEvents.push(e)
+    bus.on("delivery.recorded", onFailure as never)
+    await (failing as unknown as { retryDue: () => Promise<void> }).retryDue()
+    bus.off("delivery.recorded", onFailure as never)
+
+    expect(failed).toEqual([{ id: 12, token: "lease-failure" }])
+    expect(failureEvents).toEqual([
+      expect.objectContaining({
+        deliveryKey: action.deliveryKey,
+        status: "failed",
+        error: "temporary send failure",
+      }),
+    ])
+
+    const staleEvents: unknown[] = []
+    const onStale = (e: unknown) => staleEvents.push(e)
+    bus.on("delivery.recorded", onStale as never)
+    const staleOutbox: OutboundStore = {
+      enqueueAndClaim: () => null,
+      claimDue: () => [makeRecord(13, "lease-stale")],
+      markSent: (id, _at, token) => {
+        sent.push({ id, token })
+        return false
+      },
+      markFailed: () => true,
+      sentChunkCount: () => 0,
+    }
+    const stale = new ChannelRegistry({ outbox: staleOutbox })
+    stale.register(makeChannel("tg"))
+    await (stale as unknown as { retryDue: () => Promise<void> }).retryDue()
+    bus.off("delivery.recorded", onStale as never)
+
+    expect(sent).toContainEqual({ id: 13, token: "lease-stale" })
+    expect(staleEvents).toHaveLength(0)
+  })
+
   it("register + get", () => {
     const reg = new ChannelRegistry()
     const qq = makeChannel("qq")
