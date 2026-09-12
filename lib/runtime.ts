@@ -196,6 +196,7 @@ export class RuntimeManager {
         proactiveScanMs: cfg.proactiveScanMs,
         proactiveSilenceMs: cfg.proactiveSilenceMs,
         proactiveMaxPerScan: cfg.proactiveMaxPerScan,
+        proactiveCandidateBudget: cfg.proactiveCandidateBudget,
         handoffTimeoutMin: cfg.handoffTimeoutMin,
         brand: resolveBrand({
           name: cfg.brandName,

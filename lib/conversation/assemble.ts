@@ -52,6 +52,7 @@ export interface AssembleDeps {
   proactiveScanMs?: number
   proactiveSilenceMs?: number
   proactiveMaxPerScan?: number
+  proactiveCandidateBudget?: number
   handoffTimeoutMin?: number
   /** 平台/客服品牌身份，供主链路与旁路判定器共用。 */
   brand?: BrandInput
@@ -183,6 +184,7 @@ export function assemble(deps: AssembleDeps): () => void {
         scanMs: deps.proactiveScanMs,
         silenceMs: deps.proactiveSilenceMs,
         maxPerScan: deps.proactiveMaxPerScan,
+        maxCandidatesPerScan: deps.proactiveCandidateBudget,
         // 全局关时,只扫策略显式开启的群
         globalProactiveEnabled: !!deps.proactiveEnabled,
         groupPolicies: policies,

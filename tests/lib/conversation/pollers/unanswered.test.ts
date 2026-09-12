@@ -44,7 +44,7 @@ const fakeAgent = (text: string, sessionId = "sess-x") => ({
 const base = (over: Record<string, unknown> = {}) => ({
   repo,
   store: new SessionStore(repo, 0),
-  classify: async () => true, // 默认判官放行
+  classify: async () => ({ decision: "answerable" as const }), // 默认判官放行
   adminSurface: { channel: "qq" as const, chatId: "999" },
   enabledChats: [{ channel: "qq" as const, chatId: "100" }],
   silenceMs: 1000, // until = NOW-1000
@@ -158,7 +158,12 @@ describe("unanswered poller runScan", () => {
     const agent = fakeAgent("答案")
     const spy = vi.fn()
     bus.on("reply.ready", spy)
-    await runScan(base({ agent: agent as never, classify: async () => false }))
+    await runScan(
+      base({
+        agent: agent as never,
+        classify: async () => ({ decision: "not_answerable" as const }),
+      })
+    )
     expect(agent.run).not.toHaveBeenCalled()
     expect(spy).not.toHaveBeenCalled()
   })
@@ -207,6 +212,23 @@ describe("unanswered poller runScan", () => {
     await runScan(base({ agent: fakeAgent(AGENT_FALLBACK_TEXT) as never }))
     expect(spy).not.toHaveBeenCalled()
     expect(repo.sessionUpdatedAt("qq:100:200")).toBeUndefined()
+  })
+
+  it("agent partial/failed → 保持游标不动,不把部分文本当答案", async () => {
+    repo.setGroupProactiveCursor("qq", "100", 1)
+    seed(100, 200, "member", "问题?", NOW - 5000)
+    const agent = {
+      run: vi.fn(async () => ({
+        text: "部分答案",
+        sessionId: "partial",
+        status: "partial" as const,
+      })),
+    }
+    const spy = vi.fn()
+    bus.on("reply.ready", spy)
+    await runScan(base({ agent: agent as never }))
+    expect(spy).not.toHaveBeenCalled()
+    expect(repo.groupProactiveCursor("qq", "100")).toBe(1)
   })
 
   it("太新(> until)消息不处理", async () => {
@@ -271,6 +293,32 @@ describe("unanswered poller runScan", () => {
     expect(e.scope).toBe("proactive")
     expect(e.chatId).toBe("100")
     expect(e.channel).toBe("qq")
+  })
+
+  it("判官 error → 保持游标不动,下轮可重试", async () => {
+    repo.setGroupProactiveCursor("qq", "100", 1)
+    seed(100, 200, "member", "价格?", NOW - 5000)
+    await runScan(
+      base({
+        classify: async () => ({
+          decision: "error" as const,
+          reason: "classifier_error" as const,
+        }),
+      })
+    )
+    expect(repo.groupProactiveCursor("qq", "100")).toBe(1)
+  })
+
+  it("连续不可答候选达到预算 → 停止并保持游标", async () => {
+    repo.setGroupProactiveCursor("qq", "100", 1)
+    seed(100, 200, "member", "问题A", NOW - 5000)
+    seed(100, 201, "member", "问题B", NOW - 4900)
+    seed(100, 202, "member", "问题C", NOW - 4800)
+    seed(100, 203, "member", "问题D", NOW - 4700)
+    const classify = vi.fn(async () => ({ decision: "not_answerable" as const }))
+    await runScan(base({ classify, maxCandidatesPerScan: 3 }))
+    expect(classify).toHaveBeenCalledTimes(3)
+    expect(repo.groupProactiveCursor("qq", "100")).toBe(1)
   })
 
   it("isBypassEnabled=false 时跳过该 chat，不调 agent", async () => {

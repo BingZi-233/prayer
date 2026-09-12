@@ -13,41 +13,47 @@ function fakeQuery(text: string) {
 }
 
 describe("answerability 判官", () => {
-  it("产品问题 → true", async () => {
+  it("产品问题 → answerable", async () => {
     const c = makeAnswerabilityClassifier({
       queryFn: fakeQuery('{"answer":true}') as never,
     })
-    expect(await c("claude 的价格多少?")).toBe(true)
+    expect(await c("claude 的价格多少?")).toEqual({ decision: "answerable" })
   })
 
-  it("闲聊/无关 → false", async () => {
+  it("闲聊/无关 → not_answerable", async () => {
     const c = makeAnswerabilityClassifier({
       queryFn: fakeQuery('{"answer":false}') as never,
     })
-    expect(await c("今天天气不错")).toBe(false)
+    expect(await c("今天天气不错")).toEqual({ decision: "not_answerable" })
   })
 
   it("空文本 → false,不调用 LLM", async () => {
     const qf = vi.fn(fakeQuery('{"answer":true}'))
     const c = makeAnswerabilityClassifier({ queryFn: qf as never })
-    expect(await c("   ")).toBe(false)
+    expect(await c("   ")).toEqual({ decision: "not_answerable" })
     expect(qf).not.toHaveBeenCalled()
   })
 
-  it("非法输出 → false(fail-closed)", async () => {
+  it("非法输出 → error(invalid_output)", async () => {
     const c = makeAnswerabilityClassifier({
       queryFn: fakeQuery("抱歉无法处理") as never,
     })
-    expect(await c("随便问问")).toBe(false)
+    expect(await c("随便问问")).toEqual({
+      decision: "error",
+      reason: "invalid_output",
+    })
   })
 
-  it("LLM 抛错 → false(fail-closed)", async () => {
+  it("LLM 抛错 → error(classifier_error)", async () => {
     const c = makeAnswerabilityClassifier({
       queryFn: (() => {
         throw new Error("boom")
       }) as never,
     })
-    expect(await c("问题")).toBe(false)
+    expect(await c("问题")).toEqual({
+      decision: "error",
+      reason: "classifier_error",
+    })
   })
 
   it("cache 友好:tools=[] / skills=[] / strictMcpConfig", async () => {
@@ -86,7 +92,10 @@ describe("answerability 判官", () => {
       timeoutMs: 30,
     })
     const t0 = Date.now()
-    expect(await c("价格多少")).toBe(false)
+    expect(await c("价格多少")).toEqual({
+      decision: "error",
+      reason: "timeout",
+    })
     // 远小于永不 settle 的等待:确实走了超时而非死等
     expect(Date.now() - t0).toBeLessThan(5_000)
   })

@@ -86,6 +86,8 @@ export const appConfigSchema = z.object({
   proactiveScanMs: scanMs.default(60_000),
   proactiveSilenceMs: durationMs.default(180_000),
   proactiveMaxPerScan: count.default(2),
+  /** 每轮最多尝试判定/生成的候选数；运行时至少不小于 proactiveMaxPerScan。 */
+  proactiveCandidateBudget: count.default(12),
   supportUrl: z.string().default(""),
   ackEnabled: z.boolean().default(true),
   /** 0 不拆分；开启拆分时至少 50 字，避免发送大量碎片消息。 */
@@ -107,9 +109,14 @@ type ParsedAppConfig = z.output<typeof appConfigSchema>
  */
 export type AppConfig = Omit<
   ParsedAppConfig,
-  "brandName" | "brandDescription"
+  "brandName" | "brandDescription" | "proactiveCandidateBudget"
 > &
-  Partial<Pick<ParsedAppConfig, "brandName" | "brandDescription">>
+  Partial<
+    Pick<
+      ParsedAppConfig,
+      "brandName" | "brandDescription" | "proactiveCandidateBudget"
+    >
+  >
 export type GroupPolicy = z.output<typeof groupPolicySchema>
 
 export function isConfigRecord(

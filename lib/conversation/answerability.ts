@@ -7,10 +7,24 @@ import { logger } from "../core/logger"
 import { resolveBrand, type BrandInput } from "../core/brand"
 
 // 主动兜底的可答性判官:判定一条群消息是否为「值得客服主动补位回答的品牌产品咨询」。
-// 与 intent.ts 相反,fail-CLOSED:出错/无法解析 → false(主动插话宁可少发)。
-export type AnswerabilityClassifier = (text: string) => Promise<boolean>
+// 与 intent.ts 相反,fail-CLOSED:出错/无法解析 → error(由轮询保留游标以便重试)。
+export type AnswerabilityDecision =
+  | "answerable"
+  | "not_answerable"
+  | "error"
+export type AnswerabilityReason =
+  | "timeout"
+  | "invalid_output"
+  | "classifier_error"
+export interface AnswerabilityResult {
+  decision: AnswerabilityDecision
+  reason?: AnswerabilityReason
+}
+export type AnswerabilityClassifier = (
+  text: string
+) => Promise<AnswerabilityResult>
 
-/** 判官 LLM 硬超时:短判定任务,超时按不可答处理(fail-closed),防 relay 挂起拖死兜底循环 */
+/** 判官 LLM 硬超时:短判定任务,超时返回可重试 error,防 relay 挂起拖死兜底循环 */
 export const DEFAULT_ANSWERABILITY_TIMEOUT_MS = 30_000
 
 const USER_BEGIN = "<<<UNTRUSTED_USER_MESSAGE>>>"
@@ -44,14 +58,21 @@ export function buildAnswerabilitySystem(brandInput?: BrandInput): string {
 {"answer":true} 或 {"answer":false}`
 }
 
-function parseAnswer(s: string): boolean {
+function parseAnswer(s: string): AnswerabilityResult {
   const m = s.match(/\{[\s\S]*\}/)
-  if (!m) return false
+  if (!m) return { decision: "error", reason: "invalid_output" }
   try {
-    return JSON.parse(m[0])?.answer === true
+    const answer = JSON.parse(m[0])?.answer
+    if (answer === true) return { decision: "answerable" }
+    if (answer === false) return { decision: "not_answerable" }
+    return { decision: "error", reason: "invalid_output" }
   } catch {
-    return false
+    return { decision: "error", reason: "invalid_output" }
   }
+}
+
+function isTimeoutError(err: unknown): boolean {
+  return err instanceof Error && /^超时\(/.test(err.message)
 }
 
 export interface AnswerabilityDeps {
@@ -67,8 +88,8 @@ export function makeAnswerabilityClassifier(
   const queryFn = deps.queryFn ?? sdkQuery
   const timeoutMs = deps.timeoutMs ?? DEFAULT_ANSWERABILITY_TIMEOUT_MS
   const systemPrompt = buildAnswerabilitySystem(deps.brand)
-  return async (text: string): Promise<boolean> => {
-    if (!text.trim()) return false
+  return async (text: string): Promise<AnswerabilityResult> => {
+    if (!text.trim()) return { decision: "not_answerable" }
     try {
       const { text: out } = await withTimeout(
         timeoutMs,
@@ -92,10 +113,13 @@ export function makeAnswerabilityClassifier(
         )
       )
       return parseAnswer(out)
-    } catch {
+    } catch (err) {
+      const reason: AnswerabilityReason = isTimeoutError(err)
+        ? "timeout"
+        : "classifier_error"
       // 超时/出错一律 fail-closed;记 warn 便于区分「判官挂了」与「真的不可答」
       logger.warn(`可答性判定失败(fail-closed)`, { scope: "answerability" })
-      return false
+      return { decision: "error", reason }
     }
   }
 }
