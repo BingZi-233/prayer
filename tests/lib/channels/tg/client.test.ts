@@ -333,6 +333,34 @@ describe("TelegramChannel", () => {
     expect(api.sent).toHaveLength(0)
   })
 
+  it("身份已知但轮询已断连时 send 仍拒绝，交由 outbox 重试", async () => {
+    const api = makeMockApi({ updatesQueue: [[]] })
+    const ch = track(
+      new TelegramChannel("tok", {
+        getOffset: () => offset,
+        setOffset: (n) => {
+          offset = n
+        },
+        api,
+        pollTimeoutSec: 0,
+        sleep: (ms) => delay(ms),
+      })
+    )
+    // 模拟 getMe 已成功、随后 getUpdates 超时/断线的状态。
+    const state = ch as unknown as { botId: number; connected: boolean }
+    state.botId = 42
+    state.connected = false
+
+    await expect(
+      ch.send({
+        channel: "tg",
+        chatId: "-100111",
+        text: "must retry",
+      })
+    ).rejects.toThrow("telegram channel not ready")
+    expect(api.sent).toHaveLength(0)
+  })
+
   it("401 记 lastError 并退避，进程不崩", async () => {
     const err = Object.assign(new Error("Unauthorized"), { error_code: 401 })
     let sleeps = 0

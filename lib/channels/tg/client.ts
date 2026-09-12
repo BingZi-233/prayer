@@ -448,7 +448,7 @@ export class TelegramChannel implements Channel {
   }
 
   private async sendAction(a: ActionSend): Promise<void> {
-    if (!this.connected && this.botId == null) {
+    if (!this.connected) {
       logger.log("warn", "[tg] send skipped: not ready")
       throw new Error("telegram channel not ready")
     }
