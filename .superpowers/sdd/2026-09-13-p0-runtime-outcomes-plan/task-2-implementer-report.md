@@ -54,4 +54,4 @@ Both completed successfully.
 
 ## Commit
 
-`4dd8177` (`fix: bound proactive candidates and preserve retryable errors`)
+`3dee231` (`fix: bound proactive candidates and preserve retryable errors`)
