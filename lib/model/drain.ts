@@ -1,6 +1,11 @@
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk"
 import { usageStats, type UsageSite, type UsageDelta } from "./stats/usage"
 import { isStructuredOutputTool } from "./tool-policy"
+import {
+  consumeAssistantContent,
+  finalAssistantText,
+  type AssistantTextState,
+} from "./final-text"
 
 // usage 提取只依赖这几个字段;SDK result 消息 / 测试桩的形状都落在这个子集上。
 // 末尾三个可选字段兼容 SDK>=0.3.222 新增的 SDKTaskNotificationMessage.usage 形状
@@ -107,7 +112,7 @@ export async function drainQuery(
   iter: AsyncIterable<unknown>,
   site: UsageSite
 ): Promise<DrainResult> {
-  let text = ""
+  const textState: AssistantTextState = { text: "" }
   let sessionId: string | undefined
   let usage: UsageDelta | undefined
   let structuredOutput: unknown | undefined
@@ -120,7 +125,7 @@ export async function drainQuery(
       msg.type === "assistant" &&
       Array.isArray(msg.message?.content)
     ) {
-      for (const b of msg.message.content) if (b.type === "text") text += b.text
+      consumeAssistantContent(textState, msg.message.content)
     }
     const so = pickStructuredFromMessage(msg)
     if (so !== undefined) structuredOutput = so
@@ -128,5 +133,5 @@ export async function drainQuery(
     if (u) usage = u
   }
   if (usage) usageStats.record(site, usage)
-  return { text, sessionId, usage, structuredOutput }
+  return { text: finalAssistantText(textState), sessionId, usage, structuredOutput }
 }

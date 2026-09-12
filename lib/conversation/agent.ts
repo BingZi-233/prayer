@@ -9,6 +9,11 @@ import type { KbPrefetch } from "../knowledge/kb-prefetch"
 import { agentQueryOptions } from "../model/query-options"
 import { buildPrompt, kbProbeText, type AgentMedia } from "../model/prompt"
 import { usageFromResult } from "../model/drain"
+import {
+  consumeAssistantContent,
+  finalAssistantText,
+  type AssistantTextState,
+} from "../model/final-text"
 import { buildDefaultSystem, DEFAULT_SYSTEM } from "../model/system-prompt"
 import { isToolAllowed, denyMessage, CS_KB_TOOL } from "../model/tool-policy"
 
@@ -55,6 +60,7 @@ export const DEFAULT_RUN_TIMEOUT_MS = 180_000
 export interface AgentResult {
   text: string
   sessionId?: string
+  status: "success" | "partial" | "failed"
 }
 
 // Agent 降级兜底文案:maxTurns/CLI 出错且无累积文本时返回。主动路径据此判为非答案 → 沉默。
@@ -114,7 +120,8 @@ export class Agent {
     // 本 run 的工具调用计数(工具名 → 次数),在 finally 一次性提交给 toolStats
     const toolCalls = new Map<string, number>()
     let sessionId: string | undefined = resumeId
-    let out = ""
+    const textState: AssistantTextState = { text: "" }
+    let status: AgentResult["status"] = "success"
     let timer: ReturnType<typeof setTimeout> | undefined
     try {
       // 超时到点 abort:让 SDK reject 迭代器并杀掉 CLI 子进程(best-effort);
@@ -182,10 +189,10 @@ export class Agent {
             sessionId = msg.session_id
           }
           if (msg.type === "assistant" && Array.isArray(msg.message?.content)) {
+            consumeAssistantContent(textState, msg.message.content)
             for (const block of msg.message.content) {
-              if (block.type === "text") out += block.text
               // 工具用量观测:block 是 SDK 的 union,取 name 需窄化(同 pickStructuredFromMessage 的写法)
-              else if (block.type === "tool_use") {
+              if (block.type === "tool_use") {
                 const name = String((block as { name?: unknown }).name ?? "")
                 if (name) toolCalls.set(name, (toolCalls.get(name) ?? 0) + 1)
               }
@@ -215,7 +222,11 @@ export class Agent {
       // maxTurns / CLI 异常(SDK reject 迭代器)、超时或 queryFn 同步抛错:降级 ——
       // 保留已累积文本与 sessionId,避免整个请求 500、丢掉会话,更避免 handle 永挂拖死编排串行链
       console.error("[agent] query 启动/迭代中断/超时,降级返回已累积内容:", e)
-      if (!out.trim()) out = AGENT_FALLBACK_TEXT
+      if (!finalAssistantText(textState).trim()) {
+        status = "failed"
+      } else {
+        status = "partial"
+      }
     } finally {
       if (timer) clearTimeout(timer)
       // 超时/异常降级的 run 也要计入,否则覆盖率分母失真
@@ -224,6 +235,11 @@ export class Agent {
         toolCalls.set(KB_GROUNDED_TOOL, 1)
       toolStats.recordRun("agent", Object.fromEntries(toolCalls))
     }
-    return { text: out.trim(), sessionId }
+    const finalText = finalAssistantText(textState).trim()
+    return {
+      text: finalText || (status === "failed" ? AGENT_FALLBACK_TEXT : finalText),
+      sessionId,
+      status,
+    }
   }
 }

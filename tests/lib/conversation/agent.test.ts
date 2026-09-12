@@ -271,6 +271,44 @@ describe("Agent.run 超时", () => {
   })
 })
 
+describe("Agent.run status", () => {
+  const ctx = { sessionKey: "1:2", groupId: 1, userId: 2 }
+
+  it("迭代器直接抛错时返回 failed", async () => {
+    const boom = async function* () {
+      throw new Error("iterator failed")
+    }
+    const agent = new Agent({
+      systemPrompt: "s",
+      queryFn: boom as unknown as QueryFn,
+    })
+
+    const out = await agent.run("hi", undefined, ctx)
+
+    expect(out.status).toBe("failed")
+    expect(out.text).toBe(AGENT_FALLBACK_TEXT)
+  })
+
+  it("迭代器输出文本后抛错时返回 partial", async () => {
+    const interrupted = async function* () {
+      yield {
+        type: "assistant",
+        message: { content: [{ type: "text", text: "partial answer" }] },
+      }
+      throw new Error("iterator interrupted")
+    }
+    const agent = new Agent({
+      systemPrompt: "s",
+      queryFn: interrupted as unknown as QueryFn,
+    })
+
+    const out = await agent.run("hi", undefined, ctx)
+
+    expect(out.status).toBe("partial")
+    expect(out.text).toBe("partial answer")
+  })
+})
+
 describe("Agent.run systemPrompt", () => {
   it("systemPrompt 恒定 = deps.systemPrompt(无按调用拼接的后缀 → 主动/正常路径共享前缀)", async () => {
     let captured!: QueryArgs
