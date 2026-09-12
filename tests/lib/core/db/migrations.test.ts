@@ -72,6 +72,7 @@ describe("数据库迁移注册表", () => {
     expect(indexExists(db, "idx_sessions_human_since")).toBe(true)
     expect(indexExists(db, "idx_tickets_status_created")).toBe(true)
     expect(indexExists(db, "idx_qo_topic_msg_ts")).toBe(true)
+    expect(indexExists(db, "idx_outbox_resolution_status")).toBe(true)
   })
 
   it("迁移失败时回滚当前版本，修复原因后可从断点继续", () => {
