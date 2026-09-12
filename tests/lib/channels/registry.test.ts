@@ -170,7 +170,13 @@ describe("ChannelRegistry", () => {
     }
     const successful = new ChannelRegistry({ outbox: sentOutbox })
     const sends: ActionSend[] = []
-    successful.register(makeChannel("tg", { onSend: (a) => sends.push(a) }))
+    successful.register(
+      makeChannel("tg", {
+        onSend: (a) => {
+          sends.push(a)
+        },
+      })
+    )
     const successEvents: unknown[] = []
     const onSuccess = (e: unknown) => successEvents.push(e)
     bus.on("delivery.recorded", onSuccess as never)
