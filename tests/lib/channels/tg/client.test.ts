@@ -309,6 +309,30 @@ describe("TelegramChannel", () => {
     expect(api.sent.length).toBe(before)
   })
 
+  it("未完成 getMe 握手时 send 拒绝，避免出站消息静默丢失", async () => {
+    const api = makeMockApi({ updatesQueue: [[]] })
+    const ch = track(
+      new TelegramChannel("tok", {
+        getOffset: () => offset,
+        setOffset: (n) => {
+          offset = n
+        },
+        api,
+        pollTimeoutSec: 0,
+        sleep: (ms) => delay(ms),
+      })
+    )
+
+    await expect(
+      ch.send({
+        channel: "tg",
+        chatId: "-100111",
+        text: "must not disappear",
+      })
+    ).rejects.toThrow("telegram channel not ready")
+    expect(api.sent).toHaveLength(0)
+  })
+
   it("401 记 lastError 并退避，进程不崩", async () => {
     const err = Object.assign(new Error("Unauthorized"), { error_code: 401 })
     let sleeps = 0

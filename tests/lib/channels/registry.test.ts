@@ -7,6 +7,7 @@ import type {
   ChannelId,
 } from "@/lib/core/chat/types"
 import type { ActionSend } from "@/lib/core/chat/events"
+import type { OutboundStore, OutboxRecord } from "@/lib/core/chat/outbox"
 
 const caps: ChannelCapabilities = {
   canNotifyOwnAdminSurface: false,
@@ -65,6 +66,41 @@ afterEach(() => {
 })
 
 describe("ChannelRegistry", () => {
+  it("未注册 channel 的持久化失败必须带 lease token，防止旧 worker 覆盖重试", async () => {
+    let marked: { id: number; token?: string | null } | undefined
+    const claimed: OutboxRecord = {
+      id: 7,
+      deliveryKey: "delivery-7",
+      action: {
+        channel: "tg",
+        chatId: "-100",
+        text: "orphan",
+        deliveryKey: "delivery-7",
+      },
+      status: "sending",
+      attempts: 1,
+      nextAttemptAt: 0,
+      leaseUntil: 30_000,
+      claimToken: "lease-7",
+      lastError: null,
+    }
+    const outbox: OutboundStore = {
+      enqueueAndClaim: () => claimed,
+      claimDue: () => [],
+      markSent: () => true,
+      markFailed: (id, _error, _nextAttemptAt, token) => {
+        marked = { id, token }
+        return true
+      },
+      sentChunkCount: () => 0,
+    }
+    const reg = new ChannelRegistry({ outbox })
+
+    await reg.dispatch(claimed.action)
+
+    expect(marked).toEqual({ id: 7, token: "lease-7" })
+  })
+
   it("register + get", () => {
     const reg = new ChannelRegistry()
     const qq = makeChannel("qq")
