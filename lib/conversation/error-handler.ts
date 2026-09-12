@@ -75,8 +75,10 @@ function defaultLogError(scope: string, err: unknown, e: ErrorOccurred): void {
 function shouldUserReply(e: ErrorOccurred): boolean {
   if (e.userVisible === false) return false
   if (e.scope === "intent") return false
-  // channel.send* 发送失败再回用户会连环炸
-  if (e.scope.startsWith("channel.send")) return false
+  // 发送链路失败再回同一通道会连环炸（适配器与 registry 两种 scope）。
+  if (e.scope.startsWith("channel.send") || e.scope.endsWith(".send")) {
+    return false
+  }
   return true
 }
 

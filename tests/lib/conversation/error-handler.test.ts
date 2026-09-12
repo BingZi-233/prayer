@@ -70,6 +70,20 @@ describe("error handler", () => {
     expect(spy).not.toHaveBeenCalled()
   })
 
+  it("通道适配器的 send 错误不触发同通道兜底递归", async () => {
+    registerErrorHandler({ logger: () => {} })
+    const spy = vi.fn()
+    bus.on("action.send", spy)
+    bus.emit("error.occurred", {
+      scope: "tg.send",
+      err: new Error("transport down"),
+      channel: "tg" as const,
+      chatId: "-100",
+    })
+    await new Promise((r) => setTimeout(r, 20))
+    expect(spy).not.toHaveBeenCalled()
+  })
+
   it("自定义 logger 被调用", () => {
     const log = vi.fn()
     registerErrorHandler({ logger: log })
