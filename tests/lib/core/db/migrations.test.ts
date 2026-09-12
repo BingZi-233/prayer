@@ -42,9 +42,9 @@ function indexExists(db: Database.Database, name: string): boolean {
 describe("数据库迁移注册表", () => {
   it("版本连续、唯一，并与当前版本常量一致", () => {
     const versions = MIGRATIONS.map((migration) => migration.version)
-    expect(versions).toEqual([2, 3, 4, 5, 6, 7, 8])
+    expect(versions).toEqual([2, 3, 4, 5, 6, 7, 8, 9])
     expect(new Set(versions).size).toBe(versions.length)
-    expect(CURRENT_SCHEMA_VERSION).toBe(8)
+    expect(CURRENT_SCHEMA_VERSION).toBe(9)
     expect(MIGRATIONS.every((migration) => migration.name.length > 0)).toBe(
       true
     )
@@ -53,7 +53,7 @@ describe("数据库迁移注册表", () => {
   it("全新数据库可逐版本升级，并可在每一级幂等重跑", () => {
     const db = createDb()
 
-    for (const targetVersion of [2, 3, 4, 5, 6, 7, 8]) {
+    for (const targetVersion of [2, 3, 4, 5, 6, 7, 8, 9]) {
       migrateDatabase(db, 3, targetVersion)
       expect(userVersion(db)).toBe(targetVersion)
 

@@ -301,7 +301,7 @@ async function scanOnce(d: Resolved): Promise<void> {
           continue // 哨兵/空 → 沉默
         }
         if (result.sessionId) d.store.remember(key, result.sessionId)
-        const deliveryKey = `proactive:${key}:${messageId ?? text.slice(0, 24)}`
+        const deliveryKey = `proactive:${key}:${questionTs}:${messageId ?? text.slice(0, 24)}`
         d.repo.insertProactiveReply(channel, chatId, userId, text, result.text, {
           deliveryKey,
           deliveryStatus: "pending",

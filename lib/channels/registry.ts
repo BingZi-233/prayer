@@ -37,6 +37,14 @@ export class ChannelRegistry {
     const ch = this.map.get(a.channel)
     if (!ch) {
       const err = new Error(`channel not registered: ${a.channel}`)
+      if (this.opts.outbox) {
+        const action = a.deliveryKey ? a : { ...a, deliveryKey: `legacy:${Date.now()}:${Math.random()}` }
+        const claimed = this.opts.outbox.enqueueAndClaim(action, this.now())
+        if (claimed) {
+          this.opts.outbox.markFailed(claimed.id, err.message, this.now() + 1000)
+          bus.emit("delivery.recorded", { deliveryKey: action.deliveryKey!, resolutionKey: action.resolutionKey, status: "failed", error: err.message, at: this.now() })
+        }
+      }
       logger.log("warn", `[registry] ${err.message}`)
       bus.emit("error.occurred", {
         scope: "channel.unregistered",

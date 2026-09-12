@@ -42,6 +42,7 @@ export class StatisticsRepository {
       userId?: string
       detail?: string
       deliveryKey?: string
+      resolutionKey?: string
       deliveryStatus?: string
       deliveryExpected?: number
     } = {}
@@ -56,7 +57,7 @@ export class StatisticsRepository {
         opts.channel ?? null,
         opts.chatId ?? null,
         opts.userId ?? null,
-        opts.detail ?? null, opts.deliveryKey ?? null, opts.deliveryStatus ?? "sent", opts.deliveryExpected ?? null
+        opts.detail ?? null, opts.deliveryKey ?? opts.resolutionKey ?? null, opts.deliveryStatus ?? "sent", opts.deliveryExpected ?? null
       )
   }
 
