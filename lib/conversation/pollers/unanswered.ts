@@ -275,9 +275,9 @@ async function scanOnce(d: Resolved): Promise<void> {
           capped = true
           break
         }
-        // 旧测试桩可能没有 status;真实 Agent 的 partial/failed 结果可重试,
+        // 只有完整 success 才能外发;缺失/partial/failed 均可重试,
         // 不得把部分文本记为成功或推进游标。
-        if (result.status !== undefined && result.status !== "success") {
+        if (result.status !== "success") {
           bus.emit("resolution.recorded", {
             kind: "proactive_silent",
             sessionKey: key,

@@ -72,7 +72,13 @@ describe("registry → poller bypass chain", () => {
       .run("tg", "-1001", "200", "member", "价格?", NOW - 5000)
     repo.setGroupProactiveCursor("tg", "-1001", 1)
 
-    const agent = { run: vi.fn(async () => ({ text: "答案", sessionId: "s" })) }
+    const agent = {
+      run: vi.fn(async () => ({
+        text: "答案",
+        sessionId: "s",
+        status: "success" as const,
+      })),
+    }
     await runScan({
       repo,
       store: new SessionStore(repo, 0),
@@ -103,7 +109,11 @@ describe("registry → poller bypass chain", () => {
     repo.setGroupProactiveCursor("tg", "-1001", 1)
 
     const agent = {
-      run: vi.fn(async () => ({ text: "这是答案", sessionId: "s" })),
+      run: vi.fn(async () => ({
+        text: "这是答案",
+        sessionId: "s",
+        status: "success" as const,
+      })),
     }
     await runScan({
       repo,

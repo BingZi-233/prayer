@@ -36,9 +36,9 @@ function seed(
     )
 }
 
-// 假 agent:返回固定文本 + sessionId
+// 假 agent:返回固定文本 + sessionId + 成功状态
 const fakeAgent = (text: string, sessionId = "sess-x") => ({
-  run: vi.fn(async () => ({ text, sessionId })),
+  run: vi.fn(async () => ({ text, sessionId, status: "success" as const })),
 })
 
 const base = (over: Record<string, unknown> = {}) => ({
@@ -223,6 +223,19 @@ describe("unanswered poller runScan", () => {
         sessionId: "partial",
         status: "partial" as const,
       })),
+    }
+    const spy = vi.fn()
+    bus.on("reply.ready", spy)
+    await runScan(base({ agent: agent as never }))
+    expect(spy).not.toHaveBeenCalled()
+    expect(repo.groupProactiveCursor("qq", "100")).toBe(1)
+  })
+
+  it("agent 缺失 status → 按 agent_error 处理并保持游标", async () => {
+    repo.setGroupProactiveCursor("qq", "100", 1)
+    seed(100, 200, "member", "问题?", NOW - 5000)
+    const agent = {
+      run: vi.fn(async () => ({ text: "答案", sessionId: "missing-status" })),
     }
     const spy = vi.fn()
     bus.on("reply.ready", spy)
