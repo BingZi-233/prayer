@@ -12,8 +12,8 @@ export class StatisticsRepository {
   constructor(private readonly sql: SqliteContext) {}
   markDelivery(key: string, status: "pending" | "sent" | "failed", error?: string, at?: number, sentChunks?: number): void {
     const finalStatus = status === "sent" && (sentChunks == null || sentChunks > 0) ? "sent" : status
-    this.sql.prepare("UPDATE resolution_events SET delivery_status=?, last_error=?, delivered_at=? WHERE delivery_key=?").run(finalStatus, error ?? null, at ?? Date.now(), key)
-    this.sql.prepare("UPDATE proactive_replies SET delivery_status=?, last_error=?, delivered_at=? WHERE delivery_key=?").run(finalStatus, error ?? null, at ?? Date.now(), key)
+    this.sql.prepare("UPDATE resolution_events SET delivery_status=CASE WHEN delivery_status='sent' THEN 'sent' ELSE ? END, last_error=CASE WHEN delivery_status='sent' THEN last_error ELSE ? END, delivered_at=CASE WHEN delivery_status='sent' THEN delivered_at ELSE ? END WHERE delivery_key=?").run(finalStatus, error ?? null, at ?? Date.now(), key)
+    this.sql.prepare("UPDATE proactive_replies SET delivery_status=CASE WHEN delivery_status='sent' THEN 'sent' ELSE ? END, last_error=CASE WHEN delivery_status='sent' THEN last_error ELSE ? END, delivered_at=CASE WHEN delivery_status='sent' THEN delivered_at ELSE ? END WHERE delivery_key=?").run(finalStatus, error ?? null, at ?? Date.now(), key)
   }
   planDelivery(key: string, expected: number): void {
     this.sql.prepare("UPDATE resolution_events SET delivery_expected=?, delivery_status='pending' WHERE delivery_key=?").run(expected, key)

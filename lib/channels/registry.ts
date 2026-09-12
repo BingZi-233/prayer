@@ -64,7 +64,7 @@ export class ChannelRegistry {
       if (this.opts.outbox && !claimed) return
       await ch.send(action)
       if (claimed) {
-        this.opts.outbox!.markSent(claimed.id, this.now())
+        this.opts.outbox!.markSent(claimed.id, this.now(), claimed.claimToken)
         bus.emit("delivery.recorded", { deliveryKey: action.deliveryKey!, resolutionKey: action.resolutionKey, status: "sent", at: this.now() })
       }
     } catch (err) {
@@ -78,7 +78,7 @@ export class ChannelRegistry {
         userVisible: a.userVisibleOnFailure ?? false,
       })
       if (claimed) {
-        this.opts.outbox?.markFailed(claimed.id, msg, this.now() + 1000)
+        this.opts.outbox?.markFailed(claimed.id, msg, this.now() + 1000, claimed.claimToken)
         bus.emit("delivery.recorded", { deliveryKey: action.deliveryKey!, resolutionKey: action.resolutionKey, status: "failed", error: msg, at: this.now() })
       }
     }
@@ -128,17 +128,17 @@ export class ChannelRegistry {
       const ch = this.map.get(r.action.channel)
       if (!ch) {
         const msg = `channel not registered: ${r.action.channel}`
-        this.opts.outbox.markFailed(r.id, msg, this.now() + 1000)
+        this.opts.outbox.markFailed(r.id, msg, this.now() + 1000, r.claimToken)
         bus.emit("delivery.recorded", { deliveryKey: r.action.deliveryKey!, resolutionKey: r.action.resolutionKey, status: "failed", error: msg, at: this.now() })
         continue
       }
       try {
         await ch.send(r.action)
-        this.opts.outbox.markSent(r.id, this.now())
+        this.opts.outbox.markSent(r.id, this.now(), r.claimToken)
         bus.emit("delivery.recorded", { deliveryKey: r.action.deliveryKey!, resolutionKey: r.action.resolutionKey, status: "sent", at: this.now() })
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e)
-        this.opts.outbox.markFailed(r.id, msg, this.now() + Math.min(60000, 1000 * Math.pow(2, Math.max(0, r.attempts - 1))))
+        this.opts.outbox.markFailed(r.id, msg, this.now() + Math.min(60000, 1000 * Math.pow(2, Math.max(0, r.attempts - 1))), r.claimToken)
         bus.emit("delivery.recorded", { deliveryKey: r.action.deliveryKey!, resolutionKey: r.action.resolutionKey, status: "failed", error: msg, at: this.now() })
       }
     }

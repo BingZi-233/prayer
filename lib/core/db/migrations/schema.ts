@@ -1025,9 +1025,10 @@ export function migrateToVersion9(db: Database.Database): void {
     id INTEGER PRIMARY KEY AUTOINCREMENT, delivery_key TEXT NOT NULL UNIQUE,
     resolution_key TEXT, action_json TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending',
     attempts INTEGER NOT NULL DEFAULT 0, next_attempt_at INTEGER NOT NULL DEFAULT 0,
-    lease_until INTEGER, last_error TEXT, sent_at INTEGER,
+    lease_until INTEGER, claim_token TEXT, last_error TEXT, sent_at INTEGER,
     CHECK(status IN ('pending','sending','sent','failed'))
   ); CREATE INDEX IF NOT EXISTS idx_outbox_due ON outbox_messages(status,next_attempt_at);`)
+  if (!tableColumns(db, "outbox_messages").has("claim_token")) db.exec("ALTER TABLE outbox_messages ADD COLUMN claim_token TEXT")
   for (const [table, cols] of [["resolution_events", ["delivery_key TEXT", "delivery_status TEXT NOT NULL DEFAULT 'sent'", "last_error TEXT", "delivered_at INTEGER", "delivery_expected INTEGER"]], ["proactive_replies", ["delivery_key TEXT", "delivery_status TEXT NOT NULL DEFAULT 'sent'", "last_error TEXT", "delivered_at INTEGER", "delivery_expected INTEGER"]]] as const) {
     if (!tableExists(db, table)) continue
     const existing = tableColumns(db, table)
