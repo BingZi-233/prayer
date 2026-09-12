@@ -49,7 +49,7 @@ export class StatisticsRepository {
   ): void {
     this.sql
       .prepare(
-        "INSERT INTO resolution_events (kind, session_key, channel, group_id, user_id, detail, delivery_key, delivery_status, delivery_expected) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        "INSERT OR IGNORE INTO resolution_events (kind, session_key, channel, group_id, user_id, detail, delivery_key, delivery_status, delivery_expected) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
       )
       .run(
         kind,
