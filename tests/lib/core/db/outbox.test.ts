@@ -20,6 +20,23 @@ describe("durable outbox", () => {
     expect(repo.outbox.markSent(first.id, 31_001, first.claimToken)).toBe(false)
     expect(repo.outbox.markSent(second.id, 31_002, second.claimToken)).toBe(true)
   })
+  it("retries a failed row after its backoff with a fresh claim", () => {
+    const repo = new Repo(openDb(":memory:", 3))
+    const action = { channel: "qq" as const, chatId: "1", text: "x", deliveryKey: "retry" }
+    const first = repo.outbox.enqueueAndClaim(action, 0)!
+
+    expect(repo.outbox.markFailed(first.id, "offline", 1_000, first.claimToken)).toBe(true)
+    expect(repo.outbox.claimDue(1, 999)).toHaveLength(0)
+
+    const retry = repo.outbox.claimDue(1, 1_000)[0]!
+    expect(retry.id).toBe(first.id)
+    expect(retry.attempts).toBe(2)
+    expect(retry.claimToken).not.toBe(first.claimToken)
+    expect(repo.outbox.markSent(retry.id, 1_001, retry.claimToken)).toBe(true)
+
+    // The old worker cannot overwrite the newer attempt after reclaim.
+    expect(repo.outbox.markFailed(retry.id, "late failure", 2_000, first.claimToken)).toBe(false)
+  })
   it("resolution delivery keys are idempotent", () => {
     const repo = new Repo(openDb(":memory:", 3))
     repo.insertResolution("auto", { deliveryKey: "same" })

@@ -11,13 +11,14 @@ import type { SqliteContext } from "../context.ts"
 export class StatisticsRepository {
   constructor(private readonly sql: SqliteContext) {}
   markDelivery(key: string, status: "pending" | "sent" | "failed", error?: string, at?: number, sentChunks?: number): void {
-    const finalStatus = status === "sent" && (sentChunks == null || sentChunks > 0) ? "sent" : status
+    const finalStatus = status === "sent" && sentChunks === 0 ? "pending" : status
     this.sql.prepare("UPDATE resolution_events SET delivery_status=CASE WHEN delivery_status='sent' THEN 'sent' ELSE ? END, last_error=CASE WHEN delivery_status='sent' THEN last_error ELSE ? END, delivered_at=CASE WHEN delivery_status='sent' THEN delivered_at ELSE ? END WHERE delivery_key=?").run(finalStatus, error ?? null, at ?? Date.now(), key)
     this.sql.prepare("UPDATE proactive_replies SET delivery_status=CASE WHEN delivery_status='sent' THEN 'sent' ELSE ? END, last_error=CASE WHEN delivery_status='sent' THEN last_error ELSE ? END, delivered_at=CASE WHEN delivery_status='sent' THEN delivered_at ELSE ? END WHERE delivery_key=?").run(finalStatus, error ?? null, at ?? Date.now(), key)
   }
   planDelivery(key: string, expected: number): void {
-    this.sql.prepare("UPDATE resolution_events SET delivery_expected=?, delivery_status='pending' WHERE delivery_key=?").run(expected, key)
-    this.sql.prepare("UPDATE proactive_replies SET delivery_expected=?, delivery_status='pending' WHERE delivery_key=?").run(expected, key)
+    const sql = "UPDATE %s SET delivery_expected=?, delivery_status=CASE WHEN delivery_status IN ('sent','failed') THEN delivery_status ELSE 'pending' END WHERE delivery_key=?"
+    this.sql.prepare(sql.replace("%s", "resolution_events")).run(expected, key)
+    this.sql.prepare(sql.replace("%s", "proactive_replies")).run(expected, key)
   }
   deliveryExpected(key: string): number | undefined {
     const a = this.sql.prepare<{delivery_expected:number|null}>("SELECT delivery_expected FROM resolution_events WHERE delivery_key=? LIMIT 1").get(key)

@@ -85,7 +85,7 @@ export class ProactiveRepository {
         lastTs: number
       }>(
         `SELECT channel AS channel, group_id AS chatId, COUNT(*) AS count, MAX(created_at) AS lastTs
-         FROM proactive_replies GROUP BY channel, group_id`
+         FROM proactive_replies WHERE delivery_status = 'sent' GROUP BY channel, group_id`
       )
       .all()
   }
@@ -95,7 +95,7 @@ export class ProactiveRepository {
     return this.sql
       .prepare<{
         n: number
-      }>("SELECT COUNT(*) n FROM proactive_replies")
+      }>("SELECT COUNT(*) n FROM proactive_replies WHERE delivery_status = 'sent'")
       .get()!.n
   }
 
@@ -103,13 +103,13 @@ export class ProactiveRepository {
     if (sinceTs != null) {
       return this.sql
         .prepare<{ n: number }>(
-          "SELECT COUNT(*) n FROM proactive_replies WHERE quality = 'bad' AND created_at >= ?"
+          "SELECT COUNT(*) n FROM proactive_replies WHERE quality = 'bad' AND delivery_status = 'sent' AND created_at >= ?"
         )
         .get(sinceTs)!.n
     }
     return this.sql
       .prepare<{ n: number }>(
-        "SELECT COUNT(*) n FROM proactive_replies WHERE quality = 'bad'"
+        "SELECT COUNT(*) n FROM proactive_replies WHERE quality = 'bad' AND delivery_status = 'sent'"
       )
       .get()!.n
   }

@@ -56,10 +56,10 @@ describe("QqChannel + ChannelRegistry 出站", () => {
     const ch = new QqChannel("ws://127.0.0.1:1")
     expect(typeof ch.send).toBe("function")
     expect(ch.id).toBe("qq")
-    // 未连接时 send 不抛
+    // 未连接时显式拒绝，交由 outbox/registry 重试，避免静默丢失
     await expect(
       ch.send({ channel: "qq", chatId: "1", text: "x" })
-    ).resolves.toBeUndefined()
+    ).rejects.toThrow("qq channel not connected")
   })
 
   it("真实收到入站帧后 status().detail 含 rx=", async () => {

@@ -112,8 +112,7 @@ export class OneBotClient {
 
   /**
    * 出站：发群消息。由 QqChannel / 单测直接调用。
-   * 未连接时丢弃（与历史行为一致），但记 warn —— 答案/兜底句无声消失
-   * 原本两侧(运维/用户)都不可见，先让运维侧看得见。
+   * 未连接或 WebSocket 写失败时 reject，由 registry/outbox 负责重试，避免静默丢失。
    */
   send(a: ActionSend): Promise<void> {
     if (this.ws?.readyState !== WebSocket.OPEN) {

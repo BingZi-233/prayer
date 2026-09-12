@@ -73,9 +73,10 @@ describe("unanswered poller runScan", () => {
     expect(agent.run).toHaveBeenCalledTimes(1)
     expect(repo.sessionUpdatedAt("qq:100:200")).toBeGreaterThan(0) // remember 写回
     expect(repo.groupProactiveCursor("qq", "100")).toBe(NOW - 1000)
-    // 命中留痕:库里 1 条,内容为问题原料 + agent 答案
-    expect(repo.proactiveTotalCount()).toBe(1)
+    // 命中留痕先写 pending；只有 channel Promise 成功后才计入成功指标。
+    expect(repo.proactiveTotalCount()).toBe(0)
     const rec = repo.proactiveReplies(10)
+    expect(rec).toHaveLength(1)
     expect(rec[0]).toMatchObject({
       channel: "qq" as const,
       chatId: "100",

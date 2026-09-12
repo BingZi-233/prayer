@@ -38,11 +38,24 @@ export class ChannelRegistry {
     if (!ch) {
       const err = new Error(`channel not registered: ${a.channel}`)
       if (this.opts.outbox) {
-        const action = a.deliveryKey ? a : { ...a, deliveryKey: `legacy:${Date.now()}:${Math.random()}` }
+        const action = a.deliveryKey ? a : { ...a, deliveryKey: `legacy:${this.now()}:${Math.random()}` }
         const claimed = this.opts.outbox.enqueueAndClaim(action, this.now())
         if (claimed) {
-          this.opts.outbox.markFailed(claimed.id, err.message, this.now() + 1000)
-          bus.emit("delivery.recorded", { deliveryKey: action.deliveryKey!, resolutionKey: action.resolutionKey, status: "failed", error: err.message, at: this.now() })
+          const marked = this.opts.outbox.markFailed(
+            claimed.id,
+            err.message,
+            this.now() + 1000,
+            claimed.claimToken
+          )
+          if (marked) {
+            bus.emit("delivery.recorded", {
+              deliveryKey: action.deliveryKey!,
+              resolutionKey: action.resolutionKey,
+              status: "failed",
+              error: err.message,
+              at: this.now(),
+            })
+          }
         }
       }
       logger.log("warn", `[registry] ${err.message}`)
@@ -58,14 +71,25 @@ export class ChannelRegistry {
     let claimed: OutboxRecord | null = null
     let action = a
     try {
-      const key = a.deliveryKey ?? (this.opts.outbox ? `legacy:${Date.now()}:${Math.random()}` : undefined)
+      const key = a.deliveryKey ?? (this.opts.outbox ? `legacy:${this.now()}:${Math.random()}` : undefined)
       action = key && !a.deliveryKey ? { ...a, deliveryKey: key } : a
       claimed = this.opts.outbox ? this.opts.outbox.enqueueAndClaim(action, this.now()) : null
       if (this.opts.outbox && !claimed) return
       await ch.send(action)
       if (claimed) {
-        this.opts.outbox!.markSent(claimed.id, this.now(), claimed.claimToken)
-        bus.emit("delivery.recorded", { deliveryKey: action.deliveryKey!, resolutionKey: action.resolutionKey, status: "sent", at: this.now() })
+        const marked = this.opts.outbox!.markSent(
+          claimed.id,
+          this.now(),
+          claimed.claimToken
+        )
+        if (marked) {
+          bus.emit("delivery.recorded", {
+            deliveryKey: action.deliveryKey!,
+            resolutionKey: action.resolutionKey,
+            status: "sent",
+            at: this.now(),
+          })
+        }
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
@@ -78,8 +102,21 @@ export class ChannelRegistry {
         userVisible: a.userVisibleOnFailure ?? false,
       })
       if (claimed) {
-        this.opts.outbox?.markFailed(claimed.id, msg, this.now() + 1000, claimed.claimToken)
-        bus.emit("delivery.recorded", { deliveryKey: action.deliveryKey!, resolutionKey: action.resolutionKey, status: "failed", error: msg, at: this.now() })
+        const marked = this.opts.outbox?.markFailed(
+          claimed.id,
+          msg,
+          this.now() + 1000,
+          claimed.claimToken
+        )
+        if (marked) {
+          bus.emit("delivery.recorded", {
+            deliveryKey: action.deliveryKey!,
+            resolutionKey: action.resolutionKey,
+            status: "failed",
+            error: msg,
+            at: this.now(),
+          })
+        }
       }
     }
   }
@@ -128,18 +165,54 @@ export class ChannelRegistry {
       const ch = this.map.get(r.action.channel)
       if (!ch) {
         const msg = `channel not registered: ${r.action.channel}`
-        this.opts.outbox.markFailed(r.id, msg, this.now() + 1000, r.claimToken)
-        bus.emit("delivery.recorded", { deliveryKey: r.action.deliveryKey!, resolutionKey: r.action.resolutionKey, status: "failed", error: msg, at: this.now() })
+        const marked = this.opts.outbox.markFailed(
+          r.id,
+          msg,
+          this.now() + 1000,
+          r.claimToken
+        )
+        if (marked) {
+          bus.emit("delivery.recorded", {
+            deliveryKey: r.action.deliveryKey!,
+            resolutionKey: r.action.resolutionKey,
+            status: "failed",
+            error: msg,
+            at: this.now(),
+          })
+        }
         continue
       }
       try {
         await ch.send(r.action)
-        this.opts.outbox.markSent(r.id, this.now(), r.claimToken)
-        bus.emit("delivery.recorded", { deliveryKey: r.action.deliveryKey!, resolutionKey: r.action.resolutionKey, status: "sent", at: this.now() })
+        const marked = this.opts.outbox.markSent(r.id, this.now(), r.claimToken)
+        if (marked) {
+          bus.emit("delivery.recorded", {
+            deliveryKey: r.action.deliveryKey!,
+            resolutionKey: r.action.resolutionKey,
+            status: "sent",
+            at: this.now(),
+          })
+        }
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e)
-        this.opts.outbox.markFailed(r.id, msg, this.now() + Math.min(60000, 1000 * Math.pow(2, Math.max(0, r.attempts - 1))), r.claimToken)
-        bus.emit("delivery.recorded", { deliveryKey: r.action.deliveryKey!, resolutionKey: r.action.resolutionKey, status: "failed", error: msg, at: this.now() })
+        const marked = this.opts.outbox.markFailed(
+          r.id,
+          msg,
+          this.now() + Math.min(
+            60000,
+            1000 * Math.pow(2, Math.max(0, r.attempts - 1))
+          ),
+          r.claimToken
+        )
+        if (marked) {
+          bus.emit("delivery.recorded", {
+            deliveryKey: r.action.deliveryKey!,
+            resolutionKey: r.action.resolutionKey,
+            status: "failed",
+            error: msg,
+            at: this.now(),
+          })
+        }
       }
     }
   }

@@ -83,6 +83,37 @@ describe("Repo 统计/列表", () => {
       answer: "填 base_url",
     })
   })
+
+  it("只把已送达的主动回复计入成功指标", () => {
+    const repo = mkRepo()
+    repo.insertProactiveReply("qq", "pending", "u", "q", "a", {
+      deliveryKey: "proactive-pending",
+      deliveryStatus: "pending",
+    })
+    repo.insertProactiveReply("qq", "sent", "u", "q", "a", {
+      deliveryKey: "proactive-sent",
+      deliveryStatus: "sent",
+    })
+
+    expect(repo.proactiveTotalCount()).toBe(1)
+    expect(repo.proactiveGroupCounts()).toEqual([
+      expect.objectContaining({ channel: "qq", chatId: "sent", count: 1 }),
+    ])
+  })
+
+  it("delivery 状态单调：已送达不会被迟到失败或重新计划覆盖", () => {
+    const repo = mkRepo()
+    repo.insertResolution("auto", {
+      deliveryKey: "resolution-monotonic",
+      deliveryStatus: "pending",
+    })
+
+    repo.markDelivery("resolution-monotonic", "sent", undefined, 10, 1)
+    repo.markDelivery("resolution-monotonic", "failed", "late", 11, 1)
+    repo.planDelivery("resolution-monotonic", 2)
+
+    expect(repo.resolutionCounts(0).auto).toBe(1)
+  })
 })
 
 describe("Repo 工具调用日表", () => {
