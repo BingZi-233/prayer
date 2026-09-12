@@ -96,6 +96,9 @@ export interface ResolutionRecorded {
   chatId?: string
   userId?: string
   detail?: string
+  deliveryKey?: string
+  resolutionKey?: string
+  deliveryExpected?: number
 }
 
 export interface EventMap {

@@ -41,6 +41,9 @@ export function registerReplyMapper(deps: ReplyMapperDeps = {}): () => void {
     const chunks = splitReply(r.text, maxChars).filter(
       (t) => !isNoAnswerText(t)
     )
+    const root = r.deliveryKey ?? `reply:${Date.now()}:${Math.random()}`
+    const resolutionKey = r.resolutionKey
+    bus.emit("delivery.planned", { deliveryKey: root, resolutionKey, chunkCount: chunks.length })
     chunks.forEach((text, i) => {
       bus.emit("action.send", {
         channel: r.channel,
@@ -48,6 +51,10 @@ export function registerReplyMapper(deps: ReplyMapperDeps = {}): () => void {
         text,
         // 仅首条引用原消息,避免刷一串 reply
         replyToId: i === 0 ? r.replyToId : undefined,
+        deliveryKey: `${root}/${i}`,
+        resolutionKey,
+        chunkIndex: i,
+        chunkCount: chunks.length,
       })
     })
   }

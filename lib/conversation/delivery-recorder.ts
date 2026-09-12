@@ -1,5 +1,21 @@
 import type { Repo } from "../core/db/repo"
 import type { ActionSend } from "../core/chat/events"
+import { bus } from "../core/bus"
+
+export function registerDeliveryRecorder(repo: Repo): () => void {
+  const expected = new Map<string, number>()
+  const plan = (e: { resolutionKey?: string; chunkCount: number }) => { if (e.resolutionKey) expected.set(e.resolutionKey, e.chunkCount) }
+  const on = (e: { deliveryKey: string; resolutionKey?: string; status: "sent" | "failed"; error?: string; at: number }) => {
+    if (!e.resolutionKey) return
+    const count = repo.outbox.sentChunkCount(e.resolutionKey)
+    const want = expected.get(e.resolutionKey) ?? 1
+    if (e.status === "sent") repo.markDelivery(e.resolutionKey, count >= want ? "sent" : "pending", undefined, e.at, count)
+    else repo.markDelivery(e.resolutionKey, "failed", e.error, e.at, count)
+  }
+  bus.on("delivery.planned", plan)
+  bus.on("delivery.recorded", on)
+  return () => { bus.off("delivery.planned", plan); bus.off("delivery.recorded", on) }
+}
 
 export function recordDelivery(repo: Repo, event: { deliveryKey: string; resolutionKey?: string; status: "sent" | "failed"; error?: string; at: number }): void {
   if (!event.resolutionKey) return

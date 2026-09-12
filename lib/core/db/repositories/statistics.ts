@@ -10,7 +10,7 @@ import type { SqliteContext } from "../context.ts"
 /** 处理结果、模型用量与工具调用的增量统计。 */
 export class StatisticsRepository {
   constructor(private readonly sql: SqliteContext) {}
-  markDelivery(key: string, status: "sent" | "failed", error?: string, at?: number, sentChunks?: number): void {
+  markDelivery(key: string, status: "pending" | "sent" | "failed", error?: string, at?: number, sentChunks?: number): void {
     const finalStatus = status === "sent" && (sentChunks == null || sentChunks > 0) ? "sent" : status
     this.sql.prepare("UPDATE resolution_events SET delivery_status=?, last_error=?, delivered_at=? WHERE delivery_key=?").run(finalStatus, error ?? null, at ?? Date.now(), key)
     this.sql.prepare("UPDATE proactive_replies SET delivery_status=?, last_error=?, delivered_at=? WHERE delivery_key=?").run(finalStatus, error ?? null, at ?? Date.now(), key)

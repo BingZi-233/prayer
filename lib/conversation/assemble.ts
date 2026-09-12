@@ -15,6 +15,7 @@ import { registerUnansweredPoller } from "./pollers/unanswered"
 import { makeAnswerabilityClassifier } from "./answerability"
 import { registerHandoffHandler } from "./handoff-handler"
 import { registerResolutionRecorder } from "./resolution-recorder"
+import { registerDeliveryRecorder } from "./delivery-recorder"
 import type { GroupPolicy } from "../core/config-store"
 import type { ChannelId, ChatRef } from "../core/chat/types"
 import { getGroupPolicy } from "../core/chat/enabled-chats"
@@ -96,6 +97,7 @@ export function assemble(deps: AssembleDeps): () => void {
 
   const cleanups = [
     registerResolutionRecorder(repo),
+    registerDeliveryRecorder(repo),
     registerErrorHandler({ supportUrl: deps.supportUrl }),
     registerHandoffHandler({
       repo,

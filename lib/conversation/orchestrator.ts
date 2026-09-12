@@ -154,11 +154,14 @@ export function registerOrchestrator(deps: OrchestratorDeps): () => void {
     }
     if (result.sessionId) store.remember(q.sessionKey, result.sessionId)
     if (result.text) {
+      const deliveryKey = `auto:${q.sessionKey}:${q.messageId}`
       bus.emit("reply.ready", {
         channel: q.channel,
         chatId: q.chatId,
         text: result.text,
         replyToId: q.messageId,
+        deliveryKey,
+        resolutionKey: deliveryKey,
       })
       bus.emit("resolution.recorded", {
         kind: "auto",
@@ -166,6 +169,8 @@ export function registerOrchestrator(deps: OrchestratorDeps): () => void {
         channel: q.channel,
         chatId: q.chatId,
         userId: q.userId,
+        deliveryKey,
+        resolutionKey: deliveryKey,
       })
     }
   }

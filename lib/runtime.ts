@@ -169,7 +169,7 @@ export class RuntimeManager {
 
       // 空 registry 先挂上：assemble 闭包引用 isBypassEnabled；
       // register 在 assemble 之后同步完成，poller 首轮 tick 前通道已就绪。
-      const registry = new ChannelRegistry()
+      const registry = new ChannelRegistry({ outbox: repo.outbox })
       this.registry = registry
 
       this.teardown = builders.assemble({
