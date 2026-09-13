@@ -101,6 +101,36 @@ describe("ChannelRegistry", () => {
     expect(marked).toEqual({ id: 7, token: "lease-7" })
   })
 
+  it("未注册 channel 的首次失败使用 1 秒退避", async () => {
+    let nextAttemptAt = 0
+    const claimed: OutboxRecord = {
+      id: 70,
+      deliveryKey: "delivery-70",
+      action: { channel: "tg", chatId: "-100", text: "orphan", deliveryKey: "delivery-70" },
+      status: "sending",
+      attempts: 1,
+      nextAttemptAt: 0,
+      leaseUntil: 30_000,
+      claimToken: "lease-70",
+      lastError: null,
+    }
+    const outbox: OutboundStore = {
+      enqueueAndClaim: () => claimed,
+      claimDue: () => [],
+      markSent: () => true,
+      markFailed: (_id, _error, next) => {
+        nextAttemptAt = next
+        return true
+      },
+      sentChunkCount: () => 0,
+    }
+    const reg = new ChannelRegistry({ outbox, now: () => 10_000 })
+
+    await reg.dispatch(claimed.action)
+
+    expect(nextAttemptAt).toBe(11_000)
+  })
+
   it("旧 lease 的发送完成不会伪造 delivery.sent", async () => {
     const events: unknown[] = []
     const onDelivery = (e: unknown) => events.push(e)
@@ -246,6 +276,41 @@ describe("ChannelRegistry", () => {
 
     expect(sent).toContainEqual({ id: 13, token: "lease-stale" })
     expect(staleEvents).toHaveLength(0)
+  })
+
+  it("retryDue 未注册 channel 按 attempts 使用指数退避", async () => {
+    let nextAttemptAt = 0
+    const action: ActionSend = {
+      channel: "tg",
+      chatId: "-100",
+      text: "retry orphan",
+      deliveryKey: "delivery-orphan-retry",
+    }
+    const outbox: OutboundStore = {
+      enqueueAndClaim: () => null,
+      claimDue: () => [{
+        id: 71,
+        deliveryKey: action.deliveryKey!,
+        action,
+        status: "sending",
+        attempts: 3,
+        nextAttemptAt: 5_000,
+        leaseUntil: 35_000,
+        claimToken: "lease-71",
+        lastError: null,
+      }],
+      markSent: () => true,
+      markFailed: (_id, _error, next) => {
+        nextAttemptAt = next
+        return true
+      },
+      sentChunkCount: () => 0,
+    }
+    const reg = new ChannelRegistry({ outbox, now: () => 5_000 })
+
+    await (reg as unknown as { retryDue: () => Promise<void> }).retryDue()
+
+    expect(nextAttemptAt).toBe(9_000)
   })
 
   it("register + get", () => {

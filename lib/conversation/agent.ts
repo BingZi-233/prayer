@@ -198,6 +198,14 @@ export class Agent {
               }
             }
           }
+          if (
+            msg.type === "result" &&
+            (msg.subtype !== "success" || msg.is_error === true)
+          ) {
+            status = finalAssistantText(textState).trim()
+              ? "partial"
+              : "failed"
+          }
           // 末尾 result:记账缓存/用量。内联(不走 drainQuery)以保留下方降级逻辑
           const usage = usageFromResult(msg)
           if (usage) usageStats.record("agent", usage)

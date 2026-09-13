@@ -14,6 +14,7 @@ export interface UserMessageRow {
 }
 
 export interface MemberMessageRow {
+  id: number
   user_id: string
   text: string
   created_at: number

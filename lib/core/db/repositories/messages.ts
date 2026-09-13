@@ -186,7 +186,7 @@ export class MessagesRepository {
   ): MemberMessage[] {
     const rows = this.sql
       .prepare<MemberMessageRow>(
-        `SELECT user_id, text, created_at, message_id FROM group_messages
+        `SELECT id, user_id, text, created_at, message_id FROM group_messages
          WHERE channel = ? AND group_id = ? AND created_at > ? AND created_at <= ?
            AND (sender_role IS NULL OR sender_role NOT IN ('owner','admin'))
            AND mentioned_bot = 0
@@ -194,6 +194,7 @@ export class MessagesRepository {
       )
       .all(channel, chatId, afterTs, untilTs)
     return rows.map((r) => ({
+      id: r.id,
       userId: r.user_id,
       text: r.text,
       createdAt: r.created_at,

@@ -307,6 +307,36 @@ describe("Agent.run status", () => {
     expect(out.status).toBe("partial")
     expect(out.text).toBe("partial answer")
   })
+
+  it("result error subtype without text returns failed", async () => {
+    const q = async function* () {
+      yield { type: "result", subtype: "error_max_turns", is_error: true }
+    }
+    const out = await new Agent({
+      systemPrompt: "s",
+      queryFn: q as unknown as QueryFn,
+    }).run("hi", undefined, ctx)
+
+    expect(out.status).toBe("failed")
+    expect(out.text).toBe(AGENT_FALLBACK_TEXT)
+  })
+
+  it("result marked is_error after text returns partial", async () => {
+    const q = async function* () {
+      yield {
+        type: "assistant",
+        message: { content: [{ type: "text", text: "partial result" }] },
+      }
+      yield { type: "result", subtype: "success", is_error: true }
+    }
+    const out = await new Agent({
+      systemPrompt: "s",
+      queryFn: q as unknown as QueryFn,
+    }).run("hi", undefined, ctx)
+
+    expect(out.status).toBe("partial")
+    expect(out.text).toBe("partial result")
+  })
 })
 
 describe("Agent.run systemPrompt", () => {

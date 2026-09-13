@@ -1,20 +1,20 @@
 import { z } from "zod"
 import { mergeSecret } from "../settings-writer"
 import {
-  appConfigSchema,
+  appConfigBaseSchema,
   groupPolicySchema,
   type AppConfig,
   type GroupPolicy,
 } from "./schema"
 
-type ConfigShape = typeof appConfigSchema.shape
+type ConfigShape = typeof appConfigBaseSchema.shape
 type PatchShape = {
   [K in keyof ConfigShape]: z.ZodOptional<ReturnType<ConfigShape[K]["unwrap"]>>
 }
 
 // 先去掉 default 再 optional：否则 Zod 会给未提交字段补默认值，局部保存会覆盖旧值。
 const patchFields = Object.fromEntries(
-  Object.entries(appConfigSchema.shape).map(([key, schema]) => [
+  Object.entries(appConfigBaseSchema.shape).map(([key, schema]) => [
     key,
     schema.unwrap().optional(),
   ])

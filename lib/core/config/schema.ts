@@ -40,7 +40,7 @@ export const groupPolicySchema = z.object({
 })
 
 /** 配置字段、默认值与类型的唯一来源；不得引入数据库或运行时依赖。 */
-export const appConfigSchema = z.object({
+export const appConfigBaseSchema = z.object({
   /** 平台/客服对外显示名称；默认使用 Prayer，可按部署方白标。 */
   brandName: z.string().trim().min(1).max(80).default("Prayer"),
   /** 给 Agent 的简短业务说明；具体事实仍以知识库和插件为准。 */
@@ -102,6 +102,20 @@ export const appConfigSchema = z.object({
   groupPolicies: z.record(z.string(), groupPolicySchema).default({}),
 })
 
+/**
+ * Cross-field invariants belong to the public parser, while patch/restore
+ * callers continue to consume the object shape above without a ZodEffects
+ * wrapper.  Parsing an old config therefore remains backwards compatible,
+ * but the candidate budget can never be lower than the answer cap.
+ */
+export const appConfigSchema = appConfigBaseSchema.transform((config) => ({
+  ...config,
+  proactiveCandidateBudget: Math.max(
+    config.proactiveMaxPerScan,
+    config.proactiveCandidateBudget
+  ),
+}))
+
 type ParsedAppConfig = z.output<typeof appConfigSchema>
 /**
  * 对外保留新增品牌字段的旧调用兼容性：历史测试/集成方可以继续构造旧形状，
@@ -133,7 +147,7 @@ export function normalizeStoredConfig(
   raw: Record<string, unknown>,
   fallback: AppConfig
 ): AppConfig {
-  const fields = Object.entries(appConfigSchema.shape).map(([key, schema]) => {
+  const fields = Object.entries(appConfigBaseSchema.shape).map(([key, schema]) => {
     const parsed = schema.safeParse(raw[key])
     const value =
       raw[key] !== undefined && parsed.success

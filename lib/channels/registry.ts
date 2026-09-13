@@ -44,7 +44,7 @@ export class ChannelRegistry {
           const marked = this.opts.outbox.markFailed(
             claimed.id,
             err.message,
-            this.now() + 1000,
+            this.now() + this.retryDelayMs(claimed.attempts),
             claimed.claimToken
           )
           if (marked) {
@@ -159,6 +159,9 @@ export class ChannelRegistry {
     if (this.retryTimer) { clearInterval(this.retryTimer); this.retryTimer = undefined }
   }
   private now(): number { return this.opts.now?.() ?? Date.now() }
+  private retryDelayMs(attempts: number): number {
+    return Math.min(60000, 1000 * Math.pow(2, Math.max(0, attempts - 1)))
+  }
   private async retryDue(): Promise<void> {
     if (!this.opts.outbox) return
     for (const r of this.opts.outbox.claimDue(20, this.now())) {
@@ -168,7 +171,7 @@ export class ChannelRegistry {
         const marked = this.opts.outbox.markFailed(
           r.id,
           msg,
-          this.now() + 1000,
+          this.now() + this.retryDelayMs(r.attempts),
           r.claimToken
         )
         if (marked) {

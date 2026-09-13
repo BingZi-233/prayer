@@ -86,6 +86,21 @@ describe("unanswered poller runScan", () => {
     })
   })
 
+  it("messageId 缺失时 deliveryKey 使用稳定的消息行 id", async () => {
+    repo.setGroupProactiveCursor("qq", "100", 1)
+    seed(100, 200, "member", "无平台消息 id", NOW - 5000)
+    const row = repoDb(repo)
+      .prepare(
+        "SELECT id FROM group_messages WHERE channel = 'qq' AND group_id = '100'"
+      )
+      .get() as { id: number }
+    const reply = new Promise<ReplyReady>((res) => bus.once("reply.ready", res))
+
+    await runScan(base())
+
+    expect((await reply).deliveryKey).toBe(`proactive:qq:100:200:${NOW - 5000}:row:${row.id}`)
+  })
+
   it("主动回复引用用户代表消息(band 内最后一条)", async () => {
     repo.setGroupProactiveCursor("qq", "100", 1)
     seed(100, 200, "member", "第一句", NOW - 6000, 501)

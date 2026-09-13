@@ -28,6 +28,7 @@ export interface UserMessage {
   id: number
 }
 export interface MemberMessage {
+  id: number
   userId: string
   text: string
   createdAt: number

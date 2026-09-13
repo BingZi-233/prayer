@@ -13,4 +13,12 @@ describe("app config proactive candidate budget", () => {
     })
     expect(cfg.proactiveCandidateBudget).toBe(7)
   })
+
+  it("clamps a candidate budget below the answer cap to the answer cap", () => {
+    const cfg = appConfigSchema.parse({
+      proactiveMaxPerScan: 9,
+      proactiveCandidateBudget: 2,
+    })
+    expect(cfg.proactiveCandidateBudget).toBe(9)
+  })
 })

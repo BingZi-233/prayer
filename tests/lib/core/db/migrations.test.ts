@@ -75,6 +75,34 @@ describe("数据库迁移注册表", () => {
     expect(indexExists(db, "idx_outbox_resolution_status")).toBe(true)
   })
 
+  it("v9 preserves legacy rows and defaults delivery state to sent", () => {
+    const db = createDb()
+    migrateDatabase(db, 3, 8)
+    db.prepare(
+      "INSERT INTO resolution_events (kind, session_key, detail) VALUES (?, ?, ?)"
+    ).run("auto", "legacy-session", "legacy")
+    db.prepare(
+      "INSERT INTO proactive_replies (channel, group_id, user_id, question, answer) VALUES (?, ?, ?, ?, ?)"
+    ).run("qq", "100", "200", "legacy question", "legacy answer")
+
+    migrateDatabase(db, 3, 9)
+
+    expect(
+      db.prepare("SELECT COUNT(*) AS n FROM resolution_events").get()
+    ).toEqual({ n: 1 })
+    expect(
+      db.prepare("SELECT delivery_status FROM resolution_events").get()
+    ).toEqual({ delivery_status: "sent" })
+    expect(
+      db.prepare("SELECT COUNT(*) AS n FROM proactive_replies").get()
+    ).toEqual({ n: 1 })
+    expect(
+      db.prepare("SELECT delivery_status FROM proactive_replies").get()
+    ).toEqual({ delivery_status: "sent" })
+    expect(indexExists(db, "idx_resolution_events_delivery_key")).toBe(true)
+    expect(indexExists(db, "idx_proactive_replies_delivery_key")).toBe(true)
+  })
+
   it("迁移失败时回滚当前版本，修复原因后可从断点继续", () => {
     const db = createDb()
     migrateDatabase(db, 3, 5)

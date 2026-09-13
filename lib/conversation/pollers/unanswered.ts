@@ -174,7 +174,7 @@ async function scanOnce(d: Resolved): Promise<void> {
       // 只要用户最后一句仍无人应答就兜底。前文多句升序拼进 text 作上下文。
       const byUser = new Map<
         string,
-        { text: string; questionTs: number; messageId: string | null }
+        { text: string; questionTs: number; messageId: string | null; rowId: number }
       >()
       for (const r of rows) {
         const prev = byUser.get(r.userId)
@@ -182,13 +182,14 @@ async function scanOnce(d: Resolved): Promise<void> {
           text: prev ? `${prev.text}\n${r.text}` : r.text,
           questionTs: r.createdAt,
           messageId: r.messageId, // 代表 = band 内最后一条,引用它
+          rowId: r.id,
         })
       }
 
       let hits = 0
       let candidates = 0
       let capped = false
-      for (const [userId, { text, questionTs, messageId }] of byUser) {
+      for (const [userId, { text, questionTs, messageId, rowId }] of byUser) {
         if (hits >= d.maxPerScan) {
           capped = true
           break
@@ -301,7 +302,7 @@ async function scanOnce(d: Resolved): Promise<void> {
           continue // 哨兵/空 → 沉默
         }
         if (result.sessionId) d.store.remember(key, result.sessionId)
-        const deliveryKey = `proactive:${key}:${questionTs}:${messageId ?? text.slice(0, 24)}`
+        const deliveryKey = `proactive:${key}:${questionTs}:${messageId ?? `row:${rowId}`}`
         d.repo.insertProactiveReply(channel, chatId, userId, text, result.text, {
           deliveryKey,
           deliveryStatus: "pending",
