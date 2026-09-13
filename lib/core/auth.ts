@@ -38,8 +38,7 @@ function throttleMap(): Map<string, ThrottleEntry> {
   if (m.size > THROTTLE_GC_ENTRIES) {
     const now = Date.now()
     for (const [k, v] of m) {
-      if (v.blockedUntil <= now && v.fails === 0) m.delete(k)
-      else if (v.blockedUntil <= now && v.fails > 0) m.delete(k)
+      if (v.blockedUntil <= now) m.delete(k)
     }
   }
   return m

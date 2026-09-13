@@ -16,13 +16,8 @@ export interface AgentMedia {
 
 // 折叠引用/转发为文本前言,与正文拼接;用户侧文本一律 sanitize,防 MiniMax new_sensitive
 function foldPreamble(text: string, media?: AgentMedia): string {
-  const clean = (value: string): string => {
-    let out = sanitizeForModel(value)
-    for (const marker of AGENT_PROMPT_MARKERS) {
-      out = out.split(marker).join("")
-    }
-    return out
-  }
+  const clean = (value: string) =>
+    stripAgentPromptMarkers(sanitizeForModel(value))
   return [
     media?.quoted && `【用户引用了一条消息:${clean(media.quoted)}】`,
     media?.forwarded && `【用户转发的合并消息:\n${clean(media.forwarded)}】`,

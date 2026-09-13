@@ -1,8 +1,7 @@
 import { bus } from "../../core/bus"
 import { logger } from "../../core/logger"
 import type { Repo } from "../../core/db/repo"
-import type { Agent } from "../agent"
-import { AGENT_FALLBACK_TEXT } from "../agent"
+import { AGENT_FALLBACK_TEXT, type Agent } from "../agent"
 import { isNoAnswerText, PROACTIVE_SUFFIX } from "../../model/prompt"
 import type { SessionStore } from "../session"
 import type {
@@ -127,14 +126,12 @@ function chatPolicy(
 
 function chatEnabled(d: Resolved, channel: ChannelId, chatId: string): boolean {
   const p = chatPolicy(d, channel, chatId)
-  if (p?.proactiveEnabled !== undefined) return p.proactiveEnabled
-  return d.globalProactiveEnabled
+  return p?.proactiveEnabled ?? d.globalProactiveEnabled
 }
 
 function chatSilence(d: Resolved, channel: ChannelId, chatId: string): number {
   const p = chatPolicy(d, channel, chatId)
-  if (p?.proactiveSilenceMs !== undefined) return p.proactiveSilenceMs
-  return d.silenceMs
+  return p?.proactiveSilenceMs ?? d.silenceMs
 }
 
 // 真答案判定:非空、不含哨兵、且不是 agent 降级兜底文案。撞任一 → 沉默。

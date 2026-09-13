@@ -106,7 +106,6 @@ export class RuntimeManager {
   private unbindUsage?: () => void
   private unbindToolStats?: () => void
   private wsConnected = false
-  private usageBudgetUsd = 0
 
   getStatus(): RuntimeStatus {
     return {
@@ -149,8 +148,6 @@ export class RuntimeManager {
       const db = builders.openDb(cfg.dbPath)
       const repo = builders.makeRepo(db)
       const agent = builders.makeAgent(cfg, repo)
-      this.usageBudgetUsd = cfg.usageBudgetUsd
-
       const { enabledChats, adminSurface } = resolveRuntimeChatConfig(cfg)
 
       this.unbindUsage = bindUsagePersistence(repo, {

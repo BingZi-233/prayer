@@ -1,5 +1,4 @@
-import { query as sdkQuery } from "@anthropic-ai/claude-agent-sdk"
-import type { Options } from "@anthropic-ai/claude-agent-sdk"
+import { query as sdkQuery, type Options } from "@anthropic-ai/claude-agent-sdk"
 import { usageStats } from "../model/stats/usage"
 import { toolStats, KB_PREFETCH_TOOL, KB_GROUNDED_TOOL } from "../model/stats/tool"
 import { logger } from "../core/logger"

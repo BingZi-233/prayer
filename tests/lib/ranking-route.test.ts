@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 import { NextRequest } from "next/server"
 
 const { embedMock, batchMock, searchMock, rankedMock } = vi.hoisted(() => ({
-  embedMock: vi.fn(async (probe: string) => { await new Promise((r) => setTimeout(r, 1)); return [0.1] }),
+  embedMock: vi.fn(async () => { await new Promise((r) => setTimeout(r, 1)); return [0.1] }),
   batchMock: vi.fn(), searchMock: vi.fn(async () => []),
   rankedMock: vi.fn(() => [{ id: 1, title: "A", count: 1, lastTs: 2 }, { id: 2, title: "B", count: 1, lastTs: 1 }]),
 }))

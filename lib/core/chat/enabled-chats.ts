@@ -1,11 +1,12 @@
 import type { ChannelId, ChatRef } from "./types"
+import { makeChatRef } from "./ids"
 import type { AppConfig, GroupPolicy } from "../config/schema"
 
 export type { ChatRef }
 
 /** policy / 游标 key：`${channel}:${chatId}` */
 export function policyKey(channel: ChannelId, chatId: string): string {
-  return `${channel}:${chatId}`
+  return makeChatRef(channel, chatId)
 }
 
 /** 生效会话配置源（仅 chat-ref 列表） */

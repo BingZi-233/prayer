@@ -1,6 +1,10 @@
-import type { QuestionTopic, TopicRanking, ChatCursor } from "../models.ts"
+import type {
+  QuestionTopic,
+  TopicRanking,
+  ChatCursor,
+  ChatRef,
+} from "../models.ts"
 import type { SqliteContext } from "../context.ts"
-import type { ChatRef } from "../models.ts"
 import type { ConfigRepository } from "./config.ts"
 
 /** 问题主题、出现记录与排行游标；批量归类由调用方包在事务中。 */

@@ -38,7 +38,7 @@ export class Repo {
   readonly outbox: OutboxRepository
 
   constructor(private readonly db: Database.Database) {
-    this.sql = new SqliteContext(db)
+    this.sql = new SqliteContext(this.db)
     this.config = new ConfigRepository(this.sql)
     this.knowledge = new KnowledgeRepository(this.sql)
     this.sessions = new SessionsRepository(this.sql)

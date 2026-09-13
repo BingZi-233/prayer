@@ -101,14 +101,3 @@ export function MetricRows({
     </div>
   )
 }
-
-/** 指标行的加载骨架。 */
-export function MetricRowsSkeleton({ count = 4 }: { count?: number }) {
-  return (
-    <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-      {Array.from({ length: count }).map((_, i) => (
-        <Skeleton key={i} className="h-8 w-full" />
-      ))}
-    </div>
-  )
-}

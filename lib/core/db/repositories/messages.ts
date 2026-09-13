@@ -9,9 +9,9 @@ import type {
   GroupMessage,
   MemberMessage,
   ChatActivity,
+  ChatRef,
 } from "../models.ts"
 import type { SqliteContext } from "../context.ts"
-import type { ChatRef } from "../models.ts"
 
 /** 群消息缓冲与入站去重；为主应答和后台任务提供统一时间窗。 */
 export class MessagesRepository {

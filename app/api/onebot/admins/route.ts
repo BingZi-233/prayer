@@ -6,21 +6,8 @@ import {
   loadGroupMembers,
   toAdminMemberShape,
 } from "@/lib/channels/qq/members-fetch"
+import { parseQQList } from "@/lib/core/config/chats"
 import { ok, fail } from "@/lib/core/api"
-
-/** 解析 ?groups=1,2,3;非法项丢弃 */
-function parseGroupsParam(raw: string | null): number[] | null {
-  if (raw == null || raw === "") return null
-  const seen = new Set<number>()
-  const out: number[] = []
-  for (const part of raw.split(/[,\s]+/)) {
-    const n = Number(part)
-    if (!Number.isFinite(n) || n <= 0 || seen.has(n)) continue
-    seen.add(n)
-    out.push(n)
-  }
-  return out
-}
 
 /**
  * 拉取群内 owner/admin 名单,跨群按 QQ 去重。
@@ -32,7 +19,9 @@ function parseGroupsParam(raw: string | null): number[] | null {
  */
 export async function GET(req: NextRequest): Promise<NextResponse> {
   const { cfg } = getAppContext()
-  const fromQuery = parseGroupsParam(req.nextUrl.searchParams.get("groups"))
+  const rawGroups = req.nextUrl.searchParams.get("groups")
+  const fromQuery =
+    rawGroups == null || rawGroups === "" ? null : parseQQList(rawGroups)
   const fromCfg = cfg.enabledChats
     .filter((c) => c.channel === "qq")
     .map((c) => Number(c.chatId))

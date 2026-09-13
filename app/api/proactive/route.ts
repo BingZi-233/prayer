@@ -6,12 +6,8 @@ import {
   listEnabledChats,
   policyKey,
 } from "@/lib/core/chat/enabled-chats"
-import type { ChannelId } from "@/lib/core/chat/types"
 import { ok, fail } from "@/lib/core/api"
-
-function chatKey(channel: string, chatId: string): string {
-  return `${channel}:${chatId}`
-}
+import type { ChannelId } from "@/lib/core/chat/types"
 
 // 主动回复专页:节奏配置 + 每群(游标/滞后/主动回复数) + 最近插话列表
 export async function GET(): Promise<NextResponse> {
@@ -20,24 +16,29 @@ export async function GET(): Promise<NextResponse> {
     const now = Date.now()
 
     const counts = new Map(
-      repo.proactiveGroupCounts().map((c) => [chatKey(c.channel, c.chatId), c])
+      repo
+        .proactiveGroupCounts()
+        .map((c) => [policyKey(c.channel as ChannelId, c.chatId), c])
     )
     const enabled = listEnabledChats(cfg)
+    const enabledSet = new Set(
+      enabled.map((c) => policyKey(c.channel, c.chatId))
+    )
     const cursors = new Map<string, number>()
     for (const c of enabled) {
       cursors.set(
-        chatKey(c.channel, c.chatId),
+        policyKey(c.channel, c.chatId),
         repo.groupProactiveCursor(c.channel, c.chatId)
       )
     }
 
     const ids = new Set<string>([
-      ...enabled.map((c) => chatKey(c.channel, c.chatId)),
+      ...enabled.map((c) => policyKey(c.channel, c.chatId)),
       ...counts.keys(),
     ])
     // 管理面会话不展示
     const adminKey = cfg.adminSurface
-      ? chatKey(cfg.adminSurface.channel, cfg.adminSurface.chatId)
+      ? policyKey(cfg.adminSurface.channel, cfg.adminSurface.chatId)
       : null
 
     const groups = [...ids]
@@ -51,10 +52,7 @@ export async function GET(): Promise<NextResponse> {
         const c = counts.get(key)
         const policy = getGroupPolicy(cfg, channel, chatId)
         const silence = policy?.proactiveSilenceMs ?? cfg.proactiveSilenceMs
-        const proactiveOn =
-          policy?.proactiveEnabled !== undefined
-            ? policy.proactiveEnabled
-            : cfg.proactiveEnabled
+        const proactiveOn = policy?.proactiveEnabled ?? cfg.proactiveEnabled
         // QQ-only UI: groupId 数字;其它通道 Number 可能 NaN,前端仍可用 chatId
         const groupIdNum = Number(chatId)
         return {
@@ -62,9 +60,7 @@ export async function GET(): Promise<NextResponse> {
           chatId,
           // 兼容旧前端字段(useGroupNames 仍按 QQ 群号)
           groupId: Number.isFinite(groupIdNum) ? groupIdNum : 0,
-          enabled: enabled.some(
-            (e) => e.channel === channel && e.chatId === chatId
-          ),
+          enabled: enabledSet.has(policyKey(channel, chatId)),
           proactiveEnabled: proactiveOn,
           cursor,
           // 游标落后当前沉默前沿多久(与 poller 的 until = now - silenceMs 对齐)
@@ -122,10 +118,7 @@ export async function PATCH(req: NextRequest): Promise<NextResponse> {
     if (!parsed.success)
       return NextResponse.json(fail("参数非法"), { status: 400 })
     const { repo } = getAppContext()
-    const okk = repo.setProactiveQuality(
-      parsed.data.id,
-      parsed.data.quality
-    )
+    const okk = repo.setProactiveQuality(parsed.data.id, parsed.data.quality)
     if (!okk) return NextResponse.json(fail("记录不存在"), { status: 404 })
     return NextResponse.json(
       ok({ id: parsed.data.id, quality: parsed.data.quality })
