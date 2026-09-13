@@ -105,7 +105,7 @@ export class ChannelRegistry {
         const marked = this.opts.outbox?.markFailed(
           claimed.id,
           msg,
-          this.now() + 1000,
+          this.now() + this.retryDelayMs(claimed.attempts),
           claimed.claimToken
         )
         if (marked) {

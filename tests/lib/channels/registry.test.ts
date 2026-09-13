@@ -131,6 +131,48 @@ describe("ChannelRegistry", () => {
     expect(nextAttemptAt).toBe(11_000)
   })
 
+  it("registered channel send rejection uses attempts-based exponential backoff", async () => {
+    let nextAttemptAt = 0
+    const claimed: OutboxRecord = {
+      id: 72,
+      deliveryKey: "delivery-72",
+      action: {
+        channel: "tg",
+        chatId: "-100",
+        text: "retry registered",
+        deliveryKey: "delivery-72",
+      },
+      status: "sending",
+      attempts: 3,
+      nextAttemptAt: 0,
+      leaseUntil: 30_000,
+      claimToken: "lease-72",
+      lastError: null,
+    }
+    const outbox: OutboundStore = {
+      enqueueAndClaim: () => claimed,
+      claimDue: () => [],
+      markSent: () => true,
+      markFailed: (_id, _error, next) => {
+        nextAttemptAt = next
+        return true
+      },
+      sentChunkCount: () => 0,
+    }
+    const reg = new ChannelRegistry({ outbox, now: () => 10_000 })
+    reg.register(
+      makeChannel("tg", {
+        onSend: () => {
+          throw new Error("registered send failure")
+        },
+      })
+    )
+
+    await reg.dispatch(claimed.action)
+
+    expect(nextAttemptAt).toBe(14_000)
+  })
+
   it("旧 lease 的发送完成不会伪造 delivery.sent", async () => {
     const events: unknown[] = []
     const onDelivery = (e: unknown) => events.push(e)

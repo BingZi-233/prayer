@@ -80,3 +80,30 @@ Observed: exit 0; same single pre-existing ranking-route warning.
 - The existing lint warning in `tests/lib/ranking-route.test.ts` remains unrelated and unchanged.
 - Durable outbox semantics remain local at-least-once; a process crash after platform acceptance can still produce a duplicate, as specified.
 - Existing unrelated KB/reflection/package edits were preserved and not staged.
+
+## Task 4 reviewer follow-up (round 1)
+
+- Fixed the registered-channel `dispatch` rejection path to use the shared attempts-based retry delay helper.
+- Added a regression using a claimed record with `attempts=3`; it asserts `now + 4000` after an actual registered channel send rejection.
+
+Verification:
+
+```text
+pnpm vitest run tests/lib/channels/registry.test.ts
+```
+
+Observed: 1 file passed, 15 tests passed.
+
+```text
+pnpm typecheck && pnpm lint
+```
+
+Observed: exit 0; one pre-existing warning remains in `tests/lib/ranking-route.test.ts`.
+
+Red command before the fix:
+
+```text
+pnpm vitest run tests/lib/channels/registry.test.ts -t 'registered channel send rejection'
+```
+
+Observed: failed with `expected 14000, received 11000`.
