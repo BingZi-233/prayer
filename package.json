@@ -16,6 +16,7 @@
     "check": "pnpm typecheck && pnpm lint && pnpm test",
     "db:check": "node --experimental-transform-types scripts/db-maintenance.ts check",
     "db:backup": "node --experimental-transform-types scripts/db-maintenance.ts backup",
+    "kb:audit": "node --experimental-transform-types scripts/audit-kb-quality-recovery.ts",
     "ingest": "node --experimental-transform-types scripts/ingest.ts",
     "pm:start": "next build && pm2 start ecosystem.config.cjs",
     "pm:stop": "pm2 stop prayer",
