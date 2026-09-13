@@ -11,9 +11,9 @@ import type {
   ReflectionSummary,
   CompactionSummary,
   CompactionDetail,
+  ReflectionStatus,
 } from "../models.ts"
 import type { SqliteContext } from "../context.ts"
-import type { ReflectionStatus } from "../models.ts"
 import {
   mapReflectionRow,
   normalizeReflectionStatus,

@@ -5,9 +5,8 @@ import { bus } from "@/lib/core/bus"
 import { registerOrchestrator } from "@/lib/conversation/orchestrator"
 import { registerReplyMapper, splitReply } from "@/lib/conversation/reply-mapper"
 import { SessionStore } from "@/lib/conversation/session"
-import { BLOCKED_REPLY } from "@/lib/conversation/intent"
+import { BLOCKED_REPLY, type IntentClassifier } from "@/lib/conversation/intent"
 import type { Agent } from "@/lib/conversation/agent"
-import type { IntentClassifier } from "@/lib/conversation/intent"
 import type {
   QualifiedMessage,
   ReplyReady,

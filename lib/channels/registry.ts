@@ -1,9 +1,8 @@
 import { bus } from "../core/bus"
-import type { ActionSend } from "../core/chat/events"
+import type { ActionSend, EventMap } from "../core/chat/events"
 import { logger } from "../core/logger"
 import type { Channel, ChannelId, ChannelStatus } from "../core/chat/types"
-import type { OutboundStore } from "../core/chat/outbox"
-import type { OutboxRecord } from "../core/chat/outbox"
+import type { OutboundStore, OutboxRecord } from "../core/chat/outbox"
 
 /**
  * 多通道生命周期注册表 + 唯一 action.send 分发器。
@@ -36,36 +35,7 @@ export class ChannelRegistry {
   async dispatch(a: ActionSend): Promise<void> {
     const ch = this.map.get(a.channel)
     if (!ch) {
-      const err = new Error(`channel not registered: ${a.channel}`)
-      if (this.opts.outbox) {
-        const action = a.deliveryKey ? a : { ...a, deliveryKey: `legacy:${this.now()}:${Math.random()}` }
-        const claimed = this.opts.outbox.enqueueAndClaim(action, this.now())
-        if (claimed) {
-          const marked = this.opts.outbox.markFailed(
-            claimed.id,
-            err.message,
-            this.now() + this.retryDelayMs(claimed.attempts),
-            claimed.claimToken
-          )
-          if (marked) {
-            bus.emit("delivery.recorded", {
-              deliveryKey: action.deliveryKey!,
-              resolutionKey: action.resolutionKey,
-              status: "failed",
-              error: err.message,
-              at: this.now(),
-            })
-          }
-        }
-      }
-      logger.log("warn", `[registry] ${err.message}`)
-      bus.emit("error.occurred", {
-        scope: "channel.unregistered",
-        err,
-        channel: a.channel,
-        chatId: a.chatId,
-        userVisible: false,
-      })
+      this.handleUnregistered(a)
       return
     }
     let claimed: OutboxRecord | null = null
@@ -83,12 +53,7 @@ export class ChannelRegistry {
           claimed.claimToken
         )
         if (marked) {
-          bus.emit("delivery.recorded", {
-            deliveryKey: action.deliveryKey!,
-            resolutionKey: action.resolutionKey,
-            status: "sent",
-            at: this.now(),
-          })
+          this.recordDelivery(action, "sent")
         }
       }
     } catch (err) {
@@ -102,21 +67,7 @@ export class ChannelRegistry {
         userVisible: a.userVisibleOnFailure ?? false,
       })
       if (claimed) {
-        const marked = this.opts.outbox?.markFailed(
-          claimed.id,
-          msg,
-          this.now() + this.retryDelayMs(claimed.attempts),
-          claimed.claimToken
-        )
-        if (marked) {
-          bus.emit("delivery.recorded", {
-            deliveryKey: action.deliveryKey!,
-            resolutionKey: action.resolutionKey,
-            status: "failed",
-            error: msg,
-            at: this.now(),
-          })
-        }
+        this.failDelivery(claimed, action, msg)
       }
     }
   }
@@ -168,60 +119,74 @@ export class ChannelRegistry {
       const ch = this.map.get(r.action.channel)
       if (!ch) {
         const msg = `channel not registered: ${r.action.channel}`
-        const marked = this.opts.outbox.markFailed(
-          r.id,
-          msg,
-          this.now() + this.retryDelayMs(r.attempts),
-          r.claimToken
-        )
-        if (marked) {
-          bus.emit("delivery.recorded", {
-            deliveryKey: r.action.deliveryKey!,
-            resolutionKey: r.action.resolutionKey,
-            status: "failed",
-            error: msg,
-            at: this.now(),
-          })
-        }
+        this.failDelivery(r, r.action, msg)
         continue
       }
       try {
         await ch.send(r.action)
         const marked = this.opts.outbox.markSent(r.id, this.now(), r.claimToken)
         if (marked) {
-          bus.emit("delivery.recorded", {
-            deliveryKey: r.action.deliveryKey!,
-            resolutionKey: r.action.resolutionKey,
-            status: "sent",
-            at: this.now(),
-          })
+          this.recordDelivery(r.action, "sent")
         }
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e)
-        const marked = this.opts.outbox.markFailed(
-          r.id,
-          msg,
-          this.now() + Math.min(
-            60000,
-            1000 * Math.pow(2, Math.max(0, r.attempts - 1))
-          ),
-          r.claimToken
-        )
-        if (marked) {
-          bus.emit("delivery.recorded", {
-            deliveryKey: r.action.deliveryKey!,
-            resolutionKey: r.action.resolutionKey,
-            status: "failed",
-            error: msg,
-            at: this.now(),
-          })
-        }
+        this.failDelivery(r, r.action, msg)
       }
     }
   }
 
   status(): ChannelStatus[] {
     return [...this.map.values()].map((c) => c.status())
+  }
+
+  private recordDelivery(
+    action: Pick<ActionSend, "deliveryKey" | "resolutionKey">,
+    status: EventMap["delivery.recorded"]["status"],
+    error?: string
+  ): void {
+    const event: EventMap["delivery.recorded"] = {
+      deliveryKey: action.deliveryKey!,
+      resolutionKey: action.resolutionKey,
+      status,
+      at: this.now(),
+    }
+    if (error !== undefined) event.error = error
+    bus.emit("delivery.recorded", event)
+  }
+
+  private failDelivery(
+    record: Pick<OutboxRecord, "id" | "attempts" | "claimToken">,
+    action: ActionSend,
+    error: string
+  ): void {
+    const marked = this.opts.outbox?.markFailed(
+      record.id,
+      error,
+      this.now() + this.retryDelayMs(record.attempts),
+      record.claimToken
+    )
+    if (marked) this.recordDelivery(action, "failed", error)
+  }
+
+  private handleUnregistered(a: ActionSend): void {
+    const err = new Error(`channel not registered: ${a.channel}`)
+    if (this.opts.outbox) {
+      const action = a.deliveryKey
+        ? a
+        : { ...a, deliveryKey: `legacy:${this.now()}:${Math.random()}` }
+      const claimed = this.opts.outbox.enqueueAndClaim(action, this.now())
+      if (claimed) {
+        this.failDelivery(claimed, action, err.message)
+      }
+    }
+    logger.log("warn", `[registry] ${err.message}`)
+    bus.emit("error.occurred", {
+      scope: "channel.unregistered",
+      err,
+      channel: a.channel,
+      chatId: a.chatId,
+      userVisible: false,
+    })
   }
 
   private ensureListening(): void {

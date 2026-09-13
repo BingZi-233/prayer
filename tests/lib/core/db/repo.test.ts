@@ -9,8 +9,7 @@ import {
 } from "@/lib/core/db/index"
 import { CURRENT_SCHEMA_VERSION } from "@/lib/core/db/migrations/index"
 import { Repo } from "@/lib/core/db/repo"
-import BetterSqlite3 from "better-sqlite3"
-import type Database from "better-sqlite3"
+import BetterSqlite3, * as Database from "better-sqlite3"
 
 let db: Database.Database
 let repo: Repo
