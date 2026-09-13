@@ -107,3 +107,36 @@ pnpm vitest run tests/lib/channels/registry.test.ts -t 'registered channel send 
 ```
 
 Observed: failed with `expected 14000, received 11000`.
+
+## Task 4 final review fix wave
+
+- `recordDelivery` now compares sent chunk count with `repo.deliveryExpected` and records `pending` until every planned chunk is sent.
+- `registerResolutionRecorder` now falls back to `resolutionKey` when `deliveryKey` is absent, preserving an updatable delivery row.
+
+Red command:
+
+```text
+pnpm vitest run tests/lib/conversation/delivery-recorder.test.ts -t 'recordDelivery waits|resolutionKey is persisted'
+```
+
+Observed: 2 expected failures: one-of-two was counted as sent, and a resolution-only event persisted a NULL delivery key.
+
+Green commands:
+
+```text
+pnpm vitest run tests/lib/conversation/delivery-recorder.test.ts -t 'recordDelivery waits|resolutionKey is persisted'
+```
+
+Observed: 1 file passed, 2 tests passed.
+
+```text
+pnpm vitest run tests/lib/conversation/delivery-recorder.test.ts tests/lib/conversation/pollers/unanswered.test.ts tests/lib/core/db/repo.stats.test.ts
+```
+
+Observed: 3 files passed, 42 tests passed.
+
+```text
+pnpm typecheck && pnpm lint
+```
+
+Observed: exit 0; one pre-existing warning remains in `tests/lib/ranking-route.test.ts`.

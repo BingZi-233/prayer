@@ -35,8 +35,11 @@ export function registerDeliveryRecorder(repo: Repo): () => void {
 export function recordDelivery(repo: Repo, event: { deliveryKey: string; resolutionKey?: string; status: "sent" | "failed"; error?: string; at: number }): void {
   if (!event.resolutionKey) return
   const n = repo.outbox.sentChunkCount(event.resolutionKey)
+  const expected = repo.deliveryExpected(event.resolutionKey) ?? 1
+  const status =
+    event.status === "sent" && n < expected ? "pending" : event.status
   repo.transaction(() => {
-    repo.statistics.markDelivery(event.resolutionKey!, event.status, event.error, event.at, n)
+    repo.statistics.markDelivery(event.resolutionKey!, status, event.error, event.at, n)
   })
 }
 

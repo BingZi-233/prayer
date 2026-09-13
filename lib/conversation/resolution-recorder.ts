@@ -12,7 +12,7 @@ export function registerResolutionRecorder(repo: Repo): () => void {
         chatId: e.chatId,
         userId: e.userId,
         detail: e.detail,
-        deliveryKey: e.deliveryKey,
+        deliveryKey: e.deliveryKey ?? e.resolutionKey,
         deliveryStatus: e.resolutionKey ? "pending" : "sent",
         deliveryExpected: e.deliveryExpected,
       })

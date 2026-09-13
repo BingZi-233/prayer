@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import { openDb } from "@/lib/core/db/index"
 import { Repo } from "@/lib/core/db/repo"
-import { registerDeliveryRecorder } from "@/lib/conversation/delivery-recorder"
+import { recordDelivery, registerDeliveryRecorder } from "@/lib/conversation/delivery-recorder"
 import { registerResolutionRecorder } from "@/lib/conversation/resolution-recorder"
 import { registerReplyMapper } from "@/lib/conversation/reply-mapper"
 import { ChannelRegistry } from "@/lib/channels/registry"
@@ -44,6 +44,65 @@ describe("delivery recorder", () => {
     off()
 
     expect(repo.resolutionCounts(0).auto).toBe(1)
+  })
+
+  it("recordDelivery waits for every planned chunk before marking sent", () => {
+    const repo = new Repo(openDb(":memory:", 3))
+    repo.insertResolution("auto", {
+      deliveryKey: "recorded-two",
+      resolutionKey: "recorded-two",
+      deliveryStatus: "pending",
+      deliveryExpected: 2,
+    })
+    const first = repo.outbox.enqueueAndClaim({
+      channel: "qq",
+      chatId: "1",
+      text: "first",
+      deliveryKey: "recorded-two/0",
+      resolutionKey: "recorded-two",
+    }, 0)!
+    const second = repo.outbox.enqueueAndClaim({
+      channel: "qq",
+      chatId: "1",
+      text: "second",
+      deliveryKey: "recorded-two/1",
+      resolutionKey: "recorded-two",
+    }, 0)!
+    repo.outbox.markSent(first.id, 1, first.claimToken)
+
+    recordDelivery(repo, {
+      deliveryKey: "recorded-two/0",
+      resolutionKey: "recorded-two",
+      status: "sent",
+      at: 2,
+    })
+    expect(repo.resolutionCounts(0).auto ?? 0).toBe(0)
+
+    repo.outbox.markSent(second.id, 3, second.claimToken)
+    recordDelivery(repo, {
+      deliveryKey: "recorded-two/1",
+      resolutionKey: "recorded-two",
+      status: "sent",
+      at: 4,
+    })
+    expect(repo.resolutionCounts(0).auto).toBe(1)
+  })
+
+  it("resolutionKey is persisted as delivery key when deliveryKey is omitted", () => {
+    const repo = new Repo(openDb(":memory:", 3))
+    const off = registerResolutionRecorder(repo)
+    bus.emit("resolution.recorded", {
+      kind: "auto",
+      resolutionKey: "resolution-only",
+    })
+    off()
+
+    const db = (repo as unknown as {
+      db: { prepare: (sql: string) => { get: () => unknown } }
+    }).db
+    expect(
+      db.prepare("SELECT delivery_key, delivery_status FROM resolution_events").get()
+    ).toEqual({ delivery_key: "resolution-only", delivery_status: "pending" })
   })
 
   it("proactive reply moves pending to sent through mapper, registry, and outbox", async () => {
