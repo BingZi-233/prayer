@@ -1,5 +1,4 @@
 import type { Repo } from "../core/db/repo"
-import type { ActionSend } from "../core/chat/events"
 import { bus } from "../core/bus"
 
 export function registerDeliveryRecorder(repo: Repo): () => void {
@@ -42,5 +41,3 @@ export function recordDelivery(repo: Repo, event: { deliveryKey: string; resolut
     repo.statistics.markDelivery(event.resolutionKey!, status, event.error, event.at, n)
   })
 }
-
-export function deliveryMetadata(a: ActionSend): ActionSend { return a }

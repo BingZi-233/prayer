@@ -35,6 +35,17 @@ export function sanitizeForModel(text: string): string {
   return out
 }
 
+export const UNTRUSTED_USER_BEGIN = "<<<UNTRUSTED_USER_MESSAGE>>>"
+export const UNTRUSTED_USER_END = "<<<END_UNTRUSTED_USER_MESSAGE>>>"
+
+/** 清洗并包裹不可信用户文本,防止伪造定界符注入分类器。 */
+export function wrapUntrustedUserText(text: string): string {
+  const clean = sanitizeForModel(
+    text.split(UNTRUSTED_USER_BEGIN).join("").split(UNTRUSTED_USER_END).join("")
+  )
+  return `${UNTRUSTED_USER_BEGIN}\n${clean}\n${UNTRUSTED_USER_END}`
+}
+
 /** 是否为 MiniMax/Foundry 的 input new_sensitive(1026) */
 export function isNewSensitiveError(err: unknown): boolean {
   return /new_sensitive/i.test(errorMessage(err))
