@@ -3,21 +3,10 @@ import { join, sep } from "node:path"
 import { openDb } from "../lib/core/db/index.ts"
 import { Repo } from "../lib/core/db/repo.ts"
 import { embed } from "../lib/model/embed.ts"
+import { splitCompactedFaq } from "../lib/knowledge/reflection/compact-chunks.ts"
 
-export function chunkText(text: string, maxLen = 500): string[] {
-  const paras = text
-    .split(/\n\s*\n/)
-    .map((p) => p.trim())
-    .filter(Boolean)
-  const out: string[] = []
-  for (const p of paras) {
-    if (p.length <= maxLen) out.push(p)
-    else
-      for (let i = 0; i < p.length; i += maxLen)
-        out.push(p.slice(i, i + maxLen))
-  }
-  return out
-}
+// 保留 CLI/测试的旧导出名；知识库与反思整理共用同一分块实现。
+export const chunkText = splitCompactedFaq
 
 export interface IngestResult {
   file: string

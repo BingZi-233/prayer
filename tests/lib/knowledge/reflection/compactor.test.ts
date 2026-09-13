@@ -107,6 +107,27 @@ describe("runCompact", () => {
     ).toBe(true)
   })
 
+  it("整理结果写入前按知识库上限切块,不产生超长反思向量", async () => {
+    seedReflections(3)
+    const longFaq = `问题: ${"细节".repeat(500)}`
+    await runCompact(
+      opts({
+        queryFn: fakeQuery({
+          items: [{ faq: longFaq }, { faq: "短 FAQ" }],
+        }) as never,
+      })
+    )
+
+    const contents = repo.reflectionEntries().map((entry) => entry.content)
+    expect(contents).toHaveLength(4)
+    expect(contents).toContain("短 FAQ")
+    expect(contents.every((content) => content.length <= 500)).toBe(true)
+    expect(repo.recentCompactions(1)[0]).toMatchObject({
+      beforeCount: 3,
+      afterCount: 2,
+    })
+  })
+
   it("query 带 outputFormat.json_schema + 用 structured_output", async () => {
     seedReflections(5)
     let captured: { options?: { outputFormat?: unknown } } | undefined

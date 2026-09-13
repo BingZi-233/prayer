@@ -7,6 +7,7 @@ import { noToolQueryOptions } from "../../model/query-options"
 import { drainQuery } from "../../model/drain"
 import { pickArrayFieldDual, previewJsonPayload } from "../../model/json-output"
 import { sanitizeForModel } from "../../model/sanitize-input"
+import { splitCompactedFaq } from "./compact-chunks"
 import {
   DEFAULT_EMBED_TIMEOUT_MS,
   DEFAULT_QUERY_TIMEOUT_MS,
@@ -317,8 +318,11 @@ export async function runCompact(deps: ReflectionCompactorDeps): Promise<void> {
       return
     }
 
+    // LLM 输出不能直接绕过生产 ingest 的 500 字边界；先切成自包含的
+    // 检索单元，再逐块生成向量。这样历史整理也不会继续制造超长 chunk。
+    const chunkedFaqs = allFaqs.flatMap((faq) => splitCompactedFaq(faq))
     const withVec: { content: string; embedding: Float32Array }[] = []
-    for (const faq of allFaqs)
+    for (const faq of chunkedFaqs)
       withVec.push({ content: faq, embedding: await d.embed(faq) })
     // 传 before/after 文本快照 → 事务内记入 reflect_compactions,供 web「整理记录」追溯差异
     d.repo.replaceReflectionEntries(
@@ -326,20 +330,26 @@ export async function runCompact(deps: ReflectionCompactorDeps): Promise<void> {
       withVec,
       d.now(),
       entries.map((e) => e.content),
+      // compactions.after 保留 LLM 的逻辑 FAQ 列表；物理检索块数量由
+      // entries 表示，避免管理页把硬切片误当成新的业务 FAQ。
       allFaqs
     )
 
     const batchNote = batches.length > 1 ? `(分 ${batches.length} 批)` : ""
+    const chunkNote =
+      chunkedFaqs.length === allFaqs.length
+        ? ""
+        : `，写入 ${chunkedFaqs.length} 个检索块`
     logger.log(
       "info",
-      `[reflection-compact] ${entries.length} → ${allFaqs.length} 条${batchNote}`
+      `[reflection-compact] ${entries.length} → ${allFaqs.length} 条${batchNote}${chunkNote}`
     )
 
     if (d.notifyAdmin && d.adminSurface) {
       bus.emit("action.send", {
         channel: d.adminSurface.channel,
         chatId: d.adminSurface.chatId,
-        text: `反思整理:${entries.length} → ${allFaqs.length} 条${batchNote}`,
+        text: `反思整理:${entries.length} → ${allFaqs.length} 条${batchNote}${chunkNote}`,
       })
     }
   } catch (err) {
