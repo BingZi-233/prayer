@@ -46,6 +46,8 @@ logs/
 # 知识库正文(admin/kb 与 ingest 运行时读写,不入库)
 /docs/kb/**
 !/docs/kb/.gitkeep
+# 本地知识库审计快照、报告与 staging 产物不入库
+/docs/kb-audit/
 
 # 本地工具产物 / 配置(非源码)
 .claude/
