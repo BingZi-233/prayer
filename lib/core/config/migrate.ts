@@ -82,6 +82,14 @@ export function migrateConfigShape(
     { ...rest, enabledChats, adminSurface },
     seed
   )
+  // 逐策略修复旧库中的坏 groupPolicies 后写回规范形态；否则每次读取都
+  // 会重复修复，且管理员看不到数据库里实际仍残留的越界值。
+  if (
+    Object.prototype.hasOwnProperty.call(raw, "groupPolicies") &&
+    JSON.stringify(raw.groupPolicies) !== JSON.stringify(merged.groupPolicies)
+  ) {
+    migrated = true
+  }
   // 再规范化一次，防止 rest 里脏 chat-ref
   merged.enabledChats = normalizeChatRefs(merged.enabledChats)
   merged.adminSurface = normalizeAdminSurface(merged.adminSurface)

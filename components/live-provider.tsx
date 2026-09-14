@@ -22,6 +22,7 @@ export interface ChannelStatusView {
 
 export interface Status {
   state: string
+  ready?: boolean
   wsConnected: boolean
   sessionCount: number
   handoffQueue: number
@@ -37,12 +38,20 @@ export interface OverviewMetrics {
   proactive: number
   handoff: number
   error: number
+  operationalErrors: number
   blocked: number
   proactiveSilent: number
   autoResolutionRate: number | null
   proactiveBad: number
   usageCostUsd: number
   usageBudgetUsd: number
+  outbox?: {
+    pending: number
+    sending: number
+    sent: number
+    failed: number
+  }
+  storage?: { dbBytes: number; walBytes: number; shmBytes: number }
 }
 
 export interface Overview {

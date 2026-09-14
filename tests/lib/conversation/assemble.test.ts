@@ -74,4 +74,40 @@ describe("assemble e2e(总线级)", () => {
       vi.useRealTimers()
     }
   })
+
+  it("装配中途失败会回滚已注册的监听器和定时器", () => {
+    vi.useFakeTimers()
+    const nativeSetInterval = globalThis.setInterval
+    let calls = 0
+    const setIntervalSpy = vi
+      .spyOn(globalThis, "setInterval")
+      .mockImplementation(((handler: TimerHandler, timeout?: number) => {
+        calls++
+        if (calls === 2) throw new Error("timer setup failed")
+        return nativeSetInterval(handler, timeout)
+      }) as typeof globalThis.setInterval)
+    try {
+      const repo = new Repo(openDb(":memory:"))
+      const fakeAgent = {
+        run: vi.fn(async () => ({ text: "x", sessionId: "s" })),
+      }
+
+      expect(() =>
+        assemble({
+          repo,
+          botQQ: 555,
+          adminSurface: { channel: "qq", chatId: "999" },
+          enabledChats: [{ channel: "qq", chatId: "1" }],
+          agent: fakeAgent as unknown as Agent,
+        })
+      ).toThrow("timer setup failed")
+      expect(
+        bus.eventNames().reduce((n, name) => n + bus.listenerCount(name), 0)
+      ).toBe(0)
+      expect(vi.getTimerCount()).toBe(0)
+    } finally {
+      setIntervalSpy.mockRestore()
+      vi.useRealTimers()
+    }
+  })
 })

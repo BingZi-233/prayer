@@ -1,3 +1,5 @@
+import { isIP } from "node:net"
+
 /**
  * 后台鉴权共用原语。
  *
@@ -70,13 +72,53 @@ export function clearLoginFails(ip: string): void {
   throttleMap().delete(ip)
 }
 
-/** 从代理头里尽量取客户端 IP(XFF 首段);取不到就归并到 unknown。
- *  已知权衡:直连(无代理头)部署下所有请求共用 unknown 桶,连续口令错误会
- *  连管理员一起锁 15 分钟(廉价 DoS 面);本服务假定部署在可信反代后(XFF 可信)。 */
-export function clientIp(req: Headers): string {
-  return (
-    req.get("x-forwarded-for")?.split(",")[0]?.trim() ||
-    req.get("x-real-ip") ||
-    "unknown"
-  )
+/**
+ * 读取登录限速用的客户端 IP。
+ *
+ * X-Forwarded-For/X-Real-IP 都可由直连客户端伪造，因此默认不信任；只有
+ * 部署方明确设置 TRUST_PROXY=true（或调用方显式传 true）时才读取代理头。
+ * Node/hosting adapter 若把 socket 地址挂到 request 上，则直连优先使用
+ * 该服务端元数据；值无效时归并到 unknown，避免把任意 header 内容带入
+ * 内存 key/日志。
+ */
+export type ClientIpRequest = {
+  headers: Headers
+  /** Optional trusted address supplied by a Node/hosting adapter. */
+  ip?: unknown
+  socket?: { remoteAddress?: unknown } | null
+  connection?: { remoteAddress?: unknown } | null
+}
+
+export function clientIp(
+  req: Headers | ClientIpRequest,
+  trustProxy = process.env.TRUST_PROXY === "true"
+): string {
+  const headers = req instanceof Headers ? req : req.headers
+  if (trustProxy) {
+    const forwarded = headers.get("x-forwarded-for")
+    for (const raw of forwarded?.split(",") ?? []) {
+      const value = raw.trim()
+      if (isIp(value)) return value
+    }
+    const real = headers.get("x-real-ip")?.trim()
+    if (real && isIp(real)) return real
+  }
+
+  // `NextRequest` itself does not expose this field today, but Node adapters
+  // and some hosts attach it. It is server-side metadata, unlike request
+  // headers, so it remains usable when TRUST_PROXY=false.
+  if (!(req instanceof Headers)) {
+    const address =
+      (typeof req.ip === "string" && req.ip) ||
+      (typeof req.socket?.remoteAddress === "string" &&
+        req.socket.remoteAddress) ||
+      (typeof req.connection?.remoteAddress === "string" &&
+        req.connection.remoteAddress)
+    if (address && isIp(address)) return address
+  }
+  return "unknown"
+}
+
+function isIp(value: string): boolean {
+  return value.length <= 128 && isIP(value) !== 0
 }

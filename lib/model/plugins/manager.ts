@@ -3,6 +3,7 @@
 // 本模块管的是怎么把它们挂给模型。
 import { execFile } from "node:child_process"
 import { resolve } from "node:path"
+import { logger } from "../../core/logger"
 
 export interface PluginInfo {
   id: string
@@ -11,6 +12,16 @@ export interface PluginInfo {
   enabled: boolean
   installPath: string
   mcpServers?: Record<string, unknown>
+}
+
+/** Minimal shape emitted by `claude plugin marketplace list --json`. */
+export interface MarketplaceInfo {
+  name: string
+  source?: string
+  repo?: string
+  path?: string
+  url?: string
+  installLocation?: string
 }
 
 // 插件引用 name@marketplace / 单名:仅允许安全字符,杜绝命令注入
@@ -25,6 +36,77 @@ export interface CliResult {
   error?: string
 }
 
+export type PluginRollback = () => Promise<CliResult>
+
+// Plugin hooks are third-party code.  Give the management CLI only the small
+// set of process values it needs for locating the executable, config and temp
+// directory.  In particular, a denylist is not enough here: cloud SDKs also
+// use names such as AWS_ACCESS_KEY_ID and GOOGLE_APPLICATION_CREDENTIALS.
+// Claude's own auth/model settings are loaded from CLAUDE_CONFIG_DIR below.
+const SAFE_PLUGIN_ENV_KEYS = new Set([
+  "APPDATA",
+  "CI",
+  "COLORTERM",
+  "ComSpec",
+  "FORCE_COLOR",
+  "HOME",
+  "INIT_CWD",
+  "LANG",
+  "LC_ALL",
+  "LC_CTYPE",
+  "LOGNAME",
+  "LOCALAPPDATA",
+  "NO_COLOR",
+  "NODE_ENV",
+  "OLDPWD",
+  "PATH",
+  "PATHEXT",
+  "PWD",
+  "SHELL",
+  "SystemRoot",
+  "TERM",
+  "TERM_PROGRAM",
+  "TERM_PROGRAM_VERSION",
+  "TMP",
+  "TEMP",
+  "TMPDIR",
+  "TZ",
+  "USER",
+  "USERPROFILE",
+  "WINDIR",
+  "XDG_CACHE_HOME",
+  "XDG_CONFIG_HOME",
+  "XDG_DATA_HOME",
+])
+
+export function pluginCliEnv(configDir: string): NodeJS.ProcessEnv {
+  // Next's ambient ProcessEnv declaration requires NODE_ENV even though the
+  // value may be absent at runtime. Seed it from the parent environment so the
+  // returned map remains type-safe without widening the allowlist.
+  const env: NodeJS.ProcessEnv = { NODE_ENV: process.env.NODE_ENV }
+  for (const key of Object.keys(process.env)) {
+    if (SAFE_PLUGIN_ENV_KEYS.has(key) || key.startsWith("LC_"))
+      env[key] = process.env[key]
+  }
+  env.CLAUDE_CONFIG_DIR = resolve(configDir)
+  return env
+}
+
+/** Run an inverse CLI action without masking the original reconfigure failure. */
+export async function bestEffortPluginRollback(
+  rollback?: PluginRollback
+): Promise<CliResult | undefined> {
+  if (!rollback) return undefined
+  try {
+    return await rollback()
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    }
+  }
+}
+
 export class PluginManager {
   constructor(private configDir: string) {}
 
@@ -34,7 +116,7 @@ export class PluginManager {
         "claude",
         args,
         {
-          env: { ...process.env, CLAUDE_CONFIG_DIR: resolve(this.configDir) },
+          env: pluginCliEnv(this.configDir),
           maxBuffer: 10 * 1024 * 1024,
           // CLI 卡住(网络拉 marketplace 元数据/配置目录锁)时整个插件管理 API
           // 不能无限期悬挂;30s 足够覆盖正常 CLI 操作
@@ -66,12 +148,43 @@ export class PluginManager {
     }
   }
 
+  async find(id: string): Promise<PluginInfo | undefined> {
+    this.assertRef(id)
+    return (await this.list()).find((plugin) => plugin.id === id)
+  }
+
+  async listMarketplaces(): Promise<MarketplaceInfo[]> {
+    const { stdout } = await this.run(["plugin", "marketplace", "list", "--json"])
+    try {
+      const parsed: unknown = JSON.parse(stdout)
+      if (!Array.isArray(parsed)) throw new Error("不是数组")
+      return parsed as MarketplaceInfo[]
+    } catch {
+      throw new Error(
+        `marketplace list 输出非 JSON(可能混入了 CLI 前景日志): ${stdout.slice(
+          0,
+          200
+        )}`
+      )
+    }
+  }
+
   private async mutate(args: string[]): Promise<CliResult> {
+    const action = args[1] ?? "unknown"
+    const target = args[2] ?? ""
     try {
       const { stdout } = await this.run(args)
+      logger.info(`[plugin] ${action} ${target}`.trim(), {
+        scope: "plugin.audit",
+      })
       return { ok: true, stdout: stdout.trim() }
     } catch (e) {
-      return { ok: false, error: e instanceof Error ? e.message : String(e) }
+      const error = e instanceof Error ? e.message : String(e)
+      logger.error(`[plugin] ${action} ${target} failed`, {
+        scope: "plugin.audit",
+        raw: error.slice(0, 500),
+      })
+      return { ok: false, error }
     }
   }
 
@@ -89,6 +202,28 @@ export class PluginManager {
       "--scope",
       "user",
     ])
+  }
+
+  /** Remove a marketplace only when the caller knows it was added by this operation. */
+  async removeMarketplace(name: string): Promise<CliResult> {
+    this.assertRef(name)
+    return this.mutate(["plugin", "marketplace", "remove", name])
+  }
+
+  /**
+   * Restore only an enable/disable transition captured immediately before it.
+   * Refuse if the plugin disappeared or its version/scope changed meanwhile.
+   */
+  async restoreEnabled(snapshot: PluginInfo): Promise<CliResult> {
+    this.assertRef(snapshot.id)
+    const current = await this.find(snapshot.id)
+    if (!current)
+      return { ok: false, error: "插件已不存在，拒绝自动恢复启停状态" }
+    if (current.version !== snapshot.version || current.scope !== snapshot.scope)
+      return { ok: false, error: "插件版本或 scope 已变化，拒绝自动恢复启停状态" }
+    if (current.enabled === snapshot.enabled)
+      return { ok: true, stdout: "插件启停状态已恢复" }
+    return snapshot.enabled ? this.enable(snapshot.id) : this.disable(snapshot.id)
   }
 
   async uninstall(id: string): Promise<CliResult> {

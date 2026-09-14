@@ -4,8 +4,10 @@ import {
   type SDKMessage,
 } from "@anthropic-ai/claude-agent-sdk"
 import type { AppConfig } from "../core/config-store"
-import { TOOL_ALLOWLIST, isToolAllowed } from "./tool-policy"
+import { redactDiagnostic } from "../core/log-context"
+import { configuredToolAllowlist, isToolAllowed } from "./tool-policy"
 import { sdkEnv } from "./sdk-env"
+import { canonicalDbPath } from "../core/db/path"
 
 export interface CapabilityTool {
   name: string
@@ -42,16 +44,17 @@ export interface Capabilities {
   probedAt: number
 }
 
-// 工具门控:唯一真源是 lib/model/tool-policy.ts 的 isToolAllowed(允许制:mcp__ 前缀或命中 TOOL_ALLOWLIST 才放行)。
+// 工具门控:唯一真源是 lib/model/tool-policy.ts 的 isToolAllowed(仅显式 MCP
+// server/tool 白名单与 Skill 放行)。
 // 不再手写枚举被禁工具 —— 把 probe 到的 Agent 实际暴露工具(liveTools)逐个跑 isToolAllowed 分区:
 //   放行的进 allowlist;被拒的进 gated,逐条列真实工具名。
 // 内建宿主工具(Bash/Read/Web* 等)需模型 turn 才被 getContextUsage 上报,零 token probe 看不到,
-// 故补一条规则兜底(不点名任何工具),说明「规则外一律 deny」,避免手写清单造成漂移/误读。
+// 故补一条规则兜底(不点名任何工具),说明「规则外一律 deny」,避免把新插件工具误当成可用。
 export function buildToolPolicy(
   liveTools: string[] = []
 ): CapabilityToolPolicy {
   const uniq = [...new Set(liveTools)]
-  const allowRule = ["mcp__* 前缀工具", ...TOOL_ALLOWLIST].join("、")
+  const allowRule = [...configuredToolAllowlist()].join("、")
   return {
     allowlist: [
       `规则:放行 ${allowRule}`,
@@ -65,7 +68,7 @@ export function buildToolPolicy(
           constraint: "未命中放行规则 → canUseTool 拒绝(deny)",
         })),
       {
-        tool: "其余一切工具(非 mcp__ 前缀且不在放行白名单)",
+        tool: "其余一切工具(不在显式放行白名单)",
         constraint: "允许制:一律 canUseTool 拒绝(deny)",
       },
     ],
@@ -103,7 +106,7 @@ function normalizeMcp(list: McpStatusRaw[]): CapabilityMcpServer[] {
     name: s.name,
     status: s.status,
     version: s.serverInfo?.version,
-    error: s.error,
+    error: s.error === undefined ? undefined : redactDiagnostic(s.error),
     scope: s.scope,
     tools: (s.tools ?? []).map((t) => ({
       name: t.name,
@@ -178,10 +181,15 @@ async function probeUncached(
   const now = opts.now ?? Date.now
   const queryFn = opts.queryFn ?? sdkQuery
 
-  // 绝对化配置目录与 DB 路径,防 cwd 漂移(与 runtime.start 一致)。
+  // 绝对化配置目录与 DB 路径,防 cwd 漂移(与 runtime.start 一致),但只放进
+  // 本次 query 的 env 快照。探针可与 config PUT/reconfigure 并发;写全局
+  // process.env 会让另一请求按本次探测配置打开错误的 DB/插件目录。
   // DB_PATH 供 cs 插件 MCP 子进程(plugins/cs/scripts/cs-mcp.ts)继承打开知识库。
-  process.env.CLAUDE_CONFIG_DIR = resolve(cfg.claudeConfigDir)
-  process.env.DB_PATH = resolve(cfg.dbPath)
+  const probeEnv = {
+    ...process.env,
+    CLAUDE_CONFIG_DIR: resolve(cfg.claudeConfigDir),
+    DB_PATH: canonicalDbPath(cfg.dbPath),
+  }
 
   const abortController = new AbortController()
 
@@ -203,7 +211,7 @@ async function probeUncached(
       permissionMode: "default",
       maxTurns: 1,
       abortController,
-      env: sdkEnv(),
+      env: sdkEnv(probeEnv),
     },
   }) as unknown as ProbeQuery
 

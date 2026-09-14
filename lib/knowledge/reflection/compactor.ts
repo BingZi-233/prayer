@@ -1,5 +1,5 @@
 import { query as sdkQuery } from "@anthropic-ai/claude-agent-sdk"
-import { bus } from "../../core/bus"
+import { bus, emitErrorSafely } from "../../core/bus"
 import { logger } from "../../core/logger"
 import type { Repo } from "../../core/db/repo"
 import { embed as defaultEmbed } from "../../model/embed"
@@ -7,6 +7,7 @@ import { noToolQueryOptions } from "../../model/query-options"
 import { drainQuery } from "../../model/drain"
 import { pickArrayFieldDual, previewJsonPayload } from "../../model/json-output"
 import { sanitizeForModel } from "../../model/sanitize-input"
+import { withKbMutationLock } from "../mutation-lock"
 import { splitCompactedFaq } from "./compact-chunks"
 import {
   DEFAULT_EMBED_TIMEOUT_MS,
@@ -222,9 +223,7 @@ async function compactOneBatch(
     }
   }
   const baseBlock = [...ctx.values()]
-    .map((c, i) =>
-      JSON.stringify({ index: i + 1, text: sanitizeForModel(c) })
-    )
+    .map((c, i) => JSON.stringify({ index: i + 1, text: sanitizeForModel(c) }))
     .join("\n")
   const refBlock = batch
     .map((e, i) =>
@@ -263,11 +262,12 @@ async function compactOneBatch(
       "warn",
       `[reflection-compact] 第 ${batchIndex + 1}/${batchTotal} 批校验失败(${check.reason}),该批保留原文。预览: ${preview || "(空)"}`
     )
-    bus.emit("error.occurred", {
+    emitErrorSafely({
       scope: "reflection-compact",
       err: new Error(
         `第 ${batchIndex + 1}/${batchTotal} 批 LLM 产出未过安全校验,该批保留原文:${check.reason}`
       ),
+      userVisible: false,
     })
     return null
   }
@@ -275,14 +275,17 @@ async function compactOneBatch(
 }
 
 // 执行一轮压缩整理,供测试直驱。旁路:异常保留旧库并 emit error,不抛。
+// 返回 false 让手动入口能报告失败;定时入口仍按既有周期推进游标。
 // 超过 batchSize 时分批调 LLM,各批结果汇总后一次性替换;单批失败则该批保留原文,其它批仍生效。
-export async function runCompact(deps: ReflectionCompactorDeps): Promise<void> {
+export async function runCompact(
+  deps: ReflectionCompactorDeps
+): Promise<boolean> {
   const d = resolve(deps)
   // 只整理已入库未升格/未驳回的条目;已升格条目保留作审计,不参与整库替换
   const entries = d.repo
     .reflectionEntries()
     .filter((e) => e.status === "approved") as ReflectionEntry[]
-  if (entries.length < d.minEntries) return
+  if (entries.length < d.minEntries) return true
 
   try {
     const batches = partitionBatches(entries, d.batchSize)
@@ -310,12 +313,12 @@ export async function runCompact(deps: ReflectionCompactorDeps): Promise<void> {
         "warn",
         `[reflection-compact] 全部 ${batches.length} 批均失败,保留旧库`
       )
-      return
+      return false
     }
     // 全是单条批(极端)或全部 LLM 成功/部分成功:继续替换
     if (!anyLlmOk && !anyBatchFailed) {
       // 全是 <2 条的批,无变化
-      return
+      return true
     }
 
     // LLM 输出不能直接绕过生产 ingest 的 500 字边界；先切成自包含的
@@ -325,15 +328,29 @@ export async function runCompact(deps: ReflectionCompactorDeps): Promise<void> {
     for (const faq of chunkedFaqs)
       withVec.push({ content: faq, embedding: await d.embed(faq) })
     // 传 before/after 文本快照 → 事务内记入 reflect_compactions,供 web「整理记录」追溯差异
-    d.repo.replaceReflectionEntries(
-      entries.map((e) => e.id),
-      withVec,
-      d.now(),
-      entries.map((e) => e.content),
-      // compactions.after 保留 LLM 的逻辑 FAQ 列表；物理检索块数量由
-      // entries 表示，避免管理页把硬切片误当成新的业务 FAQ。
-      allFaqs
+    const replaced = await withKbMutationLock(async () =>
+      d.repo.replaceReflectionEntries(
+        entries.map((e) => e.id),
+        withVec,
+        d.now(),
+        entries.map((e) => e.content),
+        // compactions.after 保留 LLM 的逻辑 FAQ 列表；物理检索块数量由
+        // entries 表示，避免管理页把硬切片误当成新的业务 FAQ。
+        allFaqs,
+        "approved"
+      )
     )
+    if (!replaced) {
+      // 审核/升格可能在 LLM 等待期间改变了快照状态;保留现状,下轮重试。
+      const err = new Error("反思整理快照在提交前已变化,保留现有条目")
+      logger.log("warn", `[reflection-compact] ${err.message}`)
+      emitErrorSafely({
+        scope: "reflection-compact",
+        err,
+        userVisible: false,
+      })
+      return false
+    }
 
     const batchNote = batches.length > 1 ? `(分 ${batches.length} 批)` : ""
     const chunkNote =
@@ -352,8 +369,16 @@ export async function runCompact(deps: ReflectionCompactorDeps): Promise<void> {
         text: `反思整理:${entries.length} → ${allFaqs.length} 条${batchNote}${chunkNote}`,
       })
     }
+    // A partial batch failure still leaves a valid conservative replacement,
+    // but the manual caller must surface it and avoid consuming its cursor.
+    return !anyBatchFailed
   } catch (err) {
-    bus.emit("error.occurred", { scope: "reflection-compact", err })
+    emitErrorSafely({
+      scope: "reflection-compact",
+      err,
+      userVisible: false,
+    })
+    return false
   }
 }
 
@@ -368,18 +393,41 @@ export function registerReflectionCompactor(
   const now = deps.now ?? (() => Date.now())
   const repo = deps.repo
   let running = false // 防重入:上一轮未结束则跳过本次触发
+  const reportTimerError = (err: unknown) => {
+    logger.error(
+      `[reflection-compact] timer failed: ${
+        err instanceof Error ? err.message : String(err)
+      }`,
+      {
+        scope: "reflection-compact.timer",
+        raw: err instanceof Error ? err.stack : String(err),
+      }
+    )
+    emitErrorSafely({
+      scope: "reflection-compact.timer",
+      err,
+      userVisible: false,
+    })
+  }
   const tick = () => {
     if (running) return
-    if (now() - repo.compactAt() < compactMs) return // 未到期
+    try {
+      if (now() - repo.compactAt() < compactMs) return // 未到期
+    } catch (err) {
+      reportTimerError(err)
+      return
+    }
     running = true
     logger.log("info", "[reflection-compact] due, running")
     void runCompact(deps)
-      .catch((err) =>
-        bus.emit("error.occurred", { scope: "reflection-compact", err })
-      )
+      .catch(reportTimerError)
       .finally(() => {
         // 无论成败推进游标:到期即消费一个周期,失败下周期重试,避免每 scanMs 反复打 LLM
-        repo.setCompactAt(now())
+        try {
+          repo.setCompactAt(now())
+        } catch (err) {
+          reportTimerError(err)
+        }
         running = false
       })
   }

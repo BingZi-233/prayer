@@ -70,8 +70,20 @@ export class TopicsRepository {
     this.config.setConfigRow(`topic_cursor:${channel}:${chatId}`, String(ts))
   }
 
+  // 管理面排行只展示前 500 个主题;避免历史 occurrences 无限增长时一次性物化整表。
+  static readonly MAX_RANKING_TOPICS = 500
+
   // 时间窗排行:msg_ts >= sinceTs 的归属按主题计数,降序。sinceTs=0 即全部。
-  rankingByWindow(sinceTs: number): TopicRanking[] {
+  rankingByWindow(
+    sinceTs: number,
+    limit = TopicsRepository.MAX_RANKING_TOPICS
+  ): TopicRanking[] {
+    const boundedLimit = Number.isFinite(limit)
+      ? Math.max(
+          0,
+          Math.min(TopicsRepository.MAX_RANKING_TOPICS, Math.floor(limit))
+        )
+      : TopicsRepository.MAX_RANKING_TOPICS
     return this.sql
       .prepare<{
         id: number
@@ -84,9 +96,29 @@ export class TopicsRepository {
          JOIN question_topics t ON t.id = o.topic_id
          WHERE o.msg_ts >= ?
          GROUP BY t.id
-         ORDER BY count DESC, lastTs DESC`
+         ORDER BY count DESC, lastTs DESC
+         LIMIT ?`
       )
-      .all(sinceTs)
+      .all(sinceTs, boundedLimit)
+  }
+
+  /** 排行总数只返回一行,配合列表 cap 保持管理面 totals 的全量语义。 */
+  rankingTotalsByWindow(sinceTs: number): {
+    topics: number
+    questions: number
+  } {
+    const row = this.sql
+      .prepare<{ topics: number; questions: number }>(
+        `SELECT COUNT(DISTINCT o.topic_id) AS topics, COUNT(o.id) AS questions
+         FROM question_occurrences o
+         JOIN question_topics t ON t.id = o.topic_id
+         WHERE o.msg_ts >= ?`
+      )
+      .get(sinceTs)
+    return {
+      topics: Number(row?.topics ?? 0),
+      questions: Number(row?.questions ?? 0),
+    }
   }
 
   // 某主题窗口内代表问题样例,按最近降序。按 text 去重(同句重复发/转发只展示一次,计数不受影响)。
@@ -102,20 +134,26 @@ export class TopicsRepository {
     return rows.map((r) => r.text)
   }
 
-  topicSamplesBatch(topicIds: number[], limit: number, sinceTs = 0): Map<number, string[]> {
+  topicSamplesBatch(
+    topicIds: number[],
+    limit: number,
+    sinceTs = 0
+  ): Map<number, string[]> {
     const result = new Map<number, string[]>()
     for (const id of topicIds) result.set(id, [])
     if (topicIds.length === 0 || limit <= 0) return result
     const placeholders = topicIds.map(() => "?").join(",")
-    const rows = this.sql.prepare<{ topic_id: number; text: string }>(
-      `SELECT topic_id, text FROM (
+    const rows = this.sql
+      .prepare<{ topic_id: number; text: string }>(
+        `SELECT topic_id, text FROM (
          SELECT topic_id, text, MAX(msg_ts) AS ts,
                 ROW_NUMBER() OVER (PARTITION BY topic_id ORDER BY MAX(msg_ts) DESC) AS rn
          FROM question_occurrences
          WHERE topic_id IN (${placeholders}) AND msg_ts >= ?
          GROUP BY topic_id, text
        ) WHERE rn <= ? ORDER BY topic_id, ts DESC`
-    ).all(...topicIds, sinceTs, limit)
+      )
+      .all(...topicIds, sinceTs, limit)
     for (const row of rows) result.get(row.topic_id)!.push(row.text)
     return result
   }

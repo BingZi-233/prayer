@@ -1,5 +1,9 @@
 import type { ActionSend } from "../../core/chat/events"
-import type { Channel, ChannelCapabilities, ChannelStatus } from "../../core/chat/types"
+import type {
+  Channel,
+  ChannelCapabilities,
+  ChannelStatus,
+} from "../../core/chat/types"
 import { OneBotClient, type OneBotStats } from "./client"
 
 const QQ_CAPABILITIES: ChannelCapabilities = {
@@ -45,11 +49,14 @@ export class QqChannel implements Channel {
   }
 
   status(): ChannelStatus {
+    const stats = this.client.stats()
     return {
       id: this.id,
       connected: this.isConnected(),
-      lastError: this.lastError,
-      detail: formatQqDetail(this.client.stats()) ?? this.detail,
+      // start() 只启动后台 WS 循环；连接错误发生在其返回之后，需从 client
+      // 读取当前错误，否则 readiness/管理页会一直只看到「未连接」。
+      lastError: this.lastError ?? stats.lastError,
+      detail: formatQqDetail(stats) ?? this.detail,
     }
   }
 
@@ -95,6 +102,9 @@ export function formatQqDetail(
   }
   if (stats.staleReconnects > 0) {
     parts.push(`stale-reconnects=${stats.staleReconnects}`)
+  }
+  if ((stats.connectionErrors ?? 0) > 0) {
+    parts.push(`connection-errors=${stats.connectionErrors}`)
   }
   return parts.length > 0 ? parts.join(" ") : undefined
 }

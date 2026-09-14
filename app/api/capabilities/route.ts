@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
 import { getAppContext } from "@/lib/core/app-context"
 import { probeCapabilities } from "@/lib/model/introspect"
-import { ok, fail } from "@/lib/core/api"
+import { ok, fail, safeApiError } from "@/lib/core/api"
 
 export async function GET(req: Request): Promise<NextResponse> {
   try {
@@ -11,7 +11,8 @@ export async function GET(req: Request): Promise<NextResponse> {
     const caps = await probeCapabilities(cfg, { refresh })
     return NextResponse.json(ok(caps))
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err)
-    return NextResponse.json(fail(`能力探测失败:${msg}`), { status: 500 })
+    return NextResponse.json(fail(`能力探测失败:${safeApiError(err)}`), {
+      status: 500,
+    })
   }
 }

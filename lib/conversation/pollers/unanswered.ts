@@ -1,4 +1,4 @@
-import { bus } from "../../core/bus"
+import { bus, emitErrorSafely } from "../../core/bus"
 import { logger } from "../../core/logger"
 import type { Repo } from "../../core/db/repo"
 import { AGENT_FALLBACK_TEXT, type Agent } from "../agent"
@@ -16,12 +16,19 @@ import {
   isAdminSurface,
   type ChatRef,
 } from "../../core/chat/enabled-chats"
+import {
+  PROACTIVE_MAX_CANDIDATES_PER_SCAN,
+  PROACTIVE_MAX_PER_SCAN,
+  PROACTIVE_MIN_SCAN_MS,
+  PROACTIVE_MIN_SILENCE_MS,
+} from "../../core/config/schema"
 
 // 主动模式指令定义在 model/prompt.ts:预检索要按它剥前缀才能拿到干净的检索
 // query(见同模块 kbProbeText),这边只消费。
 
 /** 旧手写 poller 依赖仍可返回布尔值；生产判官使用三态结果。 */
-type PollerClassifier = AnswerabilityClassifier | ((text: string) => Promise<boolean>)
+type PollerClassifier =
+  AnswerabilityClassifier | ((text: string) => Promise<boolean>)
 
 function normalizeClassification(
   verdict: AnswerabilityResult | boolean
@@ -92,12 +99,22 @@ interface Resolved {
 }
 
 function resolve(d: UnansweredPollerDeps): Resolved {
-  const positiveInt = (value: number | undefined, fallback: number) =>
-    Number.isFinite(value) ? Math.max(1, Math.floor(value!)) : fallback
-  const maxPerScan = positiveInt(d.maxPerScan, 2)
+  const positiveInt = (
+    value: number | undefined,
+    fallback: number,
+    max: number
+  ) =>
+    Number.isFinite(value)
+      ? Math.min(max, Math.max(1, Math.floor(value!)))
+      : fallback
+  const maxPerScan = positiveInt(d.maxPerScan, 2, PROACTIVE_MAX_PER_SCAN)
   const maxCandidatesPerScan = Math.max(
     maxPerScan,
-    positiveInt(d.maxCandidatesPerScan, 12)
+    positiveInt(
+      d.maxCandidatesPerScan,
+      12,
+      PROACTIVE_MAX_CANDIDATES_PER_SCAN
+    )
   )
   return {
     repo: d.repo,
@@ -171,7 +188,12 @@ async function scanOnce(d: Resolved): Promise<void> {
       // 只要用户最后一句仍无人应答就兜底。前文多句升序拼进 text 作上下文。
       const byUser = new Map<
         string,
-        { text: string; questionTs: number; messageId: string | null; rowId: number }
+        {
+          text: string
+          questionTs: number
+          messageId: string | null
+          rowId: number
+        }
       >()
       for (const r of rows) {
         const prev = byUser.get(r.userId)
@@ -211,7 +233,16 @@ async function scanOnce(d: Resolved): Promise<void> {
         let verdict: AnswerabilityResult | boolean
         try {
           verdict = await d.classify(text)
-        } catch {
+        } catch (err) {
+          // A classifier outage is operationally actionable even though this
+          // candidate remains retryable and must not advance the cursor.
+          emitErrorSafely({
+            scope: "proactive.classifier",
+            err,
+            channel,
+            chatId,
+            userVisible: false,
+          })
           verdict = { decision: "error", reason: "classifier_error" }
         }
         // 兼容旧的手写依赖:布尔 true/false 分别视为 answerable/not_answerable。
@@ -264,11 +295,12 @@ async function scanOnce(d: Resolved): Promise<void> {
             userId,
             detail: "agent_error",
           })
-          bus.emit("error.occurred", {
+          emitErrorSafely({
             scope: "proactive",
             err,
             channel,
             chatId,
+            userVisible: false,
           })
           capped = true
           break
@@ -300,10 +332,17 @@ async function scanOnce(d: Resolved): Promise<void> {
         }
         if (result.sessionId) d.store.remember(key, result.sessionId)
         const deliveryKey = `proactive:${key}:${questionTs}:${messageId ?? `row:${rowId}`}`
-        d.repo.insertProactiveReply(channel, chatId, userId, text, result.text, {
-          deliveryKey,
-          deliveryStatus: "pending",
-        })
+        d.repo.insertProactiveReply(
+          channel,
+          chatId,
+          userId,
+          text,
+          result.text,
+          {
+            deliveryKey,
+            deliveryStatus: "pending",
+          }
+        )
         bus.emit("reply.ready", {
           channel,
           chatId,
@@ -332,11 +371,12 @@ async function scanOnce(d: Resolved): Promise<void> {
       if (!capped) d.repo.setGroupProactiveCursor(channel, chatId, until)
     } catch (err) {
       // 单会话失败不牵连其他;该会话不推进游标 → 下轮重试
-      bus.emit("error.occurred", {
+      emitErrorSafely({
         scope: "proactive",
         err,
         channel,
         chatId,
+        userVisible: false,
       })
     }
   }
@@ -351,15 +391,29 @@ export async function runScan(deps: UnansweredPollerDeps): Promise<void> {
 export function registerUnansweredPoller(
   deps: UnansweredPollerDeps
 ): () => void {
-  const d = resolve(deps)
-  // 秒级扫描可配;下限 1s 防 setInterval(0) 空转打爆 CPU
-  const scanMs = Math.max(1_000, deps.scanMs ?? 60_000)
+  // Runtime constructor is a second safety boundary behind AppConfig parsing:
+  // direct callers cannot bypass the conservative outbound timing limits.
+  const d = resolve({
+    ...deps,
+    silenceMs: Number.isFinite(deps.silenceMs)
+      ? Math.max(PROACTIVE_MIN_SILENCE_MS, Math.floor(deps.silenceMs!))
+      : 180_000,
+  })
+  const scanMs = Number.isFinite(deps.scanMs)
+    ? Math.max(PROACTIVE_MIN_SCAN_MS, Math.floor(deps.scanMs!))
+    : 60_000
   let running = false // 防重入:上一轮未结束则跳过本次触发,避免重复兜底
   const timer = setInterval(() => {
     if (running) return
     running = true
     void scanOnce(d)
-      .catch((err) => bus.emit("error.occurred", { scope: "proactive", err }))
+      .catch((err) =>
+        emitErrorSafely({
+          scope: "proactive",
+          err,
+          userVisible: false,
+        })
+      )
       .finally(() => {
         running = false
       })

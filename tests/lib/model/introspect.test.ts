@@ -8,13 +8,14 @@ import {
 describe("buildToolPolicy", () => {
   it("放行规则条恒在;无 liveTools 时 gated 仅兜底规则条", () => {
     const p = buildToolPolicy()
-    expect(p.allowlist[0]).toContain("mcp__*")
+    expect(p.allowlist[0]).toContain("mcp__plugin_cs_cs__kb_search")
+    expect(p.allowlist[0]).toContain("mcp__plugin_packyapi_packyapi__packy")
     expect(p.allowlist[0]).toContain("Skill") // 规则条含 TOOL_ALLOWLIST 内容
     expect(p.gated).toHaveLength(1)
     expect(p.gated[0].tool).toContain("其余一切工具")
   })
 
-  it("liveTools 经 isToolAllowed 分区:mcp__/Skill 进 allowlist,其余进 gated", () => {
+  it("liveTools 经 isToolAllowed 分区:显式 MCP/Skill 进 allowlist,其余进 gated", () => {
     const p = buildToolPolicy([
       "mcp__plugin_cs_cs__kb_search",
       "Skill",
@@ -129,6 +130,42 @@ function opts(over: Partial<ProbeOptions> = {}): ProbeOptions {
 }
 
 describe("probeCapabilities", () => {
+  it("探针使用局部 env 快照,不污染调用进程", async () => {
+    const previousConfigDir = process.env.CLAUDE_CONFIG_DIR
+    const previousDbPath = process.env.DB_PATH
+    process.env.CLAUDE_CONFIG_DIR = "/caller/config"
+    process.env.DB_PATH = "/caller/database.sqlite"
+    let probeOptions: QueryParams["options"] | undefined
+    try {
+      await probeCapabilities(
+        {
+          ...cfg,
+          claudeConfigDir: "/probe/config",
+          dbPath: ":memory:",
+        },
+        {
+          refresh: true,
+          now: () => 3000,
+          queryFn: ((params: QueryParams) => {
+            probeOptions = params.options
+            return fakeQuery()
+          }) as unknown as QueryFn,
+        }
+      )
+      expect(probeOptions?.env).toMatchObject({
+        CLAUDE_CONFIG_DIR: "/probe/config",
+        DB_PATH: ":memory:",
+      })
+      expect(process.env.CLAUDE_CONFIG_DIR).toBe("/caller/config")
+      expect(process.env.DB_PATH).toBe("/caller/database.sqlite")
+    } finally {
+      if (previousConfigDir === undefined) delete process.env.CLAUDE_CONFIG_DIR
+      else process.env.CLAUDE_CONFIG_DIR = previousConfigDir
+      if (previousDbPath === undefined) delete process.env.DB_PATH
+      else process.env.DB_PATH = previousDbPath
+    }
+  })
+
   it("归一化 plugins/skills/mcp + 叠加门控", async () => {
     const caps = await probeCapabilities(cfg, opts())
     expect(caps.plugins[0]).toMatchObject({

@@ -1,5 +1,9 @@
 import { describe, it, expect, beforeEach } from "vitest"
-import { Agent, AGENT_FALLBACK_TEXT, type AgentDeps } from "@/lib/conversation/agent"
+import {
+  Agent,
+  AGENT_FALLBACK_TEXT,
+  type AgentDeps,
+} from "@/lib/conversation/agent"
 import {
   KB_CANDIDATES_BEGIN,
   KB_CANDIDATES_END,
@@ -15,6 +19,7 @@ import {
   KB_PREFETCH_TOOL,
   KB_GROUNDED_TOOL,
 } from "@/lib/model/stats/tool"
+import { bus } from "@/lib/core/bus"
 
 // 与 Agent 内部 queryFn 同型;spy 捕获的入参即 SDK query 的参数
 type QueryFn = NonNullable<AgentDeps["queryFn"]>
@@ -268,6 +273,42 @@ describe("Agent.run 超时", () => {
     const out = await agent.run("在吗", undefined, ctx)
     expect(out.text).toBe(AGENT_FALLBACK_TEXT)
     expect(out.sessionId).toBeUndefined()
+  })
+
+  it("降级异常 emit error.occurred,但标记为不可见", async () => {
+    const boom = new Error("relay unavailable")
+    const event = new Promise<{
+      scope: string
+      err: unknown
+      sessionKey?: string
+      channel?: string
+      chatId?: string
+      userVisible?: boolean
+    }>((resolve) => bus.once("error.occurred", resolve))
+    const agent = new Agent({
+      systemPrompt: "客服",
+      queryFn: (() => {
+        throw boom
+      }) as unknown as QueryFn,
+    })
+
+    const out = await agent.run("在吗", undefined, {
+      sessionKey: "tg:-100:2",
+      channel: "tg",
+      chatId: "-100",
+      userId: "2",
+    })
+    const e = await event
+
+    expect(out.status).toBe("failed")
+    expect(e).toMatchObject({
+      scope: "agent",
+      err: boom,
+      sessionKey: "tg:-100:2",
+      channel: "tg",
+      chatId: "-100",
+      userVisible: false,
+    })
   })
 })
 

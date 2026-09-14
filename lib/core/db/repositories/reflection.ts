@@ -23,6 +23,8 @@ import type { ConfigRepository } from "./config.ts"
 
 /** 反思来源、审核状态与整理记录；与知识库共享事务连接。 */
 export class ReflectionRepository {
+  static readonly MAX_SUMMARY_ROWS = 500
+
   constructor(
     private readonly sql: SqliteContext,
     private readonly config: ConfigRepository,
@@ -97,17 +99,24 @@ export class ReflectionRepository {
   // contentLen 供前端判断是否截断(展开后拉全文)。
   reflectionEntrySummaries(
     contentCap = 300,
-    sourceCap = 200
+    sourceCap = 200,
+    limit = ReflectionRepository.MAX_SUMMARY_ROWS
   ): ReflectionSummary[] {
+    const boundedLimit = Number.isFinite(limit)
+      ? Math.max(
+          0,
+          Math.min(ReflectionRepository.MAX_SUMMARY_ROWS, Math.floor(limit))
+        )
+      : ReflectionRepository.MAX_SUMMARY_ROWS
     const rows = this.sql
       .prepare<ReflectionSummaryRow>(
         `SELECT c.id, substr(c.content, 1, ?) AS content, length(c.content) AS contentLen,
               c.source, substr(m.question, 1, ?) AS question, substr(m.answer, 1, ?) AS answer,
               COALESCE(m.status, 'approved') AS status
          FROM kb_chunks c LEFT JOIN reflection_meta m ON m.chunk_id = c.id
-         WHERE c.doc = 'human-reflection' ORDER BY c.id DESC`
+         WHERE c.doc = 'human-reflection' ORDER BY c.id DESC LIMIT ?`
       )
-      .all(contentCap, sourceCap, sourceCap)
+      .all(contentCap, sourceCap, sourceCap, boundedLimit)
     return rows.map((r) => ({
       ...mapReflectionRow(r),
       contentLen: r.contentLen,
@@ -242,11 +251,31 @@ export class ReflectionRepository {
     entries: { content: string; embedding: Float32Array }[],
     sourceTs: number,
     beforeContents: string[] = [],
-    afterContents: string[] = []
-  ): void {
-    this.sql.transaction(() => {
+    afterContents: string[] = [],
+    /**
+     * Optional optimistic guard used by compaction.  The LLM runs outside
+     * this transaction, so a reviewer may change one of the snapshotted
+     * entries while it is waiting.  Refuse the replacement instead of
+     * deleting a now-rejected/promoted entry.
+     */
+    expectedStatus?: ReflectionStatus
+  ): boolean {
+    return this.sql.transaction(() => {
       if (oldIds.length) {
         const ph = oldIds.map(() => "?").join(",")
+        if (expectedStatus) {
+          const row = this.sql
+            .prepare<{ n: number }>(
+              `SELECT COUNT(*) AS n
+               FROM kb_chunks c
+               LEFT JOIN reflection_meta m ON m.chunk_id = c.id
+               WHERE c.doc = 'human-reflection'
+                 AND c.id IN (${ph})
+                 AND COALESCE(m.status, 'approved') = ?`
+            )
+            .get(...oldIds, expectedStatus)
+          if (!row || row.n !== oldIds.length) return false
+        }
         this.sql
           .prepare(`DELETE FROM kb_vec WHERE chunk_id IN (${ph})`)
           .run(...oldIds)
@@ -277,6 +306,7 @@ export class ReflectionRepository {
           JSON.stringify(beforeContents),
           JSON.stringify(afterContents)
         )
+      return true
     })
   }
 }

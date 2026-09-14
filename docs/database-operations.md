@@ -35,9 +35,48 @@ pnpm db:backup
 pnpm db:backup ./data/agent.db ./backups/agent-before-release.db
 ```
 
+数据库路径应使用普通文件路径，或不带 query/fragment 的本机绝对 `file:` URI；带 SQLite
+URI 选项、远程主机或相对路径的 `file:` URI 会被拒绝。这样不会把 `mode=ro` 等访问语义
+意外降级为可写的普通文件打开。
+
+`DB_PATH` 属于部署级存储边界，不应通过管理 API 在线切换；需要迁移时先停掉应用和后台任务，完成备份与恢复校验，再在部署环境更新变量并启动新进程。
+
 备份使用 SQLite 在线备份 API，能够包含 WAL 中已提交的数据。创建前检查源数据库，
-创建后重新以只读方式打开备份并执行 `PRAGMA integrity_check`。目标文件必须不存在，
-防止误覆盖最后一份可用备份。
+先在目标目录的私有随机临时目录生成并重新以只读方式打开备份执行
+`PRAGMA integrity_check`，再以不可覆盖的原子发布方式落到目标路径。目标文件必须不存在，
+防止误覆盖最后一份可用备份，也避免目标路径在检查与写入之间被替换成符号链接。
+
+## 数据保留与 transcript 清理
+
+`pnpm db:retention` 是只读预检，输出各表的过期候选行数和受保护的会话数；它不会
+自动删除数据，也不会执行 `VACUUM`。建议先生成一份新备份，再在停机窗口确认报告后
+显式传入 `--apply`：
+
+```bash
+pnpm db:backup ./data/agent.db ./backups/before-retention.db
+pnpm db:retention ./data/agent.db
+pnpm db:retention ./data/agent.db --apply
+```
+
+默认策略是：`reflect_compactions` 180 天，主题出现记录/孤立主题和非活动会话 365
+天，模型/工具日用量 730 天，已成功投递的 `outbox_messages` 记录 90 天（`pending`、
+`sending`、`failed` 会保留以便重试和排障）。会话只有在非人工、无 `resume_id` 且没有任何历史工单时才会
+清理；有工单（包括已关闭）、人工接管或续接指针的旧会话会在报告中标为 protected。现有反思
+轮询器继续负责 `resolution_events`、主动回复和入站去重表的 90/90/7 天窗口。
+
+Claude transcript 位于 `CLAUDE_CONFIG_DIR/projects`，默认不会被扫描。需要评估时显式
+指定目录（按文件 mtime 统计，默认 90 天）：
+
+```bash
+pnpm db:retention ./data/agent.db \
+  --transcripts=./data/claude-config/projects
+```
+
+数据库清理和 transcript 删除是两个独立动作；只有同时传入
+`--apply --transcripts=/absolute/path --delete-transcripts` 才会删除根目录下过期的
+`.jsonl` 普通文件（递归子目录）。脚本拒绝跟随符号链接，删除前会重新检查 mtime；若只是想清理数据
+库，不要传 `--delete-transcripts`。当前仓库没有自动 cron，部署方应把备份、报告、人工
+确认和 apply 编排成可审计的作业，并保留每次命令输出。
 
 ## 恢复流程
 

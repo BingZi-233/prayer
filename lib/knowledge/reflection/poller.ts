@@ -1,5 +1,5 @@
 import { query as sdkQuery } from "@anthropic-ai/claude-agent-sdk"
-import { bus } from "../../core/bus"
+import { bus, emitErrorSafely } from "../../core/bus"
 import { logger } from "../../core/logger"
 import { errorMessage } from "../../core/log-context"
 import type { Repo, KbHit } from "../../core/db/repo"
@@ -7,7 +7,10 @@ import { embed as defaultEmbed } from "../../model/embed"
 import { noToolQueryOptions } from "../../model/query-options"
 import { drainQuery } from "../../model/drain"
 import { pickArrayFieldDual, previewJsonPayload } from "../../model/json-output"
-import { isNewSensitiveError, sanitizeForModel } from "../../model/sanitize-input"
+import {
+  isNewSensitiveError,
+  sanitizeForModel,
+} from "../../model/sanitize-input"
 import {
   DEFAULT_EMBED_TIMEOUT_MS,
   DEFAULT_QUERY_TIMEOUT_MS,
@@ -436,11 +439,12 @@ async function scanOnce(d: Resolved): Promise<void> {
         continue
       }
       // 该会话不推进游标 → 下轮重试;剪枝上限保证最终自愈(超 lookback+settle 放弃)
-      bus.emit("error.occurred", {
+      emitErrorSafely({
         scope: "reflection",
         err,
         channel: channel as ChannelId,
         chatId,
+        userVisible: false,
       })
     }
   }
@@ -477,7 +481,13 @@ export function registerReflectionPoller(
     if (running) return
     running = true
     void scanOnce(d)
-      .catch((err) => bus.emit("error.occurred", { scope: "reflection", err }))
+      .catch((err) =>
+        emitErrorSafely({
+          scope: "reflection",
+          err,
+          userVisible: false,
+        })
+      )
       .finally(() => {
         running = false
       })

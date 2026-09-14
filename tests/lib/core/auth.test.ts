@@ -56,12 +56,37 @@ describe("登录爆破限速", () => {
 })
 
 describe("clientIp", () => {
-  it("XFF 首段 > x-real-ip > unknown", () => {
+  it("默认不信任可伪造的代理头", () => {
     const h = new Headers()
     expect(clientIp(h)).toBe("unknown")
     h.set("x-real-ip", "9.9.9.9")
-    expect(clientIp(h)).toBe("9.9.9.9")
+    expect(clientIp(h)).toBe("unknown")
     h.set("x-forwarded-for", "1.2.3.4, 10.0.0.1")
-    expect(clientIp(h)).toBe("1.2.3.4")
+    expect(clientIp(h)).toBe("unknown")
+  })
+
+  it("显式信任代理时读取首个合法转发地址", () => {
+    const h = new Headers()
+    h.set("x-real-ip", "9.9.9.9")
+    expect(clientIp(h, true)).toBe("9.9.9.9")
+    h.set("x-forwarded-for", "1.2.3.4, 10.0.0.1")
+    expect(clientIp(h, true)).toBe("1.2.3.4")
+    h.set("x-forwarded-for", "not-an-ip, 2001:db8::1")
+    expect(clientIp(h, true)).toBe("2001:db8::1")
+  })
+
+  it("拒绝注入型代理头", () => {
+    const h = new Headers()
+    h.set("x-forwarded-for", "1.2.3.4:bad, attacker\\n")
+    expect(clientIp(h, true)).toBe("unknown")
+  })
+
+  it("直连时使用 adapter 提供的服务端 request 地址,不读取伪造 header", () => {
+    const h = new Headers({ "x-forwarded-for": "9.9.9.9" })
+    expect(clientIp({ headers: h, ip: "192.0.2.10" }, false)).toBe("192.0.2.10")
+    expect(
+      clientIp({ headers: h, socket: { remoteAddress: "192.0.2.11" } }, false)
+    ).toBe("192.0.2.11")
+    expect(clientIp({ headers: h, ip: "not-an-ip" }, false)).toBe("unknown")
   })
 })

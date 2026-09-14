@@ -20,6 +20,7 @@ import type { GroupPolicy } from "../core/config-store"
 import type { ChannelId, ChatRef } from "../core/chat/types"
 import { getGroupPolicy } from "../core/chat/enabled-chats"
 import type { BrandInput } from "../core/brand"
+import { logger } from "../core/logger"
 
 export interface AssembleDeps {
   repo: Repo
@@ -95,104 +96,142 @@ export function assemble(deps: AssembleDeps): () => void {
   )
   const proactiveOn = !!deps.proactiveEnabled || anyGroupProactive
 
-  const cleanups = [
-    registerResolutionRecorder(repo),
-    registerDeliveryRecorder(repo),
-    registerErrorHandler({ supportUrl: deps.supportUrl }),
-    registerHandoffHandler({
-      repo,
-      adminSurface,
-      handoffTimeoutMin: deps.handoffTimeoutMin ?? 30,
-      shouldNotify: shouldNotifyHandoff,
-    }),
+  const cleanups: (() => void)[] = []
+  const dispose = () => {
+    // Teardown is a best-effort boundary: one faulty disposer must not leave
+    // later listeners/timers alive. Run in reverse registration order and
+    // preserve any listeners owned by other application components.
+    for (const cleanup of [...cleanups].reverse()) {
+      try {
+        cleanup()
+      } catch (err) {
+        logger.warn(
+          `[assemble] cleanup failed: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+          {
+            scope: "runtime.teardown",
+            raw: err instanceof Error ? err.stack : String(err),
+          }
+        )
+      }
+    }
+    cleanups.length = 0
+  }
+
+  try {
+    cleanups.push(registerResolutionRecorder(repo))
+    cleanups.push(registerDeliveryRecorder(repo))
+    cleanups.push(registerErrorHandler({ supportUrl: deps.supportUrl }))
+    cleanups.push(
+      registerHandoffHandler({
+        repo,
+        adminSurface,
+        handoffTimeoutMin: deps.handoffTimeoutMin ?? 30,
+        shouldNotify: shouldNotifyHandoff,
+      })
+    )
     // gateway 必须先于 message-buffer 注册:同 tick 内 prior 回看时当前消息尚未入库;
     // excludeMessageId 是双保险,防止当前触发消息被误纳入 prior。
-    registerGateway({
-      repo,
-      botQQ,
-      extraAtQQs: deps.extraAtQQs,
-      enabledChats,
-      adminSurface,
-      supportUrl: deps.supportUrl,
-    }),
-    registerOrchestrator({
-      agent,
-      store,
-      classify: makeIntentClassifier({ brand: deps.brand }),
-      ackEnabled: deps.ackEnabled !== false,
-    }),
-    registerReplyMapper({ maxChars: deps.maxReplyChars ?? 900 }),
-    registerMessageBuffer({
-      repo,
-      botQQ,
-      extraAtQQs: deps.extraAtQQs,
-      enabledChats,
-      adminSurface,
-    }),
-    registerTopicPoller({
-      repo,
-      enabledChats,
-      scanMs: deps.topicScanMs,
-      settleMs: deps.topicSettleMs,
-      windowMax: deps.topicWindowMax,
-      topicPromptMax: deps.topicPromptMax,
-      brand: deps.brand,
-      isBypassEnabled: deps.isBypassEnabled,
-    }),
-    registerReflectionPoller({
-      repo,
-      enabledChats,
-      adminSurface,
-      scanMs: deps.reflectScanMs,
-      lookbackMs: deps.reflectLookbackMs,
-      settleMs: deps.reflectSettleMs,
-      windowMax: deps.reflectWindowMax,
-      notifyAdmin,
-      isBypassEnabled: deps.isBypassEnabled,
-    }),
-  ]
-  if ((deps.reflectCompactMs ?? 3_600_000) > 0) {
     cleanups.push(
-      registerReflectionCompactor({
+      registerGateway({
         repo,
-        adminSurface,
-        compactMs: deps.reflectCompactMs,
-        minEntries: deps.reflectCompactMinEntries,
-        notifyAdmin,
-      })
-    )
-  }
-  if ((deps.reflectPromoteMs ?? 86_400_000) > 0) {
-    cleanups.push(
-      registerReflectionPromoter({
-        repo,
-        adminSurface,
-        promoteMs: deps.reflectPromoteMs,
-        minEntries: deps.reflectPromoteMinEntries,
-        maxPerRun: deps.reflectPromoteMaxPerRun,
-        notifyAdmin,
-      })
-    )
-  }
-  if (proactiveOn) {
-    cleanups.push(
-      registerUnansweredPoller({
-        repo,
-        agent,
-        store,
-        classify: makeAnswerabilityClassifier({ brand: deps.brand }),
+        botQQ,
+        extraAtQQs: deps.extraAtQQs,
         enabledChats,
         adminSurface,
-        scanMs: deps.proactiveScanMs,
-        silenceMs: deps.proactiveSilenceMs,
-        maxPerScan: deps.proactiveMaxPerScan,
-        maxCandidatesPerScan: deps.proactiveCandidateBudget,
-        // 全局关时,只扫策略显式开启的群
-        globalProactiveEnabled: !!deps.proactiveEnabled,
-        groupPolicies: policies,
+        supportUrl: deps.supportUrl,
+      })
+    )
+    cleanups.push(
+      registerOrchestrator({
+        agent,
+        store,
+        classify: makeIntentClassifier({ brand: deps.brand }),
+        ackEnabled: deps.ackEnabled !== false,
+      })
+    )
+    cleanups.push(registerReplyMapper({ maxChars: deps.maxReplyChars ?? 900 }))
+    cleanups.push(
+      registerMessageBuffer({
+        repo,
+        botQQ,
+        extraAtQQs: deps.extraAtQQs,
+        enabledChats,
+        adminSurface,
+      })
+    )
+    cleanups.push(
+      registerTopicPoller({
+        repo,
+        enabledChats,
+        scanMs: deps.topicScanMs,
+        settleMs: deps.topicSettleMs,
+        windowMax: deps.topicWindowMax,
+        topicPromptMax: deps.topicPromptMax,
+        brand: deps.brand,
         isBypassEnabled: deps.isBypassEnabled,
       })
     )
+    cleanups.push(
+      registerReflectionPoller({
+        repo,
+        enabledChats,
+        adminSurface,
+        scanMs: deps.reflectScanMs,
+        lookbackMs: deps.reflectLookbackMs,
+        settleMs: deps.reflectSettleMs,
+        windowMax: deps.reflectWindowMax,
+        notifyAdmin,
+        isBypassEnabled: deps.isBypassEnabled,
+      })
+    )
+    if ((deps.reflectCompactMs ?? 3_600_000) > 0) {
+      cleanups.push(
+        registerReflectionCompactor({
+          repo,
+          adminSurface,
+          compactMs: deps.reflectCompactMs,
+          minEntries: deps.reflectCompactMinEntries,
+          notifyAdmin,
+        })
+      )
+    }
+    if ((deps.reflectPromoteMs ?? 86_400_000) > 0) {
+      cleanups.push(
+        registerReflectionPromoter({
+          repo,
+          adminSurface,
+          promoteMs: deps.reflectPromoteMs,
+          minEntries: deps.reflectPromoteMinEntries,
+          maxPerRun: deps.reflectPromoteMaxPerRun,
+          notifyAdmin,
+        })
+      )
+    }
+    if (proactiveOn) {
+      cleanups.push(
+        registerUnansweredPoller({
+          repo,
+          agent,
+          store,
+          classify: makeAnswerabilityClassifier({ brand: deps.brand }),
+          enabledChats,
+          adminSurface,
+          scanMs: deps.proactiveScanMs,
+          silenceMs: deps.proactiveSilenceMs,
+          maxPerScan: deps.proactiveMaxPerScan,
+          maxCandidatesPerScan: deps.proactiveCandidateBudget,
+          // 全局关时,只扫策略显式开启的群
+          globalProactiveEnabled: !!deps.proactiveEnabled,
+          groupPolicies: policies,
+          isBypassEnabled: deps.isBypassEnabled,
+        })
+      )
+    }
+    return dispose
+  } catch (err) {
+    dispose()
+    throw err
   }
-  return () => cleanups.forEach((c) => c())
 }

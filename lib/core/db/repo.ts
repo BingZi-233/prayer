@@ -11,6 +11,8 @@ import { TicketsRepository } from "./repositories/tickets.ts"
 import { ConfigRepository } from "./repositories/config.ts"
 import { OutboxRepository } from "./repositories/outbox.ts"
 
+export { MAX_KB_PREVIEW_CHUNKS } from "./repositories/knowledge.ts"
+
 export type {
   KbHit,
   ProactiveQuality,
@@ -188,6 +190,21 @@ export class Repo {
   }
   kbDocStats(...args: Parameters<KnowledgeRepository["kbDocStats"]>) {
     return this.knowledge.kbDocStats(...args)
+  }
+  kbDocVectorStats(
+    ...args: Parameters<KnowledgeRepository["kbDocVectorStats"]>
+  ) {
+    return this.knowledge.kbDocVectorStats(...args)
+  }
+  kbOrphanVectorCount(
+    ...args: Parameters<KnowledgeRepository["kbOrphanVectorCount"]>
+  ) {
+    return this.knowledge.kbOrphanVectorCount(...args)
+  }
+  kbVectorDimension(
+    ...args: Parameters<KnowledgeRepository["kbVectorDimension"]>
+  ) {
+    return this.knowledge.kbVectorDimension(...args)
   }
   kbChunksByDoc(...args: Parameters<KnowledgeRepository["kbChunksByDoc"]>) {
     return this.knowledge.kbChunksByDoc(...args)
@@ -370,10 +387,17 @@ export class Repo {
   rankingByWindow(...args: Parameters<TopicsRepository["rankingByWindow"]>) {
     return this.topics.rankingByWindow(...args)
   }
+  rankingTotalsByWindow(
+    ...args: Parameters<TopicsRepository["rankingTotalsByWindow"]>
+  ) {
+    return this.topics.rankingTotalsByWindow(...args)
+  }
   topicSamples(...args: Parameters<TopicsRepository["topicSamples"]>) {
     return this.topics.topicSamples(...args)
   }
-  topicSamplesBatch(...args: Parameters<TopicsRepository["topicSamplesBatch"]>) {
+  topicSamplesBatch(
+    ...args: Parameters<TopicsRepository["topicSamplesBatch"]>
+  ) {
     return this.topics.topicSamplesBatch(...args)
   }
   topicCursors(...args: Parameters<TopicsRepository["topicCursors"]>) {
@@ -399,9 +423,17 @@ export class Repo {
   ) {
     return this.statistics.resolutionCounts(...args)
   }
-  markDelivery(...args: Parameters<StatisticsRepository["markDelivery"]>) { return this.statistics.markDelivery(...args) }
-  planDelivery(...args: Parameters<StatisticsRepository["planDelivery"]>) { return this.statistics.planDelivery(...args) }
-  deliveryExpected(...args: Parameters<StatisticsRepository["deliveryExpected"]>) { return this.statistics.deliveryExpected(...args) }
+  markDelivery(...args: Parameters<StatisticsRepository["markDelivery"]>) {
+    return this.statistics.markDelivery(...args)
+  }
+  planDelivery(...args: Parameters<StatisticsRepository["planDelivery"]>) {
+    return this.statistics.planDelivery(...args)
+  }
+  deliveryExpected(
+    ...args: Parameters<StatisticsRepository["deliveryExpected"]>
+  ) {
+    return this.statistics.deliveryExpected(...args)
+  }
   addUsageDaily(...args: Parameters<StatisticsRepository["addUsageDaily"]>) {
     return this.statistics.addUsageDaily(...args)
   }

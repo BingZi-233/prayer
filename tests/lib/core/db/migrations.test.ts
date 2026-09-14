@@ -6,6 +6,7 @@ import {
   MIGRATIONS,
   migrateDatabase,
 } from "@/lib/core/db/migrations/index"
+import { migrateToVersion9 } from "@/lib/core/db/migrations/schema"
 
 const opened: Database.Database[] = []
 
@@ -101,6 +102,161 @@ describe("数据库迁移注册表", () => {
     ).toEqual({ delivery_status: "sent" })
     expect(indexExists(db, "idx_resolution_events_delivery_key")).toBe(true)
     expect(indexExists(db, "idx_proactive_replies_delivery_key")).toBe(true)
+  })
+
+  it("v9 空的 partial outbox 会重建为完整 canonical schema", () => {
+    const db = createDb()
+    db.exec(
+      "CREATE TABLE outbox_messages (id INTEGER PRIMARY KEY, delivery_key TEXT)"
+    )
+
+    migrateToVersion9(db)
+
+    expect(columns(db, "outbox_messages")).toEqual([
+      "id",
+      "delivery_key",
+      "resolution_key",
+      "action_json",
+      "status",
+      "attempts",
+      "next_attempt_at",
+      "lease_until",
+      "claim_token",
+      "last_error",
+      "sent_at",
+    ])
+    expect(
+      db
+        .prepare(
+          "SELECT sql FROM sqlite_master WHERE type='table' AND name='outbox_messages'"
+        )
+        .get()
+    ).toMatchObject({ sql: expect.stringContaining("CHECK(status IN") })
+    expect(indexExists(db, "idx_outbox_due")).toBe(true)
+    expect(indexExists(db, "idx_outbox_resolution_status")).toBe(true)
+
+    db.prepare(
+      "INSERT INTO outbox_messages (delivery_key, action_json) VALUES (?, ?)"
+    ).run("canonical", "{}")
+    expect(() =>
+      db
+        .prepare(
+          "INSERT INTO outbox_messages (delivery_key, action_json, status) VALUES (?, ?, ?)"
+        )
+        .run("bad-status", "{}", "unknown")
+    ).toThrow()
+    expect(() =>
+      db
+        .prepare(
+          "INSERT INTO outbox_messages (delivery_key, action_json) VALUES (?, ?)"
+        )
+        .run("canonical", "{}")
+    ).toThrow()
+  })
+
+  it("v9 非空 partial outbox 只补可空列并保留存量行", () => {
+    const db = createDb()
+    db.exec(`
+      CREATE TABLE outbox_messages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        delivery_key TEXT NOT NULL,
+        action_json TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending',
+        attempts INTEGER NOT NULL DEFAULT 0,
+        next_attempt_at INTEGER NOT NULL DEFAULT 0
+      );
+      INSERT INTO outbox_messages (delivery_key, action_json)
+      VALUES ('legacy-outbox', '{}');
+    `)
+
+    migrateToVersion9(db)
+
+    expect(columns(db, "outbox_messages")).toEqual([
+      "id",
+      "delivery_key",
+      "action_json",
+      "status",
+      "attempts",
+      "next_attempt_at",
+      "resolution_key",
+      "lease_until",
+      "claim_token",
+      "last_error",
+      "sent_at",
+    ])
+    expect(
+      db
+        .prepare(
+          "SELECT delivery_key, action_json, claim_token FROM outbox_messages"
+        )
+        .get()
+    ).toEqual({
+      delivery_key: "legacy-outbox",
+      action_json: "{}",
+      claim_token: null,
+    })
+    expect(indexExists(db, "idx_outbox_due")).toBe(true)
+    expect(indexExists(db, "idx_outbox_resolution_status")).toBe(true)
+    expect(() =>
+      db
+        .prepare(
+          "INSERT INTO outbox_messages (delivery_key, action_json) VALUES (?, ?)"
+        )
+        .run("legacy-outbox", "{}")
+    ).toThrow()
+  })
+
+  it("v9 非空 outbox 缺关键列时明确失败且不改写存量数据", () => {
+    const db = createDb()
+    db.exec(`
+      CREATE TABLE outbox_messages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        delivery_key TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending',
+        attempts INTEGER NOT NULL DEFAULT 0,
+        next_attempt_at INTEGER NOT NULL DEFAULT 0
+      );
+      INSERT INTO outbox_messages (delivery_key) VALUES ('incomplete');
+    `)
+
+    expect(() => migrateToVersion9(db)).toThrow(
+      /v9 outbox_messages 非空表缺少关键列：.*action_json/
+    )
+    expect(columns(db, "outbox_messages")).toEqual([
+      "id",
+      "delivery_key",
+      "status",
+      "attempts",
+      "next_attempt_at",
+    ])
+    expect(
+      db.prepare("SELECT delivery_key FROM outbox_messages").get()
+    ).toEqual({ delivery_key: "incomplete" })
+  })
+
+  it("v9 拒绝状态或 delivery_key 已损坏的存量行", () => {
+    const db = createDb()
+    db.exec(`
+      CREATE TABLE outbox_messages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        delivery_key TEXT NOT NULL,
+        action_json TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending',
+        attempts INTEGER NOT NULL DEFAULT 0,
+        next_attempt_at INTEGER NOT NULL DEFAULT 0,
+        resolution_key TEXT,
+        lease_until INTEGER,
+        claim_token TEXT,
+        last_error TEXT,
+        sent_at INTEGER
+      );
+      INSERT INTO outbox_messages (delivery_key, action_json, status)
+      VALUES ('broken', '{}', 'unknown');
+    `)
+
+    expect(() => migrateToVersion9(db)).toThrow(
+      /v9 outbox_messages 存量数据不符合约束/
+    )
   })
 
   it("迁移失败时回滚当前版本，修复原因后可从断点继续", () => {

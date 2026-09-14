@@ -113,6 +113,23 @@ describe("配置局部更新", () => {
       }).success
     ).toBe(false)
   })
+
+  it("拒绝会修改对象原型的群策略键", () => {
+    expect(
+      configPatchSchema.safeParse({
+        groupPolicies: { __proto__: { proactiveEnabled: true } },
+      }).success
+    ).toBe(true)
+    // JSON.parse is the realistic wire shape: __proto__ is an own key there.
+    const wire = JSON.parse(
+      '{"groupPolicies":{"__proto__":{"proactiveEnabled":true}}}'
+    ) as unknown
+    expect(configPatchSchema.safeParse(wire).success).toBe(false)
+    const current = currentConfig()
+    const merged = mergeConfigPatch(current, wire as never)
+    expect(Object.getPrototypeOf(merged.groupPolicies)).toBe(Object.prototype)
+    expect(Object.prototype.hasOwnProperty.call(merged.groupPolicies, "__proto__")).toBe(false)
+  })
 })
 
 describe("配置边界与关闭语义", () => {
@@ -135,16 +152,16 @@ describe("配置边界与关闭语义", () => {
     ).toEqual({ reflectCompactMs: 1000, reflectPromoteMs: 1000 })
   })
 
-  it("始终运行的扫描周期不能关闭，超出 Node 上限也不会回退到 1ms", () => {
+  it("始终运行的扫描周期不能关闭，主动回复还强制保守下限", () => {
     expect(
       configPatchSchema.parse({
         reflectScanMs: 0,
-        proactiveScanMs: -1,
+        proactiveScanMs: 1,
         topicScanMs: 2 ** 31,
       })
     ).toEqual({
       reflectScanMs: 1000,
-      proactiveScanMs: 1000,
+      proactiveScanMs: 10000,
       topicScanMs: 2 ** 31 - 1,
     })
   })

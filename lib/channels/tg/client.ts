@@ -1,10 +1,14 @@
 import { Bot, GrammyError } from "grammy"
 import type { Update } from "grammy/types"
-import { bus } from "../../core/bus"
+import { bus, emitErrorSafely } from "../../core/bus"
 import type { ActionSend } from "../../core/chat/events"
 import { logger } from "../../core/logger"
 import { getNameCache } from "../../core/chat/name-cache"
-import type { Channel, ChannelCapabilities, ChannelStatus } from "../../core/chat/types"
+import type {
+  Channel,
+  ChannelCapabilities,
+  ChannelStatus,
+} from "../../core/chat/types"
 import { DeadlineExceededError, withDeadline } from "../keepalive"
 import {
   AdminsCache,
@@ -79,7 +83,9 @@ export interface TelegramChannelOpts {
   adminsCache?: AdminsCache
   /** 可注入图片下载；传 null 禁用下载 */
   downloadImage?:
-    | ((fileId: string) => Promise<import("../../core/chat/events").ImageInput | null>)
+    | ((
+        fileId: string
+      ) => Promise<import("../../core/chat/events").ImageInput | null>)
     | null
 }
 
@@ -125,7 +131,9 @@ export class TelegramChannel implements Channel {
   private readonly sleep: (ms: number) => Promise<void>
   private readonly adminsCache: AdminsCache
   private readonly downloadImage:
-    | ((fileId: string) => Promise<import("../../core/chat/events").ImageInput | null>)
+    | ((
+        fileId: string
+      ) => Promise<import("../../core/chat/events").ImageInput | null>)
     | null
 
   constructor(
@@ -171,6 +179,16 @@ export class TelegramChannel implements Channel {
       logger.log("error", `[tg] poll loop crashed: ${msg}`)
       this.lastError = msg
       this.setConnected(false)
+      // runLoop normally contains recoverable poll errors itself.  If an
+      // unexpected failure escapes that boundary (for example a broken
+      // backoff/sleep implementation), count it as an operational error so
+      // readiness and the admin metrics cannot silently miss a dead poller.
+      emitErrorSafely({
+        scope: "tg.poll.loop",
+        err,
+        channel: "tg",
+        userVisible: false,
+      })
     })
   }
 
@@ -291,7 +309,9 @@ export class TelegramChannel implements Channel {
           if (this.stopped) break
           await this.handleUpdate(update)
           // offset 仅在 emit/丢弃决策之后推进（不得在 enrich 前推进）
-          this.setOffset(update.update_id + 1)
+          // 停机可能发生在 enrich 等待期间；此时不推进 offset，让下一代
+          // poller 在重新启动后仍有机会重放这条尚未送入 bus 的 update。
+          if (!this.stopped) this.setOffset(update.update_id + 1)
         }
 
         // 成功一轮：重置退避
@@ -366,7 +386,11 @@ export class TelegramChannel implements Channel {
             botId: this.botId,
           })
         }
+        // stop/reconfigure 期间仍可能有一个 enrich 在飞；不要把旧通道的
+        // 结果送进新一代 bus/数据库。
+        if (this.stopped) return
       } catch (err) {
+        if (this.stopped) return
         const m = err instanceof Error ? err.message : String(err)
         logger.log(
           "warn",
@@ -375,12 +399,14 @@ export class TelegramChannel implements Channel {
         // 降级：至少带 member 角色
         enriched = { ...msg, senderRole: msg.senderRole ?? "member" }
       }
+      if (this.stopped) return
       bus.emit("message.received", enriched)
     } catch (err) {
+      if (this.stopped) return
       // 解析异常：记日志后仍推进 offset，避免卡死同一 update
       const m = err instanceof Error ? err.message : String(err)
       logger.log("warn", `[tg] parse update ${update.update_id} failed: ${m}`)
-      bus.emit("error.occurred", { scope: "tg.parse", err })
+      emitErrorSafely({ scope: "tg.parse", err, userVisible: false })
     }
   }
 
@@ -433,6 +459,14 @@ export class TelegramChannel implements Channel {
     const code = telegramErrorCode(err)
     const msg = err instanceof Error ? err.message : String(err)
     this.lastError = code != null ? `HTTP ${code}: ${msg}` : msg
+    // 轮询冲突、认证失败和网络错误都进入统一观测口径；userVisible=false
+    // 避免把后台重试噪声广播给群聊，resolution recorder 仍会计数。
+    emitErrorSafely({
+      scope: "tg.poll",
+      err,
+      channel: "tg",
+      userVisible: false,
+    })
     // 401 无效 token / 409 多实例冲突：保持进程存活，退避重试
     if (code === 401 || code === 409) {
       this.setConnected(false)
@@ -443,7 +477,8 @@ export class TelegramChannel implements Channel {
     } else {
       logger.log("warn", `[tg] poll error: ${msg}; backoff ${this.backoffMs}ms`)
     }
-    await this.sleep(this.backoffMs)
+    // 停机可能发生在退避期间；不要让默认/注入的 sleep 把 stop 卡到 60s。
+    await sleepWithAbort(this.sleep, this.backoffMs, this.abort?.signal)
     this.backoffMs = Math.min(this.backoffMs * 2, 60_000)
   }
 
@@ -476,13 +511,8 @@ export class TelegramChannel implements Channel {
       } catch (err) {
         const m = err instanceof Error ? err.message : String(err)
         logger.log("error", `[tg] sendMessage failed: ${m}`)
-        bus.emit("error.occurred", {
-          scope: "tg.send",
-          err,
-          channel: "tg",
-          chatId: a.chatId,
-          userVisible: a.userVisibleOnFailure,
-        })
+        // ChannelRegistry owns the outbound error event and outbox transition;
+        // emitting here as well would count one failed delivery twice.
         throw err
       }
     }
@@ -569,4 +599,23 @@ function isAbortError(err: unknown): boolean {
 
 function defaultSleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms))
+}
+
+/** 让不可取消的注入 sleep 也服从通道停机信号。 */
+async function sleepWithAbort(
+  sleep: (ms: number) => Promise<void>,
+  ms: number,
+  signal?: AbortSignal
+): Promise<void> {
+  if (!signal || signal.aborted) return signal?.aborted ? undefined : sleep(ms)
+  let onAbort!: () => void
+  const aborted = new Promise<void>((resolve) => {
+    onAbort = resolve
+    signal.addEventListener("abort", onAbort, { once: true })
+  })
+  try {
+    await Promise.race([sleep(ms), aborted])
+  } finally {
+    signal.removeEventListener("abort", onAbort)
+  }
 }

@@ -1,4 +1,5 @@
 import type { ChannelId } from "./chat/types"
+import { redactSensitive } from "./log-context"
 
 export type LogLevel = "info" | "warn" | "error"
 
@@ -38,6 +39,15 @@ export interface LogMeta {
 }
 
 const MAX = 2000
+/** Keep the in-memory ring and /api/logs response bounded per field. */
+export const MAX_LOG_MESSAGE_CHARS = 1_000
+export const MAX_LOG_RAW_CHARS = 4_000
+export const MAX_LOG_CONTEXT_CHARS = 256
+
+function bounded(value: string, max: number): string {
+  const redacted = redactSensitive(value)
+  return redacted.length > max ? `${redacted.slice(0, max - 1)}…` : redacted
+}
 
 /** 会话标识：优先 channel:chatId，回退旧 groupId */
 function chatIdentity(
@@ -97,13 +107,25 @@ class RingLogger {
     const entry: LogEntry = {
       ts: Date.now(),
       level: partial.level,
-      msg: partial.msg,
-      scope: partial.scope,
+      msg: bounded(partial.msg, MAX_LOG_MESSAGE_CHARS),
+      scope:
+        partial.scope === undefined
+          ? undefined
+          : bounded(partial.scope, MAX_LOG_CONTEXT_CHARS),
       channel: partial.channel,
-      chatId: partial.chatId,
+      chatId:
+        partial.chatId === undefined
+          ? undefined
+          : bounded(partial.chatId, MAX_LOG_CONTEXT_CHARS),
       groupId: partial.groupId,
-      sessionKey: partial.sessionKey,
-      raw: partial.raw,
+      sessionKey:
+        partial.sessionKey === undefined
+          ? undefined
+          : bounded(partial.sessionKey, MAX_LOG_CONTEXT_CHARS),
+      raw:
+        partial.raw === undefined
+          ? undefined
+          : bounded(partial.raw, MAX_LOG_RAW_CHARS),
     }
     this.buf.push(entry)
     if (this.buf.length > MAX) this.buf.splice(0, this.buf.length - MAX)

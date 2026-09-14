@@ -1,7 +1,12 @@
 import { query as sdkQuery, type Options } from "@anthropic-ai/claude-agent-sdk"
 import { usageStats } from "../model/stats/usage"
-import { toolStats, KB_PREFETCH_TOOL, KB_GROUNDED_TOOL } from "../model/stats/tool"
+import {
+  toolStats,
+  KB_PREFETCH_TOOL,
+  KB_GROUNDED_TOOL,
+} from "../model/stats/tool"
 import { logger } from "../core/logger"
+import { emitErrorSafely } from "../core/bus"
 import type { ChannelId } from "../core/chat/types"
 import type { BrandProfile } from "../core/brand"
 import type { KbPrefetch } from "../knowledge/kb-prefetch"
@@ -104,7 +109,16 @@ export class Agent {
         { fresh: !resumeId }
       )
     } catch (e) {
-      console.warn("[agent] 预检索异常,跳过注入:", e)
+      logger.warn(
+        `[agent] 预检索异常,跳过注入: ${e instanceof Error ? e.message : String(e)}`,
+        {
+          scope: "agent.kb-prefetch",
+          channel: ctx.channel as ChannelId | undefined,
+          chatId: ctx.chatId,
+          sessionKey: ctx.sessionKey,
+          raw: e instanceof Error ? e.stack : String(e),
+        }
+      )
       return ""
     }
   }
@@ -201,9 +215,7 @@ export class Agent {
             msg.type === "result" &&
             (msg.subtype !== "success" || msg.is_error === true)
           ) {
-            status = finalAssistantText(textState).trim()
-              ? "partial"
-              : "failed"
+            status = finalAssistantText(textState).trim() ? "partial" : "failed"
           }
           // 末尾 result:记账缓存/用量。内联(不走 drainQuery)以保留下方降级逻辑
           const usage = usageFromResult(msg)
@@ -228,7 +240,28 @@ export class Agent {
     } catch (e) {
       // maxTurns / CLI 异常(SDK reject 迭代器)、超时或 queryFn 同步抛错:降级 ——
       // 保留已累积文本与 sessionId,避免整个请求 500、丢掉会话,更避免 handle 永挂拖死编排串行链
-      console.error("[agent] query 启动/迭代中断/超时,降级返回已累积内容:", e)
+      logger.error(
+        `[agent] query 启动/迭代中断/超时,降级返回已累积内容: ${
+          e instanceof Error ? e.message : String(e)
+        }`,
+        {
+          scope: "agent",
+          channel: ctx.channel as ChannelId | undefined,
+          chatId: ctx.chatId,
+          sessionKey: ctx.sessionKey,
+          raw: e instanceof Error ? e.stack : String(e),
+        }
+      )
+      // 这是可观测错误而非用户可见失败:partial/failed 仍由编排决定是否发结果,
+      // 统一 recorder 计数但禁止 error-handler 再发一条兜底造成重复回复。
+      emitErrorSafely({
+        scope: "agent",
+        err: e,
+        sessionKey: ctx.sessionKey,
+        channel: ctx.channel as ChannelId | undefined,
+        chatId: ctx.chatId,
+        userVisible: false,
+      })
       if (!finalAssistantText(textState).trim()) {
         status = "failed"
       } else {
@@ -244,7 +277,8 @@ export class Agent {
     }
     const finalText = finalAssistantText(textState).trim()
     return {
-      text: finalText || (status === "failed" ? AGENT_FALLBACK_TEXT : finalText),
+      text:
+        finalText || (status === "failed" ? AGENT_FALLBACK_TEXT : finalText),
       sessionId,
       status,
     }

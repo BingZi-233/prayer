@@ -1,8 +1,17 @@
 import Database from "better-sqlite3"
 import * as sqliteVec from "sqlite-vec"
-import { access, mkdir, unlink } from "node:fs/promises"
-import { dirname, resolve } from "node:path"
+import {
+  access,
+  chmod,
+  link,
+  lstat,
+  mkdir,
+  mkdtemp,
+  rm,
+} from "node:fs/promises"
+import { basename, dirname, join, resolve } from "node:path"
 import { readUserVersion } from "./migrations/index.ts"
+import { databaseOpenPath } from "./path.ts"
 
 export type DatabaseIntegrity = Readonly<{
   ok: boolean
@@ -38,7 +47,10 @@ export function assertDatabaseIntegrity(db: Database.Database): void {
 
 /** 只读验证备份文件，不执行迁移，避免检查动作修改待恢复数据。 */
 export function verifyDatabaseFile(path: string): DatabaseIntegrity {
-  const db = new Database(path, { readonly: true, fileMustExist: true })
+  const db = new Database(databaseOpenPath(path), {
+    readonly: true,
+    fileMustExist: true,
+  })
   try {
     sqliteVec.load(db)
     return checkDatabaseIntegrity(db)
@@ -55,7 +67,10 @@ export async function backupDatabase(
   db: Database.Database,
   destinationPath: string
 ): Promise<DatabaseBackup> {
-  const destination = resolve(destinationPath)
+  const destination = databaseOpenPath(destinationPath)
+  if (destination === ":memory:") {
+    throw new Error("备份目标不能是内存数据库")
+  }
   if (db.name !== ":memory:" && resolve(db.name) === destination) {
     throw new Error("备份目标不能与当前数据库相同")
   }
@@ -69,20 +84,44 @@ export async function backupDatabase(
   assertDatabaseIntegrity(db)
   await mkdir(dirname(destination), { recursive: true })
 
+  // 在父目录内创建仅当前用户可访问的随机目录。SQLite 先写入临时文件，
+  // 完整性校验通过后再用 link(2) 发布；link 不会跟随目标符号链接，且
+  // 目标已存在时原子失败，从而避免“检查后写入”的 TOCTOU 窗口。
+  const stagingDirectory = await mkdtemp(
+    join(dirname(destination), `.${basename(destination)}.tmp-`)
+  )
+  const stagingPath = join(stagingDirectory, basename(destination))
   try {
-    const metadata = await db.backup(destination)
-    const integrity = verifyDatabaseFile(destination)
+    const metadata = await db.backup(stagingPath)
+    const created = await lstat(stagingPath)
+    if (!created.isFile() || created.isSymbolicLink()) {
+      throw new Error("备份目标不是普通文件")
+    }
+    await chmod(stagingPath, 0o600)
+    const integrity = verifyDatabaseFile(stagingPath)
     if (!integrity.ok) {
       throw new Error(`备份完整性检查失败：${integrity.messages.join("；")}`)
+    }
+    try {
+      await link(stagingPath, destination)
+    } catch (error) {
+      const code =
+        error && typeof error === "object" && "code" in error
+          ? String(error.code)
+          : ""
+      if (code === "EEXIST") {
+        throw new Error(`备份目标已存在：${destination}`)
+      }
+      throw error
     }
     return {
       path: destination,
       userVersion: readUserVersion(db),
       totalPages: metadata.totalPages,
     }
-  } catch (error) {
-    // 目标原本不存在，因此这里只清理由本次调用创建的不完整文件。
-    await unlink(destination).catch(() => undefined)
-    throw error
+  } finally {
+    await rm(stagingDirectory, { recursive: true, force: true }).catch(
+      () => undefined
+    )
   }
 }

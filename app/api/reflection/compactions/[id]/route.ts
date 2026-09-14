@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { getAppContext } from "@/lib/core/app-context"
-import { ok, fail } from "@/lib/core/api"
+import { ok, fail, safeApiError } from "@/lib/core/api"
 
 // 单条整理记录详情(before/after 全文)。列表接口只给摘要,前端展开时才来这里拉,
 // 避免每次轮询都带上整批知识条目全文。
@@ -19,9 +19,6 @@ export async function GET(
     if (!detail) return NextResponse.json(fail("记录不存在"), { status: 404 })
     return NextResponse.json(ok(detail))
   } catch (err) {
-    return NextResponse.json(
-      fail(err instanceof Error ? err.message : String(err)),
-      { status: 500 }
-    )
+    return NextResponse.json(fail(safeApiError(err)), { status: 500 })
   }
 }

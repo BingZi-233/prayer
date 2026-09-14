@@ -1,11 +1,17 @@
 import { NextResponse } from "next/server"
 import { getAppContext } from "@/lib/core/app-context"
-import { ok, fail } from "@/lib/core/api"
+import { ok, fail, safeApiError } from "@/lib/core/api"
 import { runPromote } from "@/lib/knowledge/reflection/promoter"
 import { resolveAdminSurface } from "@/lib/core/chat/enabled-chats"
+import { emptyBodyFailure, readEmptyBody } from "@/lib/core/http-security"
 
 // 手动触发一轮自动升格评审(与定时任务同逻辑)
-export async function POST(): Promise<NextResponse> {
+export async function POST(req: Request): Promise<NextResponse> {
+  const bodyFailure = emptyBodyFailure(await readEmptyBody(req))
+  if (bodyFailure)
+    return NextResponse.json(fail(bodyFailure.message), {
+      status: bodyFailure.status,
+    })
   try {
     const { cfg, repo } = getAppContext()
     const before = repo
@@ -18,6 +24,10 @@ export async function POST(): Promise<NextResponse> {
       maxPerRun: cfg.reflectPromoteMaxPerRun,
       notifyAdmin: cfg.reflectNotifyAdmin,
     })
+    if (result.failed)
+      return NextResponse.json(fail("反思升格失败，请查看运维日志"), {
+        status: 503,
+      })
     repo.setPromoteAt(Date.now())
     return NextResponse.json(
       ok({
@@ -30,9 +40,6 @@ export async function POST(): Promise<NextResponse> {
       })
     )
   } catch (err) {
-    return NextResponse.json(
-      fail(err instanceof Error ? err.message : String(err)),
-      { status: 500 }
-    )
+    return NextResponse.json(fail(safeApiError(err)), { status: 500 })
   }
 }

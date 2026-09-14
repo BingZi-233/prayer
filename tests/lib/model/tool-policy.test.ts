@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { isToolAllowed } from "@/lib/model/tool-policy"
+import { configuredToolAllowlist, isToolAllowed } from "@/lib/model/tool-policy"
 
 describe("isToolAllowed", () => {
   it("白名单工具放行:cs kb_search + packyapi + Skill", () => {
@@ -7,9 +7,19 @@ describe("isToolAllowed", () => {
     expect(isToolAllowed("mcp__plugin_packyapi_packyapi__packy", {})).toBe(true)
     expect(isToolAllowed("Skill", { command: "packyapi" })).toBe(true)
   })
-  it("所有 MCP 工具(mcp__ 前缀)无条件放行 —— 新增 server/工具免改白名单", () => {
-    expect(isToolAllowed("mcp__plugin_foo_bar__anything", {})).toBe(true)
-    expect(isToolAllowed("mcp__whatever", {})).toBe(true)
+  it("未知 MCP 工具默认拒绝，避免插件安装扩大模型权限", () => {
+    expect(isToolAllowed("mcp__plugin_foo_bar__anything", {})).toBe(false)
+    expect(isToolAllowed("mcp__whatever", {})).toBe(false)
+  })
+  it("部署可显式增补合法 MCP 工具名，非法值不会形成通配", () => {
+    const allow = configuredToolAllowlist({
+      NODE_ENV: "test",
+      PRAYER_MCP_ALLOWLIST:
+        "mcp__plugin_internal_server__read_status, mcp__bad value, *",
+    })
+    expect(allow.has("mcp__plugin_internal_server__read_status")).toBe(true)
+    expect(allow.has("mcp__bad")).toBe(false)
+    expect(allow.has("*")).toBe(false)
   })
   it("Bash / Read / WebSearch / WebFetch 禁用", () => {
     expect(isToolAllowed("Bash", { command: "node /a/packy.ts models" })).toBe(

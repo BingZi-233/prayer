@@ -84,6 +84,7 @@ export type ResolutionKind =
   | "ack" // 即时 ACK(不计入解决率分母)
   | "blocked" // 意图拦截
   | "error" // 错误兜底
+  | "operational_error" // 后台运维错误(不计入自动解决率)
   | "proactive" // 主动补位
   | "proactive_silent" // 主动路径沉默
   | "handoff" // 转人工
@@ -106,8 +107,18 @@ export interface EventMap {
   "message.qualified": QualifiedMessage
   "reply.ready": ReplyReady
   "action.send": ActionSend
-  "delivery.planned": { deliveryKey: string; resolutionKey?: string; chunkCount: number }
-  "delivery.recorded": { deliveryKey: string; resolutionKey?: string; status: "sent" | "failed"; error?: string; at: number }
+  "delivery.planned": {
+    deliveryKey: string
+    resolutionKey?: string
+    chunkCount: number
+  }
+  "delivery.recorded": {
+    deliveryKey: string
+    resolutionKey?: string
+    status: "sent" | "failed"
+    error?: string
+    at: number
+  }
   "error.occurred": ErrorOccurred
   "handoff.requested": HandoffRequested
   "handoff.resumed": HandoffResumed

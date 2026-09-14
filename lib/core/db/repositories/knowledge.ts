@@ -2,6 +2,9 @@ import type { SqliteContext } from "../context.ts"
 import type { KbHit } from "../models.ts"
 import { KB_SEARCH_SQL } from "../kb-sql.ts"
 
+/** Bound admin previews without limiting internal freshness scans. */
+export const MAX_KB_PREVIEW_CHUNKS = 500
+
 /** 知识分块和向量的物理存储；删除时维护关联数据的一致性。 */
 export class KnowledgeRepository {
   constructor(private readonly sql: SqliteContext) {}
@@ -55,13 +58,60 @@ export class KnowledgeRepository {
       .all()
   }
 
-  // 单 doc 的分块内容,按 id 升序(即入库/切分顺序)
-  kbChunksByDoc(doc: string): { id: number; content: string }[] {
+  /** 按文档同时统计 chunk 与向量数，供只读 freshness 检查发现半成品索引。 */
+  kbDocVectorStats(): { doc: string; chunks: number; vecs: number }[] {
+    return this.sql
+      .prepare<{ doc: string; chunks: number; vecs: number }>(
+        `SELECT c.doc, COUNT(DISTINCT c.id) AS chunks, COUNT(v.chunk_id) AS vecs
+         FROM kb_chunks c LEFT JOIN kb_vec v ON v.chunk_id = c.id
+         GROUP BY c.doc ORDER BY c.doc`
+      )
+      .all()
+  }
+
+  /** 向量表里没有对应 kb_chunks 的行；vec0 无外键时需单独审计。 */
+  kbOrphanVectorCount(): number {
+    return this.sql
+      .prepare<{ n: number }>(
+        `SELECT COUNT(*) AS n
+         FROM kb_vec v
+         LEFT JOIN kb_chunks c ON c.id = v.chunk_id
+         WHERE c.id IS NULL`
+      )
+      .get()!.n
+  }
+
+  /** 从 vec0 表定义读取 embedding 维度；空索引也能检查。 */
+  kbVectorDimension(): number | null {
+    const row = this.sql
+      .prepare<{ sql: string | null }>(
+        "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'kb_vec'"
+      )
+      .get()
+    const match = row?.sql?.match(/FLOAT\s*\[\s*(\d+)\s*\]/i)
+    return match ? Number(match[1]) : null
+  }
+
+  // 单 doc 的分块内容,按 id 升序(即入库/切分顺序)。管理预览可传上限；
+  // 不传时保留内部 freshness 校验所需的完整结果。
+  kbChunksByDoc(
+    doc: string,
+    limit?: number
+  ): { id: number; content: string }[] {
+    if (limit === undefined) {
+      return this.sql
+        .prepare<{ id: number; content: string }>(
+          "SELECT id, content FROM kb_chunks WHERE doc = ? ORDER BY id"
+        )
+        .all(doc)
+    }
+    if (!Number.isSafeInteger(limit) || limit < 1)
+      throw new Error("kb chunk limit must be a positive integer")
     return this.sql
       .prepare<{ id: number; content: string }>(
-        "SELECT id, content FROM kb_chunks WHERE doc = ? ORDER BY id"
+        "SELECT id, content FROM kb_chunks WHERE doc = ? ORDER BY id LIMIT ?"
       )
-      .all(doc)
+      .all(doc, limit)
   }
 
   // 删文档对应的全部 chunk+vec(文件删除 / 重建前清理用)。返回删除的 chunk 数。

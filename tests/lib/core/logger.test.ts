@@ -1,5 +1,12 @@
 import { describe, it, expect, beforeEach } from "vitest"
-import { logger, captureConsole, consoleLine } from "@/lib/core/logger"
+import {
+  logger,
+  captureConsole,
+  consoleLine,
+  MAX_LOG_CONTEXT_CHARS,
+  MAX_LOG_MESSAGE_CHARS,
+  MAX_LOG_RAW_CHARS,
+} from "@/lib/core/logger"
 
 describe("logger ring buffer", () => {
   beforeEach(() => logger.clear())
@@ -48,6 +55,23 @@ describe("logger ring buffer", () => {
     expect("code" in e).toBe(false)
     expect("category" in e).toBe(false)
     expect("count" in e).toBe(false)
+  })
+
+  it("限制消息、原文和上下文长度", () => {
+    logger.error("m".repeat(MAX_LOG_MESSAGE_CHARS + 100), {
+      scope: "s".repeat(MAX_LOG_CONTEXT_CHARS + 100),
+      chatId: "c".repeat(MAX_LOG_CONTEXT_CHARS + 100),
+      sessionKey: "k".repeat(MAX_LOG_CONTEXT_CHARS + 100),
+      raw: "r".repeat(MAX_LOG_RAW_CHARS + 100),
+    })
+    const [entry] = logger.tail()
+    expect(entry.msg).toHaveLength(MAX_LOG_MESSAGE_CHARS)
+    expect(entry.raw).toHaveLength(MAX_LOG_RAW_CHARS)
+    expect(entry.scope).toHaveLength(MAX_LOG_CONTEXT_CHARS)
+    expect(entry.chatId).toHaveLength(MAX_LOG_CONTEXT_CHARS)
+    expect(entry.sessionKey).toHaveLength(MAX_LOG_CONTEXT_CHARS)
+    expect(entry.msg.endsWith("…")).toBe(true)
+    expect(entry.raw?.endsWith("…")).toBe(true)
   })
 
   it("consoleLine 优先 raw 首行", () => {

@@ -2,7 +2,7 @@ import { describe, it, expect, afterEach } from "vitest"
 import { WebSocketServer, type WebSocket } from "ws"
 import type { AddressInfo } from "node:net"
 import { bus } from "@/lib/core/bus"
-import type { IncomingMessage } from "@/lib/core/chat/events"
+import type { ErrorOccurred, IncomingMessage } from "@/lib/core/chat/events"
 import { OneBotClient } from "@/lib/channels/qq/client"
 
 // OneBot 服务端收到的 API 请求帧(测试断言用)
@@ -25,6 +25,22 @@ function startServer(onConn: (ws: WebSocket) => void): Promise<number> {
       resolve((wss!.address() as AddressInfo).port)
     })
     wss.on("connection", onConn)
+  })
+}
+
+function waitForQqError(timeoutMs = 3000): Promise<ErrorOccurred> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      bus.off("error.occurred", onError)
+      reject(new Error("timeout waiting for qq error"))
+    }, timeoutMs)
+    const onError = (event: ErrorOccurred) => {
+      if (event.channel !== "qq") return
+      clearTimeout(timer)
+      bus.off("error.occurred", onError)
+      resolve(event)
+    }
+    bus.on("error.occurred", onError)
   })
 }
 
@@ -71,6 +87,58 @@ describe("OneBotClient", () => {
     client!.stop()
     expect(client!.isConnected()).toBe(false)
     expect(statuses[statuses.length - 1]).toBe(false)
+  })
+
+  it("WS 连接错误 → 记录 lastError/stats 并发 qq error 事件", async () => {
+    const error = waitForQqError()
+    client = new OneBotClient("ws://127.0.0.1:1")
+    client.start()
+
+    const event = await error
+    expect(event.scope).toBe("qq.ws.error")
+    expect(event.channel).toBe("qq")
+    expect(event.userVisible).toBe(false)
+    expect(client.stats().connectionErrors).toBe(1)
+    expect(client.stats().lastError).toBeTruthy()
+  })
+
+  it("远端异常 close → 记录一次 qq 错误并带关闭码", async () => {
+    const error = waitForQqError()
+    const port = await startServer((ws) => {
+      setTimeout(() => ws.close(1008, "policy"), 20)
+    })
+    client = new OneBotClient(`ws://127.0.0.1:${port}`)
+    client.start()
+
+    const event = await error
+    expect(event.scope).toBe("qq.ws.close")
+    expect(client.stats().lastError).toContain("1008")
+    expect(client.stats().connectionErrors).toBe(1)
+    expect((client as unknown as { ws?: WebSocket }).ws).toBeUndefined()
+  })
+
+  it("主动 stop 不记录连接错误", async () => {
+    const errors: ErrorOccurred[] = []
+    const onError = (event: ErrorOccurred) => {
+      if (event.channel === "qq") errors.push(event)
+    }
+    bus.on("error.occurred", onError)
+    try {
+      const port = await startServer(() => {})
+      const connected = new Promise<void>((resolve) => {
+        client = new OneBotClient(`ws://127.0.0.1:${port}`, undefined, (ok) => {
+          if (ok) resolve()
+        })
+        client.start()
+      })
+      await connected
+      client!.stop()
+      await new Promise((resolve) => setTimeout(resolve, 50))
+      expect(errors).toEqual([])
+      expect(client!.stats().connectionErrors).toBe(0)
+    } finally {
+      bus.off("error.occurred", onError)
+    }
   })
 
   it("client.send → 对端收到 send_group_msg", async () => {
@@ -226,6 +294,7 @@ describe("OneBotClient", () => {
 
   it("服务端静默超过 livenessMs → terminate 并重新建连", async () => {
     let connections = 0
+    const staleError = waitForQqError()
     const port = await startServer(() => {
       connections++
       // 建连后什么都不发，也不回 ping（pingIntervalMs 设得足够大，不会发出 ping）
@@ -237,8 +306,10 @@ describe("OneBotClient", () => {
     client.start()
     // 首连 + 看门狗开火 + backoff 1000ms 后重连
     await new Promise((r) => setTimeout(r, 2500))
+    expect((await staleError).scope).toBe("qq.stale")
     expect(connections).toBeGreaterThanOrEqual(2)
     expect(client.stats().staleReconnects).toBeGreaterThanOrEqual(1)
+    expect(client.stats().connectionErrors).toBeGreaterThanOrEqual(1)
   }, 10_000)
 
   it("heartbeat meta_event 不 emit 消息,且按 interval 收紧 deadline", async () => {

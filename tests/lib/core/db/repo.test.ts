@@ -169,6 +169,19 @@ describe("Repo kb", () => {
     const chunks = repo.kbChunksByDoc("faq/退款.md")
     expect(chunks.map((c) => c.content)).toEqual(["退款要 7 天", "整单退"])
     expect(chunks[0].id).toBe(a)
+
+    expect(repo.kbChunksByDoc("faq/退款.md", 1).map((c) => c.content)).toEqual([
+      "退款要 7 天",
+    ])
+  })
+
+  it("kbDocVectorStats 同时统计每个文档的 chunk 与向量", () => {
+    const id = repo.insertKbChunk("faq.md", "正文", "faq.md")
+    repo.insertKbVec(id, new Float32Array([1, 0, 0]))
+    repo.insertKbChunk("faq.md", "缺向量", "faq.md")
+    expect(repo.kbDocVectorStats()).toEqual([
+      { doc: "faq.md", chunks: 2, vecs: 1 },
+    ])
   })
 })
 
@@ -619,9 +632,11 @@ describe("ranking repo 聚合", () => {
     // 窗口 [1500, ∞):只剩 a 的 1 条
     const win = r.rankingByWindow(1500)
     expect(win[0]).toMatchObject({ id: a, count: 1 })
+    expect(r.rankingTotalsByWindow(1500)).toEqual({ topics: 1, questions: 1 })
     // 全部窗口(sinceTs=0):a=2 排 b=1 前
     const all = r.rankingByWindow(0)
     expect(all.map((row) => row.count)).toEqual([2, 1])
+    expect(r.rankingTotalsByWindow(0)).toEqual({ topics: 2, questions: 3 })
     expect(all[0].id).toBe(a)
     // topicSamples 按 msg_ts DESC:ts=2000 的"退款多久" 在前,ts=1000 的"怎么退款" 在后
     expect(r.topicSamples(a, 5)).toEqual(["退款多久", "怎么退款"])
@@ -661,6 +676,17 @@ describe("ranking repo 聚合", () => {
     const rows = r.rankingByWindow(0)
     expect(rows.map((row) => row.count)).toEqual([1, 1]) // count 相同
     expect(rows.map((row) => row.id)).toEqual([c, d]) // lastTs DESC → c 在前
+  })
+
+  it("rankingByWindow 对显式 limit 和默认结果都设置硬上限", () => {
+    const r = new Repo(openDb(":memory:", 3))
+    const a = r.insertQuestionTopic("a", 0)
+    const b = r.insertQuestionTopic("b", 0)
+    r.insertQuestionOccurrence(a, "qq", "100", "1", "a", 2)
+    r.insertQuestionOccurrence(b, "qq", "100", "2", "b", 1)
+    expect(r.rankingByWindow(0, 1)).toHaveLength(1)
+    // 超大 limit 不能绕过管理面/仓储硬上限;小数据仍完整返回。
+    expect(r.rankingByWindow(0, Number.MAX_SAFE_INTEGER)).toHaveLength(2)
   })
 })
 
@@ -878,7 +904,9 @@ describe("channel schema migration", () => {
 
     const migrated = openDb(p, 3)
     // v1→当前版本一路升完
-    expect(migrated.pragma("user_version", { simple: true }) as number).toBe(CURRENT_SCHEMA_VERSION)
+    expect(migrated.pragma("user_version", { simple: true }) as number).toBe(
+      CURRENT_SCHEMA_VERSION
+    )
     // v4: group_messages 补 mentioned_bot 列,老数据默认 0
     const gmCols = (
       migrated.prepare("PRAGMA table_info(group_messages)").all() as {
@@ -925,7 +953,9 @@ describe("channel schema migration", () => {
     // 幂等:再 open 不炸
     migrated.close()
     const again = openDb(p, 3)
-    expect(again.pragma("user_version", { simple: true })).toBe(CURRENT_SCHEMA_VERSION)
+    expect(again.pragma("user_version", { simple: true })).toBe(
+      CURRENT_SCHEMA_VERSION
+    )
     again.close()
     rmSync(dir, { recursive: true, force: true })
   })
@@ -1033,10 +1063,14 @@ describe("v6 迁移:性能索引", () => {
 
     const upgraded = openDb(p, 3)
     // v6(索引+唯一化)→当前版本一路升完
-    expect(upgraded.pragma("user_version", { simple: true }) as number).toBe(CURRENT_SCHEMA_VERSION)
+    expect(upgraded.pragma("user_version", { simple: true }) as number).toBe(
+      CURRENT_SCHEMA_VERSION
+    )
     upgraded.close()
     const again = openDb(p, 3)
-    expect(again.pragma("user_version", { simple: true })).toBe(CURRENT_SCHEMA_VERSION)
+    expect(again.pragma("user_version", { simple: true })).toBe(
+      CURRENT_SCHEMA_VERSION
+    )
     again.close()
     rmSync(dir, { recursive: true, force: true })
   })
@@ -1243,6 +1277,8 @@ describe("沉淀条目摘要与详情", () => {
     expect(tight.find((s) => s.id === id1)!.question).toHaveLength(3)
 
     expect(repo.reflectionEntryDetail(999999)).toBeNull()
+
+    expect(repo.reflectionEntrySummaries(300, 200, 1)).toHaveLength(1)
   })
 })
 

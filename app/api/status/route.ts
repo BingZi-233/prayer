@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server"
 import { getRuntime } from "@/lib/runtime"
-import { ok } from "@/lib/core/api"
+import { fail, ok, safeApiError } from "@/lib/core/api"
 
 export async function GET(): Promise<NextResponse> {
-  return NextResponse.json(ok(getRuntime().getStatus()))
+  try {
+    return NextResponse.json(ok(getRuntime().getStatus()))
+  } catch (err) {
+    return NextResponse.json(fail(safeApiError(err)), { status: 500 })
+  }
 }

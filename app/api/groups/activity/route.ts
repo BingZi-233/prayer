@@ -7,7 +7,7 @@ import {
   policyKey,
 } from "@/lib/core/chat/enabled-chats"
 import type { ChannelId } from "@/lib/core/chat/types"
-import { ok, fail } from "@/lib/core/api"
+import { ok, fail, safeApiError } from "@/lib/core/api"
 import { buildGroupChatStats } from "@/lib/knowledge/reflection/stats"
 
 // 生效群活动页:生效群 ∪ 有活动群,各群消息量/最近活动/反思游标/沉淀数 + 策略覆盖
@@ -95,9 +95,6 @@ export async function GET(): Promise<NextResponse> {
       })
     )
   } catch (err) {
-    return NextResponse.json(
-      fail(err instanceof Error ? err.message : String(err)),
-      { status: 500 }
-    )
+    return NextResponse.json(fail(safeApiError(err)), { status: 500 })
   }
 }

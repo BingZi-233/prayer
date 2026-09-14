@@ -6,23 +6,49 @@ import type {
   ToolUsage,
 } from "../models.ts"
 import type { SqliteContext } from "../context.ts"
+import { redactDiagnostic } from "../../log-context.ts"
 
 /** 处理结果、模型用量与工具调用的增量统计。 */
 export class StatisticsRepository {
   constructor(private readonly sql: SqliteContext) {}
-  markDelivery(key: string, status: "pending" | "sent" | "failed", error?: string, at?: number, sentChunks?: number): void {
-    const finalStatus = status === "sent" && sentChunks === 0 ? "pending" : status
-    this.sql.prepare("UPDATE resolution_events SET delivery_status=CASE WHEN delivery_status='sent' THEN 'sent' ELSE ? END, last_error=CASE WHEN delivery_status='sent' THEN last_error ELSE ? END, delivered_at=CASE WHEN delivery_status='sent' THEN delivered_at ELSE ? END WHERE delivery_key=?").run(finalStatus, error ?? null, at ?? Date.now(), key)
-    this.sql.prepare("UPDATE proactive_replies SET delivery_status=CASE WHEN delivery_status='sent' THEN 'sent' ELSE ? END, last_error=CASE WHEN delivery_status='sent' THEN last_error ELSE ? END, delivered_at=CASE WHEN delivery_status='sent' THEN delivered_at ELSE ? END WHERE delivery_key=?").run(finalStatus, error ?? null, at ?? Date.now(), key)
+  markDelivery(
+    key: string,
+    status: "pending" | "sent" | "failed",
+    error?: string,
+    at?: number,
+    sentChunks?: number
+  ): void {
+    const finalStatus =
+      status === "sent" && sentChunks === 0 ? "pending" : status
+    const safeError = error == null ? null : redactDiagnostic(error)
+    this.sql
+      .prepare(
+        "UPDATE resolution_events SET delivery_status=CASE WHEN delivery_status='sent' THEN 'sent' ELSE ? END, last_error=CASE WHEN delivery_status='sent' THEN last_error ELSE ? END, delivered_at=CASE WHEN delivery_status='sent' THEN delivered_at ELSE ? END WHERE delivery_key=?"
+      )
+      .run(finalStatus, safeError, at ?? Date.now(), key)
+    this.sql
+      .prepare(
+        "UPDATE proactive_replies SET delivery_status=CASE WHEN delivery_status='sent' THEN 'sent' ELSE ? END, last_error=CASE WHEN delivery_status='sent' THEN last_error ELSE ? END, delivered_at=CASE WHEN delivery_status='sent' THEN delivered_at ELSE ? END WHERE delivery_key=?"
+      )
+      .run(finalStatus, safeError, at ?? Date.now(), key)
   }
   planDelivery(key: string, expected: number): void {
-    const sql = "UPDATE %s SET delivery_expected=?, delivery_status=CASE WHEN delivery_status IN ('sent','failed') THEN delivery_status ELSE 'pending' END WHERE delivery_key=?"
+    const sql =
+      "UPDATE %s SET delivery_expected=?, delivery_status=CASE WHEN delivery_status IN ('sent','failed') THEN delivery_status ELSE 'pending' END WHERE delivery_key=?"
     this.sql.prepare(sql.replace("%s", "resolution_events")).run(expected, key)
     this.sql.prepare(sql.replace("%s", "proactive_replies")).run(expected, key)
   }
   deliveryExpected(key: string): number | undefined {
-    const a = this.sql.prepare<{delivery_expected:number|null}>("SELECT delivery_expected FROM resolution_events WHERE delivery_key=? LIMIT 1").get(key)
-    const b = this.sql.prepare<{delivery_expected:number|null}>("SELECT delivery_expected FROM proactive_replies WHERE delivery_key=? LIMIT 1").get(key)
+    const a = this.sql
+      .prepare<{ delivery_expected: number | null }>(
+        "SELECT delivery_expected FROM resolution_events WHERE delivery_key=? LIMIT 1"
+      )
+      .get(key)
+    const b = this.sql
+      .prepare<{ delivery_expected: number | null }>(
+        "SELECT delivery_expected FROM proactive_replies WHERE delivery_key=? LIMIT 1"
+      )
+      .get(key)
     return a?.delivery_expected ?? b?.delivery_expected ?? undefined
   }
 
@@ -58,11 +84,15 @@ export class StatisticsRepository {
         opts.channel ?? null,
         opts.chatId ?? null,
         opts.userId ?? null,
-        opts.detail ?? null, opts.deliveryKey ?? opts.resolutionKey ?? null, opts.deliveryStatus ?? "sent", opts.deliveryExpected ?? null
+        opts.detail ?? null,
+        opts.deliveryKey ?? opts.resolutionKey ?? null,
+        opts.deliveryStatus ?? "sent",
+        opts.deliveryExpected ?? null
       )
   }
 
-  // sinceTs 起各 kind 计数;用于日看板 / 自动解决率
+  // sinceTs 起各 kind 计数; operational_error 保留为独立运维指标,
+  // 由 overview 排除出自动解决率分母; auto/proactive 仍只计已送达。
   resolutionCounts(sinceTs: number): Record<string, number> {
     const rows = this.sql
       .prepare<{ kind: string; n: number }>(

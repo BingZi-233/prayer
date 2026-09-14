@@ -7,6 +7,12 @@ import {
   recordLoginFail,
   timingSafeEqualStr,
 } from "@/lib/core/auth"
+import {
+  emptyBodyFailure,
+  readEmptyBody,
+  readJsonBody,
+  REQUEST_BODY_TOO_LARGE,
+} from "@/lib/core/http-security"
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
   const token = process.env.ADMIN_TOKEN
@@ -16,7 +22,7 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     )
   }
   // 爆破限速:同 IP 连续 5 次失败锁 15 分钟(此前可无限尝试)
-  const ip = clientIp(req.headers)
+  const ip = clientIp(req, process.env.TRUST_PROXY === "true")
   const state = loginThrottleState(ip)
   if (state.blocked) {
     const min = Math.ceil((state.retryAfterMs ?? 0) / 60_000)
@@ -28,8 +34,17 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     })
   }
 
-  const body = await req.json().catch(() => null)
-  const provided = typeof body?.token === "string" ? body.token : ""
+  const body = await readJsonBody(req)
+  if (body === REQUEST_BODY_TOO_LARGE) {
+    return NextResponse.json(fail("请求体过大"), { status: 413 })
+  }
+  const provided =
+    typeof body === "object" &&
+    body !== null &&
+    "token" in body &&
+    typeof body.token === "string"
+      ? body.token
+      : ""
   if (!timingSafeEqualStr(provided, token)) {
     recordLoginFail(ip)
     return NextResponse.json(fail("口令错误"), { status: 401 })
@@ -40,14 +55,26 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
   res.cookies.set("admin_token", token, {
     httpOnly: true,
     sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
     path: "/",
     maxAge: 60 * 60 * 24 * 14, // 14 天
   })
   return res
 }
 
-export async function DELETE(): Promise<NextResponse> {
+export async function DELETE(req: NextRequest): Promise<NextResponse> {
+  const bodyFailure = emptyBodyFailure(await readEmptyBody(req))
+  if (bodyFailure)
+    return NextResponse.json(fail(bodyFailure.message), {
+      status: bodyFailure.status,
+    })
   const res = NextResponse.json(ok({ auth: false }))
-  res.cookies.set("admin_token", "", { httpOnly: true, path: "/", maxAge: 0 })
+  res.cookies.set("admin_token", "", {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    maxAge: 0,
+  })
   return res
 }

@@ -1,8 +1,22 @@
 import { describe, it, expect } from "vitest"
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs"
+import {
+  mkdtempSync,
+  mkdirSync,
+  rmSync,
+  symlinkSync,
+  truncateSync,
+  writeFileSync,
+} from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { parseTranscript, findTranscript, readTranscript } from "@/lib/conversation/transcript"
+import {
+  findTranscript,
+  MAX_TRANSCRIPT_BYTES,
+  MAX_TRANSCRIPT_MESSAGES,
+  MAX_TRANSCRIPT_SESSION_ID_CHARS,
+  parseTranscript,
+  readTranscript,
+} from "@/lib/conversation/transcript"
 
 describe("parseTranscript", () => {
   it("文本与 tool_use 拆成独立条目", () => {
@@ -75,6 +89,17 @@ describe("parseTranscript", () => {
 
   it("空输入返回空数组", () => {
     expect(parseTranscript("")).toEqual([])
+  })
+
+  it("达到消息上限后停止解析,不把整份 JSONL 展开到内存", () => {
+    const line = JSON.stringify({
+      type: "user",
+      message: { content: "一条消息" },
+    })
+    const msgs = parseTranscript(
+      Array.from({ length: MAX_TRANSCRIPT_MESSAGES + 1 }, () => line).join("\n")
+    )
+    expect(msgs).toHaveLength(MAX_TRANSCRIPT_MESSAGES)
   })
 
   it("合成注入的 user 记录(<task-notification> 等)不产 user 气泡", () => {
@@ -179,10 +204,59 @@ describe("findTranscript", () => {
     const proj = join(dir, "projects", "-x")
     mkdirSync(proj, { recursive: true })
     writeFileSync(join(proj, "stale-1.jsonl"), "")
-    expect(findTranscript(dir, "stale-1")).toBe(
-      join(proj, "stale-1.jsonl")
-    )
+    expect(findTranscript(dir, "stale-1")).toBe(join(proj, "stale-1.jsonl"))
     rmSync(join(proj, "stale-1.jsonl"))
     expect(readTranscript(dir, "stale-1")).toEqual([])
+  })
+
+  it("读取合法 transcript 时通过有界无跟随 fd", () => {
+    const dir = mkdtempSync(join(tmpdir(), "cfg-read-"))
+    const proj = join(dir, "projects", "-x")
+    mkdirSync(proj, { recursive: true })
+    writeFileSync(
+      join(proj, "read-1.jsonl"),
+      JSON.stringify({ type: "user", message: { content: "可读" } })
+    )
+    expect(readTranscript(dir, "read-1")).toEqual([
+      { role: "user", text: "可读" },
+    ])
+  })
+
+  it("拒绝 projects 下的 symlink transcript", () => {
+    const dir = mkdtempSync(join(tmpdir(), "cfg-symlink-"))
+    const proj = join(dir, "projects", "-x")
+    mkdirSync(proj, { recursive: true })
+    const outside = join(dir, "outside.jsonl")
+    writeFileSync(
+      outside,
+      JSON.stringify({ type: "user", message: { content: "secret" } })
+    )
+    symlinkSync(outside, join(proj, "symlink-1.jsonl"))
+    expect(findTranscript(dir, "symlink-1")).toBeNull()
+    expect(readTranscript(dir, "symlink-1")).toEqual([])
+  })
+
+  it("拒绝超过大小上限的 transcript", () => {
+    const dir = mkdtempSync(join(tmpdir(), "cfg-large-"))
+    const proj = join(dir, "projects", "-x")
+    mkdirSync(proj, { recursive: true })
+    const file = join(proj, "large-1.jsonl")
+    writeFileSync(file, "x")
+    truncateSync(file, MAX_TRANSCRIPT_BYTES + 1)
+    expect(findTranscript(dir, "large-1")).toBeNull()
+    expect(readTranscript(dir, "large-1")).toEqual([])
+  })
+
+  it("拒绝超长或含路径/控制字符的 session id", () => {
+    const dir = mkdtempSync(join(tmpdir(), "cfg-session-id-"))
+    const proj = join(dir, "projects", "-x")
+    mkdirSync(proj, { recursive: true })
+    writeFileSync(join(proj, "valid.jsonl"), "")
+
+    expect(
+      findTranscript(dir, "x".repeat(MAX_TRANSCRIPT_SESSION_ID_CHARS + 1))
+    ).toBeNull()
+    expect(findTranscript(dir, "../valid")).toBeNull()
+    expect(readTranscript(dir, "bad\u0000id")).toEqual([])
   })
 })

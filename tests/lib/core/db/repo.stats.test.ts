@@ -114,6 +114,37 @@ describe("Repo 统计/列表", () => {
 
     expect(repo.resolutionCounts(0).auto).toBe(1)
   })
+
+  it("投递失败文本写入统计表前会脱敏并截断", () => {
+    const db = openDb(":memory:", 3)
+    const repo = new Repo(db)
+    const key = "redact-statistics"
+    repo.insertResolution("auto", {
+      deliveryKey: key,
+      deliveryStatus: "pending",
+    })
+    repo.insertProactiveReply("qq", "1", "u", "q", "a", {
+      deliveryKey: key,
+      deliveryStatus: "pending",
+    })
+    const secret = "Bearer sk-ant-abcdefghijklmnopqrstuvwxyz"
+    const raw = `${secret} ${"y".repeat(500)}`
+
+    repo.markDelivery(key, "failed", raw, 123, 0)
+
+    const rows = db
+      .prepare(
+        "SELECT last_error FROM resolution_events WHERE delivery_key = ? UNION ALL SELECT last_error FROM proactive_replies WHERE delivery_key = ?"
+      )
+      .all(key, key) as { last_error: string | null }[]
+    expect(rows).toHaveLength(2)
+    for (const row of rows) {
+      expect(row.last_error).toBeDefined()
+      expect(row.last_error).not.toContain(secret)
+      expect(row.last_error).toContain("[REDACTED]")
+      expect(row.last_error!.length).toBeLessThanOrEqual(300)
+    }
+  })
 })
 
 describe("Repo 工具调用日表", () => {

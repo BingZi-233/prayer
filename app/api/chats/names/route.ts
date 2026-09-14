@@ -3,7 +3,7 @@ import { Bot } from "grammy"
 import { getAppContext } from "@/lib/core/app-context"
 import { getRuntime } from "@/lib/runtime"
 import { getNameCache, type GroupNameRow } from "@/lib/core/chat/name-cache"
-import { ok } from "@/lib/core/api"
+import { fail, ok, safeApiError } from "@/lib/core/api"
 
 /**
  * 多通道群/会话显示名。
@@ -14,57 +14,61 @@ import { ok } from "@/lib/core/api"
  * groupId 为 Number(chatId):QQ 正、TG 负。
  */
 export async function GET(): Promise<NextResponse> {
-  const cache = getNameCache()
-  const { cfg } = getAppContext()
-  const byId = new Map<number, string>()
+  try {
+    const cache = getNameCache()
+    const { cfg } = getAppContext()
+    const byId = new Map<number, string>()
 
-  // 1) 已缓存的单会话名(含 TG 消息侧写入)
-  for (const r of cache.listCachedChatNames()) {
-    const id = Number(r.chatId)
-    if (!Number.isFinite(id)) continue
-    byId.set(id, r.chatName)
-  }
-
-  // 2) QQ 整包列表(有则覆盖/补全)
-  let qqList = cache.getGroupsList()
-  if (!qqList) {
-    const raw = await getRuntime().getGroups()
-    if (Array.isArray(raw)) {
-      qqList = raw
-        .map((g) => {
-          const o = g as { group_id?: unknown; group_name?: unknown }
-          const groupId = Number(o.group_id)
-          return {
-            groupId,
-            groupName: String(o.group_name ?? groupId),
-          }
-        })
-        .filter((g) => Number.isFinite(g.groupId) && g.groupId > 0)
-      cache.setGroupsList(qqList)
+    // 1) 已缓存的单会话名(含 TG 消息侧写入)
+    for (const r of cache.listCachedChatNames()) {
+      const id = Number(r.chatId)
+      if (!Number.isFinite(id)) continue
+      byId.set(id, r.chatName)
     }
-  }
-  if (qqList) {
-    for (const g of qqList) byId.set(g.groupId, g.groupName)
-  }
 
-  // 3) TG 白名单:缓存 miss 则 getChat
-  for (const c of cfg.enabledChats) {
-    if (c.channel !== "tg") continue
-    const chatId = c.chatId
-    const id = Number(chatId)
-    if (!Number.isFinite(id)) continue
-    const existing = byId.get(id)
-    // 已有真人名(非裸 id 回退)则跳过
-    if (existing && existing !== chatId && existing !== String(id)) continue
-    const title = await resolveTgTitle(chatId, cache, cfg.telegramBotToken)
-    byId.set(id, title ?? chatId)
+    // 2) QQ 整包列表(有则覆盖/补全)
+    let qqList = cache.getGroupsList()
+    if (!qqList) {
+      const raw = await getRuntime().getGroups()
+      if (Array.isArray(raw)) {
+        qqList = raw
+          .map((g) => {
+            const o = g as { group_id?: unknown; group_name?: unknown }
+            const groupId = Number(o.group_id)
+            return {
+              groupId,
+              groupName: String(o.group_name ?? groupId),
+            }
+          })
+          .filter((g) => Number.isFinite(g.groupId) && g.groupId > 0)
+        cache.setGroupsList(qqList)
+      }
+    }
+    if (qqList) {
+      for (const g of qqList) byId.set(g.groupId, g.groupName)
+    }
+
+    // 3) TG 白名单:缓存 miss 则 getChat
+    for (const c of cfg.enabledChats) {
+      if (c.channel !== "tg") continue
+      const chatId = c.chatId
+      const id = Number(chatId)
+      if (!Number.isFinite(id)) continue
+      const existing = byId.get(id)
+      // 已有真人名(非裸 id 回退)则跳过
+      if (existing && existing !== chatId && existing !== String(id)) continue
+      const title = await resolveTgTitle(chatId, cache, cfg.telegramBotToken)
+      byId.set(id, title ?? chatId)
+    }
+
+    const rows: GroupNameRow[] = [...byId.entries()]
+      .map(([groupId, groupName]) => ({ groupId, groupName }))
+      .sort((a, b) => a.groupId - b.groupId)
+
+    return NextResponse.json(ok(rows))
+  } catch (err) {
+    return NextResponse.json(fail(safeApiError(err)), { status: 500 })
   }
-
-  const rows: GroupNameRow[] = [...byId.entries()]
-    .map(([groupId, groupName]) => ({ groupId, groupName }))
-    .sort((a, b) => a.groupId - b.groupId)
-
-  return NextResponse.json(ok(rows))
 }
 
 async function resolveTgTitle(

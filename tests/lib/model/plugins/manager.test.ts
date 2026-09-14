@@ -1,11 +1,15 @@
-import { describe, it, expect, vi, beforeEach } from "vitest"
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 
 const execFileMock = vi.fn()
 vi.mock("node:child_process", () => ({
   execFile: (...a: unknown[]) => execFileMock(...a),
 }))
 
-import { PluginManager, isValidPluginRef } from "@/lib/model/plugins/manager"
+import {
+  pluginCliEnv,
+  PluginManager,
+  isValidPluginRef,
+} from "@/lib/model/plugins/manager"
 
 function mgr() {
   return new PluginManager("/tmp/cfgdir-test")
@@ -34,6 +38,32 @@ describe("isValidPluginRef", () => {
   })
 })
 
+describe("pluginCliEnv", () => {
+  afterEach(() => vi.unstubAllEnvs())
+
+  it("不把应用、模型和数据库凭据传给第三方 CLI", () => {
+    vi.stubEnv("ADMIN_TOKEN", "admin-secret")
+    vi.stubEnv("ANTHROPIC_AUTH_TOKEN", "model-secret")
+    vi.stubEnv("ONEBOT_ACCESS_TOKEN", "onebot-secret")
+    vi.stubEnv("DB_PATH", "/tmp/agent.db")
+    vi.stubEnv("AWS_ACCESS_KEY_ID", "aws-secret")
+    vi.stubEnv("GOOGLE_APPLICATION_CREDENTIALS", "/tmp/gcp.json")
+    vi.stubEnv("HTTPS_PROXY", "https://user:pass@example.test")
+    vi.stubEnv("PATH", "/usr/bin")
+
+    const env = pluginCliEnv("/tmp/cfgdir-test")
+    expect(env.CLAUDE_CONFIG_DIR).toContain("cfgdir-test")
+    expect(env.ADMIN_TOKEN).toBeUndefined()
+    expect(env.ANTHROPIC_AUTH_TOKEN).toBeUndefined()
+    expect(env.ONEBOT_ACCESS_TOKEN).toBeUndefined()
+    expect(env.DB_PATH).toBeUndefined()
+    expect(env.AWS_ACCESS_KEY_ID).toBeUndefined()
+    expect(env.GOOGLE_APPLICATION_CREDENTIALS).toBeUndefined()
+    expect(env.HTTPS_PROXY).toBeUndefined()
+    expect(env.PATH).toBe("/usr/bin")
+  })
+})
+
 describe("PluginManager.list", () => {
   it("解析 --json 并注入 CLAUDE_CONFIG_DIR", async () => {
     execFileMock.mockImplementation((_cmd, _args, _opts, cb) =>
@@ -59,6 +89,26 @@ describe("PluginManager.list", () => {
     expect(
       (opts as { env: Record<string, string> }).env.CLAUDE_CONFIG_DIR
     ).toContain("cfgdir-test")
+  })
+
+  it("解析 marketplace list --json", async () => {
+    execFileMock.mockClear()
+    execFileMock.mockImplementation((_cmd, _args, _opts, cb) =>
+      cb(
+        null,
+        '[{"name":"prayer-local","source":"directory","path":"/tmp/prayer"}]',
+        ""
+      )
+    )
+    await expect(mgr().listMarketplaces()).resolves.toEqual([
+      { name: "prayer-local", source: "directory", path: "/tmp/prayer" },
+    ])
+    expect(execFileMock.mock.calls[0][1]).toEqual([
+      "plugin",
+      "marketplace",
+      "list",
+      "--json",
+    ])
   })
 })
 
@@ -118,5 +168,68 @@ describe("PluginManager 写操作", () => {
     )
     const r = await mgr().enable("packyapi@prayer-local")
     expect(r).toEqual({ ok: false, error: "boom" })
+  })
+
+  it("removeMarketplace 使用显式 marketplace remove", async () => {
+    okExec()
+    await expect(mgr().removeMarketplace("prayer-local")).resolves.toEqual({
+      ok: true,
+      stdout: "done",
+    })
+    expect(execFileMock.mock.calls[0][1]).toEqual([
+      "plugin",
+      "marketplace",
+      "remove",
+      "prayer-local",
+    ])
+  })
+
+  it("restoreEnabled 只恢复同版本同 scope 的实际状态变化", async () => {
+    execFileMock
+      .mockImplementationOnce((_cmd, _args, _opts, cb) =>
+        cb(
+          null,
+          '[{"id":"pkg@mkt","version":"1.0.0","scope":"user","enabled":true,"installPath":"/tmp/pkg"}]',
+          ""
+        )
+      )
+      .mockImplementationOnce((_cmd, _args, _opts, cb) => cb(null, "done", ""))
+    const result = await mgr().restoreEnabled({
+      id: "pkg@mkt",
+      version: "1.0.0",
+      scope: "user",
+      enabled: false,
+      installPath: "/tmp/pkg",
+    })
+    expect(result.ok).toBe(true)
+    expect(execFileMock.mock.calls[1][1]).toEqual([
+      "plugin",
+      "disable",
+      "pkg@mkt",
+      "--scope",
+      "user",
+    ])
+  })
+
+  it("restoreEnabled 版本变化时拒绝反向操作", async () => {
+    execFileMock.mockImplementation((_cmd, _args, _opts, cb) =>
+      cb(
+        null,
+        '[{"id":"pkg@mkt","version":"2.0.0","scope":"user","enabled":true,"installPath":"/tmp/pkg"}]',
+        ""
+      )
+    )
+    const result = await mgr().restoreEnabled({
+      id: "pkg@mkt",
+      version: "1.0.0",
+      scope: "user",
+      enabled: false,
+      installPath: "/tmp/pkg",
+    })
+    expect(result).toEqual({
+      ok: false,
+      error: "插件版本或 scope 已变化，拒绝自动恢复启停状态",
+    })
+    expect(execFileMock).toHaveBeenCalledTimes(1)
   })
 })

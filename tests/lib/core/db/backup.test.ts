@@ -1,5 +1,12 @@
 import Database from "better-sqlite3"
-import { mkdtemp, rm, writeFile } from "node:fs/promises"
+import {
+  mkdtemp,
+  readFile,
+  rm,
+  symlink,
+  stat,
+  writeFile,
+} from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
@@ -45,6 +52,7 @@ describe("数据库备份", () => {
 
     expect(result.userVersion).toBe(CURRENT_SCHEMA_VERSION)
     expect(result.totalPages).toBeGreaterThan(0)
+    expect((await stat(result.path)).mode & 0o777).toBe(0o600)
     expect(verifyDatabaseFile(result.path)).toEqual({
       ok: true,
       messages: ["ok"],
@@ -70,6 +78,21 @@ describe("数据库备份", () => {
     await expect(backupDatabase(source, destination)).rejects.toThrow(
       "备份目标已存在"
     )
+  })
+
+  it("拒绝目标符号链接且不触碰其指向文件", async () => {
+    const directory = await tempDirectory()
+    const source = openDb(join(directory, "source.db"), 3)
+    databases.push(source)
+    const target = join(directory, "outside.db")
+    const destination = join(directory, "snapshot.db")
+    await writeFile(target, "keep me")
+    await symlink(target, destination)
+
+    await expect(backupDatabase(source, destination)).rejects.toThrow(
+      "备份目标已存在"
+    )
+    expect(await readFile(target, "utf8")).toBe("keep me")
   })
 
   it("完整数据库返回 ok，损坏文件无法通过只读验证", async () => {

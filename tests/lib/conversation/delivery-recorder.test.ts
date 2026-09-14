@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest"
 import { openDb } from "@/lib/core/db/index"
 import { Repo } from "@/lib/core/db/repo"
-import { recordDelivery, registerDeliveryRecorder } from "@/lib/conversation/delivery-recorder"
+import {
+  recordDelivery,
+  registerDeliveryRecorder,
+} from "@/lib/conversation/delivery-recorder"
 import { registerResolutionRecorder } from "@/lib/conversation/resolution-recorder"
 import { registerReplyMapper } from "@/lib/conversation/reply-mapper"
 import { ChannelRegistry } from "@/lib/channels/registry"
@@ -9,36 +12,94 @@ import { bus } from "@/lib/core/bus"
 
 describe("delivery recorder", () => {
   it("waits for all chunks", () => {
-    const repo = new Repo(openDb(":memory:", 3)); repo.insertResolution("auto", { deliveryKey: "r", resolutionKey: "r", deliveryStatus: "pending" })
+    const repo = new Repo(openDb(":memory:", 3))
+    repo.insertResolution("auto", {
+      deliveryKey: "r",
+      resolutionKey: "r",
+      deliveryStatus: "pending",
+    })
     const off = registerDeliveryRecorder(repo)
-    bus.emit("delivery.planned", { deliveryKey: "r", resolutionKey: "r", chunkCount: 2 })
-    bus.emit("delivery.recorded", { deliveryKey: "r/0", resolutionKey: "r", status: "sent", at: 1 })
+    bus.emit("delivery.planned", {
+      deliveryKey: "r",
+      resolutionKey: "r",
+      chunkCount: 2,
+    })
+    bus.emit("delivery.recorded", {
+      deliveryKey: "r/0",
+      resolutionKey: "r",
+      status: "sent",
+      at: 1,
+    })
     off()
     expect(repo.resolutionCounts(0).auto ?? 0).toBe(0)
   })
   it("marks after two sent chunks", () => {
-    const repo = new Repo(openDb(":memory:", 3)); repo.insertResolution("auto", { deliveryKey: "r2", resolutionKey: "r2" })
-    const a = repo.outbox.enqueueAndClaim({ channel: "qq", chatId: "1", text: "a", deliveryKey: "r2/0", resolutionKey: "r2" }, 0)!
-    const b = repo.outbox.enqueueAndClaim({ channel: "qq", chatId: "1", text: "b", deliveryKey: "r2/1", resolutionKey: "r2" }, 0)!
-    repo.outbox.markSent(a.id, 1, a.claimToken); repo.outbox.markSent(b.id, 1, b.claimToken)
-    const off = registerDeliveryRecorder(repo); bus.emit("delivery.planned", { deliveryKey: "r2", resolutionKey: "r2", chunkCount: 2 }); bus.emit("delivery.recorded", { deliveryKey: "r2/1", resolutionKey: "r2", status: "sent", at: 2 }); off()
+    const repo = new Repo(openDb(":memory:", 3))
+    repo.insertResolution("auto", { deliveryKey: "r2", resolutionKey: "r2" })
+    const a = repo.outbox.enqueueAndClaim(
+      {
+        channel: "qq",
+        chatId: "1",
+        text: "a",
+        deliveryKey: "r2/0",
+        resolutionKey: "r2",
+      },
+      0
+    )!
+    const b = repo.outbox.enqueueAndClaim(
+      {
+        channel: "qq",
+        chatId: "1",
+        text: "b",
+        deliveryKey: "r2/1",
+        resolutionKey: "r2",
+      },
+      0
+    )!
+    repo.outbox.markSent(a.id, 1, a.claimToken)
+    repo.outbox.markSent(b.id, 1, b.claimToken)
+    const off = registerDeliveryRecorder(repo)
+    bus.emit("delivery.planned", {
+      deliveryKey: "r2",
+      resolutionKey: "r2",
+      chunkCount: 2,
+    })
+    bus.emit("delivery.recorded", {
+      deliveryKey: "r2/1",
+      resolutionKey: "r2",
+      status: "sent",
+      at: 2,
+    })
+    off()
     expect(repo.resolutionCounts(0).auto).toBe(1)
   })
 
   it("duplicate delivery.recorded is idempotent", () => {
     const repo = new Repo(openDb(":memory:", 3))
     repo.insertResolution("auto", { deliveryKey: "dup", resolutionKey: "dup" })
-    const row = repo.outbox.enqueueAndClaim({
-      channel: "qq",
-      chatId: "1",
-      text: "answer",
-      deliveryKey: "dup/0",
-      resolutionKey: "dup",
-    }, 0)!
+    const row = repo.outbox.enqueueAndClaim(
+      {
+        channel: "qq",
+        chatId: "1",
+        text: "answer",
+        deliveryKey: "dup/0",
+        resolutionKey: "dup",
+      },
+      0
+    )!
     repo.outbox.markSent(row.id, 1, row.claimToken)
     const off = registerDeliveryRecorder(repo)
-    const event = { deliveryKey: "dup/0", resolutionKey: "dup", status: "sent" as const, at: 2 }
-    bus.emit("delivery.planned", { deliveryKey: "dup", resolutionKey: "dup", chunkCount: 1 })
+    const event = {
+      deliveryKey: "dup/0",
+      resolutionKey: "dup",
+      status: "sent" as const,
+      at: 2,
+    }
+    bus.emit("delivery.planned", {
+      deliveryKey: "dup",
+      resolutionKey: "dup",
+      chunkCount: 1,
+    })
     bus.emit("delivery.recorded", event)
     bus.emit("delivery.recorded", event)
     off()
@@ -54,20 +115,26 @@ describe("delivery recorder", () => {
       deliveryStatus: "pending",
       deliveryExpected: 2,
     })
-    const first = repo.outbox.enqueueAndClaim({
-      channel: "qq",
-      chatId: "1",
-      text: "first",
-      deliveryKey: "recorded-two/0",
-      resolutionKey: "recorded-two",
-    }, 0)!
-    const second = repo.outbox.enqueueAndClaim({
-      channel: "qq",
-      chatId: "1",
-      text: "second",
-      deliveryKey: "recorded-two/1",
-      resolutionKey: "recorded-two",
-    }, 0)!
+    const first = repo.outbox.enqueueAndClaim(
+      {
+        channel: "qq",
+        chatId: "1",
+        text: "first",
+        deliveryKey: "recorded-two/0",
+        resolutionKey: "recorded-two",
+      },
+      0
+    )!
+    const second = repo.outbox.enqueueAndClaim(
+      {
+        channel: "qq",
+        chatId: "1",
+        text: "second",
+        deliveryKey: "recorded-two/1",
+        resolutionKey: "recorded-two",
+      },
+      0
+    )!
     repo.outbox.markSent(first.id, 1, first.claimToken)
 
     recordDelivery(repo, {
@@ -97,12 +164,68 @@ describe("delivery recorder", () => {
     })
     off()
 
-    const db = (repo as unknown as {
-      db: { prepare: (sql: string) => { get: () => unknown } }
-    }).db
+    const db = (
+      repo as unknown as {
+        db: { prepare: (sql: string) => { get: () => unknown } }
+      }
+    ).db
     expect(
-      db.prepare("SELECT delivery_key, delivery_status FROM resolution_events").get()
+      db
+        .prepare("SELECT delivery_key, delivery_status FROM resolution_events")
+        .get()
     ).toEqual({ delivery_key: "resolution-only", delivery_status: "pending" })
+  })
+
+  it("error.occurred 区分用户可见错误与后台运维错误", () => {
+    const repo = new Repo(openDb(":memory:", 3))
+    const off = registerResolutionRecorder(repo)
+    bus.emit("error.occurred", {
+      scope: "reflection-compact",
+      err: new Error("provider timeout"),
+      channel: "tg",
+      chatId: "-100",
+      userVisible: false,
+    })
+    bus.emit("error.occurred", {
+      scope: "answer",
+      err: new Error("visible fallback"),
+      channel: "tg",
+      chatId: "-100",
+      userVisible: true,
+    })
+    off()
+
+    expect(repo.resolutionCounts(0)).toMatchObject({
+      operational_error: 1,
+      error: 1,
+    })
+    const db = (
+      repo as unknown as {
+        db: {
+          prepare: (sql: string) => { all: () => unknown[] }
+        }
+      }
+    ).db
+    expect(
+      db
+        .prepare(
+          "SELECT kind, detail, channel, group_id FROM resolution_events ORDER BY id"
+        )
+        .all()
+    ).toEqual([
+      {
+        kind: "operational_error",
+        detail: "provider timeout",
+        channel: "tg",
+        group_id: "-100",
+      },
+      {
+        kind: "error",
+        detail: "visible fallback",
+        channel: "tg",
+        group_id: "-100",
+      },
+    ])
   })
 
   it("proactive reply moves pending to sent through mapper, registry, and outbox", async () => {
@@ -115,7 +238,10 @@ describe("delivery recorder", () => {
     const offResolution = registerResolutionRecorder(repo)
     const offDelivery = registerDeliveryRecorder(repo)
     const offMapper = registerReplyMapper()
-    const registry = new ChannelRegistry({ outbox: repo.outbox, now: () => 100 })
+    const registry = new ChannelRegistry({
+      outbox: repo.outbox,
+      now: () => 100,
+    })
     registry.register({
       id: "qq",
       capabilities: {
@@ -181,20 +307,26 @@ describe("delivery recorder", () => {
 
     expect(repo.deliveryExpected("ordered")).toBe(2)
 
-    const a = repo.outbox.enqueueAndClaim({
-      channel: "qq",
-      chatId: "1",
-      text: "a",
-      deliveryKey: "ordered/0",
-      resolutionKey: "ordered",
-    }, 0)!
-    const b = repo.outbox.enqueueAndClaim({
-      channel: "qq",
-      chatId: "1",
-      text: "b",
-      deliveryKey: "ordered/1",
-      resolutionKey: "ordered",
-    }, 0)!
+    const a = repo.outbox.enqueueAndClaim(
+      {
+        channel: "qq",
+        chatId: "1",
+        text: "a",
+        deliveryKey: "ordered/0",
+        resolutionKey: "ordered",
+      },
+      0
+    )!
+    const b = repo.outbox.enqueueAndClaim(
+      {
+        channel: "qq",
+        chatId: "1",
+        text: "b",
+        deliveryKey: "ordered/1",
+        resolutionKey: "ordered",
+      },
+      0
+    )!
     repo.outbox.markSent(a.id, 1, a.claimToken)
 
     bus.emit("delivery.recorded", {

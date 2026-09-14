@@ -45,20 +45,39 @@ export function wrapCanUseToolForStructuredOutput(
 export const CS_KB_TOOL = "mcp__plugin_cs_cs__kb_search"
 /** 兼容 PackyAPI 插件统计/旧调用方；核心客服不依赖该工具。 */
 export const PACKY_TOOL = "mcp__plugin_packyapi_packyapi__packy"
-// 所有 MCP 工具(名以 mcp__ 前缀)统一由 isToolAllowed 无条件放行 —— 插件新增 server/工具无需改此处。
-// 本 Set 只留非 MCP 的显式放行项。WebSearch / WebFetch 禁用:整页正文/检索结果塞进 context 后
+// 只放行经过审查的 MCP server/tool；第三方插件新增工具必须显式配置，避免
+// ``mcp__*`` 通配符把安装插件变成模型可任意调用的权限扩大器。
+const DEFAULT_MCP_ALLOWLIST = new Set([CS_KB_TOOL, PACKY_TOOL])
+const MCP_TOOL_NAME = /^mcp__[A-Za-z0-9_-]+__[A-Za-z0-9_.:-]+$/
+
+/**
+ * 返回本进程实际采用的 MCP 白名单。环境变量用于部署时增补已审查工具，
+ * 但只接受完整的 mcp__server__tool 名称，且不会把空值解释成通配符。
+ */
+export function configuredToolAllowlist(
+  env: NodeJS.ProcessEnv = process.env
+): Set<string> {
+  const out = new Set(DEFAULT_MCP_ALLOWLIST)
+  const extra = env.PRAYER_MCP_ALLOWLIST ?? ""
+  for (const name of extra.split(/[\s,]+/)) {
+    if (MCP_TOOL_NAME.test(name)) out.add(name)
+  }
+  out.add("Skill")
+  return out
+}
+
+// 本 Set 保留非 MCP 的显式放行项。WebSearch / WebFetch 禁用:整页正文/检索结果塞进 context 后
 // 永久留在会话里,即便命中缓存按 0.1x 计费,每轮重发的绝对量仍显著。Bash / Read 亦禁用。
 export const TOOL_ALLOWLIST = new Set<string>(["Skill"])
 
-// 权限判定:所有 MCP 工具(mcp__ 前缀)无条件放行 —— 插件 MCP 均为受控只读查询,
-// 新增 server/工具免改白名单;再叠加非 MCP 的显式放行项(Skill)。Bash/Read/Web* 等宿主工具一律拒绝。
+// 权限判定:只允许显式 MCP server/tool 白名单与非 MCP 的 Skill；Bash/Read/Web* 等宿主工具一律拒绝。
 export function isToolAllowed(
   toolName: string,
   // 入参占位以匹配 SDK canUseTool 回调签名;当前判定只按工具名,不看入参
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   _input: Record<string, unknown>
 ): boolean {
-  return toolName.startsWith("mcp__") || TOOL_ALLOWLIST.has(toolName)
+  return configuredToolAllowlist().has(toolName) || TOOL_ALLOWLIST.has(toolName)
 }
 
 // 拒因 message:引导模型停止重试、改走合规路径,避免反复撞被拒工具烧光 maxTurns。

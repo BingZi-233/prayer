@@ -22,6 +22,7 @@ function makeChannel(
   id: ChannelId,
   opts: {
     failStart?: boolean
+    connectedBeforeFailure?: boolean
     onStart?: () => void
     onStop?: () => void
     onSend?: (a: ActionSend) => void | Promise<void>
@@ -41,7 +42,10 @@ function makeChannel(
     },
     async start() {
       opts.onStart?.()
-      if (opts.failStart) throw new Error(`${id}-boom`)
+      if (opts.failStart) {
+        if (opts.connectedBeforeFailure) connected = true
+        throw new Error(`${id}-boom`)
+      }
       connected = true
     },
     async stop() {
@@ -106,7 +110,12 @@ describe("ChannelRegistry", () => {
     const claimed: OutboxRecord = {
       id: 70,
       deliveryKey: "delivery-70",
-      action: { channel: "tg", chatId: "-100", text: "orphan", deliveryKey: "delivery-70" },
+      action: {
+        channel: "tg",
+        chatId: "-100",
+        text: "orphan",
+        deliveryKey: "delivery-70",
+      },
       status: "sending",
       attempts: 1,
       nextAttemptAt: 0,
@@ -171,6 +180,61 @@ describe("ChannelRegistry", () => {
     await reg.dispatch(claimed.action)
 
     expect(nextAttemptAt).toBe(14_000)
+  })
+
+  it("registry 传给 outbox/投递事件的错误会脱敏并截断", async () => {
+    const action: ActionSend = {
+      channel: "tg",
+      chatId: "-100",
+      text: "redact",
+      deliveryKey: "delivery-redact",
+    }
+    const claimed: OutboxRecord = {
+      id: 75,
+      deliveryKey: action.deliveryKey!,
+      action,
+      status: "sending",
+      attempts: 1,
+      nextAttemptAt: 0,
+      leaseUntil: 30_000,
+      claimToken: "lease-redact",
+      lastError: null,
+    }
+    const secret = "sk-ant-abcdefghijklmnopqrstuvwxyz"
+    const raw = `token=${secret} ${"z".repeat(500)}`
+    let persisted: string | undefined
+    let recorded: string | undefined
+    const outbox: OutboundStore = {
+      enqueueAndClaim: () => claimed,
+      claimDue: () => [],
+      markSent: () => true,
+      markFailed: (_id, error) => {
+        persisted = error
+        return true
+      },
+      sentChunkCount: () => 0,
+    }
+    const onDelivery = (event: { deliveryKey: string; error?: string }) => {
+      if (event.deliveryKey === action.deliveryKey) recorded = event.error
+    }
+    bus.on("delivery.recorded", onDelivery as never)
+    const reg = new ChannelRegistry({ outbox })
+    reg.register(
+      makeChannel("tg", {
+        onSend: () => {
+          throw new Error(raw)
+        },
+      })
+    )
+
+    await reg.dispatch(action)
+    bus.off("delivery.recorded", onDelivery as never)
+
+    expect(persisted).toBeDefined()
+    expect(persisted).toBe(recorded)
+    expect(persisted).not.toContain(secret)
+    expect(persisted).toContain("[REDACTED]")
+    expect(persisted!.length).toBeLessThanOrEqual(300)
   })
 
   it("旧 lease 的发送完成不会伪造 delivery.sent", async () => {
@@ -252,7 +316,9 @@ describe("ChannelRegistry", () => {
     const successEvents: unknown[] = []
     const onSuccess = (e: unknown) => successEvents.push(e)
     bus.on("delivery.recorded", onSuccess as never)
-    await (successful as unknown as { retryDue: () => Promise<void> }).retryDue()
+    await (
+      successful as unknown as { retryDue: () => Promise<void> }
+    ).retryDue()
     bus.off("delivery.recorded", onSuccess as never)
 
     expect(sends).toEqual([action])
@@ -330,17 +396,19 @@ describe("ChannelRegistry", () => {
     }
     const outbox: OutboundStore = {
       enqueueAndClaim: () => null,
-      claimDue: () => [{
-        id: 71,
-        deliveryKey: action.deliveryKey!,
-        action,
-        status: "sending",
-        attempts: 3,
-        nextAttemptAt: 5_000,
-        leaseUntil: 35_000,
-        claimToken: "lease-71",
-        lastError: null,
-      }],
+      claimDue: () => [
+        {
+          id: 71,
+          deliveryKey: action.deliveryKey!,
+          action,
+          status: "sending",
+          attempts: 3,
+          nextAttemptAt: 5_000,
+          leaseUntil: 35_000,
+          claimToken: "lease-71",
+          lastError: null,
+        },
+      ],
       markSent: () => true,
       markFailed: (_id, _error, next) => {
         nextAttemptAt = next
@@ -353,6 +421,466 @@ describe("ChannelRegistry", () => {
     await (reg as unknown as { retryDue: () => Promise<void> }).retryDue()
 
     expect(nextAttemptAt).toBe(9_000)
+  })
+
+  it("retryDue 每轮只 claim 一条,慢发送不会让同批后续 lease 过期", async () => {
+    let now = 0
+    const records: OutboxRecord[] = [1, 2, 3].map((id) => ({
+      id,
+      deliveryKey: `slow-${id}`,
+      action: {
+        channel: "tg",
+        chatId: String(id),
+        text: `slow-${id}`,
+        deliveryKey: `slow-${id}`,
+      },
+      status: "sending",
+      attempts: 1,
+      nextAttemptAt: 0,
+      leaseUntil: 30_000,
+      claimToken: `lease-${id}`,
+      lastError: null,
+    }))
+    const pending = [...records]
+    const claimLimits: number[] = []
+    const leaseUntil = new Map<number, number>()
+    const expiredSends: number[] = []
+    const sent: number[] = []
+    const outbox: OutboundStore = {
+      enqueueAndClaim: () => null,
+      claimDue: (limit, at) => {
+        claimLimits.push(limit)
+        const batch = pending.splice(0, limit)
+        for (const record of batch) leaseUntil.set(record.id, at + 30_000)
+        return batch
+      },
+      markSent: () => true,
+      markFailed: () => true,
+      sentChunkCount: () => 0,
+    }
+    const reg = new ChannelRegistry({ outbox, now: () => now })
+    reg.register(
+      makeChannel("tg", {
+        onSend: async (action) => {
+          const id = Number(action.chatId)
+          if (now >= (leaseUntil.get(id) ?? 0)) expiredSends.push(id)
+          sent.push(id)
+          // A slow API call; a batch claimed at t=0 would make row 3 stale.
+          now += 20_000
+        },
+      })
+    )
+
+    const retry = (reg as unknown as { retryDue: () => Promise<void> }).retryDue
+    await retry.call(reg)
+    await retry.call(reg)
+    await retry.call(reg)
+
+    expect(claimLimits).toEqual([1, 1, 1])
+    expect(sent).toEqual([1, 2, 3])
+    expect(expiredSends).toEqual([])
+  })
+
+  it("retryDue 发送失败进入统一 operational error 事件", async () => {
+    const action: ActionSend = {
+      channel: "tg",
+      chatId: "-100",
+      text: "retry error",
+      deliveryKey: "delivery-retry-error",
+      userVisibleOnFailure: true,
+    }
+    const errors: { scope: string; userVisible?: boolean }[] = []
+    const onError = (event: { scope: string; userVisible?: boolean }) =>
+      errors.push(event)
+    bus.on("error.occurred", onError as never)
+    const outbox: OutboundStore = {
+      enqueueAndClaim: () => null,
+      claimDue: () => [
+        {
+          id: 73,
+          deliveryKey: action.deliveryKey!,
+          action,
+          status: "sending",
+          attempts: 1,
+          nextAttemptAt: 0,
+          leaseUntil: 30_000,
+          claimToken: "lease-73",
+          lastError: null,
+        },
+      ],
+      markSent: () => true,
+      markFailed: () => true,
+      sentChunkCount: () => 0,
+    }
+    const reg = new ChannelRegistry({ outbox })
+    reg.register(
+      makeChannel("tg", {
+        onSend: () => {
+          throw new Error("retry send failed")
+        },
+      })
+    )
+
+    await (reg as unknown as { retryDue: () => Promise<void> }).retryDue()
+    bus.off("error.occurred", onError as never)
+
+    expect(errors).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          scope: "channel.tg.retry",
+          userVisible: false,
+        }),
+      ])
+    )
+  })
+
+  it("stopAll 排空进行中的 retry，并阻止旧代际写回 outbox", async () => {
+    const action: ActionSend = {
+      channel: "tg",
+      chatId: "-100",
+      text: "drain retry",
+      deliveryKey: "delivery-drain-retry",
+    }
+    const record: OutboxRecord = {
+      id: 76,
+      deliveryKey: action.deliveryKey!,
+      action,
+      status: "sending",
+      attempts: 1,
+      nextAttemptAt: 0,
+      leaseUntil: 30_000,
+      claimToken: "lease-drain-retry",
+      lastError: null,
+    }
+    let claims = 0
+    let marked = 0
+    let stopped = 0
+    let releaseSend!: () => void
+    let sendStarted!: () => void
+    const started = new Promise<void>((resolve) => {
+      sendStarted = resolve
+    })
+    const sendRelease = new Promise<void>((resolve) => {
+      releaseSend = resolve
+    })
+    const outbox: OutboundStore = {
+      enqueueAndClaim: () => null,
+      claimDue: () => {
+        claims++
+        return claims === 1 ? [record] : []
+      },
+      markSent: () => {
+        marked++
+        return true
+      },
+      markFailed: () => true,
+      sentChunkCount: () => 0,
+    }
+    const reg = new ChannelRegistry({ outbox })
+    reg.register(
+      makeChannel("tg", {
+        onStop: () => stopped++,
+        onSend: async () => {
+          sendStarted()
+          await sendRelease
+        },
+      })
+    )
+
+    const retry = (reg as unknown as { retryDue: () => Promise<void> }).retryDue
+    const retryPromise = retry.call(reg)
+    await started
+    let stopResolved = false
+    const stopPromise = reg.stopAll().then(() => {
+      stopResolved = true
+    })
+    await Promise.resolve()
+    expect(stopResolved).toBe(false)
+
+    releaseSend()
+    await Promise.all([retryPromise, stopPromise])
+
+    expect(marked).toBe(0)
+    expect(stopped).toBe(1)
+    await retry.call(reg)
+    expect(claims).toBe(1)
+  })
+
+  it("stopAll 对卡住的 retry 有界返回并保留 sending lease", async () => {
+    const action: ActionSend = {
+      channel: "tg",
+      chatId: "-100",
+      text: "stuck retry",
+      deliveryKey: "delivery-stuck-retry",
+    }
+    let sendStarted!: () => void
+    const started = new Promise<void>((resolve) => {
+      sendStarted = resolve
+    })
+    let releaseSend!: () => void
+    const gate = new Promise<void>((resolve) => {
+      releaseSend = resolve
+    })
+    let marked = 0
+    let failed = 0
+    const errors: string[] = []
+    const onError = (event: { scope: string }) => errors.push(event.scope)
+    bus.on("error.occurred", onError as never)
+    const outbox: OutboundStore = {
+      enqueueAndClaim: () => null,
+      claimDue: () => [
+        {
+          id: 80,
+          deliveryKey: action.deliveryKey!,
+          action,
+          status: "sending",
+          attempts: 1,
+          nextAttemptAt: 0,
+          leaseUntil: 30_000,
+          claimToken: "lease-80",
+          lastError: null,
+        },
+      ],
+      markSent: () => {
+        marked++
+        return true
+      },
+      markFailed: () => {
+        failed++
+        return true
+      },
+      sentChunkCount: () => 0,
+    }
+    const reg = new ChannelRegistry({ outbox, stopTimeoutMs: 10 })
+    reg.register(
+      makeChannel("tg", {
+        onSend: async () => {
+          sendStarted()
+          await gate
+        },
+      })
+    )
+
+    const retry = (reg as unknown as { retryDue: () => Promise<void> }).retryDue
+    const retryPromise = retry.call(reg)
+    await started
+    await reg.stopAll()
+
+    expect(errors).toContain("outbox.retry.stop-timeout")
+    expect(marked).toBe(0)
+    expect(failed).toBe(0)
+
+    // Release the late transport completion so the guarded old generation can
+    // settle without writing to the outbox after stop.
+    releaseSend()
+    await retryPromise
+    bus.off("error.occurred", onError as never)
+  })
+
+  it("retryDue 持久化失败也进入统一 operational error 事件", async () => {
+    const action: ActionSend = {
+      channel: "tg",
+      chatId: "-100",
+      text: "retry persistence error",
+      deliveryKey: "delivery-retry-persist-error",
+    }
+    const errors: { scope: string; userVisible?: boolean }[] = []
+    const onError = (event: { scope: string; userVisible?: boolean }) =>
+      errors.push(event)
+    bus.on("error.occurred", onError as never)
+    const outbox: OutboundStore = {
+      enqueueAndClaim: () => null,
+      claimDue: () => [
+        {
+          id: 74,
+          deliveryKey: action.deliveryKey!,
+          action,
+          status: "sending",
+          attempts: 1,
+          nextAttemptAt: 0,
+          leaseUntil: 30_000,
+          claimToken: "lease-74",
+          lastError: null,
+        },
+      ],
+      markSent: () => {
+        throw new Error("retry persistence failed")
+      },
+      markFailed: () => true,
+      sentChunkCount: () => 0,
+    }
+    const reg = new ChannelRegistry({ outbox })
+    reg.register(makeChannel("tg"))
+
+    await (reg as unknown as { retryDue: () => Promise<void> }).retryDue()
+    bus.off("error.occurred", onError as never)
+
+    expect(errors).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          scope: "outbox.persist",
+          userVisible: false,
+        }),
+      ])
+    )
+  })
+
+  it("transport 成功后 markSent 失败归 outbox.persist 且不标 failed", async () => {
+    const action: ActionSend = {
+      channel: "tg",
+      chatId: "-100",
+      text: "persist after send",
+      deliveryKey: "delivery-mark-sent-throws",
+    }
+    const claimed: OutboxRecord = {
+      id: 77,
+      deliveryKey: action.deliveryKey!,
+      action,
+      status: "sending",
+      attempts: 1,
+      nextAttemptAt: 0,
+      leaseUntil: 30_000,
+      claimToken: "lease-77",
+      lastError: null,
+    }
+    let sends = 0
+    let failed = 0
+    const errors: string[] = []
+    const onError = (event: { scope: string }) => errors.push(event.scope)
+    bus.on("error.occurred", onError as never)
+    const outbox: OutboundStore = {
+      enqueueAndClaim: () => claimed,
+      claimDue: () => [],
+      markSent: () => {
+        throw new Error("markSent unavailable")
+      },
+      markFailed: () => {
+        failed++
+        return true
+      },
+      sentChunkCount: () => 0,
+    }
+    const reg = new ChannelRegistry({ outbox })
+    reg.register(
+      makeChannel("tg", {
+        onSend: () => {
+          sends++
+        },
+      })
+    )
+
+    await reg.dispatch(action)
+    bus.off("error.occurred", onError as never)
+
+    expect(sends).toBe(1)
+    expect(failed).toBe(0)
+    expect(errors).toContain("outbox.persist")
+    expect(errors).not.toContain("channel.tg.send")
+  })
+
+  it("transport 成功后 delivery observer 持久化失败归 outbox.persist", async () => {
+    const action: ActionSend = {
+      channel: "tg",
+      chatId: "-100",
+      text: "observer persistence",
+      deliveryKey: "delivery-observer-throws",
+    }
+    const claimed: OutboxRecord = {
+      id: 78,
+      deliveryKey: action.deliveryKey!,
+      action,
+      status: "sending",
+      attempts: 1,
+      nextAttemptAt: 0,
+      leaseUntil: 30_000,
+      claimToken: "lease-78",
+      lastError: null,
+    }
+    let sends = 0
+    const errors: string[] = []
+    const onError = (event: { scope: string }) => errors.push(event.scope)
+    const onDelivery = () => {
+      throw new Error("delivery recorder unavailable")
+    }
+    bus.on("error.occurred", onError as never)
+    bus.on("delivery.recorded", onDelivery as never)
+    const outbox: OutboundStore = {
+      enqueueAndClaim: () => claimed,
+      claimDue: () => [],
+      markSent: () => true,
+      markFailed: () => true,
+      sentChunkCount: () => 0,
+    }
+    const reg = new ChannelRegistry({ outbox })
+    reg.register(
+      makeChannel("tg", {
+        onSend: () => {
+          sends++
+        },
+      })
+    )
+
+    await reg.dispatch(action)
+    bus.off("delivery.recorded", onDelivery as never)
+    bus.off("error.occurred", onError as never)
+
+    expect(sends).toBe(1)
+    expect(errors).toContain("outbox.persist")
+    expect(errors).not.toContain("channel.tg.send")
+  })
+
+  it("retry transport 成功后 markSent 失败不进入 failed/二次发送", async () => {
+    const action: ActionSend = {
+      channel: "tg",
+      chatId: "-100",
+      text: "retry persist after send",
+      deliveryKey: "delivery-retry-mark-sent-throws",
+    }
+    let sends = 0
+    let failed = 0
+    const errors: string[] = []
+    const onError = (event: { scope: string }) => errors.push(event.scope)
+    bus.on("error.occurred", onError as never)
+    const outbox: OutboundStore = {
+      enqueueAndClaim: () => null,
+      claimDue: () => [
+        {
+          id: 79,
+          deliveryKey: action.deliveryKey!,
+          action,
+          status: "sending",
+          attempts: 2,
+          nextAttemptAt: 0,
+          leaseUntil: 30_000,
+          claimToken: "lease-79",
+          lastError: null,
+        },
+      ],
+      markSent: () => {
+        throw new Error("retry markSent unavailable")
+      },
+      markFailed: () => {
+        failed++
+        return true
+      },
+      sentChunkCount: () => 0,
+    }
+    const reg = new ChannelRegistry({ outbox })
+    reg.register(
+      makeChannel("tg", {
+        onSend: () => {
+          sends++
+        },
+      })
+    )
+
+    await (reg as unknown as { retryDue: () => Promise<void> }).retryDue()
+    bus.off("error.occurred", onError as never)
+
+    expect(sends).toBe(1)
+    expect(failed).toBe(0)
+    expect(errors).toContain("outbox.persist")
+    expect(errors).not.toContain("channel.tg.retry")
   })
 
   it("register + get", () => {
@@ -391,6 +919,59 @@ describe("ChannelRegistry", () => {
     await reg.stopAll()
   })
 
+  it("通道启动失败即使短暂 connected 也保留 startError", async () => {
+    const reg = new ChannelRegistry()
+    const tg = makeChannel("tg", {
+      failStart: true,
+      connectedBeforeFailure: true,
+    })
+    reg.register(tg)
+
+    await reg.startAll()
+
+    expect(reg.status()).toEqual([
+      { id: "tg", connected: true, lastError: "tg-boom" },
+    ])
+    await reg.stopAll()
+  })
+
+  it("startAll 通道失败发出统一 error.occurred 事件", async () => {
+    const errors: { scope: string; channel?: string; userVisible?: boolean }[] =
+      []
+    const onError = (event: {
+      scope: string
+      channel?: string
+      userVisible?: boolean
+    }) =>
+      errors.push({
+        scope: event.scope,
+        channel: event.channel,
+        userVisible: event.userVisible,
+      })
+    bus.on("error.occurred", onError as never)
+    const reg = new ChannelRegistry()
+    reg.register(makeChannel("tg", { failStart: true }))
+
+    await reg.startAll()
+    bus.off("error.occurred", onError as never)
+
+    expect(errors).toEqual([
+      { scope: "channel.tg.start", channel: "tg", userVisible: false },
+    ])
+    await reg.stopAll()
+  })
+
+  it("error.occurred observer 抛错不会逃逸 startAll", async () => {
+    bus.on("error.occurred", () => {
+      throw new Error("observer boom")
+    })
+    const reg = new ChannelRegistry()
+    reg.register(makeChannel("tg", { failStart: true }))
+
+    await expect(reg.startAll()).resolves.toHaveLength(1)
+    await reg.stopAll()
+  })
+
   it("stopAll 停止并清空", async () => {
     const reg = new ChannelRegistry()
     let stopped = 0
@@ -409,6 +990,32 @@ describe("ChannelRegistry", () => {
     const st = reg.status()
     expect(st).toEqual([{ id: "qq", connected: true, lastError: undefined }])
     await reg.stopAll()
+  })
+
+  it("status 隔离单个通道异常并返回断开状态", () => {
+    const errors: { scope: string; userVisible?: boolean }[] = []
+    const onError = (event: { scope: string; userVisible?: boolean }) =>
+      errors.push(event)
+    bus.on("error.occurred", onError as never)
+    const broken = makeChannel("tg")
+    broken.status = () => {
+      throw new Error("status exploded")
+    }
+    const reg = new ChannelRegistry()
+    reg.register(broken)
+    reg.register(makeChannel("qq"))
+
+    expect(reg.status()).toEqual([
+      { id: "tg", connected: false, lastError: "status exploded" },
+      { id: "qq", connected: false, lastError: undefined },
+    ])
+    bus.off("error.occurred", onError as never)
+    expect(errors).toEqual([
+      expect.objectContaining({
+        scope: "channel.tg.status",
+        userVisible: false,
+      }),
+    ])
   })
 
   it("action.send 经 registry 路由到匹配 channel.send", async () => {

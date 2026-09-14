@@ -1020,21 +1020,247 @@ export function migrateToVersion8(db: Database.Database): void {
   ensureHotReadIndexes(db)
 }
 
-export function migrateToVersion9(db: Database.Database): void {
-  db.exec(`CREATE TABLE IF NOT EXISTS outbox_messages (
+const OUTBOX_TABLE = "outbox_messages"
+const OUTBOX_CRITICAL_COLUMNS = [
+  "id",
+  "delivery_key",
+  "action_json",
+  "status",
+  "attempts",
+  "next_attempt_at",
+] as const
+const OUTBOX_OPTIONAL_COLUMNS = [
+  ["resolution_key", "resolution_key TEXT"],
+  ["lease_until", "lease_until INTEGER"],
+  ["claim_token", "claim_token TEXT"],
+  ["last_error", "last_error TEXT"],
+  ["sent_at", "sent_at INTEGER"],
+] as const
+const OUTBOX_COLUMNS = [
+  ...OUTBOX_CRITICAL_COLUMNS,
+  ...OUTBOX_OPTIONAL_COLUMNS.map(([name]) => name),
+] as const
+
+type OutboxColumnInfo = {
+  name: string
+  type: string
+  notnull: number
+  dflt_value: string | null
+  pk: number
+}
+
+type SqliteIndexInfo = {
+  name: string
+  unique: number
+  partial: number
+}
+
+function outboxTableInfo(db: Database.Database): OutboxColumnInfo[] {
+  return db
+    .prepare(`PRAGMA table_info(${OUTBOX_TABLE})`)
+    .all() as OutboxColumnInfo[]
+}
+
+function quoteSqlIdentifier(identifier: string): string {
+  return `"${identifier.replaceAll('"', '""')}"`
+}
+
+function outboxIndexColumns(
+  db: Database.Database,
+  indexName: string
+): string[] {
+  return (
+    db.prepare(`PRAGMA index_info(${quoteSqlIdentifier(indexName)})`).all() as {
+      name: string | null
+    }[]
+  ).map((row) => row.name ?? "")
+}
+
+function outboxIndexes(db: Database.Database): SqliteIndexInfo[] {
+  return db
+    .prepare(`PRAGMA index_list(${quoteSqlIdentifier(OUTBOX_TABLE)})`)
+    .all() as SqliteIndexInfo[]
+}
+
+function hasOutboxUniqueDeliveryKey(db: Database.Database): boolean {
+  return outboxIndexes(db).some(
+    (index) =>
+      index.unique === 1 &&
+      index.partial === 0 &&
+      outboxIndexColumns(db, index.name).join("\0") === "delivery_key"
+  )
+}
+
+function hasOutboxStatusCheck(db: Database.Database): boolean {
+  const row = db
+    .prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name=?")
+    .get(OUTBOX_TABLE) as { sql: string | null } | undefined
+  const normalized = (row?.sql ?? "").toLowerCase().replace(/\s+/g, "")
+  return normalized.includes(
+    "check(statusin('pending','sending','sent','failed'))"
+  )
+}
+
+function ensureOutboxIndex(
+  db: Database.Database,
+  name: string,
+  columns: readonly string[]
+): void {
+  const existing = outboxIndexes(db).find((index) => index.name === name)
+  if (
+    existing &&
+    existing.unique === 0 &&
+    existing.partial === 0 &&
+    outboxIndexColumns(db, name).join("\0") === columns.join("\0")
+  ) {
+    return
+  }
+  if (existing) db.exec(`DROP INDEX ${quoteSqlIdentifier(name)}`)
+  db.exec(
+    `CREATE INDEX ${quoteSqlIdentifier(name)} ON ${OUTBOX_TABLE}(${columns.join(",")})`
+  )
+}
+
+function ensureOutboxIndexes(db: Database.Database): void {
+  if (!hasOutboxUniqueDeliveryKey(db)) {
+    const named = outboxIndexes(db).find(
+      (index) => index.name === "idx_outbox_delivery_key"
+    )
+    if (named) db.exec(`DROP INDEX ${quoteSqlIdentifier(named.name)}`)
+    db.exec(
+      `CREATE UNIQUE INDEX ${quoteSqlIdentifier("idx_outbox_delivery_key")} ON ${OUTBOX_TABLE}(delivery_key)`
+    )
+  }
+  ensureOutboxIndex(db, "idx_outbox_due", ["status", "next_attempt_at"])
+  ensureOutboxIndex(db, "idx_outbox_resolution_status", [
+    "resolution_key",
+    "status",
+  ])
+}
+
+function createCanonicalOutbox(db: Database.Database): void {
+  db.exec(`CREATE TABLE ${OUTBOX_TABLE} (
     id INTEGER PRIMARY KEY AUTOINCREMENT, delivery_key TEXT NOT NULL UNIQUE,
     resolution_key TEXT, action_json TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending',
     attempts INTEGER NOT NULL DEFAULT 0, next_attempt_at INTEGER NOT NULL DEFAULT 0,
     lease_until INTEGER, claim_token TEXT, last_error TEXT, sent_at INTEGER,
     CHECK(status IN ('pending','sending','sent','failed'))
-  );
-  CREATE INDEX IF NOT EXISTS idx_outbox_due ON outbox_messages(status,next_attempt_at);
-  CREATE INDEX IF NOT EXISTS idx_outbox_resolution_status ON outbox_messages(resolution_key,status);`)
-  if (!tableColumns(db, "outbox_messages").has("claim_token")) db.exec("ALTER TABLE outbox_messages ADD COLUMN claim_token TEXT")
-  for (const [table, cols] of [["resolution_events", ["delivery_key TEXT", "delivery_status TEXT NOT NULL DEFAULT 'sent'", "last_error TEXT", "delivered_at INTEGER", "delivery_expected INTEGER"]], ["proactive_replies", ["delivery_key TEXT", "delivery_status TEXT NOT NULL DEFAULT 'sent'", "last_error TEXT", "delivered_at INTEGER", "delivery_expected INTEGER"]]] as const) {
+  )`)
+  ensureOutboxIndexes(db)
+}
+
+function outboxRowCount(db: Database.Database): number {
+  const row = db
+    .prepare(`SELECT COUNT(*) AS count FROM ${OUTBOX_TABLE}`)
+    .get() as { count: number }
+  return row.count
+}
+
+function validateOutboxRows(db: Database.Database): void {
+  const invalid = db
+    .prepare(
+      `SELECT id, status FROM ${OUTBOX_TABLE}
+       WHERE delivery_key IS NULL
+          OR action_json IS NULL
+          OR status IS NULL
+          OR status NOT IN ('pending','sending','sent','failed')
+          OR attempts IS NULL
+          OR next_attempt_at IS NULL
+       LIMIT 1`
+    )
+    .get() as { id: number; status: string | null } | undefined
+  if (invalid) {
+    throw new Error(
+      `v9 outbox_messages 存量数据不符合约束：id=${invalid.id}, status=${String(invalid.status)}`
+    )
+  }
+
+  const duplicate = db
+    .prepare(
+      `SELECT delivery_key, COUNT(*) AS count FROM ${OUTBOX_TABLE}
+       GROUP BY delivery_key HAVING COUNT(*) > 1 LIMIT 1`
+    )
+    .get() as { delivery_key: string; count: number } | undefined
+  if (duplicate) {
+    throw new Error(
+      `v9 outbox_messages 存在重复 delivery_key：${duplicate.delivery_key} (${duplicate.count} 行)`
+    )
+  }
+}
+
+export function migrateToVersion9(db: Database.Database): void {
+  if (!tableExists(db, OUTBOX_TABLE)) {
+    createCanonicalOutbox(db)
+  } else {
+    const columns = new Set(outboxTableInfo(db).map((column) => column.name))
+    const missingCritical = OUTBOX_CRITICAL_COLUMNS.filter(
+      (column) => !columns.has(column)
+    )
+    const missingColumns = OUTBOX_COLUMNS.filter(
+      (column) => !columns.has(column)
+    )
+    const rowCount = outboxRowCount(db)
+
+    if (missingCritical.length > 0) {
+      if (rowCount > 0) {
+        throw new Error(
+          `v9 outbox_messages 非空表缺少关键列：${missingCritical.join(", ")}；为避免丢失 ${rowCount} 条数据，拒绝自动迁移`
+        )
+      }
+      // 空表没有业务数据，重建可保证 CHECK/NOT NULL/UNIQUE 等约束完整。
+      db.exec(`DROP TABLE ${OUTBOX_TABLE}`)
+      createCanonicalOutbox(db)
+    } else {
+      if (
+        rowCount === 0 &&
+        (missingColumns.length > 0 ||
+          !hasOutboxStatusCheck(db) ||
+          !hasOutboxUniqueDeliveryKey(db))
+      ) {
+        db.exec(`DROP TABLE ${OUTBOX_TABLE}`)
+        createCanonicalOutbox(db)
+      } else {
+        // 这些列均为可空字段，新增不会改写既有行，也不会丢失投递记录。
+        for (const [name, definition] of OUTBOX_OPTIONAL_COLUMNS) {
+          if (!columns.has(name)) {
+            db.exec(`ALTER TABLE ${OUTBOX_TABLE} ADD COLUMN ${definition}`)
+            columns.add(name)
+          }
+        }
+        validateOutboxRows(db)
+        ensureOutboxIndexes(db)
+      }
+    }
+  }
+  for (const [table, cols] of [
+    [
+      "resolution_events",
+      [
+        "delivery_key TEXT",
+        "delivery_status TEXT NOT NULL DEFAULT 'sent'",
+        "last_error TEXT",
+        "delivered_at INTEGER",
+        "delivery_expected INTEGER",
+      ],
+    ],
+    [
+      "proactive_replies",
+      [
+        "delivery_key TEXT",
+        "delivery_status TEXT NOT NULL DEFAULT 'sent'",
+        "last_error TEXT",
+        "delivered_at INTEGER",
+        "delivery_expected INTEGER",
+      ],
+    ],
+  ] as const) {
     if (!tableExists(db, table)) continue
     const existing = tableColumns(db, table)
-    for (const col of cols) if (!existing.has(col.split(" ")[0]!)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${col}`)
-    db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_${table}_delivery_key ON ${table}(delivery_key) WHERE delivery_key IS NOT NULL`)
+    for (const col of cols)
+      if (!existing.has(col.split(" ")[0]!))
+        db.exec(`ALTER TABLE ${table} ADD COLUMN ${col}`)
+    db.exec(
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_${table}_delivery_key ON ${table}(delivery_key) WHERE delivery_key IS NOT NULL`
+    )
   }
 }

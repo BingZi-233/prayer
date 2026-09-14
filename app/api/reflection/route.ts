@@ -2,10 +2,12 @@ import { NextRequest, NextResponse } from "next/server"
 import { z } from "zod"
 import { getAppContext } from "@/lib/core/app-context"
 import { listEnabledChats } from "@/lib/core/chat/enabled-chats"
-import { ok, fail } from "@/lib/core/api"
+import { ok, fail, safeApiError } from "@/lib/core/api"
 import { buildGroupChatStats } from "@/lib/knowledge/reflection/stats"
 import { applyPromote } from "@/lib/knowledge/reflection/apply-promote"
 import { embed } from "@/lib/model/embed"
+import { readJsonBody, REQUEST_BODY_TOO_LARGE } from "@/lib/core/http-security"
+import { withKbMutationLock } from "@/lib/knowledge/mutation-lock"
 
 function chatKey(channel: string, chatId: string): string {
   return `${channel}:${chatId}`
@@ -20,7 +22,8 @@ export async function GET(): Promise<NextResponse> {
     const { cursors, msg, sed } = buildGroupChatStats(repo)
     // 条目列表仍需展示,但只带预览截断(SQL 内截断):全文按需走
     // /api/reflection/entries/[id],3 秒轮询不背全量全文(compactions 同款修法)
-    const entries = repo.reflectionEntrySummaries()
+    // SQL 层只取最近一页摘要;全文仍可通过 entries/[id] 按需读取。
+    const entries = repo.reflectionEntrySummaries(300, 200, 500)
 
     const enabled = listEnabledChats(cfg)
     const ids = new Set<string>([
@@ -83,10 +86,7 @@ export async function GET(): Promise<NextResponse> {
       })
     )
   } catch (err) {
-    return NextResponse.json(
-      fail(err instanceof Error ? err.message : String(err)),
-      { status: 500 }
-    )
+    return NextResponse.json(fail(safeApiError(err)), { status: 500 })
   }
 }
 
@@ -98,23 +98,37 @@ const patchSchema = z.object({
 // 驳回 / 恢复入库 / 升格为正式 FAQ 文档(沉淀默认已 approved,无需审核)
 export async function PATCH(req: NextRequest): Promise<NextResponse> {
   try {
-    const body = await req.json().catch(() => null)
+    const body = await readJsonBody(req)
+    if (body === REQUEST_BODY_TOO_LARGE)
+      return NextResponse.json(fail("请求体过大"), { status: 413 })
     const parsed = patchSchema.safeParse(body)
     if (!parsed.success)
       return NextResponse.json(fail("参数非法"), { status: 400 })
-    const { repo: r } = getAppContext()
     const { id, action } = parsed.data
 
     if (action === "approve") {
-      r.setReflectionStatus(id, "approved")
-      return NextResponse.json(ok({ id, status: "approved" }))
+      return await withKbMutationLock(async () => {
+        const { repo: r } = getAppContext()
+        if (!r.reflectionEntryDetail(id))
+          return NextResponse.json(fail("条目不存在"), { status: 404 })
+        if (!r.setReflectionStatus(id, "approved"))
+          return NextResponse.json(fail("条目不存在"), { status: 404 })
+        return NextResponse.json(ok({ id, status: "approved" }))
+      })
     }
     if (action === "reject") {
-      r.setReflectionStatus(id, "rejected")
-      return NextResponse.json(ok({ id, status: "rejected" }))
+      return await withKbMutationLock(async () => {
+        const { repo: r } = getAppContext()
+        if (!r.reflectionEntryDetail(id))
+          return NextResponse.json(fail("条目不存在"), { status: 404 })
+        if (!r.setReflectionStatus(id, "rejected"))
+          return NextResponse.json(fail("条目不存在"), { status: 404 })
+        return NextResponse.json(ok({ id, status: "rejected" }))
+      })
     }
 
     // promote: 写文件 + 向量入库 + status=promoted
+    const { repo: r } = getAppContext()
     const promo = await applyPromote({ repo: r, chunkId: id, embed })
     if (!promo.ok) {
       const status = promo.reason.includes("不存在") ? 404 : 400
@@ -129,9 +143,6 @@ export async function PATCH(req: NextRequest): Promise<NextResponse> {
       })
     )
   } catch (err) {
-    return NextResponse.json(
-      fail(err instanceof Error ? err.message : String(err)),
-      { status: 500 }
-    )
+    return NextResponse.json(fail(safeApiError(err)), { status: 500 })
   }
 }

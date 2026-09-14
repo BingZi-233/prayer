@@ -268,11 +268,11 @@ export default function CapabilitiesPage() {
           <TabsContent value="policy" className="pt-4">
             <SectionCard
               title="工具门控"
-              description="工具调用的放行与限制规则。"
+              description="仅显式白名单工具可调用；其余工具默认拒绝。"
               contentClassName="flex flex-col gap-4"
             >
               <div className="flex flex-col gap-2">
-                <span className="text-sm font-medium">无条件放行</span>
+                <span className="text-sm font-medium">显式放行</span>
                 <div className="flex flex-wrap gap-2">
                   {caps.toolPolicy.allowlist.map((t) => (
                     <Badge key={t} variant="secondary">

@@ -3,7 +3,11 @@ import type { ErrorOccurred } from "../core/chat/events"
 import type { ChannelId } from "../core/chat/types"
 import { legacySessionKeyToCanonical, parseSessionKey } from "../core/chat/ids"
 import { logger } from "../core/logger"
-import { errorMessage, chatRefFromSession } from "../core/log-context"
+import {
+  errorMessage,
+  chatRefFromSession,
+  redactDiagnostic,
+} from "../core/log-context"
 
 export interface ErrorHandlerDeps {
   /** 自定义记录;缺省走结构化 logger.error(不经 console,避免 ring 双记) */
@@ -49,7 +53,9 @@ export function formatErrorLine(e: {
   channel?: ChannelId
   chatId?: string
 }): string {
-  const raw = errorMessage(e.err)
+  // 自定义 logger 分支也属于运维输出；不能因为它绕过结构化 logger
+  // 就把 provider 返回的 token/签名 URL 原样写入外部日志。
+  const raw = redactDiagnostic(errorMessage(e.err))
   const { chatId, channel } = resolveTarget(e)
   const ctx: string[] = []
   if (channel && chatId) ctx.push(`${channel}:${chatId}`)

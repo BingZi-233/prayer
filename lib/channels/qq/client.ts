@@ -1,12 +1,10 @@
 import WebSocket from "ws"
-import { bus } from "../../core/bus"
+import { bus, emitErrorSafely } from "../../core/bus"
 import type { ActionSend } from "../../core/chat/events"
 import { logger } from "../../core/logger"
+import { redactSensitive } from "../../core/log-context"
 import { enrich } from "./enrich"
-import {
-  parseGroupMessage,
-  type RawGroupMessageEvent,
-} from "./parse"
+import { parseGroupMessage, type RawGroupMessageEvent } from "./parse"
 import { StaleWatchdog } from "../keepalive"
 
 interface Pending {
@@ -45,6 +43,10 @@ export interface OneBotStats {
   lastRxAt?: number
   /** 因静默判定而强制重连的累计次数 */
   staleReconnects: number
+  /** WS 错误、异常关闭和静默重连的累计次数（跨重连保留） */
+  connectionErrors?: number
+  /** 当前连接代的最后一个错误；成功 open 后清除 */
+  lastError?: string
 }
 
 /**
@@ -64,6 +66,9 @@ export class OneBotClient {
   private watchdog?: StaleWatchdog
   private lastRxAt?: number
   private staleReconnects = 0
+  private connectionErrors = 0
+  private lastError?: string
+  private readonly reportedSockets = new WeakSet<WebSocket>()
   /** 当前生效的静默 deadline;初始等于 livenessMs,heartbeat retune 后同步更新,仅供日志排查用 */
   private effectiveLivenessMs = 0
   private readonly pingIntervalMs: number
@@ -89,7 +94,12 @@ export class OneBotClient {
 
   /** 供 QqChannel.status() 拼 detail */
   stats(): OneBotStats {
-    return { lastRxAt: this.lastRxAt, staleReconnects: this.staleReconnects }
+    return {
+      lastRxAt: this.lastRxAt,
+      staleReconnects: this.staleReconnects,
+      connectionErrors: this.connectionErrors,
+      lastError: this.lastError,
+    }
   }
 
   start(): void {
@@ -131,12 +141,19 @@ export class OneBotClient {
             { type: "text", data: { text: a.text } },
           ]
         : a.text
-    return new Promise((resolve, reject) => { try { this.ws!.send(
-      JSON.stringify({
-        action: "send_group_msg",
-        params: { group_id: Number(a.chatId), message },
-      }), (err?: Error) => err ? reject(err) : resolve())
-    } catch (e) { reject(e) } })
+    return new Promise((resolve, reject) => {
+      try {
+        this.ws!.send(
+          JSON.stringify({
+            action: "send_group_msg",
+            params: { group_id: Number(a.chatId), message },
+          }),
+          (err?: Error) => (err ? reject(err) : resolve())
+        )
+      } catch (e) {
+        reject(e)
+      }
+    })
   }
 
   private setConnected(v: boolean): void {
@@ -154,17 +171,22 @@ export class OneBotClient {
     this.ws = ws
 
     ws.on("open", () => {
+      if (this.stopped || this.ws !== ws) return
       this.backoff = 1000
+      // 连接恢复后清除当前错误；累计次数仍保留在 stats，便于看板发现抖动。
+      this.lastError = undefined
       this.setConnected(true)
       this.startKeepalive(ws)
     })
 
     // pong 与任何入站帧一样算「链路活着」，共用同一条 deadline
     ws.on("pong", () => {
+      if (this.stopped || this.ws !== ws) return
       this.watchdog?.touch()
     })
 
     ws.on("message", (raw: WebSocket.RawData) => {
+      if (this.stopped || this.ws !== ws) return
       // 收到任何帧就算活着(解析成不成功都算)
       this.lastRxAt = Date.now()
       this.watchdog?.touch()
@@ -201,18 +223,70 @@ export class OneBotClient {
       if (!parsed) return
       // 富化(回查引用/转发 + 下载图)后再 emit;失败兜底不阻断
       enrich(parsed, { call: (action, params) => this.call(action, params) })
-        .then((msg) => bus.emit("message.received", msg))
-        .catch((err) =>
-          bus.emit("error.occurred", { scope: "onebot.enrich", err })
-        )
+        .then((msg) => {
+          // stop/reconnect 期间旧 socket 的异步富化可能晚到；代际检查避免
+          // 把旧配置下的消息送进新 runtime，造成重复处理或错库写入。
+          if (!this.stopped && this.ws === ws) bus.emit("message.received", msg)
+        })
+        .catch((err) => {
+          if (this.stopped || this.ws !== ws) return
+          emitErrorSafely({
+            scope: "onebot.enrich",
+            err,
+            userVisible: false,
+          })
+        })
     })
 
-    ws.on("close", () => {
+    ws.on("close", (code: number, reason: Buffer) => {
+      if (this.ws !== ws) return
       this.stopKeepalive()
       this.setConnected(false)
+      if (!this.stopped && code !== 1000) {
+        this.reportConnectionError(
+          "qq.ws.close",
+          new Error(
+            `WebSocket abnormal close code=${code}${reason?.length ? ` reason=${reason.toString().slice(0, 200)}` : ""}`
+          ),
+          ws
+        )
+      }
+      // Mark this generation stale immediately. During reconnect backoff,
+      // async enrich work from the closed socket must not reach the bus.
+      this.ws = undefined
+      this.clearPending()
       this.scheduleReconnect()
     })
-    ws.on("error", () => ws.close())
+    ws.on("error", (err: Error) => {
+      this.reportConnectionError("qq.ws.error", err, ws)
+      // ws emits close after error; keep the existing reconnect path there.
+      try {
+        ws.close()
+      } catch {
+        /* socket already closed */
+      }
+    })
+  }
+
+  /** Record one active-socket failure; duplicate error/close events count once. */
+  private reportConnectionError(
+    scope: string,
+    err: unknown,
+    ws: WebSocket
+  ): void {
+    if (this.reportedSockets.has(ws) || this.stopped || this.ws !== ws) return
+    this.reportedSockets.add(ws)
+    const raw = err instanceof Error ? err.message : String(err)
+    const message = redactSensitive(raw).slice(0, 300)
+    this.lastError = message
+    this.connectionErrors++
+    logger.log("error", `[qq] ${scope}: ${message}`)
+    emitErrorSafely({
+      scope,
+      err,
+      channel: "qq",
+      userVisible: false,
+    })
   }
 
   private scheduleReconnect(): void {
@@ -232,9 +306,14 @@ export class OneBotClient {
     this.watchdog = new StaleWatchdog({
       onStale: () => {
         this.staleReconnects++
-        logger.log(
-          "warn",
-          `[qq] ${this.effectiveLivenessMs}ms 无入站帧,判定链路僵死,强制重连(累计 ${this.staleReconnects} 次)`
+        // 看门狗回调与同一 socket 的 close 事件共享 report 去重，避免一次
+        // terminate 被算成两次连接错误。
+        this.reportConnectionError(
+          "qq.stale",
+          new Error(
+            `${this.effectiveLivenessMs}ms 无入站帧,判定链路僵死,强制重连(累计 ${this.staleReconnects} 次)`
+          ),
+          ws
         )
         // 假死 socket 连关闭握手都发不出去,close() 会挂住,必须 terminate
         ws.terminate()

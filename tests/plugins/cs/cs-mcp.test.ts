@@ -78,6 +78,7 @@ const CS_SUBPROCESS_MODULES = [
   "lib/model/embed.ts",
   "lib/knowledge/kb.ts",
   "lib/core/db/kb-sql.ts",
+  "lib/core/db/path.ts",
 ]
 
 describe("cs 子进程按路径加载的模块必须 strip-only 可加载", () => {

@@ -1,5 +1,5 @@
 import { resolve } from "path"
-import { bus } from "./core/bus"
+import { bus, emitErrorSafely } from "./core/bus"
 import { logger } from "./core/logger"
 import type { AppConfig } from "./core/config-store"
 import type { Repo } from "./core/db/repo"
@@ -12,11 +12,16 @@ import { ChannelRegistry } from "./channels/registry"
 import { createChannels } from "./channels/factory"
 import { resolveRuntimeChatConfig } from "./core/chat/enabled-chats"
 import { resolveBrand } from "./core/brand"
+import { redactSensitive } from "./core/log-context"
+import { canonicalDbPath } from "./core/db/path"
 
-export type RuntimeState = "stopped" | "starting" | "running" | "error"
+export type RuntimeState =
+  "stopped" | "starting" | "running" | "degraded" | "error"
 
 export interface RuntimeStatus {
   state: RuntimeState
+  /** 运行管线已装配且所有必要通道当前可用。 */
+  ready: boolean
   /** 兼容字段:qq 通道是否已连接 */
   wsConnected: boolean
   sessionCount: number
@@ -24,6 +29,51 @@ export interface RuntimeStatus {
   lastError?: string
   bootedAt?: number
   channels?: ChannelStatus[]
+}
+
+export interface RuntimeReadiness {
+  ready: boolean
+  state: RuntimeState
+  /** 由凭据、启用会话、管理面和实际注册通道汇总出的必要通道。 */
+  requiredChannels: ChannelId[]
+  /** 尚未启动、未连接或带错误的必要通道。 */
+  unavailableChannels: ChannelStatus[]
+  channels: ChannelStatus[]
+  lastError?: string
+}
+
+/**
+ * 状态接口给管理 API 共用：只有明确的启动错误才算本次应用失败。
+ * 通道刚启动、尚在建立长连接时会短暂 degraded 但没有 lastError，不能把
+ * 这种异步连接窗口误报成配置写入失败；/health/ready 会继续返回 503。
+ */
+export function runtimeFailureMessage(
+  status: Pick<RuntimeStatus, "state" | "lastError">
+): string | undefined {
+  if (status.state === "error") return status.lastError ?? "运行时启动失败"
+  if (status.state === "degraded" && status.lastError) return status.lastError
+  return undefined
+}
+
+// 管理 API 的配置、插件和重启操作共用一条进程内队列。放到 globalThis，
+// 让 Next 的分路由 server bundle 也不会各自持有一把锁；RuntimeManager
+// 另外保留实例级生命周期队列，覆盖非 HTTP 调用者。
+const mutationState = (() => {
+  const root = globalThis as typeof globalThis & {
+    __prayerRuntimeMutation?: { queue: Promise<void> }
+  }
+  return (root.__prayerRuntimeMutation ??= { queue: Promise.resolve() })
+})()
+export function serializeRuntimeMutation<T>(fn: () => Promise<T>): Promise<T> {
+  const previous = mutationState.queue
+  let release!: () => void
+  mutationState.queue = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  return previous
+    .catch(() => undefined)
+    .then(fn)
+    .finally(() => release())
 }
 
 export interface RuntimeBuilders {
@@ -102,20 +152,76 @@ export class RuntimeManager {
   private bootedAt?: number
   private repo?: Repo
   private registry?: ChannelRegistry
+  private requiredChannels: ChannelId[] = []
+  // 启动失败后保留一份不含凭据的拓扑快照；teardown 会卸载 registry，但
+  // /health/ready 与管理页仍需知道是哪条必要通道导致 not ready。
+  private failureChannels: ChannelStatus[] = []
+  private failureRequiredChannels: ChannelId[] = []
   private teardown?: () => void
   private unbindUsage?: () => void
   private unbindToolStats?: () => void
   private wsConnected = false
+  // 每个 manager 仍保留实例级队列，保护测试/多实例调用者；管理 API 另用
+  // serializeRuntimeMutation 包住配置和插件文件 mutation 的完整事务。
+  private lifecycle: Promise<void> = Promise.resolve()
+
+  private serialize<T>(fn: () => Promise<T>): Promise<T> {
+    const previous = this.lifecycle
+    let release!: () => void
+    this.lifecycle = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    return previous
+      .catch(() => undefined)
+      .then(fn)
+      .finally(() => release())
+  }
 
   getStatus(): RuntimeStatus {
+    const channels = this.registry?.status() ?? this.failureChannels
+    const ready = this.isReady(channels)
     return {
-      state: this.state,
+      state: this.effectiveState(ready),
+      ready,
       wsConnected: this.wsConnected,
       sessionCount: this.repo ? this.repo.countSessions() : 0,
       handoffQueue: this.repo ? this.repo.countHumanSessions() : 0,
-      lastError: this.lastError,
+      lastError: this.safeDiagnostic(this.lastError),
       bootedAt: this.bootedAt,
-      channels: this.registry?.status(),
+      channels:
+        this.registry || this.failureChannels.length > 0
+          ? channels.map((channel) => this.safeChannelStatus(channel))
+          : undefined,
+    }
+  }
+
+  getReadiness(): RuntimeReadiness {
+    const channels = this.registry?.status() ?? this.failureChannels
+    const required =
+      this.requiredChannels.length > 0
+        ? this.requiredChannels
+        : this.failureRequiredChannels
+    const byId = new Map(channels.map((channel) => [channel.id, channel]))
+    const unavailableChannels = required
+      .map(
+        (id) =>
+          byId.get(id) ?? {
+            id,
+            connected: false,
+            lastError:
+              "channel not registered (missing credentials or adapter)",
+          }
+      )
+      .filter((channel) => !channel.connected || !!channel.lastError)
+    return {
+      ready: this.isReady(channels),
+      state: this.effectiveState(this.isReady(channels)),
+      requiredChannels: [...required],
+      unavailableChannels: unavailableChannels.map((channel) =>
+        this.safeChannelStatus(channel)
+      ),
+      channels: channels.map((channel) => this.safeChannelStatus(channel)),
+      lastError: this.safeDiagnostic(this.lastError),
     }
   }
 
@@ -138,17 +244,34 @@ export class RuntimeManager {
   }
 
   async start(cfg: AppConfig, builders: RuntimeBuilders): Promise<void> {
+    return this.serialize(() => this.startUnlocked(cfg, builders))
+  }
+
+  private async startUnlocked(
+    cfg: AppConfig,
+    builders: RuntimeBuilders
+  ): Promise<void> {
+    if (this.state !== "stopped") await this.stopUnlocked()
     this.state = "starting"
     this.lastError = undefined
+    this.failureChannels = []
+    this.failureRequiredChannels = []
     try {
       // 绝对化:CLI 子进程可能以不同 cwd 解析相对路径,绝对路径确保稳定命中配置目录
       process.env.CLAUDE_CONFIG_DIR = resolve(cfg.claudeConfigDir)
       // DB_PATH 供 cs 插件 MCP 子进程(plugins/cs/scripts/cs-mcp.ts)继承打开知识库(只读)
-      process.env.DB_PATH = resolve(cfg.dbPath)
+      process.env.DB_PATH = canonicalDbPath(cfg.dbPath)
       const db = builders.openDb(cfg.dbPath)
       const repo = builders.makeRepo(db)
       const agent = builders.makeAgent(cfg, repo)
       const { enabledChats, adminSurface } = resolveRuntimeChatConfig(cfg)
+      const requiredChannels = new Set<ChannelId>(
+        enabledChats.map((chat) => chat.channel)
+      )
+      if (adminSurface) requiredChannels.add(adminSurface.channel)
+      if (cfg.onebotWsUrl?.trim()) requiredChannels.add("qq")
+      if (cfg.telegramBotToken?.trim()) requiredChannels.add("tg")
+      this.requiredChannels = [...requiredChannels]
 
       this.unbindUsage = bindUsagePersistence(repo, {
         budgetUsd: cfg.usageBudgetUsd,
@@ -249,15 +372,61 @@ export class RuntimeManager {
       })
       for (const ch of channels) {
         registry.register(ch)
+        requiredChannels.add(ch.id)
       }
+      this.requiredChannels = [...requiredChannels]
 
-      await registry.startAll()
+      const registered = new Set(channels.map((channel) => channel.id))
+      const missing = [...requiredChannels].filter((id) => !registered.has(id))
+
+      const startResults = await registry.startAll()
 
       this.repo = repo
       this.bootedAt = Date.now()
-      this.state = "running"
-      logger.log("info", "[runtime] started")
+      const failures = startResults
+        .map((result, index) =>
+          result.status === "rejected"
+            ? { id: channels[index]!.id, reason: result.reason }
+            : undefined
+        )
+        .filter(
+          (failure): failure is { id: ChannelId; reason: unknown } =>
+            failure !== undefined
+        )
+      const unavailable = [
+        ...missing.map((id) => ({
+          id,
+          message: `${id}: channel not registered (missing credentials or adapter)`,
+        })),
+        ...failures.map(({ id, reason }) => ({
+          id,
+          message: `${id}: ${
+            reason instanceof Error ? reason.message : String(reason)
+          }`,
+        })),
+      ]
+      if (unavailable.length > 0) {
+        this.lastError = unavailable.map(({ message }) => message).join("; ")
+        this.state = "degraded"
+        logger.log("warn", `[runtime] started degraded: ${this.lastError}`)
+      } else {
+        this.state = "running"
+        logger.log("info", "[runtime] started")
+      }
     } catch (err) {
+      this.failureRequiredChannels = [...this.requiredChannels]
+      try {
+        this.failureChannels = this.registry?.status() ?? []
+      } catch {
+        this.failureChannels = []
+      }
+      // 先发布错误，再拆卸 assemble 的订阅；否则 resolution-recorder 等
+      // 统一观测器会随 teardown 一起解绑，启动失败就从指标中消失。
+      emitErrorSafely({
+        scope: "runtime.start",
+        err,
+        userVisible: false,
+      })
       // 回收可能已半装配的资源(定时器/监听器/DB 连接),避免失败 start 泄漏
       await this.teardownAll()
       this.state = "error"
@@ -293,34 +462,78 @@ export class RuntimeManager {
     } catch {
       /* ignore */
     }
-    // 兜底断言:正常路径应已由 assemble disposer + channel.stop 卸掉监听器
+    // 兜底诊断:正常路径应已由 assemble disposer + channel.stop 卸掉监听器。
+    // 不调用 bus.removeAllListeners()：总线是进程级 singleton，强制清空会
+    // 误删插件/测试/其它应用组件的监听器；泄漏只记录，交给后续修复。
     const leftover = bus
       .eventNames()
       .reduce((n, name) => n + bus.listenerCount(name), 0)
     if (leftover > 0) {
       logger.log(
         "warn",
-        `[runtime] ${leftover} bus listener(s) remain after dispose; force removeAllListeners`
+        `[runtime] ${leftover} bus listener(s) remain after dispose; external listeners preserved`
       )
-      bus.removeAllListeners()
     }
     this.teardown = undefined
     this.unbindUsage = undefined
     this.unbindToolStats = undefined
     this.registry = undefined
+    this.requiredChannels = []
     this.repo = undefined
     this.wsConnected = false
   }
 
-  async stop(): Promise<void> {
+  private async stopUnlocked(): Promise<void> {
     await this.teardownAll()
+    this.failureChannels = []
+    this.failureRequiredChannels = []
     this.state = "stopped"
     logger.log("info", "[runtime] stopped")
   }
 
+  async stop(): Promise<void> {
+    return this.serialize(() => this.stopUnlocked())
+  }
+
   async reconfigure(cfg: AppConfig, builders: RuntimeBuilders): Promise<void> {
-    await this.stop()
-    await this.start(cfg, builders)
+    return this.serialize(async () => {
+      await this.stopUnlocked()
+      await this.startUnlocked(cfg, builders)
+    })
+  }
+
+  private isReady(channels: ChannelStatus[]): boolean {
+    if (this.state !== "running") return false
+    const byId = new Map(channels.map((channel) => [channel.id, channel]))
+    const required =
+      this.requiredChannels.length > 0
+        ? this.requiredChannels
+        : this.failureRequiredChannels
+    return required.every((id) => {
+      const channel = byId.get(id)
+      return !!channel && channel.connected && !channel.lastError
+    })
+  }
+
+  /**
+   * QQ/TG 的 start() 会先启动后台连接循环再返回，因此 Promise fulfilled
+   * 只代表“启动已受理”，不代表通道已经可用。对外状态必须跟实时连接态走，
+   * 否则 readiness 已经 503 时管理面仍会误报 running。
+   */
+  private effectiveState(ready: boolean): RuntimeState {
+    return this.state === "running" && !ready ? "degraded" : this.state
+  }
+
+  private safeDiagnostic(value?: string): string | undefined {
+    return value == null ? undefined : redactSensitive(value).slice(0, 500)
+  }
+
+  private safeChannelStatus(status: ChannelStatus): ChannelStatus {
+    return {
+      ...status,
+      lastError: this.safeDiagnostic(status.lastError),
+      detail: this.safeDiagnostic(status.detail),
+    }
   }
 }
 

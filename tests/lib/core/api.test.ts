@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { ok, fail, maskConfig } from "@/lib/core/api"
+import { ok, fail, maskConfig, safeApiError } from "@/lib/core/api"
 import type { AppConfig } from "@/lib/core/config-store"
 
 const cfg: AppConfig = {
@@ -47,6 +47,16 @@ describe("api helpers", () => {
     expect(ok({ a: 1 })).toEqual({ ok: true, data: { a: 1 } }))
   it("fail 包 error", () =>
     expect(fail("boom")).toEqual({ ok: false, error: "boom" }))
+  it("safeApiError 脱敏并截断异常摘要", () => {
+    const secret = "sk-ant-abcdefghijklmnopqrstuvwxyz"
+    const out = safeApiError(new Error(`${secret} ${"x".repeat(400)}`))
+    expect(out).not.toContain(secret)
+    expect(out.length).toBe(300)
+  })
+  it("fail 对动态错误文案做同样的兜底脱敏", () => {
+    const out = fail('token="super-secret"')
+    expect(out.error).not.toContain("super-secret")
+  })
   it("maskConfig 掩码 token", () => {
     const m = maskConfig(cfg)
     expect(m.onebotAccessToken).toBe("••••9999")

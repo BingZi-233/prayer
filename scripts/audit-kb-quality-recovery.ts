@@ -1,6 +1,12 @@
-import { readFileSync, readdirSync, statSync } from "node:fs"
-import { join, sep } from "node:path"
+import { lstatSync, readdirSync } from "node:fs"
+import { sep } from "node:path"
 import { embed as productionEmbed } from "../lib/model/embed.ts"
+import {
+  isKbRelPath,
+  MAX_KB_FILE_BYTES,
+  readKbFileBoundedNoFollow,
+  safeKbAbsAt,
+} from "../lib/knowledge/kb-path.ts"
 import { splitCompactedFaq } from "../lib/knowledge/reflection/compact-chunks.ts"
 
 export interface CorpusFile {
@@ -98,15 +104,25 @@ export function auditCorpusFiles(
 }
 
 export function readMarkdownCorpus(root: string): CorpusFile[] {
-  const files = readdirSync(root, { recursive: true })
+  const rootAbs = root
+  const rootStat = lstatSync(rootAbs)
+  if (!rootStat.isDirectory() || rootStat.isSymbolicLink())
+    throw new Error("知识库审计根目录必须是非 symlink 目录")
+  const files = readdirSync(rootAbs, { recursive: true })
     .map((entry) => String(entry).split(sep).join("/"))
-    .filter((entry) => entry.endsWith(".md"))
-    .filter((entry) => statSync(join(root, entry)).isFile())
+    .filter((entry) => isKbRelPath(entry) && entry.endsWith(".md"))
     .sort()
-  return files.map((path) => ({
-    path,
-    text: readFileSync(join(root, path), "utf8"),
-  }))
+  return files.map((path) => {
+    const safe = safeKbAbsAt(rootAbs, path)
+    if (!safe) throw new Error(`知识库审计路径不安全: ${path}`)
+    const read = readKbFileBoundedNoFollow(safe, MAX_KB_FILE_BYTES)
+    if (!read) throw new Error(`无法安全读取知识库审计文件: ${path}`)
+    if ("tooLarge" in read)
+      throw new Error(
+        `知识库审计文件超过 ${MAX_KB_FILE_BYTES} 字节上限: ${path}`
+      )
+    return { path, text: read.content }
+  })
 }
 
 export interface TokenSummary {

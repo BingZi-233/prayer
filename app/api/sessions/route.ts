@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from "next/server"
 import { z } from "zod"
 import { getAppContext } from "@/lib/core/app-context"
-import { ok, fail } from "@/lib/core/api"
+import { ok, fail, safeApiError } from "@/lib/core/api"
 import { bus } from "@/lib/core/bus"
+import { readJsonBody, REQUEST_BODY_TOO_LARGE } from "@/lib/core/http-security"
 
 function sessionContext() {
   const { repo, cfg } = getAppContext()
@@ -17,10 +18,7 @@ export async function GET(): Promise<NextResponse> {
       ok(sessionRepo.listSessions(resumeTtlMs, Date.now(), 500))
     )
   } catch (err) {
-    return NextResponse.json(
-      fail(err instanceof Error ? err.message : String(err)),
-      { status: 500 }
-    )
+    return NextResponse.json(fail(safeApiError(err)), { status: 500 })
   }
 }
 
@@ -36,7 +34,9 @@ const actionSchema = z.discriminatedUnion("action", [
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
   try {
-    const body = await req.json().catch(() => null)
+    const body = await readJsonBody(req)
+    if (body === REQUEST_BODY_TOO_LARGE)
+      return NextResponse.json(fail("请求体过大"), { status: 413 })
     const parsed = actionSchema.safeParse(body)
     if (!parsed.success)
       return NextResponse.json(fail("参数非法"), { status: 400 })
@@ -53,9 +53,6 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     bus.emit("handoff.resumed", { sessionKey: parsed.data.key, by: "admin" })
     return NextResponse.json(ok({ resumed: 1 }))
   } catch (err) {
-    return NextResponse.json(
-      fail(err instanceof Error ? err.message : String(err)),
-      { status: 500 }
-    )
+    return NextResponse.json(fail(safeApiError(err)), { status: 500 })
   }
 }

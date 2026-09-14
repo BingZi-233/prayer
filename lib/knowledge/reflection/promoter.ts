@@ -1,5 +1,5 @@
 import { query as sdkQuery } from "@anthropic-ai/claude-agent-sdk"
-import { bus } from "../../core/bus"
+import { bus, emitErrorSafely } from "../../core/bus"
 import { logger } from "../../core/logger"
 import type { Repo } from "../../core/db/repo"
 import { embed as defaultEmbed } from "../../model/embed"
@@ -173,7 +173,7 @@ export function selectPromoteIds(
 
 export async function runPromote(
   deps: ReflectionPromoterDeps
-): Promise<{ considered: number; promoted: number }> {
+): Promise<{ considered: number; promoted: number; failed?: true }> {
   const d = resolve(deps)
   const candidates = d.repo
     .reflectionEntries()
@@ -243,14 +243,16 @@ export async function runPromote(
         "warn",
         `[reflection-promote] 校验失败(${selected.reason}),本轮不升格。预览: ${preview || "(空)"}`
       )
-      bus.emit("error.occurred", {
+      emitErrorSafely({
         scope: "reflection-promote",
         err: new Error(`LLM 产出未过校验:${selected.reason}`),
+        userVisible: false,
       })
-      return { considered: candidates.length, promoted: 0 }
+      return { considered: candidates.length, promoted: 0, failed: true }
     }
 
     let promoted = 0
+    let failed = false
     for (const id of selected.ids) {
       const r = await d.promoteFn({
         repo: d.repo,
@@ -270,6 +272,7 @@ export async function runPromote(
           })
         }
       } else if (!r.ok) {
+        failed = true
         logger.log("warn", `[reflection-promote] 升格 #${id} 失败: ${r.reason}`)
       }
     }
@@ -280,10 +283,16 @@ export async function runPromote(
         `[reflection-promote] ${candidates.length} 候选 → 升格 ${promoted} 条`
       )
     }
-    return { considered: candidates.length, promoted }
+    return failed
+      ? { considered: candidates.length, promoted, failed: true }
+      : { considered: candidates.length, promoted }
   } catch (err) {
-    bus.emit("error.occurred", { scope: "reflection-promote", err })
-    return { considered: candidates.length, promoted: 0 }
+    emitErrorSafely({
+      scope: "reflection-promote",
+      err,
+      userVisible: false,
+    })
+    return { considered: candidates.length, promoted: 0, failed: true }
   }
 }
 
@@ -295,17 +304,40 @@ export function registerReflectionPromoter(
   const now = deps.now ?? (() => Date.now())
   const repo = deps.repo
   let running = false
+  const reportTimerError = (err: unknown) => {
+    logger.error(
+      `[reflection-promote] timer failed: ${
+        err instanceof Error ? err.message : String(err)
+      }`,
+      {
+        scope: "reflection-promote.timer",
+        raw: err instanceof Error ? err.stack : String(err),
+      }
+    )
+    emitErrorSafely({
+      scope: "reflection-promote.timer",
+      err,
+      userVisible: false,
+    })
+  }
   const tick = () => {
     if (running) return
-    if (now() - repo.promoteAt() < promoteMs) return
+    try {
+      if (now() - repo.promoteAt() < promoteMs) return
+    } catch (err) {
+      reportTimerError(err)
+      return
+    }
     running = true
     logger.log("info", "[reflection-promote] due, running")
     void runPromote(deps)
-      .catch((err) =>
-        bus.emit("error.occurred", { scope: "reflection-promote", err })
-      )
+      .catch(reportTimerError)
       .finally(() => {
-        repo.setPromoteAt(now())
+        try {
+          repo.setPromoteAt(now())
+        } catch (err) {
+          reportTimerError(err)
+        }
         running = false
       })
   }

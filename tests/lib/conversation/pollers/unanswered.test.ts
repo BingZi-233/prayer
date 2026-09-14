@@ -98,7 +98,9 @@ describe("unanswered poller runScan", () => {
 
     await runScan(base())
 
-    expect((await reply).deliveryKey).toBe(`proactive:qq:100:200:${NOW - 5000}:row:${row.id}`)
+    expect((await reply).deliveryKey).toBe(
+      `proactive:qq:100:200:${NOW - 5000}:row:${row.id}`
+    )
   })
 
   it("主动回复引用用户代表消息(band 内最后一条)", async () => {
@@ -322,6 +324,7 @@ describe("unanswered poller runScan", () => {
     expect(e.scope).toBe("proactive")
     expect(e.chatId).toBe("100")
     expect(e.channel).toBe("qq")
+    expect(e.userVisible).toBe(false)
   })
 
   it("判官 error → 保持游标不动,下轮可重试", async () => {
@@ -338,15 +341,55 @@ describe("unanswered poller runScan", () => {
     expect(repo.groupProactiveCursor("qq", "100")).toBe(1)
   })
 
+  it("判官抛错 → 记录运维错误且保持游标不动", async () => {
+    repo.setGroupProactiveCursor("qq", "100", 1)
+    seed(100, 200, "member", "价格?", NOW - 5000)
+    const error = new Promise<ErrorOccurred>((resolve) =>
+      bus.once("error.occurred", resolve)
+    )
+    await runScan(
+      base({
+        classify: async () => {
+          throw new Error("classifier offline")
+        },
+      })
+    )
+    await expect(error).resolves.toMatchObject({
+      scope: "proactive.classifier",
+      channel: "qq",
+      chatId: "100",
+      userVisible: false,
+    })
+    expect(repo.groupProactiveCursor("qq", "100")).toBe(1)
+  })
+
   it("连续不可答候选达到预算 → 停止并保持游标", async () => {
     repo.setGroupProactiveCursor("qq", "100", 1)
     seed(100, 200, "member", "问题A", NOW - 5000)
     seed(100, 201, "member", "问题B", NOW - 4900)
     seed(100, 202, "member", "问题C", NOW - 4800)
     seed(100, 203, "member", "问题D", NOW - 4700)
-    const classify = vi.fn(async () => ({ decision: "not_answerable" as const }))
+    const classify = vi.fn(async () => ({
+      decision: "not_answerable" as const,
+    }))
     await runScan(base({ classify, maxCandidatesPerScan: 3 }))
     expect(classify).toHaveBeenCalledTimes(3)
+    expect(repo.groupProactiveCursor("qq", "100")).toBe(1)
+  })
+
+  it("直接调用也把候选预算钳到安全上限", async () => {
+    repo.setGroupProactiveCursor("qq", "100", 1)
+    for (let i = 0; i < 51; i++)
+      seed(100, 200 + i, "member", `问题${i}`, NOW - 5000 + i)
+    const classify = vi.fn(async () => ({
+      decision: "not_answerable" as const,
+    }))
+
+    await runScan(
+      base({ classify, maxPerScan: 999, maxCandidatesPerScan: 999 })
+    )
+
+    expect(classify).toHaveBeenCalledTimes(50)
     expect(repo.groupProactiveCursor("qq", "100")).toBe(1)
   })
 

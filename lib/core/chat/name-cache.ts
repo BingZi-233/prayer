@@ -4,6 +4,7 @@
 // 磁盘层仍用 INTEGER group_id(正=QQ、负=TG 启发式);内存与 API 以 chat-ref 为准。
 
 import type { ChannelId } from "@/lib/core/chat/types"
+import { canonicalDbPath } from "@/lib/core/db/path"
 import {
   createSqliteNameCachePersistence,
   type GroupNameRow,
@@ -282,10 +283,7 @@ export class NameCache {
 const g = globalThis as unknown as { __nameCache?: NameCache }
 
 function defaultDbPath(): string {
-  // 与 runtime 一致:优先 env(启动后会写成绝对路径),否则相对路径 resolve 成绝对
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { resolve } = require("node:path") as typeof import("node:path")
-  return resolve(
+  return canonicalDbPath(
     /* turbopackIgnore: true */ process.env.DB_PATH ?? "./data/agent.db"
   )
 }

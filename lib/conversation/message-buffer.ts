@@ -1,4 +1,4 @@
-import { bus } from "../core/bus"
+import { bus, emitErrorSafely } from "../core/bus"
 import type { Repo } from "../core/db/repo"
 import type { IncomingMessage } from "../core/chat/events"
 import {
@@ -52,7 +52,11 @@ export function registerMessageBuffer(deps: MessageBufferDeps): () => void {
         mentionedBot
       )
     } catch (err) {
-      bus.emit("error.occurred", { scope: "message-buffer", err })
+      emitErrorSafely({
+        scope: "message-buffer",
+        err,
+        userVisible: false,
+      })
     }
   }
 

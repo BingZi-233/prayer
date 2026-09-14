@@ -10,7 +10,7 @@
  *   注意:Node strip-only 不支持 TS「参数属性」,故不导入 lib/core/db/repo.ts(其 constructor(private db) 会报错);
  *   向量近邻 SQL 从 lib/core/db/kb-sql.ts 导入(唯一事实源),以 repo-like { searchKb } 传给 runKbSearch
  *   (kb.ts 仅 import type Repo,运行时不加载 repo.ts)。
- * DB 路径:父进程 env DB_PATH 传入(runtime.start / introspect 已绝对化),只读打开,不建表/迁移。
+ * DB 路径:父进程 env DB_PATH 传入(runtime.start / introspect 已规范化),只读打开,不建表/迁移。
  */
 import { existsSync, readFileSync, realpathSync } from "node:fs"
 import { dirname, join, resolve } from "node:path"
@@ -63,10 +63,19 @@ async function main(): Promise<void> {
   const { KB_SEARCH_SQL } = await import(
     pathToFileURL(join(root, "lib/core/db/kb-sql.ts")).href
   )
+  const { canonicalDbPath, databaseOpenPath } = await import(
+    pathToFileURL(join(root, "lib/core/db/path.ts")).href
+  )
 
   // 只读打开:多进程共享同一 WAL 库,检索为纯读;不建表/迁移(由主进程负责)
-  const dbPath = resolve(process.env.DB_PATH ?? join(root, "data/agent.db"))
-  const db = new Database(dbPath, { readonly: true, fileMustExist: true })
+  const dbPath = canonicalDbPath(
+    process.env.DB_PATH ?? join(root, "data/agent.db"),
+    root
+  )
+  const db = new Database(databaseOpenPath(dbPath, root), {
+    readonly: true,
+    fileMustExist: true,
+  })
   sqliteVec.load(db)
 
   // 与 repo.searchKb 共用 KB_SEARCH_SQL(lib/core/db/kb-sql.ts 唯一事实源):此前内联副本

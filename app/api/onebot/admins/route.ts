@@ -7,7 +7,10 @@ import {
   toAdminMemberShape,
 } from "@/lib/channels/qq/members-fetch"
 import { parseQQList } from "@/lib/core/config/chats"
-import { ok, fail } from "@/lib/core/api"
+import { ok, fail, safeApiError } from "@/lib/core/api"
+
+/** Bound the number of OneBot member-list calls a single query can trigger. */
+export const MAX_ADMIN_GROUPS = 100
 
 /**
  * 拉取群内 owner/admin 名单,跨群按 QQ 去重。
@@ -18,49 +21,65 @@ import { ok, fail } from "@/lib/core/api"
  * bot 未连接或部分群拉失败时:有结果仍返回 ok,全失败 503。
  */
 export async function GET(req: NextRequest): Promise<NextResponse> {
-  const { cfg } = getAppContext()
-  const rawGroups = req.nextUrl.searchParams.get("groups")
-  const fromQuery =
-    rawGroups == null || rawGroups === "" ? null : parseQQList(rawGroups)
-  const fromCfg = cfg.enabledChats
-    .filter((c) => c.channel === "qq")
-    .map((c) => Number(c.chatId))
-  const groups = (fromQuery ?? fromCfg).filter(
-    (g) => Number.isFinite(g) && g > 0
-  )
-  if (groups.length === 0) {
-    return NextResponse.json(ok([]))
-  }
-
-  const refresh = req.nextUrl.searchParams.get("refresh") === "1"
-
-  const results = await Promise.all(
-    groups.map(async (groupId) => {
-      const members = await loadGroupMembers(groupId, {
-        refresh,
-        requireRoles: true,
-        fetchFn: (gid) => getRuntime().getGroupMembers(gid),
-      })
-      return { groupId, members }
-    })
-  )
-
-  const okGroups = results
-    .filter(
-      (r): r is { groupId: number; members: NonNullable<typeof r.members> } =>
-        r.members != null
+  try {
+    const { cfg } = getAppContext()
+    const rawGroups = req.nextUrl.searchParams.get("groups")
+    const fromQuery =
+      rawGroups == null || rawGroups === "" ? null : parseQQList(rawGroups)
+    if (fromQuery && fromQuery.length > MAX_ADMIN_GROUPS) {
+      return NextResponse.json(
+        fail(`groups 数量过多,最多 ${MAX_ADMIN_GROUPS} 个`),
+        { status: 400 }
+      )
+    }
+    const fromCfg = cfg.enabledChats
+      .filter((c) => c.channel === "qq")
+      .map((c) => Number(c.chatId))
+    const groups = (fromQuery ?? fromCfg).filter(
+      (g) => Number.isFinite(g) && g > 0
     )
-    .map((r) => ({
-      groupId: r.groupId,
-      members: toAdminMemberShape(r.members),
-    }))
+    if (groups.length > MAX_ADMIN_GROUPS) {
+      return NextResponse.json(
+        fail(`groups 数量过多,最多 ${MAX_ADMIN_GROUPS} 个`),
+        { status: 400 }
+      )
+    }
+    if (groups.length === 0) {
+      return NextResponse.json(ok([]))
+    }
 
-  if (okGroups.length === 0) {
-    return NextResponse.json(fail("bot 未连接或无法获取群成员"), {
-      status: 503,
-    })
+    const refresh = req.nextUrl.searchParams.get("refresh") === "1"
+
+    const results = await Promise.all(
+      groups.map(async (groupId) => {
+        const members = await loadGroupMembers(groupId, {
+          refresh,
+          requireRoles: true,
+          fetchFn: (gid) => getRuntime().getGroupMembers(gid),
+        })
+        return { groupId, members }
+      })
+    )
+
+    const okGroups = results
+      .filter(
+        (r): r is { groupId: number; members: NonNullable<typeof r.members> } =>
+          r.members != null
+      )
+      .map((r) => ({
+        groupId: r.groupId,
+        members: toAdminMemberShape(r.members),
+      }))
+
+    if (okGroups.length === 0) {
+      return NextResponse.json(fail("bot 未连接或无法获取群成员"), {
+        status: 503,
+      })
+    }
+
+    const admins = collectAdmins(okGroups, { excludeUserIds: [cfg.botQQ] })
+    return NextResponse.json(ok(admins))
+  } catch (err) {
+    return NextResponse.json(fail(safeApiError(err)), { status: 500 })
   }
-
-  const admins = collectAdmins(okGroups, { excludeUserIds: [cfg.botQQ] })
-  return NextResponse.json(ok(admins))
 }

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 import { getRuntime } from "@/lib/runtime"
-import { ok, fail } from "@/lib/core/api"
+import { ok, fail, safeApiError } from "@/lib/core/api"
 import { getNameCache, type GroupNameRow } from "@/lib/core/chat/name-cache"
 
 function parseGroups(raw: unknown[]): GroupNameRow[] {
@@ -31,17 +31,21 @@ async function fetchGroupsFresh(): Promise<GroupNameRow[] | null> {
 }
 
 export async function GET(): Promise<NextResponse> {
-  const cache = getNameCache()
-  const hit = cache.getGroupsList()
-  if (hit) {
-    return NextResponse.json(ok(hit))
-  }
+  try {
+    const cache = getNameCache()
+    const hit = cache.getGroupsList()
+    if (hit) {
+      return NextResponse.json(ok(hit))
+    }
 
-  const list = await fetchGroupsFresh()
-  if (!list) {
-    return NextResponse.json(fail("bot 未连接或无法获取群列表"), {
-      status: 503,
-    })
+    const list = await fetchGroupsFresh()
+    if (!list) {
+      return NextResponse.json(fail("bot 未连接或无法获取群列表"), {
+        status: 503,
+      })
+    }
+    return NextResponse.json(ok(list))
+  } catch (err) {
+    return NextResponse.json(fail(safeApiError(err)), { status: 500 })
   }
-  return NextResponse.json(ok(list))
 }

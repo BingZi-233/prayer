@@ -1,7 +1,11 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest"
 import type { Update } from "grammy/types"
 import { bus } from "@/lib/core/bus"
-import type { ActionSend, IncomingMessage } from "@/lib/core/chat/events"
+import type {
+  ActionSend,
+  ErrorOccurred,
+  IncomingMessage,
+} from "@/lib/core/chat/events"
 import {
   TelegramChannel,
   splitTelegramText,
@@ -385,6 +389,83 @@ describe("TelegramChannel", () => {
     expect(ch.status().lastError).toMatch(/401/)
     expect(ch.isConnected()).toBe(false)
     await waitFor(() => sleeps >= 1, "backoff sleep")
+  })
+
+  it("轮询循环意外崩溃时记录 operational error", async () => {
+    const errors: ErrorOccurred[] = []
+    const onError = (event: ErrorOccurred) => errors.push(event)
+    bus.on("error.occurred", onError)
+    const api = makeMockApi()
+    api.getUpdates = async () => {
+      throw new Error("poll transport broke")
+    }
+    const ch = track(
+      new TelegramChannel("tok", {
+        getOffset: () => offset,
+        setOffset: (n) => {
+          offset = n
+        },
+        api,
+        pollTimeoutSec: 0,
+        sleep: async () => {
+          throw new Error("backoff scheduler broke")
+        },
+      })
+    )
+
+    try {
+      await ch.start()
+      await waitFor(
+        () => ch.status().lastError === "backoff scheduler broke",
+        "poll loop crash",
+        2000
+      )
+      expect(
+        errors.some(
+          (event) =>
+            event.scope === "tg.poll.loop" &&
+            event.channel === "tg" &&
+            event.userVisible === false &&
+            event.err instanceof Error &&
+            event.err.message === "backoff scheduler broke"
+        )
+      ).toBe(true)
+    } finally {
+      bus.off("error.occurred", onError)
+    }
+  })
+
+  it("退避期间 stop 可中断 sleep，不被最长退避阻塞", async () => {
+    const err = Object.assign(new Error("Unauthorized"), { error_code: 401 })
+    let sleepStarted = false
+    let releaseSleep!: () => void
+    const api = makeMockApi({ getMeError: err })
+    const ch = track(
+      new TelegramChannel("bad", {
+        getOffset: () => offset,
+        setOffset: (n) => {
+          offset = n
+        },
+        api,
+        pollTimeoutSec: 0,
+        sleep: () => {
+          sleepStarted = true
+          return new Promise<void>((resolve) => {
+            releaseSleep = resolve
+          })
+        },
+      })
+    )
+    await ch.start()
+    await waitFor(() => sleepStarted, "backoff sleep started")
+    await Promise.race([
+      ch.stop(),
+      delay(250).then(() => {
+        throw new Error("stop remained blocked in backoff sleep")
+      }),
+    ])
+    releaseSleep()
+    expect(ch.isConnected()).toBe(false)
   })
 
   it("stop 中止 in-flight getUpdates 并退出 loop", async () => {

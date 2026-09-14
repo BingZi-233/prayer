@@ -1,11 +1,12 @@
 import Database from "better-sqlite3"
 import * as sqliteVec from "sqlite-vec"
 import { migrateDatabase } from "./migrations/index.ts"
+import { databaseOpenPath } from "./path.ts"
 
 export const DIM = 512 // bge-small-zh-v1.5 输出维度
 
 export function openDb(path: string, dim: number = DIM): Database.Database {
-  const db = new Database(path)
+  const db = new Database(databaseOpenPath(path))
   try {
     db.pragma("journal_mode = WAL")
     sqliteVec.load(db)

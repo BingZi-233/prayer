@@ -7,6 +7,7 @@ export async function register(): Promise<void> {
 
   const { captureConsole } = await import("./lib/core/logger")
   const { openDb } = await import("./lib/core/db/index")
+  const { canonicalDbPath } = await import("./lib/core/db/path")
   const { Repo } = await import("./lib/core/db/repo")
   const { getConfig } = await import("./lib/core/config-store")
   const { getRuntime, defaultBuilders } = await import("./lib/runtime")
@@ -14,7 +15,9 @@ export async function register(): Promise<void> {
   captureConsole()
 
   // 读配置(首启从 env 种子入库)
-  const seedDb = openDb(process.env.DB_PATH ?? "./data/agent.db")
+  const seedDb = openDb(
+    canonicalDbPath(process.env.DB_PATH ?? "./data/agent.db")
+  )
   const cfg = getConfig(new Repo(seedDb))
   seedDb.close()
 

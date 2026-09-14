@@ -105,20 +105,20 @@ export async function enrich(
     nestedUrls.map((url) => dl(url))
   )
 
-  // 单张失败跳过(记日志带 url,不再无声消失)
+  // 单张失败跳过；不把原始图片 URL 写入 PM2/ring 日志(其中可能含签名 token)
   const images: ImageInput[] = []
   const allDl = [
     ...topDlSettled.map((r, i) => ({ r, url: imageUrls[i] })),
     ...nestedDlSettled.map((r, j) => ({ r, url: nestedUrls[j] })),
   ]
-  for (const { r, url } of allDl) {
+  for (const { r } of allDl) {
     if (r.status === "fulfilled") {
       images.push(r.value)
     } else {
-      logger.warn(
-        `[enrich] 跳过下载失败图片 ${url}: ${errorMessage(r.reason)}`,
-        { scope: "enrich", raw: String(parsed.messageId) }
-      )
+      logger.warn(`[enrich] 跳过下载失败图片: ${errorMessage(r.reason)}`, {
+        scope: "enrich",
+        raw: String(parsed.messageId),
+      })
     }
   }
 

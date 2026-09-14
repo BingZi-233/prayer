@@ -8,6 +8,7 @@ import { channelLabel } from "@/lib/core/chat/channel-labels"
 
 const STATE_LABEL: Record<string, string> = {
   running: "运行中",
+  degraded: "降级",
   stopped: "已停止",
   starting: "启动中",
   error: "错误",
@@ -27,7 +28,7 @@ export function HeaderStatus() {
   const brandName = overview?.brandName?.trim() || DEFAULT_BRAND.name
 
   const channels: ChannelStatusView[] =
-    status?.channels && status.channels.length > 0
+    status?.channels !== undefined
       ? status.channels
       : status
         ? [{ id: "qq", connected: status.wsConnected }]
@@ -38,7 +39,9 @@ export function HeaderStatus() {
   for (const ch of channels) {
     const label = channelLabel(ch.id)
     const err = "lastError" in ch && !!ch.lastError
-    parts.push(`${label} ${ch.connected && !err ? "已连接" : err ? "异常" : "断开"}`)
+    parts.push(
+      `${label} ${ch.connected && !err ? "已连接" : err ? "异常" : "断开"}`
+    )
   }
   if (lastUpdated) {
     const sec = Math.max(0, Math.floor((now - lastUpdated) / 1000))

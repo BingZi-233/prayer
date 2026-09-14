@@ -1,4 +1,4 @@
-import { bus } from "../core/bus"
+import { bus, emitErrorSafely } from "../core/bus"
 import { logger } from "../core/logger"
 import type { Agent } from "./agent"
 import { isNoAnswerText } from "../model/prompt"
@@ -180,27 +180,24 @@ export function registerOrchestrator(deps: OrchestratorDeps): () => void {
     const next = prev
       .then(() => handle(q))
       .catch((err) => {
-        bus.emit("error.occurred", {
+        emitErrorSafely({
           scope: "orchestrator",
           err,
           sessionKey: q.sessionKey,
           channel: q.channel,
           chatId: q.chatId,
         })
-        bus.emit("resolution.recorded", {
-          kind: "error",
-          sessionKey: q.sessionKey,
-          channel: q.channel,
-          chatId: q.chatId,
-          userId: q.userId,
-          detail: err instanceof Error ? err.message : String(err),
-        })
       })
     chains.set(q.sessionKey, next)
     // 链尾自清理:跑完且没有后继接上时移除,防止 chains 随历史 sessionKey 无界增长
-    next.finally(() => {
-      if (chains.get(q.sessionKey) === next) chains.delete(q.sessionKey)
-    })
+    void next.then(
+      () => {
+        if (chains.get(q.sessionKey) === next) chains.delete(q.sessionKey)
+      },
+      () => {
+        if (chains.get(q.sessionKey) === next) chains.delete(q.sessionKey)
+      }
+    )
   }
 
   bus.on("message.qualified", onQualified)

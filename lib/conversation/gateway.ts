@@ -1,4 +1,4 @@
-import { bus } from "../core/bus"
+import { bus, emitErrorSafely } from "../core/bus"
 import type { Repo } from "../core/db/repo"
 import type { IncomingMessage } from "../core/chat/events"
 import type { ChannelId } from "../core/chat/types"
@@ -198,12 +198,13 @@ export function registerGateway(deps: GatewayDeps): () => void {
         PRIOR_LINE_MAX_CHARS
       )
     } catch (err) {
-      bus.emit("error.occurred", {
+      emitErrorSafely({
         scope: "gateway.prior-context",
         err,
         sessionKey,
         channel,
         chatId,
+        userVisible: false,
       })
       priorTexts = []
     }

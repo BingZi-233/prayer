@@ -1,5 +1,6 @@
 import type { ActionSend } from "../../chat/events.ts"
 import type { OutboundStore, OutboxRecord } from "../../chat/outbox.ts"
+import { redactDiagnostic } from "../../log-context.ts"
 import type { SqliteContext } from "../context.ts"
 
 type OutboxDbRow = {
@@ -27,19 +28,36 @@ export class OutboxRepository implements OutboundStore {
       nextAttemptAt: r.next_attempt_at,
       leaseUntil: r.lease_until,
       claimToken: r.claim_token,
-      lastError: r.last_error,
+      lastError:
+        r.last_error == null ? r.last_error : redactDiagnostic(r.last_error),
     }
   }
   enqueueAndClaim(action: ActionSend, now: number): OutboxRecord | null {
     const key = action.deliveryKey
     if (!key) return null
     return this.sql.transaction(() => {
-      this.sql.prepare(`INSERT OR IGNORE INTO outbox_messages(delivery_key,resolution_key,action_json,status,attempts,next_attempt_at) VALUES(?,?,?,?,0,?)`).run(key, action.resolutionKey ?? null, JSON.stringify(action), "pending", now)
+      this.sql
+        .prepare(
+          `INSERT OR IGNORE INTO outbox_messages(delivery_key,resolution_key,action_json,status,attempts,next_attempt_at) VALUES(?,?,?,?,0,?)`
+        )
+        .run(
+          key,
+          action.resolutionKey ?? null,
+          JSON.stringify(action),
+          "pending",
+          now
+        )
       const token = `${now}:${Math.random()}`
-      const info = this.sql.prepare(`UPDATE outbox_messages SET status='sending', attempts=attempts+1, lease_until=?, claim_token=? WHERE delivery_key=? AND (status='pending' OR (status='failed' AND next_attempt_at<=?) OR (status='sending' AND lease_until<=?))`).run(now + 30000, token, key, now, now)
+      const info = this.sql
+        .prepare(
+          `UPDATE outbox_messages SET status='sending', attempts=attempts+1, lease_until=?, claim_token=? WHERE delivery_key=? AND (status='pending' OR (status='failed' AND next_attempt_at<=?) OR (status='sending' AND (lease_until IS NULL OR lease_until<=?)))`
+        )
+        .run(now + 30000, token, key, now, now)
       if (!info.changes) return null
       const row = this.sql
-        .prepare<OutboxDbRow>(`SELECT * FROM outbox_messages WHERE delivery_key=?`)
+        .prepare<OutboxDbRow>(
+          `SELECT * FROM outbox_messages WHERE delivery_key=?`
+        )
         .get(key)
       if (!row) return null
       return this.row(row)
@@ -47,11 +65,19 @@ export class OutboxRepository implements OutboundStore {
   }
   claimDue(limit: number, now: number): OutboxRecord[] {
     return this.sql.transaction(() => {
-      const rows = this.sql.prepare(`SELECT id FROM outbox_messages WHERE (status='pending' OR (status='failed' AND next_attempt_at<=?) OR (status='sending' AND lease_until<=?)) ORDER BY id LIMIT ?`).all(now, now, limit) as {id:number}[]
+      const rows = this.sql
+        .prepare(
+          `SELECT id FROM outbox_messages WHERE (status='pending' OR (status='failed' AND next_attempt_at<=?) OR (status='sending' AND (lease_until IS NULL OR lease_until<=?))) ORDER BY id LIMIT ?`
+        )
+        .all(now, now, limit) as { id: number }[]
       const out: OutboxRecord[] = []
       for (const r of rows) {
         const token = `${now}:${Math.random()}`
-        const u = this.sql.prepare(`UPDATE outbox_messages SET status='sending', attempts=attempts+1, lease_until=?, claim_token=? WHERE id=? AND (status='pending' OR (status='failed' AND next_attempt_at<=?) OR (status='sending' AND lease_until<=?))`).run(now+30000,token,r.id,now,now)
+        const u = this.sql
+          .prepare(
+            `UPDATE outbox_messages SET status='sending', attempts=attempts+1, lease_until=?, claim_token=? WHERE id=? AND (status='pending' OR (status='failed' AND next_attempt_at<=?) OR (status='sending' AND (lease_until IS NULL OR lease_until<=?)))`
+          )
+          .run(now + 30000, token, r.id, now, now)
         if (u.changes) {
           const row = this.sql
             .prepare<OutboxDbRow>(`SELECT * FROM outbox_messages WHERE id=?`)
@@ -62,15 +88,53 @@ export class OutboxRepository implements OutboundStore {
       return out
     })
   }
-  markSent(id:number, now:number, claimToken:string):boolean {
-    return this.sql
-      .prepare(`UPDATE outbox_messages SET status='sent', sent_at=?, lease_until=NULL, claim_token=NULL WHERE id=? AND status='sending' AND claim_token=?`)
-      .run(now, id, claimToken).changes > 0
+  markSent(id: number, now: number, claimToken: string): boolean {
+    return (
+      this.sql
+        .prepare(
+          `UPDATE outbox_messages SET status='sent', sent_at=?, lease_until=NULL, claim_token=NULL WHERE id=? AND status='sending' AND claim_token=?`
+        )
+        .run(now, id, claimToken).changes > 0
+    )
   }
-  markFailed(id:number,error:string,nextAttemptAt:number,claimToken:string):boolean {
-    return this.sql
-      .prepare(`UPDATE outbox_messages SET status='failed', last_error=?, next_attempt_at=?, lease_until=NULL, claim_token=NULL WHERE id=? AND status='sending' AND claim_token=?`)
-      .run(error, nextAttemptAt, id, claimToken).changes > 0
+  markFailed(
+    id: number,
+    error: string,
+    nextAttemptAt: number,
+    claimToken: string
+  ): boolean {
+    return (
+      this.sql
+        .prepare(
+          `UPDATE outbox_messages SET status='failed', last_error=?, next_attempt_at=?, lease_until=NULL, claim_token=NULL WHERE id=? AND status='sending' AND claim_token=?`
+        )
+        .run(redactDiagnostic(error), nextAttemptAt, id, claimToken).changes > 0
+    )
   }
-  sentChunkCount(resolutionKey:string):number { return (this.sql.prepare<{n:number}>(`SELECT COUNT(*) n FROM outbox_messages WHERE resolution_key=? AND status='sent'`).get(resolutionKey)!).n }
+  sentChunkCount(resolutionKey: string): number {
+    return this.sql
+      .prepare<{ n: number }>(
+        `SELECT COUNT(*) n FROM outbox_messages WHERE resolution_key=? AND status='sent'`
+      )
+      .get(resolutionKey)!.n
+  }
+
+  /** 当前投递队列分布，供健康/运营看板发现积压与失败。 */
+  statusCounts(): Record<OutboxRecord["status"], number> {
+    const out: Record<OutboxRecord["status"], number> = {
+      pending: 0,
+      sending: 0,
+      sent: 0,
+      failed: 0,
+    }
+    const rows = this.sql
+      .prepare<{ status: OutboxRecord["status"]; n: number }>(
+        "SELECT status, COUNT(*) AS n FROM outbox_messages GROUP BY status"
+      )
+      .all()
+    for (const row of rows) {
+      if (row.status in out) out[row.status] = row.n
+    }
+    return out
+  }
 }

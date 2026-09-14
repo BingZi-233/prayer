@@ -11,7 +11,8 @@ import {
   type ToolStat,
 } from "@/lib/model/stats/tool"
 import { getAppContext } from "@/lib/core/app-context"
-import { ok } from "@/lib/core/api"
+import { fail, ok, safeApiError } from "@/lib/core/api"
+import { emitErrorSafely } from "@/lib/core/bus"
 
 // 调用点中文名(与 lib/model/stats/usage.ts 的 UsageSite 对应);顺序即展示顺序
 const SITE_ORDER = [
@@ -156,8 +157,18 @@ export async function GET(): Promise<NextResponse> {
       })),
     }
     tools.daily = toolSection(groupDailyTools(repo.toolStatsDaily(day)).agent)
-  } catch {
-    /* 持久化读失败不阻断内存快照 */
+  } catch (err) {
+    // A database read failure must not be presented as a healthy response with
+    // `daily: null`; callers need a retryable signal while process metrics stay
+    // available in logs for diagnosis.
+    emitErrorSafely({
+      scope: "usage.persistence.read",
+      err,
+      userVisible: false,
+    })
+    return NextResponse.json(fail(safeApiError(err, "持久化用量读取失败")), {
+      status: 503,
+    })
   }
 
   return NextResponse.json(

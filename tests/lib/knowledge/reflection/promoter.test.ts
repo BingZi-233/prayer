@@ -261,6 +261,7 @@ describe("runPromote", () => {
       promoteFn: promoteFn as never,
     })
     expect(r.promoted).toBe(0)
+    expect(r.failed).toBe(true)
     expect(promoteFn).not.toHaveBeenCalled()
     expect((await err).scope).toBe("reflection-promote")
   })

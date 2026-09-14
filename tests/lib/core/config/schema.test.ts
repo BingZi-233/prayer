@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { appConfigSchema } from "@/lib/core/config/schema"
+import { appConfigSchema, groupPolicySchema } from "@/lib/core/config/schema"
 
 describe("app config proactive candidate budget", () => {
   it("defaults proactiveCandidateBudget to 12", () => {
@@ -20,5 +20,28 @@ describe("app config proactive candidate budget", () => {
       proactiveCandidateBudget: 2,
     })
     expect(cfg.proactiveCandidateBudget).toBe(9)
+  })
+
+  it("bounds proactive cadence and per-scan volume", () => {
+    const cfg = appConfigSchema.parse({
+      proactiveScanMs: 1,
+      proactiveSilenceMs: 1,
+      proactiveMaxPerScan: 999,
+      proactiveCandidateBudget: 999,
+    })
+    expect(cfg.proactiveScanMs).toBe(10_000)
+    expect(cfg.proactiveSilenceMs).toBe(30_000)
+    expect(cfg.proactiveMaxPerScan).toBe(10)
+    expect(cfg.proactiveCandidateBudget).toBe(50)
+  })
+
+  it("拒绝群级静默窗口低于保守下限", () => {
+    expect(() => groupPolicySchema.parse({ proactiveSilenceMs: 1 })).toThrow()
+  })
+
+  it("拒绝超过 Node 定时器上限的群级静默窗口", () => {
+    expect(() =>
+      groupPolicySchema.parse({ proactiveSilenceMs: 2 ** 31 })
+    ).toThrow()
   })
 })

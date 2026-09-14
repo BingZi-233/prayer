@@ -204,7 +204,7 @@ export default function ConfigPage() {
           <TabsContent value="advanced" className="pt-4">
             <SettingsGrid>
               <SdkSettings cfg={cfg} updateField={updateField} />
-              <StorageSettings cfg={cfg} updateField={updateField} />
+              <StorageSettings cfg={cfg} />
             </SettingsGrid>
           </TabsContent>
         </Tabs>

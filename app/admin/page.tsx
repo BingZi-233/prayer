@@ -83,6 +83,14 @@ const kfmt = (n: number) =>
     : n >= 1000
       ? `${(n / 1000).toFixed(1)}k`
       : String(Math.round(n))
+const formatBytes = (n: number) =>
+  n >= 1024 ** 3
+    ? `${(n / 1024 ** 3).toFixed(2)} GiB`
+    : n >= 1024 ** 2
+      ? `${(n / 1024 ** 2).toFixed(1)} MiB`
+      : n >= 1024
+        ? `${(n / 1024).toFixed(1)} KiB`
+        : `${n} B`
 
 /** 单元格:累计值 + 同行 muted 的单次均值(防把进程累计误读成单次量) */
 function TokenCell({ total, count }: { total: number; count: number }) {
@@ -98,6 +106,7 @@ function TokenCell({ total, count }: { total: number; count: number }) {
 
 const STATE_LABEL: Record<string, string> = {
   running: "运行中",
+  degraded: "降级",
   stopped: "已停止",
   starting: "启动中",
   error: "错误",
@@ -158,10 +167,18 @@ export default function StatusPage() {
   const m = ov?.metrics
   const channelDown =
     s != null &&
-    (s.channels?.length
+    (s.channels
       ? s.channels.some((c) => !c.connected || !!c.lastError)
       : !s.wsConnected)
-  const hasAlerts = (ov?.humanSessions ?? 0) > 0 || channelDown
+  const outboxPending = m?.outbox?.pending ?? 0
+  const outboxSending = m?.outbox?.sending ?? 0
+  const outboxFailed = m?.outbox?.failed ?? 0
+  const hasAlerts =
+    (ov?.humanSessions ?? 0) > 0 ||
+    channelDown ||
+    outboxPending > 0 ||
+    outboxSending > 0 ||
+    outboxFailed > 0
 
   return (
     <PageShell className="min-w-0">
@@ -208,7 +225,7 @@ export default function StatusPage() {
           variant="warning"
           icon={<LifeBuoy className="size-4" />}
           title="有待处理事项"
-          description="请尽快处理人工会话，或检查连接状态。"
+          description="请尽快处理人工会话、通道连接或投递队列。"
         >
           {(ov?.humanSessions ?? 0) > 0 && (
             <Link
@@ -234,8 +251,14 @@ export default function StatusPage() {
                 </Badge>
               )
           )}
-          {!s?.channels?.length && s && !s.wsConnected && (
+          {s && s.channels === undefined && !s.wsConnected && (
             <Badge variant="destructive">WS 未连接</Badge>
+          )}
+          {(outboxPending > 0 || outboxSending > 0 || outboxFailed > 0) && (
+            <Badge variant={outboxFailed > 0 ? "destructive" : "secondary"}>
+              投递队列 待发 {outboxPending} · 发送中 {outboxSending} · 失败{" "}
+              {outboxFailed}
+            </Badge>
           )}
         </Notice>
       ) : null}
@@ -248,13 +271,14 @@ export default function StatusPage() {
           hint={
             s?.bootedAt ? (
               <>
-                启动于 <RelativeTime ts={s.bootedAt} />
+                启动于 <RelativeTime ts={s.bootedAt} /> ·{" "}
+                {s.ready ? "就绪" : "未就绪"}
               </>
             ) : (
               "后台 Agent 进程状态。"
             )
           }
-          warn={s?.state === "error"}
+          warn={s?.state === "error" || s?.state === "degraded"}
         />
         <StatCard
           label="活动会话"
@@ -274,11 +298,13 @@ export default function StatusPage() {
           value={
             m?.autoResolutionRate != null ? pct(m.autoResolutionRate) : "—"
           }
-          hint="自动答 ÷ (自动答 + 主动补位 + 转人工 + 错误)。"
+          hint="自动答 ÷ (自动答 + 主动补位 + 转人工 + 用户可见错误；后台错误单列)。"
         />
       </StatGrid>
 
-      <p className="text-xs text-muted-foreground">通道与今日结果(今日 0 点起累计)</p>
+      <p className="text-xs text-muted-foreground">
+        通道与今日结果(今日 0 点起累计)
+      </p>
 
       <MetricRows
         items={[
@@ -314,10 +340,38 @@ export default function StatusPage() {
               ? `预算 $${m.usageBudgetUsd}。`
               : "今日 0 点起累计的模型调用费用。",
           },
+          {
+            label: "投递队列",
+            value: m?.outbox
+              ? `${m.outbox.pending + m.outbox.sending} 待处理 / ${m.outbox.failed} 失败`
+              : "—",
+            hint: "持久化 outbox 的当前积压；失败项会按退避重试。",
+            warn: outboxFailed > 0 || outboxPending > 0,
+          },
+          {
+            label: "数据库体积",
+            value: m?.storage
+              ? formatBytes(m.storage.dbBytes + m.storage.walBytes)
+              : "—",
+            hint: m?.storage
+              ? `主库 ${formatBytes(m.storage.dbBytes)} · WAL ${formatBytes(m.storage.walBytes)}。`
+              : "读取数据库文件体积失败。",
+            warn: (m?.storage?.walBytes ?? 0) > 100 * 1024 * 1024,
+          },
           { label: "自动答", value: m?.auto ?? "—" },
           { label: "主动补位", value: m?.proactive ?? "—" },
-          { label: "转人工", value: m?.handoff ?? "—", warn: (m?.handoff ?? 0) > 0 },
+          {
+            label: "转人工",
+            value: m?.handoff ?? "—",
+            warn: (m?.handoff ?? 0) > 0,
+          },
           { label: "错误", value: m?.error ?? "—", warn: (m?.error ?? 0) > 0 },
+          {
+            label: "后台错误",
+            value: m?.operationalErrors ?? "—",
+            hint: "后台任务/通道运维错误，不计入自动解决率。",
+            warn: (m?.operationalErrors ?? 0) > 0,
+          },
           { label: "意图拦截", value: m?.blocked ?? "—" },
           { label: "主动跳过", value: m?.proactiveSilent ?? "—" },
           {

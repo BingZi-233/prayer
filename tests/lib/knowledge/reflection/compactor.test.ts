@@ -88,7 +88,10 @@ describe("runCompact", () => {
       bus.once("action.send", res)
     )
     // 5 条 → 3 条(≥ 40% 下限),模拟近义合并
-    await runCompact(opts({ queryFn: fakeQuery(faqsItems(3)) as never }))
+    const completed = await runCompact(
+      opts({ queryFn: fakeQuery(faqsItems(3)) as never })
+    )
+    expect(completed).toBe(true)
     const a = await notice
     expect(a.channel).toBe("qq")
     expect(a.chatId).toBe("999")
@@ -198,7 +201,10 @@ describe("runCompact", () => {
     )
     const spy = vi.fn()
     bus.on("action.send", spy)
-    await runCompact(opts({ queryFn: fakeQuery({ items: [] }) as never }))
+    const completed = await runCompact(
+      opts({ queryFn: fakeQuery({ items: [] }) as never })
+    )
+    expect(completed).toBe(false)
     expect((await err).scope).toBe("reflection-compact")
     expect(repo.reflectionEntries()).toHaveLength(5)
     expect(spy).not.toHaveBeenCalled()
@@ -364,6 +370,25 @@ describe("runCompact", () => {
     )
     expect(qf).toHaveBeenCalledTimes(2)
     expect(repo.reflectionEntries()).toHaveLength(6)
+    expect(repo.recentCompactions(10)).toHaveLength(0)
+  })
+
+  it("LLM 等待期间条目被驳回 → 拒绝快照替换并保留原条目", async () => {
+    seedReflections(3)
+    const snap = repo.reflectionEntries()
+    const changedId = snap[0].id
+    bus.on("error.occurred", () => {})
+    const qf = () => {
+      // 模拟审核请求在 LLM 等待期间完成。
+      expect(repo.setReflectionStatus(changedId, "rejected")).toBe(true)
+      return fakeQuery(faqsItems(2, "不应覆盖"))()
+    }
+
+    const completed = await runCompact(opts({ queryFn: qf as never }))
+
+    expect(completed).toBe(false)
+    expect(repo.reflectionEntryDetail(changedId)?.status).toBe("rejected")
+    expect(repo.reflectionEntries()).toHaveLength(3)
     expect(repo.recentCompactions(10)).toHaveLength(0)
   })
 })

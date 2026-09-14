@@ -421,6 +421,41 @@ describe("config-store", () => {
     expect(cfg.enabledChats).toEqual([{ channel: "qq", chatId: "1" }])
     expect(cfg.adminSurface).toEqual({ channel: "qq", chatId: "2" })
   })
+
+  it("旧库单个坏群策略逐项修复,不丢其他群并写回", () => {
+    const repo = mkRepo()
+    repo.setConfigRow(
+      "app",
+      JSON.stringify({
+        groupPolicies: {
+          "qq:1": { proactiveEnabled: true, proactiveSilenceMs: 1 },
+          "qq:2": {
+            proactiveEnabled: false,
+            proactiveSilenceMs: 120_000,
+            notifyAdminOnHandoff: true,
+          },
+          "qq:3": { proactiveSilenceMs: "invalid" },
+        },
+      })
+    )
+
+    const cfg = getConfig(repo, {})
+    expect(cfg.groupPolicies["qq:1"]).toEqual({
+      proactiveEnabled: true,
+      proactiveSilenceMs: 30_000,
+    })
+    expect(cfg.groupPolicies["qq:2"]).toEqual({
+      proactiveEnabled: false,
+      proactiveSilenceMs: 120_000,
+      notifyAdminOnHandoff: true,
+    })
+    expect(cfg.groupPolicies["qq:3"]).toEqual({})
+
+    const stored = JSON.parse(repo.getConfigRow("app")!) as {
+      groupPolicies: Record<string, unknown>
+    }
+    expect(stored.groupPolicies).toEqual(cfg.groupPolicies)
+  })
 })
 
 describe("config-store proactive 字段", () => {
@@ -440,10 +475,12 @@ describe("config-store proactive 字段", () => {
       PROACTIVE_SCAN_MS: "30000",
       PROACTIVE_SILENCE_MS: "120000",
       PROACTIVE_MAX_PER_SCAN: "5",
+      PROACTIVE_CANDIDATE_BUDGET: "20",
     })
     expect(cfg.proactiveEnabled).toBe(true)
     expect(cfg.proactiveScanMs).toBe(30000)
     expect(cfg.proactiveSilenceMs).toBe(120000)
     expect(cfg.proactiveMaxPerScan).toBe(5)
+    expect(cfg.proactiveCandidateBudget).toBe(20)
   })
 })

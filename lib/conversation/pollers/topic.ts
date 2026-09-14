@@ -1,5 +1,5 @@
 import { query as sdkQuery } from "@anthropic-ai/claude-agent-sdk"
-import { bus } from "../../core/bus"
+import { emitErrorSafely } from "../../core/bus"
 import { logger } from "../../core/logger"
 import { errorMessage } from "../../core/log-context"
 import type { Repo } from "../../core/db/repo"
@@ -9,10 +9,17 @@ import { noToolQueryOptions } from "../../model/query-options"
 import { drainQuery } from "../../model/drain"
 import { pickArrayFieldDual, previewJsonPayload } from "../../model/json-output"
 import { textNearlySame } from "../../knowledge/reflection/poller"
-import { isNewSensitiveError, sanitizeForModel } from "../../model/sanitize-input"
+import {
+  isNewSensitiveError,
+  sanitizeForModel,
+} from "../../model/sanitize-input"
 import type { ChannelId } from "../../core/chat/types"
 import type { ChatRef } from "../../core/chat/enabled-chats"
-import { resolveBrand, type BrandInput, type BrandProfile } from "../../core/brand"
+import {
+  resolveBrand,
+  type BrandInput,
+  type BrandProfile,
+} from "../../core/brand"
 
 // LLM 每条问题的归类结果:归入已有 topicId / 新建 newTitle / 噪声 noise。
 export interface ClassifyItem {
@@ -309,11 +316,12 @@ async function scanOnce(d: Resolved): Promise<void> {
         )
         continue
       }
-      bus.emit("error.occurred", {
+      emitErrorSafely({
         scope: "topic",
         err,
         channel,
         chatId,
+        userVisible: false,
       })
     }
   }
@@ -331,7 +339,9 @@ export function registerTopicPoller(deps: TopicPollerDeps): () => void {
     if (running) return
     running = true
     void scanOnce(d)
-      .catch((err) => bus.emit("error.occurred", { scope: "topic", err }))
+      .catch((err) =>
+        emitErrorSafely({ scope: "topic", err, userVisible: false })
+      )
       .finally(() => {
         running = false
       })

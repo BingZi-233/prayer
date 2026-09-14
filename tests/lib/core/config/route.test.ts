@@ -1,27 +1,50 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { NextRequest } from "next/server"
+import { resolve } from "node:path"
 import { openDb } from "@/lib/core/db"
 import { Repo } from "@/lib/core/db/repo"
 import { getConfig, setConfig } from "@/lib/core/config-store"
 
 let db: ReturnType<typeof openDb>
-const { reconfigure, defaultBuilders } = vi.hoisted(() => ({
+const {
+  reconfigure,
+  getStatus,
+  runtimeFailureMessage,
+  defaultBuilders,
+  serializeRuntimeMutation,
+} = vi.hoisted(() => ({
   reconfigure: vi.fn(),
+  getStatus: vi.fn((): { state: string; lastError?: string } => ({
+    state: "running",
+  })),
+  runtimeFailureMessage: vi.fn(
+    (status: { state: string; lastError?: string }) =>
+      status.state === "error" ||
+      (status.state === "degraded" && status.lastError)
+        ? (status.lastError ?? "运行时启动失败")
+        : undefined
+  ),
   defaultBuilders: vi.fn(async () => ({})),
+  serializeRuntimeMutation: vi.fn((fn: () => Promise<unknown>) => fn()),
 }))
 vi.mock("@/lib/core/db/shared", () => ({
   sharedDb: () => db,
   sharedRepo: () => new Repo(db),
+  canonicalDbPath: (path: string) =>
+    path.startsWith(":") || path.startsWith("file:") ? path : resolve(path),
 }))
 vi.mock("@/lib/runtime", () => ({
-  getRuntime: () => ({ reconfigure }),
+  getRuntime: () => ({ reconfigure, getStatus }),
   defaultBuilders,
+  runtimeFailureMessage,
+  serializeRuntimeMutation,
 }))
 
 import { GET, PUT } from "@/app/api/config/route"
 
 beforeEach(() => {
   vi.clearAllMocks()
+  getStatus.mockReturnValue({ state: "running" })
   db = openDb(":memory:", 3)
   getConfig(new Repo(db), {})
 })
@@ -88,6 +111,16 @@ describe("配置 HTTP 边界", () => {
     ])
   })
 
+  it("拒绝在线切换数据库路径且不写库/重启", async () => {
+    const repo = new Repo(db)
+    const before = getConfig(repo)
+    const response = await put({ dbPath: "/tmp/another-prayer.db" })
+    expect(response.status).toBe(400)
+    expect(getConfig(repo)).toEqual(before)
+    expect(reconfigure).not.toHaveBeenCalled()
+    expect(defaultBuilders).not.toHaveBeenCalled()
+  })
+
   it.each([
     null,
     [],
@@ -112,5 +145,15 @@ describe("配置 HTTP 边界", () => {
     )
     expect(response.status).toBe(400)
     expect(reconfigure).not.toHaveBeenCalled()
+  })
+
+  it("运行时应用失败时恢复旧配置并返回 503", async () => {
+    getStatus.mockReturnValue({ state: "degraded", lastError: "启动失败" })
+    const repo = new Repo(db)
+    const before = getConfig(repo)
+    const response = await put({ supportUrl: "https://new.example" })
+    expect(response.status).toBe(503)
+    expect(getConfig(repo)).toEqual(before)
+    expect(reconfigure).toHaveBeenCalledTimes(2)
   })
 })

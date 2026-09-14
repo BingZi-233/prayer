@@ -8,10 +8,12 @@ import type { ConfigForm } from "./use-config-form"
 
 export function StorageSettings({
   cfg,
-  updateField,
-}: Pick<ConfigForm, "cfg" | "updateField"> ) {
+}: Pick<ConfigForm, "cfg">) {
   return (
-    <SectionCard title="存储" description="数据库文件路径。">
+    <SectionCard
+      title="存储"
+      description="数据库路径由部署环境中的 DB_PATH 决定，不能在运行时修改。"
+    >
       <FieldGroup>
         <Field>
           <FieldLabel htmlFor="dbPath">数据库路径</FieldLabel>
@@ -19,7 +21,8 @@ export function StorageSettings({
             id="dbPath"
             value={cfg.dbPath}
             placeholder="./data/agent.db"
-            onChange={(e) => updateField("dbPath", e.target.value)}
+            readOnly
+            aria-readonly="true"
           />
         </Field>
       </FieldGroup>

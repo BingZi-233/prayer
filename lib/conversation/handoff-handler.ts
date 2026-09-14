@@ -1,4 +1,4 @@
-import { bus } from "../core/bus"
+import { bus, emitErrorSafely } from "../core/bus"
 import type { Repo } from "../core/db/repo"
 import type { HandoffRequested, HandoffResumed } from "../core/chat/events"
 import type { ChannelId } from "../core/chat/types"
@@ -55,10 +55,10 @@ export function registerHandoffHandler(deps: HandoffHandlerDeps): () => void {
       detail: "human",
     })
 
-      bus.emit("action.send", {
-        channel: e.channel,
-        chatId: e.chatId,
-        text: "已转接人工客服。群管会回复；期间暂停自动答复。",
+    bus.emit("action.send", {
+      channel: e.channel,
+      chatId: e.chatId,
+      text: "已转接人工客服。群管会回复；期间暂停自动答复。",
     })
 
     const doNotify = shouldNotify
@@ -103,7 +103,11 @@ export function registerHandoffHandler(deps: HandoffHandlerDeps): () => void {
         bus.emit("handoff.resumed", { sessionKey: key, by: "timeout" })
       }
     } catch (err) {
-      bus.emit("error.occurred", { scope: "handoff-timeout", err })
+      emitErrorSafely({
+        scope: "handoff-timeout",
+        err,
+        userVisible: false,
+      })
     }
   }
 

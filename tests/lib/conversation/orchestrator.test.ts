@@ -3,7 +3,11 @@ import { openDb } from "@/lib/core/db/index"
 import { Repo } from "@/lib/core/db/repo"
 import { bus } from "@/lib/core/bus"
 import { registerOrchestrator } from "@/lib/conversation/orchestrator"
-import { registerReplyMapper, splitReply } from "@/lib/conversation/reply-mapper"
+import {
+  registerReplyMapper,
+  splitReply,
+} from "@/lib/conversation/reply-mapper"
+import { registerResolutionRecorder } from "@/lib/conversation/resolution-recorder"
 import { SessionStore } from "@/lib/conversation/session"
 import { BLOCKED_REPLY, type IntentClassifier } from "@/lib/conversation/intent"
 import type { Agent } from "@/lib/conversation/agent"
@@ -224,6 +228,29 @@ describe("orchestrator", () => {
         detail: "no_answer_suppressed",
       })
     )
+  })
+
+  it("agent 异常由 error.occurred 统一计数且不重复", async () => {
+    const off = registerResolutionRecorder(repo)
+    const fakeAgent = {
+      run: vi.fn(async () => {
+        throw new Error("agent failed")
+      }),
+    }
+    registerOrchestrator({
+      agent: fakeAgent as unknown as Agent,
+      store: new SessionStore(repo),
+      ackEnabled: false,
+    })
+
+    const failed = new Promise<void>((resolve) =>
+      bus.once("error.occurred", () => resolve())
+    )
+    bus.emit("message.qualified", qmsg({ messageId: "error-1", text: "价" }))
+    await failed
+    off()
+
+    expect(repo.resolutionCounts(0).error).toBe(1)
   })
 
   it("classify 挂起超过 classifyTimeoutMs → fail-open 归 normal,仍跑 agent 出回复", async () => {

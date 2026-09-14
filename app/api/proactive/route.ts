@@ -6,8 +6,9 @@ import {
   listEnabledChats,
   policyKey,
 } from "@/lib/core/chat/enabled-chats"
-import { ok, fail } from "@/lib/core/api"
+import { ok, fail, safeApiError } from "@/lib/core/api"
 import type { ChannelId } from "@/lib/core/chat/types"
+import { readJsonBody, REQUEST_BODY_TOO_LARGE } from "@/lib/core/http-security"
 
 // 主动回复专页:节奏配置 + 每群(游标/滞后/主动回复数) + 最近插话列表
 export async function GET(): Promise<NextResponse> {
@@ -98,10 +99,7 @@ export async function GET(): Promise<NextResponse> {
       })
     )
   } catch (err) {
-    return NextResponse.json(
-      fail(err instanceof Error ? err.message : String(err)),
-      { status: 500 }
-    )
+    return NextResponse.json(fail(safeApiError(err)), { status: 500 })
   }
 }
 
@@ -113,7 +111,9 @@ const patchSchema = z.object({
 // 质检:标主动回复为恰当 / 不当
 export async function PATCH(req: NextRequest): Promise<NextResponse> {
   try {
-    const body = await req.json().catch(() => null)
+    const body = await readJsonBody(req)
+    if (body === REQUEST_BODY_TOO_LARGE)
+      return NextResponse.json(fail("请求体过大"), { status: 413 })
     const parsed = patchSchema.safeParse(body)
     if (!parsed.success)
       return NextResponse.json(fail("参数非法"), { status: 400 })
@@ -124,9 +124,6 @@ export async function PATCH(req: NextRequest): Promise<NextResponse> {
       ok({ id: parsed.data.id, quality: parsed.data.quality })
     )
   } catch (err) {
-    return NextResponse.json(
-      fail(err instanceof Error ? err.message : String(err)),
-      { status: 500 }
-    )
+    return NextResponse.json(fail(safeApiError(err)), { status: 500 })
   }
 }
