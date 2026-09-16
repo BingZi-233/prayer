@@ -4,8 +4,9 @@ import { getAppContext } from "@/lib/core/app-context"
 import { listEnabledChats } from "@/lib/core/chat/enabled-chats"
 import { ok, fail, safeApiError } from "@/lib/core/api"
 import { buildGroupChatStats } from "@/lib/knowledge/reflection/stats"
-import { applyPromote } from "@/lib/knowledge/reflection/apply-promote"
+import { promoteEntry } from "@/lib/knowledge/reflection/promoter"
 import { embed } from "@/lib/model/embed"
+import { DEFAULT_EMBED_TIMEOUT_MS, withTimeoutFn } from "@/lib/model/timeout"
 import { readJsonBody, REQUEST_BODY_TOO_LARGE } from "@/lib/core/http-security"
 import { withKbMutationLock } from "@/lib/knowledge/mutation-lock"
 
@@ -127,9 +128,17 @@ export async function PATCH(req: NextRequest): Promise<NextResponse> {
       })
     }
 
-    // promote: 写文件 + 向量入库 + status=promoted
+    // promote: 成文 → 写文件 + 向量入库 + status=promoted
+    // 必须与定时升格走同一条路径,否则手动升格会产出不合规的旧格式文档。
     const { repo: r } = getAppContext()
-    const promo = await applyPromote({ repo: r, chunkId: id, embed })
+    const promo = await promoteEntry({
+      repo: r,
+      chunkId: id,
+      // 手动路径没有 resolve() 那层包装,裸 embed 会让 HTTP 请求一直等一个挂死的
+      // 本地 embedding(冷启动加载模型实测可达 20s+);定时路径由 promoter 的
+      // resolve() 负责套超时,这里得自己套。
+      embed: withTimeoutFn(DEFAULT_EMBED_TIMEOUT_MS, embed),
+    })
     if (!promo.ok) {
       const status = promo.reason.includes("不存在") ? 404 : 400
       return NextResponse.json(fail(promo.reason), { status })

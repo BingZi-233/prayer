@@ -4,7 +4,7 @@ const {
   getAppContextMock,
   runCompactMock,
   runPromoteMock,
-  applyPromoteMock,
+  promoteEntryMock,
   withKbMutationLockMock,
   reflectionEntriesMock,
   reflectionEntryDetailMock,
@@ -34,7 +34,7 @@ const {
     })),
     runCompactMock: vi.fn(),
     runPromoteMock: vi.fn(),
-    applyPromoteMock: vi.fn(),
+    promoteEntryMock: vi.fn(),
     withKbMutationLockMock: vi.fn((fn: () => Promise<unknown>) => fn()),
     reflectionEntriesMock: reflectionEntries,
     reflectionEntryDetailMock: repo.reflectionEntryDetail,
@@ -52,9 +52,7 @@ vi.mock("@/lib/knowledge/reflection/compactor", () => ({
 }))
 vi.mock("@/lib/knowledge/reflection/promoter", () => ({
   runPromote: runPromoteMock,
-}))
-vi.mock("@/lib/knowledge/reflection/apply-promote", () => ({
-  applyPromote: applyPromoteMock,
+  promoteEntry: promoteEntryMock,
 }))
 vi.mock("@/lib/knowledge/mutation-lock", () => ({
   withKbMutationLock: withKbMutationLockMock,
@@ -66,6 +64,7 @@ vi.mock("@/lib/model/embed", () => ({
 import { POST as compact } from "@/app/api/reflection/compact/route"
 import { POST as promote } from "@/app/api/reflection/promote/route"
 import { PATCH } from "@/app/api/reflection/route"
+import { embed as embedMock } from "@/lib/model/embed"
 
 const emptyPost = () => new Request("http://x", { method: "POST" })
 
@@ -80,9 +79,9 @@ beforeEach(() => {
   setReflectionStatusMock.mockReturnValue(true)
   runCompactMock.mockResolvedValue(true)
   runPromoteMock.mockResolvedValue({ considered: 0, promoted: 0 })
-  applyPromoteMock.mockResolvedValue({
+  promoteEntryMock.mockResolvedValue({
     ok: true,
-    file: "promoted/reflection-7.md",
+    file: "retrieval/faq/api-errors.md",
     content: "FAQ",
   })
 })
@@ -145,5 +144,48 @@ describe("manual reflection routes", () => {
 
     expect(response.status).toBe(404)
     expect(setReflectionStatusMock).not.toHaveBeenCalled()
+  })
+
+  it("promote 走 promoteEntry(与定时升格同一路径)", async () => {
+    const request = new Request("http://x", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ id: 7, action: "promote" }),
+    })
+
+    const response = await PATCH(request as never)
+
+    expect(response.status).toBe(200)
+    expect(promoteEntryMock).toHaveBeenCalledWith({
+      repo: expect.anything(),
+      chunkId: 7,
+      embed: expect.anything(),
+    })
+    // 手动路径没有 promoter 的 resolve() 包超时,必须自带包装:传进去的
+    // 不能是裸 embed,否则挂死的本地 embedding 会把 HTTP 请求一直吊住。
+    expect(promoteEntryMock.mock.calls[0][0].embed).not.toBe(embedMock)
+    expect((await response.json()).data).toMatchObject({
+      id: 7,
+      status: "promoted",
+      file: "retrieval/faq/api-errors.md",
+      already: false,
+    })
+  })
+
+  it("promoteEntry 失败 → 4xx 且不带文件", async () => {
+    promoteEntryMock.mockResolvedValue({
+      ok: false,
+      reason: "单元超长(600 > 500)",
+    })
+    const request = new Request("http://x", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ id: 7, action: "promote" }),
+    })
+
+    const response = await PATCH(request as never)
+
+    expect(response.status).toBe(400)
+    expect((await response.json()).error).toContain("单元超长")
   })
 })
