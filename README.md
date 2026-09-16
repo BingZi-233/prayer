@@ -201,7 +201,7 @@ pnpm start
 
 访问 <http://localhost:3000/admin>，在配置页完成通道、生效会话和管理面设置。
 
-> `pnpm dev` 只适合开发管理后台。生产客服 Agent 依赖真实 Node runtime 和本地 `claude` 可执行文件，生产环境必须使用 `pnpm build && pnpm start` 或 PM2。
+> `pnpm dev` 只适合开发管理后台。默认也会自动启动客服运行时；做只读 UI 验证时，可使用 `DB_PATH="$(mktemp -d)/agent.db" PRAYER_SKIP_RUNTIME_BOOT=1 pnpm dev` 跳过该自动启动。此开关不阻止显式的运行时重启、配置或插件写操作，不能当作写操作沙箱。生产客服 Agent 依赖真实 Node runtime 和本地 `claude` 可执行文件，生产环境必须使用 `pnpm build && pnpm start` 或 PM2。
 
 ## 通道配置
 
@@ -246,6 +246,7 @@ Telegram chat id 必须按字符串保存，尤其是超级群的负数 id，不
 | `TELEGRAM_ENABLED_CHATS` | 首次启动时种子的 Telegram chat id 列表，逗号或空格分隔                   |
 | `ADMIN_GROUP_ID`         | 首次启动时种子的 QQ 管理面                                               |
 | `ADMIN_TOKEN`            | 管理后台和 API 的访问口令；开发可省略，生产必填（缺失时 fail-closed）    |
+| `PRAYER_SKIP_RUNTIME_BOOT` | 在 `development` 中设为 `1` 时跳过 Next 启动钩子的自动运行时启动；仅用于隔离的只读开发验证，不能阻止管理写操作 |
 | `PRAYER_MCP_ALLOWLIST`   | 额外显式放行的完整 MCP 工具名（逗号/空格分隔）；默认仅 CS/Packy 查询工具 |
 | `TRUST_PROXY`            | 仅可信反向代理已规范化 `X-Forwarded-For`、`X-Forwarded-Host`、`X-Forwarded-Proto` 时设为 `true`，用于登录限速和 Cookie 请求的 Origin 校验 |
 | `PRAYER_BACKUP_PATHS`    | 供权限审计检查的显式备份文件路径，不会递归扫描                           |
