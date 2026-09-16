@@ -118,6 +118,7 @@ Prayer 的关键不是让模型“尽量回答”，而是让每一次回答都�
 | `/admin/groups`       | 生效会话、活动量和会话级策略覆盖                     |
 | `/admin/capabilities` | 当前 Agent 的插件、Skill、MCP 与工具能力             |
 | `/admin/plugins`      | 插件安装、更新、启停和重载                           |
+| `/admin/audit`        | 有限窗口内的管理变更轨迹与未结束审计事件             |
 
 <p align="center">
   <img src="docs/assets/prayer-operations.svg" alt="Prayer 管理后台能力图" width="100%" />
@@ -200,7 +201,7 @@ pnpm start
 
 访问 <http://localhost:3000/admin>，在配置页完成通道、生效会话和管理面设置。
 
-> `pnpm dev` 只适合开发管理后台。生产客服 Agent 依赖真实 Node runtime 和本地 `claude` 可执行文件，生产环境必须使用 `pnpm build && pnpm start` 或 PM2。
+> `pnpm dev` 只适合开发管理后台。默认也会自动启动客服运行时；做只读 UI 验证时，可使用 `DB_PATH="$(mktemp -d)/agent.db" PRAYER_SKIP_RUNTIME_BOOT=1 pnpm dev` 跳过该自动启动。此开关不阻止显式的运行时重启、配置或插件写操作，不能当作写操作沙箱。生产客服 Agent 依赖真实 Node runtime 和本地 `claude` 可执行文件，生产环境必须使用 `pnpm build && pnpm start` 或 PM2。
 
 ## 通道配置
 
@@ -245,6 +246,7 @@ Telegram chat id 必须按字符串保存，尤其是超级群的负数 id，不
 | `TELEGRAM_ENABLED_CHATS` | 首次启动时种子的 Telegram chat id 列表，逗号或空格分隔                   |
 | `ADMIN_GROUP_ID`         | 首次启动时种子的 QQ 管理面                                               |
 | `ADMIN_TOKEN`            | 管理后台和 API 的访问口令；开发可省略，生产必填（缺失时 fail-closed）    |
+| `PRAYER_SKIP_RUNTIME_BOOT` | 在 `development` 中设为 `1` 时跳过 Next 启动钩子的自动运行时启动；仅用于隔离的只读开发验证，不能阻止管理写操作 |
 | `PRAYER_MCP_ALLOWLIST`   | 额外显式放行的完整 MCP 工具名（逗号/空格分隔）；默认仅 CS/Packy 查询工具 |
 | `TRUST_PROXY`            | 仅可信反向代理已规范化 `X-Forwarded-For`、`X-Forwarded-Host`、`X-Forwarded-Proto` 时设为 `true`，用于登录限速和 Cookie 请求的 Origin 校验 |
 | `PRAYER_BACKUP_PATHS`    | 供权限审计检查的显式备份文件路径，不会递归扫描                           |
@@ -292,6 +294,9 @@ pnpm pm:disable
 - 发布前应备份 SQLite 数据库；可使用 `pnpm db:check` 和 `pnpm db:backup`。备份命令是
   一次性的本机原子备份，目标文件不得已存在；仓库不替部署方提供自动 cron、异地复制或
   恢复演练。
+- `pnpm db:report` 是可选的只读 JSON 运行报告，汇总数据库完整性、保留候选和 outbox
+  队列分布；可交给主机的 cron/systemd/监控系统采集，并在非零退出时告警。它不会创建
+  备份、删除数据或替代备份与恢复演练。
 - 外部访问管理后台时，生产必须配置 `ADMIN_TOKEN`，并同时启用 HTTPS、反向代理访问控制和最小化开放端口。
 - `/health/live` 只表示进程存活；`/health/ready` 会在必需通道未连接或启动失败时返回 `503`，可直接接入负载均衡健康检查。
 - 生产环境请将 `.env`、`settings.json`、SQLite 数据库/WAL/备份限制为 `0600`（仅进程用户
@@ -309,6 +314,7 @@ pnpm test         # Vitest
 pnpm check        # typecheck + lint + test
 pnpm kb:freshness # 只读核对 docs/kb 与 SQLite 分块/向量是否一致
 pnpm security:permissions # 只读审计；确认后用 `pnpm security:permissions -- --apply` 收紧到 600
+pnpm db:report # 只读 JSON 运行报告，供外部调度/监控采集
 pnpm db:retention # 默认只读预览；确认备份后用 `--apply` 清理过期数据
 ```
 

@@ -1,10 +1,12 @@
 import Database from "better-sqlite3"
 import * as sqliteVec from "sqlite-vec"
-import { backupDatabase, verifyDatabaseFile } from "../lib/core/db/backup.ts"
 import {
-  canonicalDbPath,
-  databaseOpenPath,
-} from "../lib/core/db/path.ts"
+  backupDatabase,
+  checkDatabaseIntegrity,
+  verifyDatabaseFile,
+} from "../lib/core/db/backup.ts"
+import { canonicalDbPath, databaseOpenPath } from "../lib/core/db/path.ts"
+import { Repo } from "../lib/core/db/repo.ts"
 import {
   applyRetention,
   applyTranscriptRetention,
@@ -62,12 +64,28 @@ function assertCompleteReport(
   if (missing.length) throw new Error(`数据库缺少保留表：${missing.join(", ")}`)
 }
 
+/**
+ * 供外部监控调用的只读快照。这里不能使用 openDb/getAppContext：它们会执行
+ * WAL 设置、迁移或配置 seed；调用者必须传入 readonly 打开的数据库。
+ */
+export function inspectDatabaseReport(db: Database.Database, now = Date.now()) {
+  const retention = inspectRetention(db, now, DEFAULT_RETENTION_POLICY)
+  const complete = retention.tables.every((table) => table.available)
+  return {
+    checkedAt: now,
+    integrity: checkDatabaseIntegrity(db),
+    retention,
+    // 部分库缺表时保留诊断而不是让 statusCounts 掩盖根因。
+    outbox: complete ? new Repo(db).outbox.statusCounts() : null,
+  }
+}
+
 async function main(): Promise<void> {
   const args = process.argv.slice(2)
   const [command, sourceArg, destinationArg] = args
-  const source = sourcePath(sourceArg)
 
   if (command === "check") {
+    const source = sourcePath(sourceArg)
     const result = verifyDatabaseFile(source)
     if (!result.ok) {
       throw new Error(`数据库完整性检查失败：${result.messages.join("；")}`)
@@ -76,7 +94,42 @@ async function main(): Promise<void> {
     return
   }
 
+  if (command === "report") {
+    const positional = retentionPositionals(args)
+    const dbPath = sourcePath(positional[0])
+    // 报告命令刻意不走 openDb：不得触发迁移/WAL 设置，也不得创建备份或删除数据。
+    const db = new Database(databaseOpenPath(dbPath), {
+      fileMustExist: true,
+      readonly: true,
+    })
+    try {
+      sqliteVec.load(db)
+      const report = inspectDatabaseReport(db, parseNow(args))
+      const schemaComplete = report.retention.tables.every(
+        (table) => table.available
+      )
+      const ok = report.integrity.ok && schemaComplete
+      console.log(
+        JSON.stringify(
+          {
+            ok,
+            source: dbPath,
+            ...report,
+          },
+          null,
+          2
+        )
+      )
+      // 保留候选是人工确认的正常运营信号，不把它误报为失败。
+      if (!ok) process.exitCode = 1
+    } finally {
+      db.close()
+    }
+    return
+  }
+
   if (command === "backup") {
+    const source = sourcePath(sourceArg)
     const db = new Database(databaseOpenPath(source), { fileMustExist: true })
     try {
       sqliteVec.load(db)
@@ -157,11 +210,13 @@ async function main(): Promise<void> {
   }
 
   throw new Error(
-    "用法：pnpm db:check [数据库路径]；pnpm db:backup [数据库路径] [备份路径]；pnpm db:retention [数据库路径] [--apply] [--transcripts=/path/to/projects --delete-transcripts]"
+    "用法：pnpm db:check [数据库路径]；pnpm db:report [数据库路径]；pnpm db:backup [数据库路径] [备份路径]；pnpm db:retention [数据库路径] [--apply] [--transcripts=/path/to/projects --delete-transcripts]"
   )
 }
 
-main().catch((error: unknown) => {
-  console.error(error instanceof Error ? error.message : String(error))
-  process.exitCode = 1
-})
+if (process.argv[1]?.endsWith("db-maintenance.ts")) {
+  main().catch((error: unknown) => {
+    console.error(error instanceof Error ? error.message : String(error))
+    process.exitCode = 1
+  })
+}

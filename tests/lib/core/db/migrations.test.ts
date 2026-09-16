@@ -43,9 +43,9 @@ function indexExists(db: Database.Database, name: string): boolean {
 describe("数据库迁移注册表", () => {
   it("版本连续、唯一，并与当前版本常量一致", () => {
     const versions = MIGRATIONS.map((migration) => migration.version)
-    expect(versions).toEqual([2, 3, 4, 5, 6, 7, 8, 9])
+    expect(versions).toEqual([2, 3, 4, 5, 6, 7, 8, 9, 10])
     expect(new Set(versions).size).toBe(versions.length)
-    expect(CURRENT_SCHEMA_VERSION).toBe(9)
+    expect(CURRENT_SCHEMA_VERSION).toBe(10)
     expect(MIGRATIONS.every((migration) => migration.name.length > 0)).toBe(
       true
     )
@@ -54,7 +54,7 @@ describe("数据库迁移注册表", () => {
   it("全新数据库可逐版本升级，并可在每一级幂等重跑", () => {
     const db = createDb()
 
-    for (const targetVersion of [2, 3, 4, 5, 6, 7, 8, 9]) {
+    for (const targetVersion of [2, 3, 4, 5, 6, 7, 8, 9, 10]) {
       migrateDatabase(db, 3, targetVersion)
       expect(userVersion(db)).toBe(targetVersion)
 
@@ -74,6 +74,86 @@ describe("数据库迁移注册表", () => {
     expect(indexExists(db, "idx_tickets_status_created")).toBe(true)
     expect(indexExists(db, "idx_qo_topic_msg_ts")).toBe(true)
     expect(indexExists(db, "idx_outbox_resolution_status")).toBe(true)
+    expect(columns(db, "admin_audit_events")).toEqual([
+      "id",
+      "request_id",
+      "actor_type",
+      "action",
+      "route",
+      "method",
+      "result",
+      "http_status",
+      "detail_json",
+      "started_at",
+      "finished_at",
+    ])
+    expect(indexExists(db, "idx_admin_audit_started_at")).toBe(true)
+    expect(indexExists(db, "idx_admin_audit_result_started_at")).toBe(true)
+  })
+
+  it("v10 约束审计状态生命周期与 JSON 详情", () => {
+    const db = createDb()
+    migrateDatabase(db, 3, 10)
+    const insert = db.prepare(
+      `INSERT INTO admin_audit_events
+       (request_id, actor_type, action, route, method, result, http_status, detail_json, started_at, finished_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+
+    insert.run(
+      "123e4567-e89b-12d3-a456-426614174000",
+      "shared-admin-token",
+      "config.update",
+      "/api/config",
+      "PUT",
+      "started",
+      null,
+      "{}",
+      100,
+      null
+    )
+    expect(() =>
+      insert.run(
+        "123e4567-e89b-12d3-a456-426614174001",
+        "shared-admin-token",
+        "config.update",
+        "/api/config",
+        "PUT",
+        "accepted",
+        null,
+        "{}",
+        100,
+        null
+      )
+    ).toThrow()
+    expect(() =>
+      insert.run(
+        "123e4567-e89b-12d3-a456-426614174002",
+        "shared-admin-token",
+        "config.update",
+        "/api/config",
+        "PUT",
+        "accepted",
+        200,
+        "not-json",
+        100,
+        101
+      )
+    ).toThrow()
+    expect(() =>
+      insert.run(
+        "123e4567-e89b-12d3-a456-426614174003",
+        "shared-admin-token",
+        "config.update",
+        "/api/config",
+        "PUT",
+        "accepted",
+        200,
+        "{}",
+        100,
+        99
+      )
+    ).toThrow()
   })
 
   it("v9 preserves legacy rows and defaults delivery state to sent", () => {

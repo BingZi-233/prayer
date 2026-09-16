@@ -16,6 +16,7 @@ import {
   applyRetention,
   applyTranscriptRetention,
   DAY_MS,
+  DEFAULT_RETENTION_POLICY,
   inspectRetention,
   inspectTranscriptRetention,
   type RetentionPolicy,
@@ -31,6 +32,7 @@ const POLICY: RetentionPolicy = {
   usageDays: 30,
   sessionsDays: 30,
   outboxSentDays: 30,
+  adminAuditEventsDays: 30,
   transcriptsDays: 30,
 }
 
@@ -87,6 +89,12 @@ function seedRetentionRows(db: Database.Database): void {
     "INSERT INTO tool_stats_daily (day, site, tool, runs, calls) VALUES (?, 'agent', 'Skill', 1, 1)"
   ).run("2026-09-12")
 
+  const audit = db.prepare(
+    "INSERT INTO admin_audit_events (request_id, actor_type, action, route, method, result, started_at) VALUES (?, 'shared-admin-token', 'retention.test', '/api/test', 'POST', 'started', ?)"
+  )
+  audit.run("old-audit", OLD)
+  audit.run("fresh-audit", FRESH)
+
   const session = db.prepare(
     "INSERT INTO sessions (key, resume_id, human_mode, updated_at) VALUES (?, ?, ?, ?)"
   )
@@ -109,6 +117,7 @@ describe("database retention", () => {
     const db = database()
     seedRetentionRows(db)
 
+    expect(DEFAULT_RETENTION_POLICY.adminAuditEventsDays).toBe(365)
     const report = inspectRetention(db, NOW, POLICY)
     expect(
       Object.fromEntries(
@@ -122,11 +131,13 @@ describe("database retention", () => {
       tool_stats_daily: 1,
       sessions: 1,
       outbox_messages: 0,
+      admin_audit_events: 1,
     })
     expect(
       report.tables.find((row) => row.table === "sessions")?.protected
     ).toBe(4)
     expect(count(db, "reflect_compactions")).toBe(2)
+    expect(count(db, "admin_audit_events")).toBe(2)
 
     const applied = applyRetention(db, NOW, POLICY)
     expect(applied.deleted).toEqual({
@@ -137,6 +148,7 @@ describe("database retention", () => {
       tool_stats_daily: 1,
       sessions: 1,
       outbox_messages: 0,
+      admin_audit_events: 1,
     })
     expect(applied.after.totalCandidates).toBe(0)
     expect(count(db, "reflect_compactions")).toBe(1)
@@ -144,6 +156,7 @@ describe("database retention", () => {
     expect(count(db, "question_topics")).toBe(1)
     expect(count(db, "usage_daily")).toBe(1)
     expect(count(db, "tool_stats_daily")).toBe(1)
+    expect(count(db, "admin_audit_events")).toBe(1)
     expect(
       db.prepare("SELECT key FROM sessions ORDER BY key").pluck().all()
     ).toEqual(["closed-ticket", "fresh", "human", "resume", "ticket"])
@@ -154,6 +167,9 @@ describe("database retention", () => {
     expect(() =>
       inspectRetention(db, NOW, { ...POLICY, sessionsDays: 0 })
     ).toThrow("sessionsDays 必须是 1 到 36500 之间的整数")
+    expect(() =>
+      inspectRetention(db, NOW, { ...POLICY, adminAuditEventsDays: 0 })
+    ).toThrow("adminAuditEventsDays 必须是 1 到 36500 之间的整数")
   })
 
   it("只清理过期 sent outbox，保留其它状态", () => {
@@ -188,12 +204,16 @@ describe("database retention", () => {
 
   it("部分数据库只报告缺表，拒绝 apply 造成半清理", () => {
     const db = database()
-    db.exec("DROP TABLE sessions")
+    seedRetentionRows(db)
+    db.exec("DROP TABLE admin_audit_events")
     const report = inspectRetention(db, NOW, POLICY)
-    expect(report.tables.find((row) => row.table === "sessions")).toMatchObject({
-      available: false,
-    })
-    expect(() => applyRetention(db, NOW, POLICY)).toThrow(/缺少表:.*sessions/)
+    expect(
+      report.tables.find((row) => row.table === "admin_audit_events")
+    ).toMatchObject({ available: false })
+    expect(() => applyRetention(db, NOW, POLICY)).toThrow(
+      /缺少表:.*admin_audit_events/
+    )
+    expect(count(db, "reflect_compactions")).toBe(2)
   })
 })
 

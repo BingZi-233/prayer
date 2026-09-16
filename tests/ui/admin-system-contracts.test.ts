@@ -37,7 +37,7 @@ describe("admin system page contracts", () => {
 
     expect(source).toContain("policyWritePayload")
     expect(source).toContain("enabledChats")
-    expect(source).toContain('body: JSON.stringify({ groupPolicies })')
+    expect(source).toContain("body: JSON.stringify({ groupPolicies })")
     expect(source).toContain("clearPolicy")
   })
 
@@ -56,7 +56,32 @@ describe("admin system page contracts", () => {
     expect(source).toContain("CATEGORIES.map")
     expect(source).toContain("<TabsList")
     expect(source).toContain("<SettingsGrid>")
-    expect(source).not.toContain("orientation=\"vertical\"")
+    expect(source).not.toContain('orientation="vertical"')
     expect(source).toContain("保存并生效")
+  })
+
+  it("keeps management audit as a bounded read-only system view", async () => {
+    const [audit, sidebar, liveProvider] = await Promise.all([
+      read("app/admin/audit/page.tsx"),
+      read("components/app-sidebar.tsx"),
+      read("components/live-provider.tsx"),
+    ])
+
+    expect(sidebar).toContain('href: "/admin/audit"')
+    expect(audit).toContain(
+      'usePolling<AuditData>(\n    "/api/audit",\n    30_000'
+    )
+    expect(audit).toContain("<DataState")
+    expect(audit).toContain("<TableShell")
+    expect(audit).toContain("授权模型")
+    expect(audit).toContain('event.result !== "started"')
+    expect(audit).toContain("unfinishedCount")
+    expect(audit).toContain("event.finishedAt")
+    expect(audit).toContain("error={data ? null : error}")
+    expect(audit).toContain("可能仍在执行")
+    expect(audit).toContain("开始时间（本地）")
+    expect(audit).toContain('aria-label="正在刷新审计记录"')
+    expect(audit).toContain("不代表真实操作人")
+    expect(liveProvider).toContain('"/admin/audit": "管理审计"')
   })
 })

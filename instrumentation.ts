@@ -1,5 +1,15 @@
+export function shouldBootRuntime(
+  env: Partial<NodeJS.ProcessEnv> = process.env
+): boolean {
+  return (
+    env.NEXT_RUNTIME === "nodejs" &&
+    !(env.NODE_ENV === "development" && env.PRAYER_SKIP_RUNTIME_BOOT === "1")
+  )
+}
+
 export async function register(): Promise<void> {
   if (process.env.NEXT_RUNTIME !== "nodejs") return
+  if (!shouldBootRuntime()) return
 
   const g = globalThis as unknown as { __agentBooted?: boolean }
   if (g.__agentBooted) return

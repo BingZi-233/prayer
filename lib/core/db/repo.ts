@@ -10,6 +10,7 @@ import { StatisticsRepository } from "./repositories/statistics.ts"
 import { TicketsRepository } from "./repositories/tickets.ts"
 import { ConfigRepository } from "./repositories/config.ts"
 import { OutboxRepository } from "./repositories/outbox.ts"
+import { AdminAuditRepository } from "./repositories/admin-audit.ts"
 
 export { MAX_KB_PREVIEW_CHUNKS } from "./repositories/knowledge.ts"
 
@@ -38,6 +39,7 @@ export class Repo {
   readonly tickets: TicketsRepository
   readonly config: ConfigRepository
   readonly outbox: OutboxRepository
+  readonly adminAudit: AdminAuditRepository
 
   constructor(private readonly db: Database.Database) {
     this.sql = new SqliteContext(this.db)
@@ -55,6 +57,7 @@ export class Repo {
     this.statistics = new StatisticsRepository(this.sql)
     this.tickets = new TicketsRepository(this.sql)
     this.outbox = new OutboxRepository(this.sql)
+    this.adminAudit = new AdminAuditRepository(this.sql)
   }
 
   /** 回调必须同步；异步计算和文件 IO 应在事务前完成。 */

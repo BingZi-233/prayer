@@ -20,6 +20,7 @@ import {
   REQUEST_BODY_TOO_LARGE,
 } from "@/lib/core/http-security"
 import { withKbMutationLock } from "@/lib/knowledge/mutation-lock"
+import { withAdminMutationAudit } from "@/lib/core/admin-audit-route"
 
 // catch-all 段:file 为路径片段数组(如 ["faq","退款.md"]),支持子目录
 function resolveRel(parts: string[]): { rel: string; abs: string } | null {
@@ -88,14 +89,29 @@ export async function PUT(
       try {
         const r = resolveRel(file)
         if (!r) return NextResponse.json(fail("文件名非法"), { status: 400 })
-        // Re-check existence/path safety after waiting for other KB writers.
-        if (!existsSync(r.abs))
-          return NextResponse.json(fail("文件不存在"), { status: 404 })
-        if (!safeKbAbs(r.rel))
-          return NextResponse.json(fail("文件名非法"), { status: 400 })
-        if (!writeKbFileNoFollow(r.abs, parsed.data.content))
-          return NextResponse.json(fail("文件不存在"), { status: 404 })
-        return NextResponse.json(ok(true))
+        const { repo } = getAppContext()
+        return withAdminMutationAudit(
+          repo,
+          {
+            action: "kb.update",
+            route: "/api/kb/[...file]",
+            method: "PUT",
+          },
+          () => {
+            try {
+              // Re-check existence/path safety after waiting for other KB writers.
+              if (!existsSync(r.abs))
+                return NextResponse.json(fail("文件不存在"), { status: 404 })
+              if (!safeKbAbs(r.rel))
+                return NextResponse.json(fail("文件名非法"), { status: 400 })
+              if (!writeKbFileNoFollow(r.abs, parsed.data.content))
+                return NextResponse.json(fail("文件不存在"), { status: 404 })
+              return NextResponse.json(ok(true))
+            } catch (err) {
+              return NextResponse.json(fail(safeApiError(err)), { status: 500 })
+            }
+          }
+        )
       } catch (err) {
         return NextResponse.json(fail(safeApiError(err)), { status: 500 })
       }
@@ -132,33 +148,50 @@ export async function PATCH(
         const newAbs = safeKbAbs(newRel)
         if (!newAbs)
           return NextResponse.json(fail("新路径非法"), { status: 400 })
-        // Re-check both paths after waiting for other KB writers.
-        if (!existsSync(r.abs))
-          return NextResponse.json(fail("文件不存在"), { status: 404 })
-        if (!safeKbAbs(r.rel))
-          return NextResponse.json(fail("文件不存在"), { status: 404 })
-        if (newRel === r.rel) return NextResponse.json(ok({ path: r.rel }))
-        if (existsSync(newAbs))
-          return NextResponse.json(fail("目标已存在"), { status: 409 })
-        // Validate both sides before creating any parent directories; the second
-        // check below closes the ordinary symlink-swap window after mkdir.
-        if (!safeKbAbs(newRel) || !safeKbAbs(r.rel))
-          return NextResponse.json(fail("路径非法"), { status: 400 })
-        mkdirSync(dirname(newAbs), { recursive: true })
-        if (!safeKbAbs(newRel) || !safeKbAbs(r.rel))
-          return NextResponse.json(fail("路径非法"), { status: 400 })
-        renameSync(r.abs, newAbs)
-        try {
-          const { repo: dbRepo } = getAppContext()
-          dbRepo.renameKbDoc(r.rel, newRel)
-        } catch (err) {
-          // The repository update is the second half of this mutation.  Put the
-          // file back before surfacing the error so disk and index do not diverge.
-          if (!rollbackRename(newAbs, r.abs))
-            throw new Error("知识库数据库同步失败且文件回滚失败，请运行 freshness 检查")
-          throw err
-        }
-        return NextResponse.json(ok({ path: newRel }))
+        const { repo: dbRepo } = getAppContext()
+        return withAdminMutationAudit(
+          dbRepo,
+          {
+            action: "kb.rename",
+            route: "/api/kb/[...file]",
+            method: "PATCH",
+          },
+          () => {
+            try {
+              // Re-check both paths after waiting for other KB writers.
+              if (!existsSync(r.abs))
+                return NextResponse.json(fail("文件不存在"), { status: 404 })
+              if (!safeKbAbs(r.rel))
+                return NextResponse.json(fail("文件不存在"), { status: 404 })
+              if (newRel === r.rel)
+                return NextResponse.json(ok({ path: r.rel }))
+              if (existsSync(newAbs))
+                return NextResponse.json(fail("目标已存在"), { status: 409 })
+              // Validate both sides before creating any parent directories; the second
+              // check below closes the ordinary symlink-swap window after mkdir.
+              if (!safeKbAbs(newRel) || !safeKbAbs(r.rel))
+                return NextResponse.json(fail("路径非法"), { status: 400 })
+              mkdirSync(dirname(newAbs), { recursive: true })
+              if (!safeKbAbs(newRel) || !safeKbAbs(r.rel))
+                return NextResponse.json(fail("路径非法"), { status: 400 })
+              renameSync(r.abs, newAbs)
+              try {
+                dbRepo.renameKbDoc(r.rel, newRel)
+              } catch (err) {
+                // The repository update is the second half of this mutation.  Put the
+                // file back before surfacing the error so disk and index do not diverge.
+                if (!rollbackRename(newAbs, r.abs))
+                  throw new Error(
+                    "知识库数据库同步失败且文件回滚失败，请运行 freshness 检查"
+                  )
+                throw err
+              }
+              return NextResponse.json(ok({ path: newRel }))
+            } catch (err) {
+              return NextResponse.json(fail(safeApiError(err)), { status: 500 })
+            }
+          }
+        )
       } catch (err) {
         return NextResponse.json(fail(safeApiError(err)), { status: 500 })
       }
@@ -184,33 +217,50 @@ export async function DELETE(
       try {
         const r = resolveRel(file)
         if (!r) return NextResponse.json(fail("文件名非法"), { status: 400 })
-        if (!existsSync(r.abs))
-          return NextResponse.json(fail("文件不存在"), { status: 404 })
-        if (!safeKbAbs(r.rel))
-          return NextResponse.json(fail("文件不存在"), { status: 404 })
-        // Move to a non-ingestible sibling first.  If the DB transaction fails we
-        // can restore the original inode without loading a potentially large file.
-        const stage = siblingStage(r.abs, "prayer-kb-delete")
-        renameSync(r.abs, stage)
-        let purged: number
-        try {
-          const { repo: dbRepo } = getAppContext()
-          purged = dbRepo.deleteKbDoc(r.rel)
-        } catch (err) {
-          if (!rollbackRename(stage, r.abs))
-            throw new Error("知识库数据库删除失败且文件回滚失败，请运行 freshness 检查")
-          throw err
-        }
-        try {
-          unlinkSync(stage)
-        } catch {
-          // The index is already gone; leave the non-ingestible staging file for
-          // an operator to remove rather than claiming the file was deleted.
-          return NextResponse.json(fail("索引已清理，但临时文件删除失败"), {
-            status: 500,
-          })
-        }
-        return NextResponse.json(ok({ path: r.rel, purged }))
+        const { repo: dbRepo } = getAppContext()
+        return withAdminMutationAudit(
+          dbRepo,
+          {
+            action: "kb.delete",
+            route: "/api/kb/[...file]",
+            method: "DELETE",
+          },
+          () => {
+            try {
+              if (!existsSync(r.abs))
+                return NextResponse.json(fail("文件不存在"), { status: 404 })
+              if (!safeKbAbs(r.rel))
+                return NextResponse.json(fail("文件不存在"), { status: 404 })
+              // Move to a non-ingestible sibling first.  If the DB transaction fails we
+              // can restore the original inode without loading a potentially large file.
+              const stage = siblingStage(r.abs, "prayer-kb-delete")
+              renameSync(r.abs, stage)
+              let purged: number
+              try {
+                purged = dbRepo.deleteKbDoc(r.rel)
+              } catch (err) {
+                if (!rollbackRename(stage, r.abs))
+                  throw new Error(
+                    "知识库数据库删除失败且文件回滚失败，请运行 freshness 检查"
+                  )
+                throw err
+              }
+              try {
+                unlinkSync(stage)
+              } catch {
+                // The index is already gone; leave the non-ingestible staging file for
+                // an operator to remove rather than claiming the file was deleted.
+                return NextResponse.json(
+                  fail("索引已清理，但临时文件删除失败"),
+                  { status: 500 }
+                )
+              }
+              return NextResponse.json(ok({ path: r.rel, purged }))
+            } catch (err) {
+              return NextResponse.json(fail(safeApiError(err)), { status: 500 })
+            }
+          }
+        )
       } catch (err) {
         return NextResponse.json(fail(safeApiError(err)), { status: 500 })
       }

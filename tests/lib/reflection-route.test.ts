@@ -1,4 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
+import { isAdminAuditRequestId } from "@/lib/core/admin-audit"
+import { openDb } from "@/lib/core/db"
+import { Repo } from "@/lib/core/db/repo"
 
 const {
   getAppContextMock,
@@ -13,9 +16,14 @@ const {
   setReflectionStatusMock,
   setCompactAtMock,
   setPromoteAtMock,
+  beginMock,
+  finishMock,
 } = vi.hoisted(() => {
   const reflectionEntries = vi.fn(() => [])
+  const begin = vi.fn(() => 1)
+  const finish = vi.fn(() => true)
   const repo = {
+    adminAudit: { begin, finish },
     reflectionEntries,
     reflectionEntryDetail: vi.fn(),
     setReflectionStatus: vi.fn(),
@@ -49,6 +57,8 @@ const {
     setReflectionStatusMock: repo.setReflectionStatus,
     setCompactAtMock: repo.setCompactAt,
     setPromoteAtMock: repo.setPromoteAt,
+    beginMock: begin,
+    finishMock: finish,
   }
 })
 
@@ -56,7 +66,7 @@ vi.mock("@/lib/core/app-context", () => ({
   getAppContext: getAppContextMock,
 }))
 vi.mock("@/lib/knowledge/reflection/compactor", () => ({
-  runCompact: runCompactMock,
+  runCompactWithOutcome: runCompactMock,
 }))
 vi.mock("@/lib/knowledge/reflection/promoter", () => ({
   runPromote: runPromoteMock,
@@ -86,6 +96,12 @@ import { DEFAULT_EMBED_TIMEOUT_MS } from "@/lib/model/timeout"
 
 const emptyPost = () => new Request("http://x", { method: "POST" })
 
+function expectRequestId(response: Response): string {
+  const requestId = response.headers.get("x-request-id")
+  expect(isAdminAuditRequestId(requestId)).toBe(true)
+  return requestId!
+}
+
 beforeEach(() => {
   vi.clearAllMocks()
   reflectionEntriesMock.mockReturnValue([])
@@ -95,7 +111,7 @@ beforeEach(() => {
     status: "approved",
   })
   setReflectionStatusMock.mockReturnValue(true)
-  runCompactMock.mockResolvedValue(true)
+  runCompactMock.mockResolvedValue("completed")
   runPromoteMock.mockResolvedValue({ considered: 0, promoted: 0 })
   promoteEntryMock.mockResolvedValue({
     ok: true,
@@ -106,13 +122,72 @@ beforeEach(() => {
 
 describe("manual reflection routes", () => {
   it("compact failure returns 503 and does not consume its cursor", async () => {
-    runCompactMock.mockResolvedValue(false)
+    runCompactMock.mockResolvedValue("failed")
 
     const response = await compact(emptyPost())
 
     expect(response.status).toBe(503)
+    expectRequestId(response)
+    expect(beginMock).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "reflection.compact" })
+    )
+    expect(finishMock).toHaveBeenCalledWith(
+      1,
+      expect.objectContaining({ result: "failed", httpStatus: 503 })
+    )
     expect((await response.json()).error).toContain("反思整理失败")
     expect(setCompactAtMock).not.toHaveBeenCalled()
+  })
+
+  it("compact success records an accepted audit result", async () => {
+    const response = await compact(emptyPost())
+
+    expect(response.status).toBe(200)
+    expectRequestId(response)
+    expect(beginMock).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "reflection.compact" })
+    )
+    expect(finishMock).toHaveBeenCalledWith(
+      1,
+      expect.objectContaining({ result: "accepted", httpStatus: 200 })
+    )
+    expect(setCompactAtMock).toHaveBeenCalledOnce()
+  })
+
+  it("compact partial outcome persists partial without consuming its cursor", async () => {
+    const db = openDb(":memory:", 3)
+    const auditRepo = new Repo(db)
+    const setCompactAt = vi.spyOn(auditRepo, "setCompactAt")
+    try {
+      getAppContextMock.mockReturnValueOnce({
+        cfg: {
+          reflectCompactMinEntries: 3,
+          reflectPromoteMinEntries: 1,
+          reflectPromoteMaxPerRun: 5,
+          reflectNotifyAdmin: false,
+          adminSurface: null,
+        },
+        repo: auditRepo,
+        configRepo: auditRepo,
+      } as never)
+      runCompactMock.mockResolvedValue("partial")
+
+      const response = await compact(emptyPost())
+      const requestId = expectRequestId(response)
+
+      expect(response.status).toBe(503)
+      expect(auditRepo.adminAudit.getByRequestId(requestId)).toMatchObject({
+        action: "reflection.compact",
+        route: "/api/reflection/compact",
+        method: "POST",
+        result: "partial",
+        httpStatus: 503,
+        detail: {},
+      })
+      expect(setCompactAt).not.toHaveBeenCalled()
+    } finally {
+      db.close()
+    }
   })
 
   it("promote failure returns 503 and does not consume its cursor", async () => {
@@ -125,8 +200,28 @@ describe("manual reflection routes", () => {
     const response = await promote(emptyPost())
 
     expect(response.status).toBe(503)
+    expectRequestId(response)
+    expect(finishMock).toHaveBeenCalledWith(
+      1,
+      expect.objectContaining({ result: "failed", httpStatus: 503 })
+    )
     expect((await response.json()).error).toContain("反思升格失败")
     expect(setPromoteAtMock).not.toHaveBeenCalled()
+  })
+
+  it("promote success records an accepted audit result", async () => {
+    const response = await promote(emptyPost())
+
+    expect(response.status).toBe(200)
+    expectRequestId(response)
+    expect(beginMock).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "reflection.promote" })
+    )
+    expect(finishMock).toHaveBeenCalledWith(
+      1,
+      expect.objectContaining({ result: "accepted", httpStatus: 200 })
+    )
+    expect(setPromoteAtMock).toHaveBeenCalledOnce()
   })
 
   it("promote 部分失败时如实上报已升格条数", async () => {
@@ -141,6 +236,44 @@ describe("manual reflection routes", () => {
     expect(response.status).toBe(503)
     expect((await response.json()).error).toContain("已升格 2 条")
     expect(setPromoteAtMock).not.toHaveBeenCalled()
+  })
+
+  it("promote 部分失败时将 503 如实持久化为 partial", async () => {
+    const db = openDb(":memory:", 3)
+    const auditRepo = new Repo(db)
+    try {
+      getAppContextMock.mockReturnValueOnce({
+        cfg: {
+          reflectCompactMinEntries: 3,
+          reflectPromoteMinEntries: 1,
+          reflectPromoteMaxPerRun: 5,
+          reflectNotifyAdmin: false,
+          adminSurface: null,
+        },
+        repo: auditRepo,
+        configRepo: auditRepo,
+      } as never)
+      runPromoteMock.mockResolvedValue({
+        considered: 3,
+        promoted: 2,
+        failed: true,
+      })
+
+      const response = await promote(emptyPost())
+      const requestId = expectRequestId(response)
+
+      expect(response.status).toBe(503)
+      expect(auditRepo.adminAudit.getByRequestId(requestId)).toMatchObject({
+        action: "reflection.promote",
+        route: "/api/reflection/promote",
+        method: "POST",
+        result: "partial",
+        httpStatus: 503,
+        detail: {},
+      })
+    } finally {
+      db.close()
+    }
   })
 
   it.each([
@@ -158,6 +291,14 @@ describe("manual reflection routes", () => {
       const response = await PATCH(request as never)
 
       expect(response.status).toBe(200)
+      expectRequestId(response)
+      expect(beginMock).toHaveBeenCalledWith(
+        expect.objectContaining({ action: `reflection.${action}` })
+      )
+      expect(finishMock).toHaveBeenCalledWith(
+        1,
+        expect.objectContaining({ result: "accepted", httpStatus: 200 })
+      )
       expect(withKbMutationLockMock).toHaveBeenCalledOnce()
       expect(setReflectionStatusMock).toHaveBeenCalledWith(7, status)
     }
@@ -175,6 +316,11 @@ describe("manual reflection routes", () => {
     const response = await PATCH(request as never)
 
     expect(response.status).toBe(404)
+    expectRequestId(response)
+    expect(finishMock).toHaveBeenCalledWith(
+      1,
+      expect.objectContaining({ result: "rejected", httpStatus: 404 })
+    )
     expect(setReflectionStatusMock).not.toHaveBeenCalled()
   })
 
@@ -188,6 +334,14 @@ describe("manual reflection routes", () => {
     const response = await PATCH(request as never)
 
     expect(response.status).toBe(200)
+    expectRequestId(response)
+    expect(beginMock).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "reflection.entry_promote" })
+    )
+    expect(finishMock).toHaveBeenCalledWith(
+      1,
+      expect.objectContaining({ result: "accepted", httpStatus: 200 })
+    )
     expect(promoteEntryMock).toHaveBeenCalledWith({
       repo: expect.anything(),
       chunkId: 7,
@@ -222,6 +376,11 @@ describe("manual reflection routes", () => {
     const response = await PATCH(request as never)
 
     expect(response.status).toBe(400)
+    expectRequestId(response)
+    expect(finishMock).toHaveBeenCalledWith(
+      1,
+      expect.objectContaining({ result: "rejected", httpStatus: 400 })
+    )
     expect((await response.json()).error).toContain("单元超长")
   })
 
@@ -292,11 +451,84 @@ describe("manual reflection routes", () => {
     const response = await PATCH(request as never)
 
     expect(response.status).toBe(500)
+    expectRequestId(response)
+    expect(finishMock).toHaveBeenCalledWith(
+      1,
+      expect.objectContaining({ result: "failed", httpStatus: 500 })
+    )
     // 定时路径超时会 emitErrorSafely,手动路径不能只在响应里说一声就完事。
     expect(emitErrorSafelyMock).toHaveBeenCalledOnce()
     expect(emitErrorSafelyMock.mock.calls[0][0]).toMatchObject({
       scope: "reflection-promote",
       userVisible: false,
     })
+  })
+
+  it("entry promote audit start failure prevents embedding and promotion", async () => {
+    beginMock.mockImplementationOnce(() => {
+      throw new Error("audit unavailable")
+    })
+    const request = new Request("http://x", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ id: 7, action: "promote" }),
+    })
+
+    const response = await PATCH(request as never)
+
+    expect(response.status).toBe(503)
+    expectRequestId(response)
+    expect(promoteEntryMock).not.toHaveBeenCalled()
+    expect(withTimeoutFnMock).not.toHaveBeenCalled()
+    expect(finishMock).not.toHaveBeenCalled()
+  })
+
+  it("status audit start failure prevents reflection reads and writes", async () => {
+    beginMock.mockImplementationOnce(() => {
+      throw new Error("audit unavailable")
+    })
+    const request = new Request("http://x", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ id: 7, action: "approve" }),
+    })
+
+    const response = await PATCH(request as never)
+
+    expect(response.status).toBe(503)
+    expectRequestId(response)
+    expect(reflectionEntryDetailMock).not.toHaveBeenCalled()
+    expect(setReflectionStatusMock).not.toHaveBeenCalled()
+    expect(finishMock).not.toHaveBeenCalled()
+  })
+
+  it("compact audit start failure prevents reflection reads and compaction", async () => {
+    beginMock.mockImplementationOnce(() => {
+      throw new Error("audit unavailable")
+    })
+
+    const response = await compact(emptyPost())
+
+    expect(response.status).toBe(503)
+    expectRequestId(response)
+    expect(reflectionEntriesMock).not.toHaveBeenCalled()
+    expect(runCompactMock).not.toHaveBeenCalled()
+    expect(setCompactAtMock).not.toHaveBeenCalled()
+    expect(finishMock).not.toHaveBeenCalled()
+  })
+
+  it("promote audit start failure prevents reflection reads and promotion", async () => {
+    beginMock.mockImplementationOnce(() => {
+      throw new Error("audit unavailable")
+    })
+
+    const response = await promote(emptyPost())
+
+    expect(response.status).toBe(503)
+    expectRequestId(response)
+    expect(reflectionEntriesMock).not.toHaveBeenCalled()
+    expect(runPromoteMock).not.toHaveBeenCalled()
+    expect(setPromoteAtMock).not.toHaveBeenCalled()
+    expect(finishMock).not.toHaveBeenCalled()
   })
 })

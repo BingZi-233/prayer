@@ -15,6 +15,7 @@
     "test:watch": "vitest",
     "check": "pnpm typecheck && pnpm lint && pnpm test",
     "db:check": "node --experimental-transform-types scripts/db-maintenance.ts check",
+    "db:report": "node --experimental-transform-types scripts/db-maintenance.ts report",
     "db:backup": "node --experimental-transform-types scripts/db-maintenance.ts backup",
     "db:retention": "node --experimental-transform-types scripts/db-maintenance.ts retention",
     "security:permissions": "node --experimental-transform-types scripts/check-permissions.ts",

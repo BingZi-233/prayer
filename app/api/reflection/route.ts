@@ -10,6 +10,7 @@ import { DEFAULT_EMBED_TIMEOUT_MS, withTimeoutFn } from "@/lib/model/timeout"
 import { readJsonBody, REQUEST_BODY_TOO_LARGE } from "@/lib/core/http-security"
 import { withKbMutationLock } from "@/lib/knowledge/mutation-lock"
 import { emitErrorSafely } from "@/lib/core/bus"
+import { withAdminMutationAudit } from "@/lib/core/admin-audit-route"
 
 function chatKey(channel: string, chatId: string): string {
   return `${channel}:${chatId}`
@@ -119,6 +120,19 @@ const INTERNAL_FAULT_REASONS = new Set([
   "台账目录非法",
 ])
 
+const reflectionAuditAction = {
+  approve: "reflection.approve",
+  reject: "reflection.reject",
+  promote: "reflection.entry_promote",
+} as const
+
+function reflectionMutationFailure(err: unknown): NextResponse {
+  // Keep manual failures on the error bus even when the audit wrapper receives
+  // a returned 500 response instead of a thrown exception.
+  emitErrorSafely({ scope: "reflection-promote", err, userVisible: false })
+  return NextResponse.json(fail(safeApiError(err)), { status: 500 })
+}
+
 // 驳回 / 恢复入库 / 升格为正式 FAQ 文档(沉淀默认已 approved,无需审核)
 export async function PATCH(req: NextRequest): Promise<NextResponse> {
   try {
@@ -130,63 +144,78 @@ export async function PATCH(req: NextRequest): Promise<NextResponse> {
       return NextResponse.json(fail("参数非法"), { status: 400 })
     const { id, action } = parsed.data
 
-    if (action === "approve") {
+    if (action !== "promote") {
+      const status = action === "approve" ? "approved" : "rejected"
       return await withKbMutationLock(async () => {
         const { repo: r } = getAppContext()
-        if (!r.reflectionEntryDetail(id))
-          return NextResponse.json(fail("条目不存在"), { status: 404 })
-        if (!r.setReflectionStatus(id, "approved"))
-          return NextResponse.json(fail("条目不存在"), { status: 404 })
-        return NextResponse.json(ok({ id, status: "approved" }))
-      })
-    }
-    if (action === "reject") {
-      return await withKbMutationLock(async () => {
-        const { repo: r } = getAppContext()
-        if (!r.reflectionEntryDetail(id))
-          return NextResponse.json(fail("条目不存在"), { status: 404 })
-        if (!r.setReflectionStatus(id, "rejected"))
-          return NextResponse.json(fail("条目不存在"), { status: 404 })
-        return NextResponse.json(ok({ id, status: "rejected" }))
+        return withAdminMutationAudit(
+          r,
+          {
+            action: reflectionAuditAction[action],
+            route: "/api/reflection",
+            method: "PATCH",
+          },
+          () => {
+            try {
+              if (!r.reflectionEntryDetail(id))
+                return NextResponse.json(fail("条目不存在"), { status: 404 })
+              if (!r.setReflectionStatus(id, status))
+                return NextResponse.json(fail("条目不存在"), { status: 404 })
+              return NextResponse.json(ok({ id, status }))
+            } catch (err) {
+              return reflectionMutationFailure(err)
+            }
+          }
+        )
       })
     }
 
     // promote: 成文 → 写文件 + 向量入库 + status=promoted
     // 必须与定时升格走同一条路径,否则手动升格会产出不合规的旧格式文档。
     const { repo: r } = getAppContext()
-    const promo = await promoteEntry({
-      repo: r,
-      chunkId: id,
-      // 手动路径没有 resolve() 那层包装,裸 embed 会让 HTTP 请求一直等一个挂死的
-      // 本地 embedding(冷启动加载模型实测可达 20s+);定时路径由 promoter 的
-      // resolve() 负责套超时,这里得自己套。
-      embed: withTimeoutFn(DEFAULT_EMBED_TIMEOUT_MS, embed),
-    })
-    if (!promo.ok) {
-      // 精确匹配,不用 includes("不存在"):「目标文档不存在」也含这三个字,用子串
-      // 判断会把「索引里有该 doc、磁盘上文件却丢了」这种内部一致性故障报成 404,
-      // 让操作员以为条目 id 不存在——而这是本特性最不该撒的谎。
-      const status =
-        promo.reason === "条目不存在"
-          ? 404
-          : INTERNAL_FAULT_REASONS.has(promo.reason)
-            ? 409
-            : 400
-      return NextResponse.json(fail(promo.reason), { status })
-    }
-    return NextResponse.json(
-      ok({
-        id,
-        status: "promoted",
-        file: promo.file,
-        already: promo.already ?? false,
-      })
+    return withAdminMutationAudit(
+      r,
+      {
+        action: reflectionAuditAction.promote,
+        route: "/api/reflection",
+        method: "PATCH",
+      },
+      async () => {
+        try {
+          const promo = await promoteEntry({
+            repo: r,
+            chunkId: id,
+            // 手动路径没有 resolve() 那层包装,裸 embed 会让 HTTP 请求一直等一个挂死的
+            // 本地 embedding(冷启动加载模型实测可达 20s+);定时路径由 promoter 的
+            // resolve() 负责套超时,这里得自己套。
+            embed: withTimeoutFn(DEFAULT_EMBED_TIMEOUT_MS, embed),
+          })
+          if (!promo.ok) {
+            // 精确匹配,不用 includes("不存在"):「目标文档不存在」也含这三个字,用子串
+            // 判断会把「索引里有该 doc、磁盘上文件却丢了」这种内部一致性故障报成 404,
+            // 让操作员以为条目 id 不存在——而这是本特性最不该撒的谎。
+            const status =
+              promo.reason === "条目不存在"
+                ? 404
+                : INTERNAL_FAULT_REASONS.has(promo.reason)
+                  ? 409
+                  : 400
+            return NextResponse.json(fail(promo.reason), { status })
+          }
+          return NextResponse.json(
+            ok({
+              id,
+              status: "promoted",
+              file: promo.file,
+              already: promo.already ?? false,
+            })
+          )
+        } catch (err) {
+          return reflectionMutationFailure(err)
+        }
+      }
     )
   } catch (err) {
-    // promoter.ts 的注释把手动路径的兜底记在这里,那就得真的兜:只回 500 而不进
-    // 错误总线,超时/流错误在运维侧零痕迹(定时路径有 emitErrorSafely,手动没有)。
-    // 这个 catch 也覆盖 approve/reject,对它们同样有益,不必分叉。
-    emitErrorSafely({ scope: "reflection-promote", err, userVisible: false })
-    return NextResponse.json(fail(safeApiError(err)), { status: 500 })
+    return reflectionMutationFailure(err)
   }
 }

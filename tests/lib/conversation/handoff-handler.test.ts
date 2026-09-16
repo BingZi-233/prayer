@@ -21,7 +21,7 @@ beforeEach(() => {
 })
 
 describe("handoff handler", () => {
-  it("handoff.requested → human_mode + 通知,不建工单", async () => {
+  it("handoff.requested → human_mode + open ticket + 通知,重复请求不重复建单", async () => {
     const sends: ActionSend[] = []
     bus.on("action.send", (a) => sends.push(a))
     bus.emit("handoff.requested", {
@@ -34,7 +34,18 @@ describe("handoff handler", () => {
     })
     await new Promise((r) => setTimeout(r, 20))
     expect(repo.isHumanMode(SK)).toBe(true)
-    expect(repo.openTickets().length).toBe(0)
+    expect(repo.openTickets()).toEqual([
+      expect.objectContaining({ sessionKey: SK, summary: "退款" }),
+    ])
+    bus.emit("handoff.requested", {
+      channel: "qq" as const,
+      sessionKey: SK,
+      chatId: "1",
+      userId: "2",
+      lastQuestion: "退款",
+      reason: "user",
+    })
+    expect(repo.openTickets()).toHaveLength(1)
     expect(
       sends.some(
         (s) => s.channel === "qq" && s.chatId === "1" && s.text.includes("转接")
@@ -49,7 +60,7 @@ describe("handoff handler", () => {
     expect(sends.some((s) => String(s.text).includes("工单"))).toBe(false)
   })
 
-  it("handoff.resumed → 清 human_mode 并回用户会话", async () => {
+  it("handoff.resumed → 清 human_mode、关闭工单并回用户会话", async () => {
     bus.emit("handoff.requested", {
       channel: "qq" as const,
       sessionKey: SK,
@@ -63,6 +74,10 @@ describe("handoff handler", () => {
     bus.emit("handoff.resumed", { sessionKey: SK, by: "admin" })
     await new Promise((r) => setTimeout(r, 10))
     expect(repo.isHumanMode(SK)).toBe(false)
+    expect(repo.openTickets()).toEqual([])
+    expect(repo.listTickets()).toEqual([
+      expect.objectContaining({ sessionKey: SK, status: "closed" }),
+    ])
     expect(
       sends.some(
         (s) =>
@@ -74,6 +89,74 @@ describe("handoff handler", () => {
     expect(sends.some((s) => s.channel === "qq" && s.chatId === "999")).toBe(
       true
     )
+  })
+
+  it("timeout resume → 清 human_mode 并关闭工单", () => {
+    bus.emit("handoff.requested", {
+      channel: "qq" as const,
+      sessionKey: SK,
+      chatId: "1",
+      userId: "2",
+      lastQuestion: "退款",
+    })
+    bus.emit("handoff.resumed", { sessionKey: SK, by: "timeout" })
+
+    expect(repo.isHumanMode(SK)).toBe(false)
+    expect(repo.openTickets()).toEqual([])
+    expect(repo.listTickets()).toEqual([
+      expect.objectContaining({ sessionKey: SK, status: "closed" }),
+    ])
+  })
+
+  it("工单创建失败时回滚人工接待状态", () => {
+    const db = (repo as unknown as { db: import("better-sqlite3").Database }).db
+    db.exec(`
+      CREATE TRIGGER fail_ticket_create
+      BEFORE INSERT ON tickets
+      BEGIN
+        SELECT RAISE(ABORT, 'ticket create failed');
+      END;
+    `)
+
+    expect(() =>
+      bus.emit("handoff.requested", {
+        channel: "qq" as const,
+        sessionKey: SK,
+        chatId: "1",
+        userId: "2",
+        lastQuestion: "退款",
+      })
+    ).toThrow("ticket create failed")
+
+    expect(repo.isHumanMode(SK)).toBe(false)
+    expect(repo.lastQuestion(SK)).toBeNull()
+    expect(repo.openTickets()).toEqual([])
+  })
+
+  it("工单关闭失败时回滚恢复自动答", () => {
+    bus.emit("handoff.requested", {
+      channel: "qq" as const,
+      sessionKey: SK,
+      chatId: "1",
+      userId: "2",
+      lastQuestion: "退款",
+    })
+    const db = (repo as unknown as { db: import("better-sqlite3").Database }).db
+    db.exec(`
+      CREATE TRIGGER fail_ticket_close
+      BEFORE UPDATE OF status ON tickets
+      WHEN NEW.status = 'closed'
+      BEGIN
+        SELECT RAISE(ABORT, 'ticket close failed');
+      END;
+    `)
+
+    expect(() =>
+      bus.emit("handoff.resumed", { sessionKey: SK, by: "admin" })
+    ).toThrow("ticket close failed")
+
+    expect(repo.isHumanMode(SK)).toBe(true)
+    expect(repo.openTickets()).toHaveLength(1)
   })
 
   it("历史两段 sessionKey 恢复时也能解析 chat", async () => {

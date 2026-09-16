@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
+import { isAdminAuditRequestId } from "@/lib/core/admin-audit"
 
 const enableMock = vi.fn()
 const disableMock = vi.fn()
@@ -9,10 +10,16 @@ const restoreEnabledMock = vi.fn()
 const reconfigureMock = vi.fn()
 const getStatusMock = vi.fn(() => ({ state: "running" as const }))
 const {
+  beginMock,
+  finishMock,
+  getAppContextMock,
   runtimeFailureMessageMock,
   serializeRuntimeMutationMock,
   bestEffortPluginRollback,
 } = vi.hoisted(() => ({
+  beginMock: vi.fn(),
+  finishMock: vi.fn(),
+  getAppContextMock: vi.fn(),
   runtimeFailureMessageMock: vi.fn(() => undefined as string | undefined),
   serializeRuntimeMutationMock: vi.fn((fn: () => Promise<unknown>) => fn()),
   bestEffortPluginRollback: async (
@@ -21,6 +28,7 @@ const {
 }))
 
 vi.mock("@/lib/model/plugins/manager", () => ({
+  isValidPluginRef: (ref: string) => /^[A-Za-z0-9._@/-]+$/.test(ref),
   PluginManager: vi.fn().mockImplementation(function () {
     return {
       enable: enableMock,
@@ -47,13 +55,7 @@ vi.mock("@/lib/core/db/repo", () => ({ Repo: vi.fn() }))
 vi.mock("@/lib/core/config-store", () => ({
   getConfig: () => ({ claudeConfigDir: "/tmp/x", dbPath: ":memory:" }),
 }))
-vi.mock("@/lib/core/app-context", () => ({
-  getAppContext: () => ({
-    cfg: { claudeConfigDir: "/tmp/x", dbPath: ":memory:" },
-    configRepo: {},
-    repo: {},
-  }),
-}))
+vi.mock("@/lib/core/app-context", () => ({ getAppContext: getAppContextMock }))
 
 import { PATCH, DELETE } from "@/app/api/plugins/[id]/route"
 
@@ -71,7 +73,17 @@ beforeEach(() => {
     getStatusMock,
     runtimeFailureMessageMock,
   ].forEach((m) => m.mockReset())
+  beginMock.mockReset()
+  finishMock.mockReset()
+  getAppContextMock.mockReset()
   serializeRuntimeMutationMock.mockClear()
+  beginMock.mockReturnValue(1)
+  finishMock.mockReturnValue(true)
+  getAppContextMock.mockReturnValue({
+    cfg: { claudeConfigDir: "/tmp/x", dbPath: ":memory:" },
+    configRepo: {},
+    repo: { adminAudit: { begin: beginMock, finish: finishMock } },
+  })
   findMock.mockResolvedValue({
     id: "pkg@mkt",
     version: "1.0.0",
@@ -91,6 +103,20 @@ describe("PATCH /api/plugins/[id]", () => {
     })
     const res = await PATCH(req as never, ctx("pkg@mkt") as never)
     expect((await res.json()).ok).toBe(true)
+    const requestId = res.headers.get("x-request-id")
+    expect(isAdminAuditRequestId(requestId)).toBe(true)
+    expect(beginMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "plugins.enable",
+        route: "/api/plugins/[id]",
+        method: "PATCH",
+        requestId,
+      })
+    )
+    expect(finishMock).toHaveBeenCalledWith(
+      1,
+      expect.objectContaining({ result: "accepted", httpStatus: 200 })
+    )
     expect(enableMock).toHaveBeenCalledWith("pkg@mkt")
     expect(reconfigureMock).toHaveBeenCalled()
   })
@@ -102,6 +128,7 @@ describe("PATCH /api/plugins/[id]", () => {
     })
     const res = await PATCH(req as never, ctx("pkg@mkt") as never)
     expect(res.status).toBe(400)
+    expect(beginMock).not.toHaveBeenCalled()
   })
 
   it("CLI 失败 → 500,不 reconfigure", async () => {
@@ -112,6 +139,14 @@ describe("PATCH /api/plugins/[id]", () => {
     })
     const res = await PATCH(req as never, ctx("pkg@mkt") as never)
     expect(res.status).toBe(500)
+    expect(isAdminAuditRequestId(res.headers.get("x-request-id"))).toBe(true)
+    expect(beginMock).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "plugins.update" })
+    )
+    expect(finishMock).toHaveBeenCalledWith(
+      1,
+      expect.objectContaining({ result: "failed", httpStatus: 500 })
+    )
     expect(reconfigureMock).not.toHaveBeenCalled()
   })
 
@@ -125,6 +160,9 @@ describe("PATCH /api/plugins/[id]", () => {
     })
     const res = await PATCH(req as never, ctx("pkg@mkt") as never)
     expect(res.status).toBe(503)
+    expect(beginMock).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "plugins.enable" })
+    )
     expect(restoreEnabledMock).toHaveBeenCalledWith(
       expect.objectContaining({ id: "pkg@mkt", enabled: false })
     )
@@ -148,6 +186,9 @@ describe("PATCH /api/plugins/[id]", () => {
     })
     const res = await PATCH(req as never, ctx("pkg@mkt") as never)
     expect(res.status).toBe(503)
+    expect(beginMock).toHaveBeenCalledWith(
+      expect.objectContaining({ action: "plugins.disable" })
+    )
     expect(restoreEnabledMock).toHaveBeenCalledWith(
       expect.objectContaining({ id: "pkg@mkt", enabled: true })
     )
@@ -184,6 +225,30 @@ describe("PATCH /api/plugins/[id]", () => {
     expect(enableMock).not.toHaveBeenCalled()
     expect(reconfigureMock).not.toHaveBeenCalled()
   })
+
+  it("审计起始失败时不读取插件、不触发 CLI 或运行时", async () => {
+    beginMock.mockImplementation(() => {
+      throw new Error("audit unavailable")
+    })
+    const req = new Request("http://x", {
+      method: "PATCH",
+      body: JSON.stringify({ action: "enable" }),
+    })
+
+    const res = await PATCH(req as never, ctx("pkg@mkt") as never)
+
+    expect(res.status).toBe(503)
+    expect(await res.json()).toEqual({
+      ok: false,
+      error: "审计服务暂不可用，本次变更未执行",
+    })
+    expect(isAdminAuditRequestId(res.headers.get("x-request-id"))).toBe(true)
+    expect(serializeRuntimeMutationMock).not.toHaveBeenCalled()
+    expect(findMock).not.toHaveBeenCalled()
+    expect(enableMock).not.toHaveBeenCalled()
+    expect(reconfigureMock).not.toHaveBeenCalled()
+    expect(finishMock).not.toHaveBeenCalled()
+  })
 })
 
 describe("DELETE /api/plugins/[id]", () => {
@@ -194,6 +259,20 @@ describe("DELETE /api/plugins/[id]", () => {
       ctx("pkg@mkt") as never
     )
     expect((await res.json()).ok).toBe(true)
+    const requestId = res.headers.get("x-request-id")
+    expect(isAdminAuditRequestId(requestId)).toBe(true)
+    expect(beginMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "plugins.uninstall",
+        route: "/api/plugins/[id]",
+        method: "DELETE",
+        requestId,
+      })
+    )
+    expect(finishMock).toHaveBeenCalledWith(
+      1,
+      expect.objectContaining({ result: "accepted", httpStatus: 200 })
+    )
     expect(uninstallMock).toHaveBeenCalledWith("pkg@mkt")
     expect(reconfigureMock).toHaveBeenCalled()
   })
@@ -217,5 +296,40 @@ describe("DELETE /api/plugins/[id]", () => {
     )
     expect(res.status).toBe(404)
     expect(uninstallMock).not.toHaveBeenCalled()
+  })
+
+  it("非法插件引用在审计和 CLI 前被拒绝", async () => {
+    const res = await DELETE(
+      new Request("http://x", { method: "DELETE" }) as never,
+      ctx("bad ref") as never
+    )
+
+    expect(res.status).toBe(400)
+    expect(beginMock).not.toHaveBeenCalled()
+    expect(findMock).not.toHaveBeenCalled()
+    expect(uninstallMock).not.toHaveBeenCalled()
+  })
+
+  it("审计起始失败时不读取插件、不卸载或重载", async () => {
+    beginMock.mockImplementation(() => {
+      throw new Error("audit unavailable")
+    })
+
+    const res = await DELETE(
+      new Request("http://x", { method: "DELETE" }) as never,
+      ctx("pkg@mkt") as never
+    )
+
+    expect(res.status).toBe(503)
+    expect(await res.json()).toEqual({
+      ok: false,
+      error: "审计服务暂不可用，本次变更未执行",
+    })
+    expect(isAdminAuditRequestId(res.headers.get("x-request-id"))).toBe(true)
+    expect(serializeRuntimeMutationMock).not.toHaveBeenCalled()
+    expect(findMock).not.toHaveBeenCalled()
+    expect(uninstallMock).not.toHaveBeenCalled()
+    expect(reconfigureMock).not.toHaveBeenCalled()
+    expect(finishMock).not.toHaveBeenCalled()
   })
 })
