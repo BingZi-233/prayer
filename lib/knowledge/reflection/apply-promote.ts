@@ -137,7 +137,10 @@ async function applyPromoteUnlocked(
   if (entry.status === "promoted") {
     return {
       ok: true,
-      file: unit.doc,
+      // 与 promoteEntry 的同名分支保持一致:回 unit.doc 只是把调用方声称的目标
+      // 原样回传,而那次升格当初真实落到哪个文档未必是它。宁可留空也不回一个
+      // 未必为真的路径。生产不可达(升格即 deleteKbChunk 物理删行),此处纯防御。
+      file: "",
       content: entry.content,
       already: true,
     }

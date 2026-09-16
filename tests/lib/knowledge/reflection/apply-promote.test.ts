@@ -128,6 +128,35 @@ describe("applyPromote", () => {
     expect(fs.writeFileFn).toHaveBeenCalledTimes(1)
   })
 
+  it("已升格(历史残留形态):file 留空,不回未必为真的目标路径", async () => {
+    const repo = makeRepo()
+    const id = seedReflection(repo)
+    // 正常流程升格即物理删 chunk,所以这个状态只可能来自历史残留;
+    // 此时无从得知当初落到哪个文档,file 必须留空而不是回传入参 unit.doc。
+    repo.setReflectionStatus(id, "promoted")
+    const fs = fakeFs()
+
+    const r = await applyPromote({
+      repo,
+      chunkId: id,
+      unit: unit(),
+      embed: asyncVec,
+      cwd: "/w",
+      writeFileFn: fs.writeFileFn,
+      mkdirFn: fs.mkdirFn,
+      writeMetaFn: fs.writeMetaFn,
+      now: () => NOW,
+    })
+
+    expect(r).toEqual({
+      ok: true,
+      file: "",
+      content: expect.any(String),
+      already: true,
+    })
+    expect(fs.writeFileFn).not.toHaveBeenCalled()
+  })
+
   it("同一条目的并发升格会串行,只提交一次", async () => {
     const repo = makeRepo()
     const id = seedReflection(repo)
