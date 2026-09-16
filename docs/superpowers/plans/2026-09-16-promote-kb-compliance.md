@@ -1950,12 +1950,61 @@ describe("applyPromote", () => {
           "utf8"
         )
       ).toBe("旧的正文\n")
+      const manifest = readFileSync(
+        join(root, `docs/kb/_meta/${DATE}-promote-1-manifest.md.disabled`),
+        "utf8"
+      )
+      expect(manifest).toContain("- result：committed")
+      // 台账里的路径是「相对 docs/kb」,前缀由生成器补:重复前缀会让审计记录指向
+      // 不存在的 docs/kb/docs/kb/... ,而这正是台账要防的自相矛盾。
+      // 三个路径字段都要正向断言——只写 not.toContain("docs/kb/docs/kb") 抓不到
+      // 其它形态的坏路径(例如把绝对路径原样塞进前缀)。
+      expect(manifest).toContain(
+        `- pre-edit snapshot：docs/kb/_meta/${DATE}-promote-1-pre-edit.md.disabled`
+      )
+      expect(manifest).toContain("- target：docs/kb/retrieval/faq/refund.md")
+      expect(manifest).toContain(
+        "- original_path：docs/kb/retrieval/faq/refund.md"
+      )
+      expect(manifest).toContain(
+        "- active_path：docs/kb/retrieval/faq/refund.md"
+      )
+      expect(manifest).not.toContain("docs/kb/docs/kb")
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it("崩溃恢复:目标文档已含该单元时重算同一正文,不重复追加", async () => {
+    const root = mkdtempSync(join(tmpdir(), "prayer-promote-"))
+    try {
+      const dir = join(root, "docs/kb/retrieval/faq")
+      mkdirSync(dir, { recursive: true })
+      // 复现「rename 成功、DB 事务未提交」的崩溃残局:磁盘已是 P0+单元,
+      // 台账 committed,但反思条目仍 approved(所以下一轮会自动重试)。
+      writeFileSync(join(dir, "refund.md"), `旧的正文\n\n${unit().content}\n`)
+      const repo = makeRepo()
+      const id = seedReflection(repo)
+
+      const r = await applyPromote({
+        repo,
+        chunkId: id,
+        unit: unit({ kind: "merge" }),
+        embed: asyncVec,
+        cwd: root,
+        now: () => NOW,
+      })
+
+      expect(r.ok).toBe(true)
+      // 关键:不再追加第二次,正文与崩溃前完全一致
+      expect(readFileSync(join(dir, "refund.md"), "utf8")).toBe(
+        `旧的正文\n\n${unit().content}\n`
+      )
+      // 并且这次把 DB 那一步补做掉:索引重建、反思条目删除
+      expect(repo.countReflectionEntries()).toBe(0)
       expect(
-        readFileSync(
-          join(root, `docs/kb/_meta/${DATE}-promote-1-manifest.md.disabled`),
-          "utf8"
-        )
-      ).toContain("- result：committed")
+        repo.kbChunksByDoc("retrieval/faq/refund.md").length
+      ).toBeGreaterThan(0)
     } finally {
       rmSync(root, { recursive: true, force: true })
     }
@@ -2283,7 +2332,9 @@ async function applyPromoteUnlocked(
   const writeMetaFn =
     opts.writeMetaFn ?? ((p: string, b: string) => writeFile(p, b, "utf8"))
   // 台账路径的 symlink 守卫只在真写盘时做:测试注入的假 fs 没有真实目录。
-  const metaGuarded = !opts.mkdirFn && !opts.writeMetaFn
+  // 判据与上面的 needsPathGuard 同构(任一操作走真盘就要守),不写成"两者都真":
+  // 只注入 mkdirFn 而 writeMetaFn 留真盘时,后者仍会往真实 _meta 写,守卫不能关。
+  const metaGuarded = !opts.mkdirFn || !opts.writeMetaFn
 
   // 先定正文,再动盘:merge 必须读到旧正文才能拼出整份新文档,
   // 读不到就直接失败而不静默新建——否则会把 canonical 文档换成只剩这条的新文件。
@@ -2298,10 +2349,21 @@ async function applyPromoteUnlocked(
     return { ok: false, reason: "目标文档已存在" }
   }
 
+  // 幂等的追加。崩溃可能落在 rename 成功之后、下面的 DB 事务提交之前:
+  // 此时磁盘已是 P0+单元、台账是 committed 且哈希与磁盘一致,但索引还是旧的 P0、
+  // 反思条目仍 approved —— 下一轮会自动重试。若直接再追加一次,文档与向量都会
+  // 出现双份(旧实现是全文覆盖,天然幂等;改成追加后才引入这个放大后果)。
+  // 按段落判重即可收敛:重试读到的是同一份 P0+单元,于是重算出同一个 body,
+  // 原样重写一遍,再把 DB 事务补做掉。
+  const unitAlreadyPresent =
+    previous !== undefined &&
+    splitCompactedFaq(previous).includes(unit.content.trim())
   const body =
     previous === undefined
       ? `${unit.content}\n`
-      : `${previous.trimEnd()}\n\n${unit.content}\n`
+      : unitAlreadyPresent
+        ? previous
+        : `${previous.trimEnd()}\n\n${unit.content}\n`
   if (Buffer.byteLength(body, "utf8") > MAX_KB_FILE_BYTES)
     return { ok: false, reason: "知识库文件过大" }
 
