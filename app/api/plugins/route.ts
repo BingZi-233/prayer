@@ -20,6 +20,7 @@ import { ok, fail, safeApiError } from "@/lib/core/api"
 import { readJsonBody, REQUEST_BODY_TOO_LARGE } from "@/lib/core/http-security"
 import { redactSensitive } from "@/lib/core/log-context"
 import { logger } from "@/lib/core/logger"
+import { withAdminMutationAudit } from "@/lib/core/admin-audit-route"
 
 function manager(cfg: { claudeConfigDir: string }) {
   return new PluginManager(cfg.claudeConfigDir)
@@ -113,9 +114,17 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json(fail("参数非法"), { status: 400 })
   const { repoOrPath, marketplaceName, pluginName } = parsed.data
   if (!isValidPluginRef(pluginName) || !isValidPluginRef(marketplaceName))
-    return NextResponse.json(fail("插件或 marketplace 名称非法"), { status: 400 })
+    return NextResponse.json(fail("插件或 marketplace 名称非法"), {
+      status: 400,
+    })
 
-  return serializeRuntimeMutation(async () => {
+  let auditRepo: ReturnType<typeof getAppContext>["repo"]
+  try {
+    auditRepo = getAppContext().repo
+  } catch (err) {
+    return NextResponse.json(fail(safeApiError(err)), { status: 500 })
+  }
+  const mutate = async (): Promise<NextResponse> => {
     let marketplaceCleanup: PluginRollback | undefined
     let installed = false
     let applied = false
@@ -135,7 +144,11 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       )
       if (
         existingMarketplace &&
-        !sameMarketplaceSource(existingMarketplace, parsed.data.source, repoOrPath)
+        !sameMarketplaceSource(
+          existingMarketplace,
+          parsed.data.source,
+          repoOrPath
+        )
       )
         return NextResponse.json(
           fail("同名 marketplace 已存在但来源不同，拒绝覆盖"),
@@ -168,7 +181,9 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       rollbackAfterInstall = async () => {
         const removed = await m.uninstall(ref)
         if (!removed.ok) return removed
-        return (await bestEffortPluginRollback(marketplaceCleanup)) ?? { ok: true }
+        return (
+          (await bestEffortPluginRollback(marketplaceCleanup)) ?? { ok: true }
+        )
       }
 
       const appliedResponse = await applyAndReconfigure(
@@ -195,5 +210,10 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       }
       return NextResponse.json(fail(safeApiError(err)), { status: 500 })
     }
-  })
+  }
+  return withAdminMutationAudit(
+    auditRepo,
+    { action: "plugins.install", route: "/api/plugins", method: "POST" },
+    () => serializeRuntimeMutation(mutate)
+  )
 }

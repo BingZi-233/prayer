@@ -10,6 +10,7 @@ import {
 } from "@/lib/runtime"
 import {
   bestEffortPluginRollback,
+  isValidPluginRef,
   PluginManager,
   type CliResult,
   type PluginRollback,
@@ -23,6 +24,7 @@ import {
 } from "@/lib/core/http-security"
 import { redactSensitive } from "@/lib/core/log-context"
 import { logger } from "@/lib/core/logger"
+import { withAdminMutationAudit } from "@/lib/core/admin-audit-route"
 
 function manager(cfg: { claudeConfigDir: string }) {
   return new PluginManager(cfg.claudeConfigDir)
@@ -87,6 +89,12 @@ const patchSchema = z.object({
   action: z.enum(["enable", "disable", "update"]),
 })
 
+const patchAuditAction = {
+  enable: "plugins.enable",
+  disable: "plugins.disable",
+  update: "plugins.update",
+} as const
+
 export async function PATCH(
   req: NextRequest,
   ctx: { params: Promise<{ id: string }> }
@@ -98,13 +106,20 @@ export async function PATCH(
   const parsed = patchSchema.safeParse(body)
   if (!parsed.success)
     return NextResponse.json(fail("参数非法"), { status: 400 })
-  return serializeRuntimeMutation(async () => {
+  if (!isValidPluginRef(id))
+    return NextResponse.json(fail("插件引用非法"), { status: 400 })
+  let auditRepo: ReturnType<typeof getAppContext>["repo"]
+  try {
+    auditRepo = getAppContext().repo
+  } catch (err) {
+    return NextResponse.json(fail(safeApiError(err)), { status: 500 })
+  }
+  const mutate = async (): Promise<NextResponse> => {
     try {
       const { cfg } = getAppContext()
       const m = manager(cfg)
       const before = await m.find(id)
-      if (!before)
-        return NextResponse.json(fail("插件不存在"), { status: 404 })
+      if (!before) return NextResponse.json(fail("插件不存在"), { status: 404 })
       // Idempotent toggles must not run an inverse action on an already-correct
       // state; the previous implementation could flip a no-op back on rollback.
       if (
@@ -130,7 +145,16 @@ export async function PATCH(
     } catch (err) {
       return NextResponse.json(fail(safeApiError(err)), { status: 500 })
     }
-  })
+  }
+  return withAdminMutationAudit(
+    auditRepo,
+    {
+      action: patchAuditAction[parsed.data.action],
+      route: "/api/plugins/[id]",
+      method: "PATCH",
+    },
+    () => serializeRuntimeMutation(mutate)
+  )
 }
 
 export async function DELETE(
@@ -143,13 +167,20 @@ export async function DELETE(
       status: bodyFailure.status,
     })
   const { id } = await ctx.params
-  return serializeRuntimeMutation(async () => {
+  if (!isValidPluginRef(id))
+    return NextResponse.json(fail("插件引用非法"), { status: 400 })
+  let auditRepo: ReturnType<typeof getAppContext>["repo"]
+  try {
+    auditRepo = getAppContext().repo
+  } catch (err) {
+    return NextResponse.json(fail(safeApiError(err)), { status: 500 })
+  }
+  const mutate = async (): Promise<NextResponse> => {
     try {
       const { cfg } = getAppContext()
       const m = manager(cfg)
       const before = await m.find(id)
-      if (!before)
-        return NextResponse.json(fail("插件不存在"), { status: 404 })
+      if (!before) return NextResponse.json(fail("插件不存在"), { status: 404 })
       const r = await m.uninstall(id)
       return applyAndReconfigure(
         r,
@@ -160,5 +191,14 @@ export async function DELETE(
     } catch (err) {
       return NextResponse.json(fail(safeApiError(err)), { status: 500 })
     }
-  })
+  }
+  return withAdminMutationAudit(
+    auditRepo,
+    {
+      action: "plugins.uninstall",
+      route: "/api/plugins/[id]",
+      method: "DELETE",
+    },
+    () => serializeRuntimeMutation(mutate)
+  )
 }
