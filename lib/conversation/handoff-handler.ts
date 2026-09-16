@@ -35,8 +35,16 @@ export function registerHandoffHandler(deps: HandoffHandlerDeps): () => void {
   } = deps
 
   const onRequested = (e: HandoffRequested) => {
-    // 已在人工模式 → 不重复通知(避免连刷「人工」)
-    if (repo.isHumanMode(e.sessionKey)) {
+    const accepted = repo.transaction(() => {
+      // 已在人工模式 → 不重复建单(避免连刷「人工」时产生重复工单)
+      if (repo.isHumanMode(e.sessionKey)) return false
+
+      repo.setHumanMode(e.sessionKey, true)
+      if (e.lastQuestion) repo.setLastQuestion(e.sessionKey, e.lastQuestion)
+      repo.createTicket(e.sessionKey, e.lastQuestion || "用户请求转人工")
+      return true
+    })
+    if (!accepted) {
       bus.emit("action.send", {
         channel: e.channel,
         chatId: e.chatId,
@@ -45,8 +53,6 @@ export function registerHandoffHandler(deps: HandoffHandlerDeps): () => void {
       return
     }
 
-    repo.setHumanMode(e.sessionKey, true)
-    if (e.lastQuestion) repo.setLastQuestion(e.sessionKey, e.lastQuestion)
     repo.insertResolution("handoff", {
       sessionKey: e.sessionKey,
       channel: e.channel,
@@ -75,8 +81,13 @@ export function registerHandoffHandler(deps: HandoffHandlerDeps): () => void {
   }
 
   const onResumed = (e: HandoffResumed) => {
-    if (!repo.isHumanMode(e.sessionKey)) return
-    repo.setHumanMode(e.sessionKey, false)
+    const resumed = repo.transaction(() => {
+      if (!repo.isHumanMode(e.sessionKey)) return false
+      repo.setHumanMode(e.sessionKey, false)
+      repo.closeOpenTicketsForSession(e.sessionKey)
+      return true
+    })
+    if (!resumed) return
 
     // 用 parseSessionKey(兼容历史两段键),禁止 Number(sessionKey.split(":")[0])
     const parsed = parseSessionKey(legacySessionKeyToCanonical(e.sessionKey))
