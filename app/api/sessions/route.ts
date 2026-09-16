@@ -50,7 +50,15 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
       repo.clearResumeId(parsed.data.key)
       return NextResponse.json(ok({ reset: 1 }))
     }
-    bus.emit("handoff.resumed", { sessionKey: parsed.data.key, by: "admin" })
+    if (!repo.isHumanMode(parsed.data.key))
+      return NextResponse.json(fail("会话未处于人工接待中"), { status: 409 })
+
+    if (!bus.emit("handoff.resumed", { sessionKey: parsed.data.key, by: "ui" }))
+      return NextResponse.json(fail("人工接待处理器未就绪"), { status: 503 })
+
+    if (repo.isHumanMode(parsed.data.key))
+      return NextResponse.json(fail("恢复自动答未完成"), { status: 503 })
+
     return NextResponse.json(ok({ resumed: 1 }))
   } catch (err) {
     return NextResponse.json(fail(safeApiError(err)), { status: 500 })
