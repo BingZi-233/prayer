@@ -2,6 +2,8 @@ import { describe, it, expect } from "vitest"
 import { existsSync, readdirSync } from "node:fs"
 import { resolve } from "node:path"
 import {
+  COMPOSE_OUTPUT_SCHEMA,
+  composePromotion,
   MAX_MERGE_CHUNKS,
   RETRIEVAL_DOMAINS,
   renderUnit,
@@ -253,5 +255,136 @@ describe("validateUnit / unitShapeIssue", () => {
     }
     expect(passed).toBeGreaterThan(0)
     expect(rejected).toBeGreaterThan(0)
+  })
+})
+
+function fakeQuery(structured: unknown) {
+  return () =>
+    (async function* () {
+      yield {
+        type: "assistant",
+        message: { content: [{ type: "text", text: "" }] },
+      }
+      yield {
+        type: "result",
+        subtype: "success",
+        structured_output: structured,
+      }
+    })()
+}
+
+const entry = {
+  id: 42,
+  content: "Codex 加密内容报 400 时新建会话重试",
+  question: "encrypted content could not be verified 怎么办",
+  answer: "新建会话后重试",
+}
+
+const candidateDocs = [
+  { doc: "retrieval/faq/api-errors.md", chunks: ["主题：API 401/403/404"] },
+]
+
+function composeDeps(structured: unknown) {
+  return {
+    entry,
+    candidateDocs,
+    queryFn: fakeQuery(structured) as never,
+    queryTimeoutMs: 1000,
+    now: () => Date.UTC(2026, 8, 16, 8, 0),
+    exists: () => false,
+  }
+}
+
+const goodDecision = {
+  target: { mode: "merge", doc: "retrieval/faq/api-errors.md" },
+  unit: {
+    product: "Codex",
+    protocol: "OpenAI Responses",
+    task: "加密内容校验失败报 400",
+    body: "新建会话后重试，沿用原任务 ID；仍失败则留取脱敏错误与 request id",
+    sourceUrl: "",
+    volatility: "错误文案随客户端版本变化",
+  },
+}
+
+describe("composePromotion", () => {
+  it("合规结果:merge 到候选文档并成文", async () => {
+    const r = await composePromotion(composeDeps(goodDecision))
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.value.doc).toBe("retrieval/faq/api-errors.md")
+    expect(r.value.kind).toBe("merge")
+    expect(r.value.content).toContain(
+      "# 产品：Codex；协议：OpenAI Responses；任务：加密内容校验失败报 400"
+    )
+    expect(r.value.content).toContain(
+      "来源：QQ 群客服会话反思 #42；核验日期：2026-09-16"
+    )
+    expect(r.value.sourceStatus).toBe("QQ 群客服会话反思 #42")
+  })
+
+  it("编造目标文档 → 拒绝本条", async () => {
+    const r = await composePromotion(
+      composeDeps({
+        ...goodDecision,
+        target: { mode: "merge", doc: "retrieval/faq/made-up.md" },
+      })
+    )
+    expect(r.ok).toBe(false)
+  })
+
+  it("成文字段为空 → 拒绝本条", async () => {
+    const r = await composePromotion(
+      composeDeps({
+        ...goodDecision,
+        unit: { ...goodDecision.unit, body: "  " },
+      })
+    )
+    expect(r.ok).toBe(false)
+  })
+
+  it("单元超长 → 拒绝本条(不写半成品)", async () => {
+    const r = await composePromotion(
+      composeDeps({
+        ...goodDecision,
+        unit: { ...goodDecision.unit, body: "长".repeat(600) },
+      })
+    )
+    expect(r.ok).toBe(false)
+    if (r.ok) return
+    expect(r.reason).toContain("超长")
+  })
+
+  it("无法解析输出 → 拒绝本条", async () => {
+    const r = await composePromotion(composeDeps({ nope: true }))
+    expect(r.ok).toBe(false)
+  })
+
+  it("new 分支:kind 透传且路径由白名单拼出", async () => {
+    // 其余用例都走 merge,这条闭合 target.kind → value.kind 的透传,
+    // 并证明 compose 层也真的会用 new 分支(resolveTarget 已在 Task 4 单测过)
+    const r = await composePromotion(
+      composeDeps({
+        ...goodDecision,
+        target: { mode: "new", domain: "faq", slug: "codex-encrypted-400" },
+      })
+    )
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.value.kind).toBe("new")
+    expect(r.value.doc).toBe("retrieval/faq/codex-encrypted-400.md")
+  })
+
+  it("请求带上 json_schema outputFormat", async () => {
+    let captured: { options?: { outputFormat?: unknown } } | undefined
+    const qf = ((args: unknown) => {
+      captured = args as { options?: { outputFormat?: unknown } }
+      return fakeQuery(goodDecision)()
+    }) as never
+    await composePromotion({ ...composeDeps(goodDecision), queryFn: qf })
+    expect(captured?.options?.outputFormat).toEqual({
+      type: "json_schema",
+      schema: COMPOSE_OUTPUT_SCHEMA,
+    })
   })
 })
