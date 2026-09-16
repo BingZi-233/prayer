@@ -156,6 +156,14 @@ export class AdminAuditRepository {
       .all(assertLimit(limit))
       .map(mapEvent)
   }
+
+  unfinishedCount(): number {
+    return this.sql
+      .prepare<{ n: number }>(
+        "SELECT COUNT(*) AS n FROM admin_audit_events WHERE result = 'started'"
+      )
+      .get()!.n
+  }
 }
 
 function assertLimit(value: number): number {
