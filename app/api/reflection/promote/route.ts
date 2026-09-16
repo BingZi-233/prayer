@@ -25,9 +25,16 @@ export async function POST(req: Request): Promise<NextResponse> {
       notifyAdmin: cfg.reflectNotifyAdmin,
     })
     if (result.failed)
-      return NextResponse.json(fail("反思升格失败，请查看运维日志"), {
-        status: 503,
-      })
+      return NextResponse.json(
+        fail(
+          // 本轮可能有部分条目已落盘入库,一律报"失败"会让操作员误以为一条没成。
+          // 不给 N/M 比例:considered 是候选总数(maxPerRun 会截断),做分母会给出错的比例。
+          result.promoted > 0
+            ? `升格部分失败：本轮已升格 ${result.promoted} 条，其余见运维日志`
+            : "反思升格失败，请查看运维日志"
+        ),
+        { status: 503 }
+      )
     repo.setPromoteAt(Date.now())
     return NextResponse.json(
       ok({

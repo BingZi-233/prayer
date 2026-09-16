@@ -111,6 +111,20 @@ describe("manual reflection routes", () => {
     expect(setPromoteAtMock).not.toHaveBeenCalled()
   })
 
+  it("promote 部分失败时如实上报已升格条数", async () => {
+    runPromoteMock.mockResolvedValue({
+      considered: 3,
+      promoted: 2,
+      failed: true,
+    })
+
+    const response = await promote(emptyPost())
+
+    expect(response.status).toBe(503)
+    expect((await response.json()).error).toContain("已升格 2 条")
+    expect(setPromoteAtMock).not.toHaveBeenCalled()
+  })
+
   it.each([
     ["approve", "approved"],
     ["reject", "rejected"],
