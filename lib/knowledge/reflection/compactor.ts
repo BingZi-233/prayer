@@ -59,6 +59,9 @@ type ReflectionEntry = {
   status: string
 }
 
+/** The manual route needs to distinguish a committed conservative subset from no write. */
+export type ReflectionCompactOutcome = "completed" | "partial" | "failed"
+
 // SDK outputFormat.json_schema 强制根对象(非裸数组);items 为整理后 FAQ 列表。
 // additionalProperties:false 防模型塞 source/id 等额外字段膨胀输出。
 export const COMPACT_OUTPUT_SCHEMA = {
@@ -274,18 +277,17 @@ async function compactOneBatch(
   return check.faqs
 }
 
-// 执行一轮压缩整理,供测试直驱。旁路:异常保留旧库并 emit error,不抛。
-// 返回 false 让手动入口能报告失败;定时入口仍按既有周期推进游标。
+// 执行一轮压缩整理,供手动入口区分完整、保守部分提交和未提交的失败。
 // 超过 batchSize 时分批调 LLM,各批结果汇总后一次性替换;单批失败则该批保留原文,其它批仍生效。
-export async function runCompact(
+export async function runCompactWithOutcome(
   deps: ReflectionCompactorDeps
-): Promise<boolean> {
+): Promise<ReflectionCompactOutcome> {
   const d = resolve(deps)
   // 只整理已入库未升格/未驳回的条目;已升格条目保留作审计,不参与整库替换
   const entries = d.repo
     .reflectionEntries()
     .filter((e) => e.status === "approved") as ReflectionEntry[]
-  if (entries.length < d.minEntries) return true
+  if (entries.length < d.minEntries) return "completed"
 
   try {
     const batches = partitionBatches(entries, d.batchSize)
@@ -313,12 +315,12 @@ export async function runCompact(
         "warn",
         `[reflection-compact] 全部 ${batches.length} 批均失败,保留旧库`
       )
-      return false
+      return "failed"
     }
     // 全是单条批(极端)或全部 LLM 成功/部分成功:继续替换
     if (!anyLlmOk && !anyBatchFailed) {
       // 全是 <2 条的批,无变化
-      return true
+      return "completed"
     }
 
     // LLM 输出不能直接绕过生产 ingest 的 500 字边界；先切成自包含的
@@ -349,7 +351,7 @@ export async function runCompact(
         err,
         userVisible: false,
       })
-      return false
+      return "failed"
     }
 
     const batchNote = batches.length > 1 ? `(分 ${batches.length} 批)` : ""
@@ -371,15 +373,22 @@ export async function runCompact(
     }
     // A partial batch failure still leaves a valid conservative replacement,
     // but the manual caller must surface it and avoid consuming its cursor.
-    return !anyBatchFailed
+    return anyBatchFailed ? "partial" : "completed"
   } catch (err) {
     emitErrorSafely({
       scope: "reflection-compact",
       err,
       userVisible: false,
     })
-    return false
+    return "failed"
   }
+}
+
+/** Backward-compatible boolean API: partial and failed both remain false. */
+export async function runCompact(
+  deps: ReflectionCompactorDeps
+): Promise<boolean> {
+  return (await runCompactWithOutcome(deps)) === "completed"
 }
 
 // 监听式装配:扫描式定时压缩 + 持久游标,返回 teardown。旁路观察者,失败不阻断主链路。

@@ -13,6 +13,14 @@ export const ADMIN_AUDIT_REQUEST_ID_HEADER = "x-request-id"
 
 type AuditRepo = Pick<Repo, "adminAudit">
 
+const partialResponses = new WeakSet<NextResponse>()
+
+/** Keeps the HTTP response unchanged while recording its audit outcome as partial. */
+export function markAdminAuditPartial(response: NextResponse): NextResponse {
+  partialResponses.add(response)
+  return response
+}
+
 function withRequestId(
   response: NextResponse,
   requestId: string
@@ -83,7 +91,9 @@ export async function withAdminMutationAudit(
   try {
     const finished = repo.adminAudit.finish(
       auditId,
-      createAdminAuditCompletion(response.status, Date.now())
+      createAdminAuditCompletion(response.status, Date.now(), {
+        partial: partialResponses.has(response),
+      })
     )
     if (!finished)
       logAuditFailure(

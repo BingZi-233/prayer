@@ -4,6 +4,7 @@ import { Repo } from "@/lib/core/db/repo"
 import { bus } from "@/lib/core/bus"
 import {
   runCompact,
+  runCompactWithOutcome,
   validateCompacted,
   validateCompactedDetailed,
   partitionBatches,
@@ -318,12 +319,13 @@ describe("runCompact", () => {
     const notice = new Promise<ActionSend>((res) =>
       bus.once("action.send", res)
     )
-    await runCompact(
+    const outcome = await runCompactWithOutcome(
       opts({
         batchSize: 3,
         queryFn: qf as never,
       })
     )
+    expect(outcome).toBe("completed")
     // 7 条 / 3 → 3 批(3+3+1);末批 1 条不调 LLM
     expect(qf).toHaveBeenCalledTimes(2)
     const a = await notice
@@ -343,12 +345,13 @@ describe("runCompact", () => {
       if (call === 1) return fakeQuery({ items: [] })() // 第 1 批失败
       return fakeQuery(faqsItems(2, "乙"))() // 第 2 批 3→2 成功
     })
-    await runCompact(
+    const outcome = await runCompactWithOutcome(
       opts({
         batchSize: 3,
         queryFn: qf as never,
       })
     )
+    expect(outcome).toBe("partial")
     expect(qf).toHaveBeenCalledTimes(2)
     const contents = repo
       .reflectionEntries()
@@ -362,12 +365,13 @@ describe("runCompact", () => {
     seedReflections(6)
     bus.on("error.occurred", () => {})
     const qf = vi.fn(fakeQuery({ items: [] }))
-    await runCompact(
+    const outcome = await runCompactWithOutcome(
       opts({
         batchSize: 3,
         queryFn: qf as never,
       })
     )
+    expect(outcome).toBe("failed")
     expect(qf).toHaveBeenCalledTimes(2)
     expect(repo.reflectionEntries()).toHaveLength(6)
     expect(repo.recentCompactions(10)).toHaveLength(0)
