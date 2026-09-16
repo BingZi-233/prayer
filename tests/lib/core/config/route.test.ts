@@ -4,6 +4,7 @@ import { resolve } from "node:path"
 import { openDb } from "@/lib/core/db"
 import { Repo } from "@/lib/core/db/repo"
 import { getConfig, setConfig } from "@/lib/core/config-store"
+import { isAdminAuditRequestId } from "@/lib/core/admin-audit"
 
 let db: ReturnType<typeof openDb>
 const {
@@ -50,11 +51,11 @@ beforeEach(() => {
 })
 afterEach(() => db.close())
 
-function put(body: unknown) {
+function put(body: unknown, headers: HeadersInit = {}) {
   return PUT(
     new NextRequest("http://localhost/api/config", {
       method: "PUT",
-      headers: { "content-type": "application/json" },
+      headers: { "content-type": "application/json", ...headers },
       body: JSON.stringify(body),
     })
   )
@@ -80,8 +81,19 @@ describe("配置 HTTP 边界", () => {
       onebotAccessToken: "secret",
       supportUrl: "https://example.com",
     })
-    const response = await put({ maxReplyChars: 0, topicScanMs: 5000 })
+    const response = await put(
+      { maxReplyChars: 0, topicScanMs: 5000 },
+      { "x-request-id": "caller-controlled-id" }
+    )
+    const requestId = response.headers.get("x-request-id")
     expect(response.status).toBe(200)
+    expect(isAdminAuditRequestId(requestId)).toBe(true)
+    expect(requestId).not.toBe("caller-controlled-id")
+    expect(repo.adminAudit.getByRequestId(requestId!)).toMatchObject({
+      action: "config.update",
+      result: "accepted",
+      httpStatus: 200,
+    })
     expect(getConfig(repo)).toMatchObject({
       maxReplyChars: 0,
       topicScanMs: 5000,
@@ -152,7 +164,14 @@ describe("配置 HTTP 边界", () => {
     const repo = new Repo(db)
     const before = getConfig(repo)
     const response = await put({ supportUrl: "https://new.example" })
+    const requestId = response.headers.get("x-request-id")
     expect(response.status).toBe(503)
+    expect(isAdminAuditRequestId(requestId)).toBe(true)
+    expect(repo.adminAudit.getByRequestId(requestId!)).toMatchObject({
+      action: "config.update",
+      result: "failed",
+      httpStatus: 503,
+    })
     expect(getConfig(repo)).toEqual(before)
     expect(reconfigure).toHaveBeenCalledTimes(2)
   })
