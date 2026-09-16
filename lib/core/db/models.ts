@@ -6,6 +6,15 @@ export interface KbHit {
   distance: number
 }
 
+/**
+ * searchBaseKb 的命中：额外带 doc 相对路径。
+ * 升格的第二阶段据此定位 canonical 文档并决定 merge 还是 new，
+ * 所以只有基础知识库检索需要它；searchKb 保持 KbHit。
+ */
+export interface KbBaseHit extends KbHit {
+  doc: string
+}
+
 export type ProactiveQuality = "ok" | "bad" | null
 export type ReflectionStatus = "pending" | "approved" | "rejected" | "promoted"
 

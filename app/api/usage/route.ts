@@ -22,6 +22,7 @@ const SITE_ORDER = [
   "reflect",
   "compact",
   "promote",
+  "promote-compose",
   "topic",
 ] as const
 const SITE_LABEL: Record<string, string> = {
@@ -31,6 +32,7 @@ const SITE_LABEL: Record<string, string> = {
   reflect: "反思沉淀",
   compact: "反思压缩",
   promote: "升格评审",
+  "promote-compose": "升格成文",
   topic: "问题归类",
 }
 

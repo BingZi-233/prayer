@@ -6,7 +6,9 @@
 
 import type { Repo } from "../../core/db/repo"
 
-// 调用点标识:与 5 个 query() 站点一一对应(introspect 不产生模型调用,不计)
+// 调用点标识:与各个 query() 站点一一对应(introspect 不产生模型调用,不计)
+// promote(阶段一评审,每轮一次批调用)与 promote-compose(阶段二成文,每条一次)
+// 分开计:阶段二每轮最多 maxPerRun 次,混在一起看不出升格成本的真实构成。
 export type UsageSite =
   | "agent"
   | "intent"
@@ -14,6 +16,7 @@ export type UsageSite =
   | "reflect"
   | "compact"
   | "promote"
+  | "promote-compose"
   | "topic"
 
 // 单次调用从 SDK result 消息提取的增量
