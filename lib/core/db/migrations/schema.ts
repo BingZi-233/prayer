@@ -1264,3 +1264,34 @@ export function migrateToVersion9(db: Database.Database): void {
     )
   }
 }
+
+/** v10: durable, non-sensitive operational records for admin mutations. */
+export function migrateToVersion10(db: Database.Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS admin_audit_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      request_id TEXT NOT NULL UNIQUE,
+      actor_type TEXT NOT NULL CHECK(actor_type IN (
+        'shared-admin-token', 'development-unprotected'
+      )),
+      action TEXT NOT NULL,
+      route TEXT NOT NULL,
+      method TEXT NOT NULL CHECK(method IN ('POST', 'PUT', 'PATCH', 'DELETE')),
+      result TEXT NOT NULL CHECK(result IN ('started', 'accepted', 'rejected', 'failed', 'partial')),
+      http_status INTEGER,
+      detail_json TEXT NOT NULL DEFAULT '{}' CHECK(json_valid(detail_json)),
+      started_at INTEGER NOT NULL,
+      finished_at INTEGER,
+      CHECK(
+        (result = 'started' AND http_status IS NULL AND finished_at IS NULL)
+        OR
+        (result <> 'started' AND http_status BETWEEN 100 AND 599 AND finished_at IS NOT NULL)
+      ),
+      CHECK(finished_at IS NULL OR finished_at >= started_at)
+    );
+    CREATE INDEX IF NOT EXISTS idx_admin_audit_started_at
+      ON admin_audit_events(started_at DESC, id DESC);
+    CREATE INDEX IF NOT EXISTS idx_admin_audit_result_started_at
+      ON admin_audit_events(result, started_at DESC, id DESC);
+  `)
+}
