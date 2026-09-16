@@ -101,10 +101,10 @@ export function PolicySheet({
                   if (v !== null) setProactiveTri(v as Tri)
                 }}
               >
-                <SelectTrigger>
+                <SelectTrigger className="w-full">
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent position="popper">
                   <SelectItem value="inherit">跟随全局</SelectItem>
                   <SelectItem value="on">强制开启</SelectItem>
                   <SelectItem value="off">强制关闭</SelectItem>
@@ -127,10 +127,10 @@ export function PolicySheet({
                   if (v !== null) setSilenceMode(v as "inherit" | "custom")
                 }}
               >
-                <SelectTrigger>
+                <SelectTrigger className="w-full">
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent position="popper">
                   <SelectItem value="inherit">
                     跟随全局
                     {globals
@@ -167,10 +167,10 @@ export function PolicySheet({
                   if (v !== null) setHandoffTri(v as Tri)
                 }}
               >
-                <SelectTrigger>
+                <SelectTrigger className="w-full">
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent position="popper">
                   <SelectItem value="inherit">跟随默认(通知)</SelectItem>
                   <SelectItem value="on">通知</SelectItem>
                   <SelectItem value="off">不通知</SelectItem>
