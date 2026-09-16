@@ -16,6 +16,7 @@ import {
   Puzzle,
   LifeBuoy,
   TrendingUp,
+  ShieldCheck,
 } from "lucide-react"
 import {
   Sidebar,
@@ -69,6 +70,7 @@ const navGroups = [
       { href: "/admin/groups", label: "生效会话", icon: Users },
       { href: "/admin/capabilities", label: "能力", icon: Boxes },
       { href: "/admin/plugins", label: "插件", icon: Puzzle },
+      { href: "/admin/audit", label: "管理审计", icon: ShieldCheck },
     ],
   },
 ]

@@ -17,7 +17,7 @@ import {
 import { TableShell } from "@/components/admin/table-shell"
 import { RowActions } from "@/components/admin/row-actions"
 import {
-  Select,
+  Select as BaseSelect,
   SelectContent,
   SelectItem,
   SelectTrigger,
@@ -116,7 +116,7 @@ export default function PluginsPage() {
         <FieldGroup className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <Field>
             <FieldLabel>来源</FieldLabel>
-            <Select
+            <BaseSelect
               items={{ github: "GitHub", directory: "本地目录" }}
               value={form.source}
               onValueChange={(v) => {
@@ -130,7 +130,7 @@ export default function PluginsPage() {
                 <SelectItem value="github">GitHub</SelectItem>
                 <SelectItem value="directory">本地目录</SelectItem>
               </SelectContent>
-            </Select>
+            </BaseSelect>
           </Field>
           <Field>
             <FieldLabel>

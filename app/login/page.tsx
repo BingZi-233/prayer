@@ -69,7 +69,7 @@ function LoginForm() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <form onSubmit={submit} aria-busy={busy}>
+            <form noValidate onSubmit={submit} aria-busy={busy}>
               <FieldGroup>
                 <Field>
                   <FieldLabel htmlFor="token">口令</FieldLabel>

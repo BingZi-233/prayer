@@ -118,6 +118,7 @@ Prayer 的关键不是让模型“尽量回答”，而是让每一次回答都�
 | `/admin/groups`       | 生效会话、活动量和会话级策略覆盖                     |
 | `/admin/capabilities` | 当前 Agent 的插件、Skill、MCP 与工具能力             |
 | `/admin/plugins`      | 插件安装、更新、启停和重载                           |
+| `/admin/audit`        | 有限窗口内的管理变更轨迹与未结束审计事件             |
 
 <p align="center">
   <img src="docs/assets/prayer-operations.svg" alt="Prayer 管理后台能力图" width="100%" />

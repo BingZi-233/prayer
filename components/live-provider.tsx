@@ -9,8 +9,33 @@ import {
   useRef,
   useState,
 } from "react"
+import { usePathname } from "next/navigation"
 import { DEFAULT_BRAND } from "@/lib/core/brand"
 import type { ChannelId } from "@/lib/core/chat/types"
+
+const ADMIN_PAGE_TITLES: Record<string, string> = {
+  "/admin/logs": "运行日志",
+  "/admin/sessions": "会话",
+  "/admin/handoff": "人工队列",
+  "/admin/proactive": "主动回复",
+  "/admin/kb": "知识库",
+  "/admin/reflection": "反思",
+  "/admin/ranking": "问题排行",
+  "/admin/config": "配置",
+  "/admin/groups": "生效会话",
+  "/admin/capabilities": "能力",
+  "/admin/plugins": "插件",
+  "/admin/audit": "管理审计",
+}
+
+function adminPageTitle(pathname: string): string {
+  if (pathname === "/admin") return "运行状态"
+  return (
+    Object.entries(ADMIN_PAGE_TITLES).find(
+      ([prefix]) => pathname === prefix || pathname.startsWith(`${prefix}/`)
+    )?.[1] ?? "客服中台"
+  )
+}
 
 /** 与 RuntimeStatus.channels / ChannelStatus 对齐 */
 export interface ChannelStatusView {
@@ -82,6 +107,7 @@ export function useLive() {
 }
 
 export function LiveProvider({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname()
   const [status, setStatus] = useState<Status | null>(null)
   const [overview, setOverview] = useState<Overview | null>(null)
   const [lastUpdated, setLastUpdated] = useState<number | null>(null)
@@ -129,13 +155,13 @@ export function LiveProvider({ children }: { children: React.ReactNode }) {
     }
   }, [])
 
-  // tab 标题:有人工会话 → "(N) Prayer · 客服 Agent"
+  // 标题保留品牌、当前后台上下文与待处理人工会话数；不放会话或客户标识。
   useEffect(() => {
     const n = overview?.humanSessions ?? 0
     const brandName = overview?.brandName?.trim() || DEFAULT_BRAND.name
-    document.title =
-      n > 0 ? `(${n}) ${brandName} · 客服 Agent` : `${brandName} · 客服 Agent`
-  }, [overview?.brandName, overview?.humanSessions])
+    const title = `${adminPageTitle(pathname)} · ${brandName}`
+    document.title = n > 0 ? `(${n}) ${title}` : title
+  }, [overview?.brandName, overview?.humanSessions, pathname])
 
   // 主动刷新:等在飞的落地后再补一发,确保拿到调用时刻之后的数据
   // (restart 后必须 —— 直接 load 会撞闸门空转,旧数据还能写进 state)

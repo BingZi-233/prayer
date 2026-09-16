@@ -24,9 +24,16 @@ export function RelativeTime({ ts }: { ts: number | null | undefined }) {
     return () => clearInterval(t)
   }, [])
   if (!ts) return <span>—</span>
+  const relative = rel(ts, now)
+  const absolute = new Date(ts).toLocaleString()
   return (
-    <span title={new Date(ts).toLocaleString()} suppressHydrationWarning>
-      {rel(ts, now)}
-    </span>
+    <time
+      dateTime={new Date(ts).toISOString()}
+      title={absolute}
+      aria-label={`${relative}（${absolute}）`}
+      suppressHydrationWarning
+    >
+      {relative}
+    </time>
   )
 }
