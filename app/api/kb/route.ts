@@ -12,6 +12,8 @@ import {
 } from "@/lib/knowledge/kb-path"
 import { readJsonBody, REQUEST_BODY_TOO_LARGE } from "@/lib/core/http-security"
 import { withKbMutationLock } from "@/lib/knowledge/mutation-lock"
+import { getAppContext } from "@/lib/core/app-context"
+import { withAdminMutationAudit } from "@/lib/core/admin-audit-route"
 
 export async function GET(): Promise<NextResponse> {
   let files: string[] = []
@@ -64,16 +66,29 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
         })
       const abs = safeKbAbs(rel)
       if (!abs) return NextResponse.json(fail("路径非法"), { status: 400 })
-      if (existsSync(abs))
-        return NextResponse.json(fail("文件已存在"), { status: 409 })
-      mkdirSync(dirname(abs), { recursive: true })
-      // Re-check after directory creation; a symlink swap must not redirect the
-      // write outside the configured KB root.
-      if (!safeKbAbs(rel))
-        return NextResponse.json(fail("路径非法"), { status: 400 })
-      if (!createKbFileNoFollow(abs, parsed.data.content ?? ""))
-        return NextResponse.json(fail("文件已存在或路径不可用"), { status: 409 })
-      return NextResponse.json(ok({ path: rel }))
+      const { repo } = getAppContext()
+      return withAdminMutationAudit(
+        repo,
+        { action: "kb.create", route: "/api/kb", method: "POST" },
+        () => {
+          try {
+            if (existsSync(abs))
+              return NextResponse.json(fail("文件已存在"), { status: 409 })
+            mkdirSync(dirname(abs), { recursive: true })
+            // Re-check after directory creation; a symlink swap must not redirect the
+            // write outside the configured KB root.
+            if (!safeKbAbs(rel))
+              return NextResponse.json(fail("路径非法"), { status: 400 })
+            if (!createKbFileNoFollow(abs, parsed.data.content ?? ""))
+              return NextResponse.json(fail("文件已存在或路径不可用"), {
+                status: 409,
+              })
+            return NextResponse.json(ok({ path: rel }))
+          } catch (err) {
+            return NextResponse.json(fail(safeApiError(err)), { status: 500 })
+          }
+        }
+      )
     } catch (err) {
       return NextResponse.json(fail(safeApiError(err)), { status: 500 })
     }
