@@ -1,5 +1,5 @@
 import type { SqliteContext } from "../context.ts"
-import type { KbHit } from "../models.ts"
+import type { KbBaseHit, KbHit } from "../models.ts"
 import { KB_SEARCH_SQL } from "../kb-sql.ts"
 
 /** Bound admin previews without limiting internal freshness scans. */
@@ -178,10 +178,10 @@ export class KnowledgeRepository {
   // 只在基础文档(doc != human-reflection)里做向量近邻,供压缩整理取权威上下文。
   // vec0 KNN 混合反思与基础条目;反思聚集时前 N 名可能被反思占满,故逐步放大候选池
   // 直到凑够 k 条基础条目或达上限(2000),避免静默少取。
-  searchBaseKb(query: Float32Array, k: number): KbHit[] {
+  searchBaseKb(query: Float32Array, k: number): KbBaseHit[] {
     const buf = Buffer.from(query.buffer)
-    const stmt = this.sql.prepare<KbHit>(
-      `SELECT c.id, c.content, c.source, v.distance
+    const stmt = this.sql.prepare<KbBaseHit>(
+      `SELECT c.id, c.content, c.source, c.doc, v.distance
        FROM kb_vec v JOIN kb_chunks c ON c.id = v.chunk_id
        WHERE v.embedding MATCH ? AND k = ?
          AND c.doc != 'human-reflection'
