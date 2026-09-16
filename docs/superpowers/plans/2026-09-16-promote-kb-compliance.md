@@ -3637,6 +3637,21 @@ Expected: `pnpm check` 全绿（typecheck + lint + test）。
 
 ---
 
+## 已知遗留（整分支最终审查提出，明确推迟，不在本分支处理）
+
+按「会不会造成真实故障」排序，不是按发现顺序：
+
+1. **字符串白名单靠注释手工同步**。`app/api/reflection/route.ts` 的 `INTERNAL_FAULT_REASONS` 是 6 个 `reason` 字面量，只有「目标文档不存在」被测试钉住；其余 5 条若 `apply-promote.ts` 改了文案会静默从 409 降级成 400（不够精确，但不说谎）。根治办法是把 `PromoteResult` 的 `ok:false` 升级成机器可读的判别联合（`not_found | rejected | validation | internal`），路由按 `kind` 映射、删掉字符串白名单。属重构。
+2. **字段内换行不净化**。`renderUnit` 不检查模型输出的 `product/protocol/task/body/volatility` 是否含 `\n`。单个换行不产生空行，分块器仍出一块，故**无正确性影响**（纯外观）。三个选项里「不做」风险最低：净化会静默改写模型输出，拒绝则可能死循环。
+3. **两处「已升格」防御分支的 `file` 语义**。`applyPromoteUnlocked` 曾回 `unit.doc`、`promoteEntry` 回 `""`，已统一为 `""`（见本文件同日的收尾提交）。两条分支在生产都不可达（升格即 `deleteKbChunk` 物理删行）。
+4. **「段数上限」有两个判据**。候选过滤用 `kbDocStats()`（索引按 doc 计数），merge 闸门用 `splitCompactedFaq(file).length`（文件重切段数）。稳态一致；崩溃残局下二者短暂分叉，靠 merge 闸门从文件重新推导而正确拒绝（防御正确），但概念上游两份判据，后续改动需同步两处。
+5. **域白名单护栏在 CI 被 skip**。`docs/kb/**` 被 gitignore，CI 裸检出无语料树，`describe.skipIf` 使「白名单 ↔ 实际目录一致」在 CI 里只剩「无重复项」兜底。域目录改名/新增在 CI 静默，只在有语料树的机器上会红。理由已写在测试注释里。
+6. **`promoter.ts` 双职责**（478 行：阶段一批量评审 + 定时循环 / `promoteEntry` + 候选收集）。建议收尾后单独 `refactor/*` 抽 `promote-entry.ts`。
+7. **`candidateK` 是纯测试旋钮**，生产无人设置（缺省 3，与 `baseContextK` 相同）。若收尾时仍无人设，可并回 `baseContextK` 减一个字段。
+8. **`promoteReflection`（`lib/core/db/repositories/reflection.ts:193`、`lib/core/db/repo.ts:289`）是死代码**，但**在分支起点 `8454a24` 就已是死代码**，非本分支引入。
+
+---
+
 ## 验收清单
 
 - [ ] `pnpm check` 全绿
