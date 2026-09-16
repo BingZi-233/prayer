@@ -9,6 +9,7 @@ import { embed } from "@/lib/model/embed"
 import { DEFAULT_EMBED_TIMEOUT_MS, withTimeoutFn } from "@/lib/model/timeout"
 import { readJsonBody, REQUEST_BODY_TOO_LARGE } from "@/lib/core/http-security"
 import { withKbMutationLock } from "@/lib/knowledge/mutation-lock"
+import { emitErrorSafely } from "@/lib/core/bus"
 
 function chatKey(channel: string, chatId: string): string {
   return `${channel}:${chatId}`
@@ -96,6 +97,28 @@ const patchSchema = z.object({
   action: z.enum(["approve", "reject", "promote"]),
 })
 
+/**
+ * 这些 reason 表示系统内部不一致(不是调用方请求有问题),映射成 409 而不是 400,
+ * 免得把「磁盘与索引对不上」误导成「你参数写错了」。
+ *
+ * 入选依据:文件系统/索引一致性、路径守卫、容量上限——这些都发生在表单参数与
+ * 条目 id 都已校验通过之后,失败源于系统自身状态(磁盘、索引、KB 布局),调用方
+ * 重试也只是撞同一堵墙。反之「已驳回,不可升格」是正常业务状态,不属故障;
+ * 成文校验类(单元超长/含空行/域不在白名单内…)是模型产出不合规,仍归 400。
+ *
+ * 刻意用白名单而不是前缀/子串匹配:reason 是文案,子串判断会随文案改动静默失效
+ * ——「目标文档不存在」含「条目不存在」的后三个字,子串判断会把它误报成 404。
+ * 字符串取自 lib/knowledge/reflection/apply-promote.ts,改动那边请同步这里。
+ */
+const INTERNAL_FAULT_REASONS = new Set([
+  "目标文档不存在",
+  "目标文档过大,拒绝合并",
+  "目标文档已存在",
+  "知识库文件过大",
+  "知识库路径非法",
+  "台账目录非法",
+])
+
 // 驳回 / 恢复入库 / 升格为正式 FAQ 文档(沉淀默认已 approved,无需审核)
 export async function PATCH(req: NextRequest): Promise<NextResponse> {
   try {
@@ -140,7 +163,15 @@ export async function PATCH(req: NextRequest): Promise<NextResponse> {
       embed: withTimeoutFn(DEFAULT_EMBED_TIMEOUT_MS, embed),
     })
     if (!promo.ok) {
-      const status = promo.reason.includes("不存在") ? 404 : 400
+      // 精确匹配,不用 includes("不存在"):「目标文档不存在」也含这三个字,用子串
+      // 判断会把「索引里有该 doc、磁盘上文件却丢了」这种内部一致性故障报成 404,
+      // 让操作员以为条目 id 不存在——而这是本特性最不该撒的谎。
+      const status =
+        promo.reason === "条目不存在"
+          ? 404
+          : INTERNAL_FAULT_REASONS.has(promo.reason)
+            ? 409
+            : 400
       return NextResponse.json(fail(promo.reason), { status })
     }
     return NextResponse.json(
@@ -152,6 +183,10 @@ export async function PATCH(req: NextRequest): Promise<NextResponse> {
       })
     )
   } catch (err) {
+    // promoter.ts 的注释把手动路径的兜底记在这里,那就得真的兜:只回 500 而不进
+    // 错误总线,超时/流错误在运维侧零痕迹(定时路径有 emitErrorSafely,手动没有)。
+    // 这个 catch 也覆盖 approve/reject,对它们同样有益,不必分叉。
+    emitErrorSafely({ scope: "reflection-promote", err, userVisible: false })
     return NextResponse.json(fail(safeApiError(err)), { status: 500 })
   }
 }
