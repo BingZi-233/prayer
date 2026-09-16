@@ -2010,6 +2010,38 @@ describe("applyPromote", () => {
     }
   })
 
+  it("崩溃恢复(边界):残局恰为 MAX_MERGE_CHUNKS+1 段时去重仍收敛", async () => {
+    const root = mkdtempSync(join(tmpdir(), "prayer-promote-"))
+    try {
+      const dir = join(root, "docs/kb/retrieval/faq")
+      mkdirSync(dir, { recursive: true })
+      // 首次 merge 时 P0 恰为 MAX_MERGE_CHUNKS 段(不 > 上限,放行),崩溃后残局
+      // 多一段。若尺寸闸门排在去重之前,重试会一直撞「目标文档过大」而永不收敛:
+      // 文件 41 段、索引 40 段持续分叉,条目永远 approved、每轮白烧两次 LLM 调用。
+      const old = Array.from(
+        { length: MAX_MERGE_CHUNKS },
+        (_, i) => `旧段${i}`
+      ).join("\n\n")
+      writeFileSync(join(dir, "refund.md"), `${old}\n\n${unit().content}\n`)
+      const repo = makeRepo()
+      const id = seedReflection(repo)
+
+      const r = await applyPromote({
+        repo,
+        chunkId: id,
+        unit: unit({ kind: "merge" }),
+        embed: asyncVec,
+        cwd: root,
+        now: () => NOW,
+      })
+
+      expect(r.ok).toBe(true)
+      expect(repo.countReflectionEntries()).toBe(0)
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it("merge 目标不存在:失败且不新建", async () => {
     const root = mkdtempSync(join(tmpdir(), "prayer-promote-"))
     try {
@@ -2339,10 +2371,20 @@ async function applyPromoteUnlocked(
   // 先定正文,再动盘:merge 必须读到旧正文才能拼出整份新文档,
   // 读不到就直接失败而不静默新建——否则会把 canonical 文档换成只剩这条的新文件。
   let previous: string | undefined
+  let previousChunks: string[] = []
   if (unit.kind === "merge") {
     previous = readPreviousFile(abs)
     if (previous === undefined) return { ok: false, reason: "目标文档不存在" }
-    if (splitCompactedFaq(previous).length > MAX_MERGE_CHUNKS)
+    previousChunks = splitCompactedFaq(previous)
+    // 尺寸闸门要让开"去重命中"这一种情况才算得对:崩溃残局可能恰好比上限多一段
+    // (P0 正好 MAX_MERGE_CHUNKS 段时首次 merge 合法 → 残局 MAX+1 段)。
+    // 若尺寸闸门先行,重试会一直撞这里、永远走不到下面的去重,于是文件与索引
+    // 永久分叉、条目永远 approved,每轮白烧两次 LLM 调用。
+    // 去重命中时"追加"其实是 no-op 重提交,尺寸上限对它不适用。
+    if (
+      previousChunks.length > MAX_MERGE_CHUNKS &&
+      !previousChunks.includes(unit.content.trim())
+    )
       return { ok: false, reason: "目标文档过大,拒绝合并" }
   } else if (fileExists(abs)) {
     // resolveTarget 已把"已存在"转成 merge,走到这里说明竞态新建了同名文件。
@@ -2356,8 +2398,7 @@ async function applyPromoteUnlocked(
   // 按段落判重即可收敛:重试读到的是同一份 P0+单元,于是重算出同一个 body,
   // 原样重写一遍,再把 DB 事务补做掉。
   const unitAlreadyPresent =
-    previous !== undefined &&
-    splitCompactedFaq(previous).includes(unit.content.trim())
+    previous !== undefined && previousChunks.includes(unit.content.trim())
   const body =
     previous === undefined
       ? `${unit.content}\n`
@@ -2406,6 +2447,12 @@ async function applyPromoteUnlocked(
 
   // 台账先于活跃语料。正文与两侧 SHA-256 都已在内存确定,所以这一步不需要
   // 先写文件再回填摘要;台账写不出去就整条放弃,而不是留下无记录的语料。
+  //
+  // 已知取舍:台账文件名由「日期 + chunkId」决定,所以崩溃后的自动重试会用
+  // 同一路径覆盖首次尝试的记录,且那次 pre 与 post 都是重试起点(幂等追加的
+  // 直接后果)。正文、索引与条目终态都正确,只损失"首次尝试时 P0 是什么"这一条
+  // 审计线索。真要保留得让文件名带尝试序号,那会让重试无限堆积台账文件,
+  // 不值得——记在这里免得日后被当成新问题重新发现。
   if (previous !== undefined)
     await writeMetaFn(join(kbRoot, snapshotRel), previous)
   await writeMetaFn(join(kbRoot, manifestRel), promoteManifest(manifestInput))
