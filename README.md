@@ -292,6 +292,9 @@ pnpm pm:disable
 - 发布前应备份 SQLite 数据库；可使用 `pnpm db:check` 和 `pnpm db:backup`。备份命令是
   一次性的本机原子备份，目标文件不得已存在；仓库不替部署方提供自动 cron、异地复制或
   恢复演练。
+- `pnpm db:report` 是可选的只读 JSON 运行报告，汇总数据库完整性、保留候选和 outbox
+  队列分布；可交给主机的 cron/systemd/监控系统采集，并在非零退出时告警。它不会创建
+  备份、删除数据或替代备份与恢复演练。
 - 外部访问管理后台时，生产必须配置 `ADMIN_TOKEN`，并同时启用 HTTPS、反向代理访问控制和最小化开放端口。
 - `/health/live` 只表示进程存活；`/health/ready` 会在必需通道未连接或启动失败时返回 `503`，可直接接入负载均衡健康检查。
 - 生产环境请将 `.env`、`settings.json`、SQLite 数据库/WAL/备份限制为 `0600`（仅进程用户
@@ -309,6 +312,7 @@ pnpm test         # Vitest
 pnpm check        # typecheck + lint + test
 pnpm kb:freshness # 只读核对 docs/kb 与 SQLite 分块/向量是否一致
 pnpm security:permissions # 只读审计；确认后用 `pnpm security:permissions -- --apply` 收紧到 600
+pnpm db:report # 只读 JSON 运行报告，供外部调度/监控采集
 pnpm db:retention # 默认只读预览；确认备份后用 `--apply` 清理过期数据
 ```
 

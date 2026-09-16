@@ -23,6 +23,31 @@
 pnpm db:check
 ```
 
+## 可选的只读运行报告
+
+`pnpm db:report` 将数据库完整性、默认保留策略下的候选行数，以及 outbox 的
+`pending`/`sending`/`sent`/`failed` 分布输出为 JSON。它使用只读连接，不运行迁移、
+不创建备份，也绝不删除数据库或 transcript：
+
+```bash
+pnpm db:report
+pnpm db:report ./data/agent.db
+```
+
+报告的 `ok: false`（完整性失败或缺少预期表）会以非零状态退出，适合由现有监控系统
+触发告警；保留候选数量本身是人工复核信号，不会让命令失败。`failed` outbox 行也可能
+仍在重试，需结合运行时和投递详情处理。
+
+可由部署方在低峰期用自己的 cron 或 systemd timer 调用，并将 JSON 保存到受保护的日志
+位置，例如：
+
+```cron
+15 3 * * * cd /srv/prayer && /path/to/pnpm db:report >> /var/log/prayer/db-report.jsonl 2>&1
+```
+
+请把调度作业的非零退出接入现有告警渠道。此报告不代表已经有有效、异地或可恢复的
+备份；自动创建备份、保留和恢复演练仍应作为明确授权、可审计的部署作业配置。
+
 创建在线一致性备份：
 
 ```bash
