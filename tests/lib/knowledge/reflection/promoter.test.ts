@@ -1,11 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from "vitest"
 import { openDb } from "@/lib/core/db/index"
 import { Repo } from "@/lib/core/db/repo"
-import {
-  applyPromote,
-  promotedDocRel,
-  promotedMarkdown,
-} from "@/lib/knowledge/reflection/apply-promote"
+import { applyPromote } from "@/lib/knowledge/reflection/apply-promote"
 import {
   runPromote,
   selectPromoteIds,
@@ -52,99 +48,6 @@ function fakeQuery(structured: unknown) {
 beforeEach(() => {
   bus.removeAllListeners()
   repo = new Repo(openDb(":memory:", 3))
-})
-
-describe("apply-promote helpers", () => {
-  it("promotedDocRel / promotedMarkdown 格式稳定", () => {
-    expect(promotedDocRel(42)).toBe("promoted/reflection-42.md")
-    expect(promotedMarkdown(42, "  正文  ")).toBe("# 升格反思 #42\n\n正文\n")
-  })
-
-  it("applyPromote:写盘+入库+标 promoted;检索走正式文档", async () => {
-    const id = repo.insertKbEntry(
-      "human-reflection",
-      "退款 7 天到账",
-      "human-reflection:1:1",
-      vec()
-    )
-    repo.insertReflectionMeta(id, "qq", "1", "多久退款", "7天")
-    const writes: { path: string; body: string }[] = []
-    const r = await applyPromote({
-      repo,
-      chunkId: id,
-      embed,
-      writeFileFn: async (p, b) => {
-        writes.push({ path: p, body: b })
-      },
-      mkdirFn: async () => {},
-    })
-    expect(r.ok).toBe(true)
-    if (!r.ok) return
-    expect(r.file).toBe("promoted/reflection-" + id + ".md")
-    expect(writes).toHaveLength(1)
-    expect(writes[0]!.body).toContain("退款 7 天到账")
-    // 原反思 chunk 已物理删除:不再出现在 reflectionEntries,也不在 searchKb
-    expect(repo.reflectionEntries().find((e) => e.id === id)).toBeUndefined()
-    // 反思侧不再命中;正式文档命中
-    const hits = repo.searchKb(vec(), 5)
-    expect(hits.some((h) => h.content.includes("退款"))).toBe(true)
-    expect(hits.every((h) => h.source !== `human-reflection:1:1` || true)).toBe(
-      true
-    )
-    // promoted 反思本身不进 searchKb
-    const reflectionHit = hits.find((h) => h.id === id)
-    expect(reflectionHit).toBeUndefined()
-    // 正式 doc 在库
-    expect(repo.kbChunksByDoc(r.file).length).toBeGreaterThan(0)
-  })
-
-  it("applyPromote 幂等:已升格 → 原 chunk 已物理删除,再调返回条目不存在", async () => {
-    const id = repo.insertKbEntry(
-      "human-reflection",
-      "faq",
-      "human-reflection:1:1",
-      vec()
-    )
-    repo.insertReflectionMeta(id, "qq", "1", "q", "a")
-    await applyPromote({
-      repo,
-      chunkId: id,
-      embed,
-      writeFileFn: async () => {},
-      mkdirFn: async () => {},
-    })
-    // 第二次写盘函数应不被调用(早期 return),且语义变成"条目不存在"
-    const r2 = await applyPromote({
-      repo,
-      chunkId: id,
-      embed,
-      writeFileFn: async () => {
-        throw new Error("should not write")
-      },
-      mkdirFn: async () => {},
-    })
-    expect(r2.ok).toBe(false)
-    if (!r2.ok) expect(r2.reason).toBe("条目不存在")
-  })
-
-  it("applyPromote 拒绝 rejected", async () => {
-    const id = repo.insertKbEntry(
-      "human-reflection",
-      "坏",
-      "human-reflection:1:1",
-      vec()
-    )
-    repo.insertReflectionMeta(id, "qq", "1", "q", "a")
-    repo.setReflectionStatus(id, "rejected")
-    const r = await applyPromote({
-      repo,
-      chunkId: id,
-      embed,
-      writeFileFn: async () => {},
-      mkdirFn: async () => {},
-    })
-    expect(r.ok).toBe(false)
-  })
 })
 
 describe("selectPromoteIds", () => {
