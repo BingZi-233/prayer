@@ -143,3 +143,101 @@ describe("db-maintenance report", () => {
     })
   })
 })
+
+describe("db-maintenance restore drill", () => {
+  it("在临时副本上验证备份，且不会改写备份或运行数据库", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "prayer-db-drill-"))
+    directories.push(directory)
+    const sourcePath = join(directory, "source.db")
+    const backupPath = join(directory, "snapshot.db")
+    const source = openDb(sourcePath, 3)
+    source
+      .prepare("INSERT INTO config(key, value) VALUES (?, ?)")
+      .run("restore-drill-sentinel", "kept")
+    source.close()
+
+    const sourceBefore = await readFile(sourcePath)
+    await run(
+      process.execPath,
+      [
+        "--experimental-transform-types",
+        "scripts/db-maintenance.ts",
+        "backup",
+        sourcePath,
+        backupPath,
+      ],
+      {
+        cwd: process.cwd(),
+        encoding: "utf8",
+        env: { ...process.env, DB_PATH: sourcePath },
+      }
+    )
+    const backupBefore = await readFile(backupPath)
+    const { stdout } = await run(
+      process.execPath,
+      [
+        "--experimental-transform-types",
+        "scripts/db-maintenance.ts",
+        "restore-drill",
+        backupPath,
+      ],
+      {
+        cwd: process.cwd(),
+        encoding: "utf8",
+        env: { ...process.env, DB_PATH: sourcePath },
+      }
+    )
+    const result = JSON.parse(stdout) as {
+      ok: boolean
+      backup: string
+      copy: { backupBytes: number; restoredBytes: number }
+      restoredSchemaVersion: number
+      report: { integrity: { ok: boolean }; outbox: { pending: number } }
+      temporaryCopyRemoved: boolean
+    }
+
+    expect(result).toMatchObject({
+      ok: true,
+      backup: backupPath,
+      copy: {
+        backupBytes: backupBefore.byteLength,
+        restoredBytes: backupBefore.byteLength,
+      },
+      restoredSchemaVersion: expect.any(Number),
+      report: { integrity: { ok: true }, outbox: { pending: 0 } },
+      temporaryCopyRemoved: true,
+    })
+    expect(await readFile(backupPath)).toEqual(backupBefore)
+    expect(await readFile(sourcePath)).toEqual(sourceBefore)
+  })
+
+  it("拒绝把配置中的运行数据库作为恢复演练输入", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "prayer-db-drill-live-"))
+    directories.push(directory)
+    const sourcePath = join(directory, "source.db")
+    const source = openDb(sourcePath, 3)
+    source.close()
+    const sourceBefore = await readFile(sourcePath)
+
+    await expect(
+      run(
+        process.execPath,
+        [
+          "--experimental-transform-types",
+          "scripts/db-maintenance.ts",
+          "restore-drill",
+          sourcePath,
+        ],
+        {
+          cwd: process.cwd(),
+          encoding: "utf8",
+          env: { ...process.env, DB_PATH: sourcePath },
+        }
+      )
+    ).rejects.toMatchObject({
+      code: 1,
+      stderr: expect.stringContaining("不能把正在运行的数据库作为输入"),
+    })
+    expect(await readFile(sourcePath)).toEqual(sourceBefore)
+  })
+})

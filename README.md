@@ -292,8 +292,9 @@ pnpm pm:disable
 - PM2 必须保持 `instances: 1` 和 `fork` 模式：better-sqlite3 是 native 依赖，通道包含长连接 / long polling。
 - Telegram 同一 Bot token 不支持多实例消费。
 - 发布前应备份 SQLite 数据库；可使用 `pnpm db:check` 和 `pnpm db:backup`。备份命令是
-  一次性的本机原子备份，目标文件不得已存在；仓库不替部署方提供自动 cron、异地复制或
-  恢复演练。
+  一次性的本机原子备份，目标文件不得已存在；`pnpm db:restore-drill <备份路径>` 会在私有
+  临时副本上验证当前数据库层可打开该备份，不会停止、重启或替换运行实例。仓库不替部署方
+  提供自动 cron 或异地复制。
 - `pnpm db:report` 是可选的只读 JSON 运行报告，汇总数据库完整性、保留候选和 outbox
   队列分布；可交给主机的 cron/systemd/监控系统采集，并在非零退出时告警。它不会创建
   备份、删除数据或替代备份与恢复演练。
@@ -315,6 +316,7 @@ pnpm check        # typecheck + lint + test
 pnpm kb:freshness # 只读核对 docs/kb 与 SQLite 分块/向量是否一致
 pnpm security:permissions # 只读审计；确认后用 `pnpm security:permissions -- --apply` 收紧到 600
 pnpm db:report # 只读 JSON 运行报告，供外部调度/监控采集
+pnpm db:restore-drill ./backups/agent.db # 临时副本恢复演练，不接触运行 DB
 pnpm db:retention # 默认只读预览；确认备份后用 `--apply` 清理过期数据
 ```
 

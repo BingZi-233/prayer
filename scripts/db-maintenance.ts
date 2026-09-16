@@ -1,10 +1,15 @@
 import Database from "better-sqlite3"
 import * as sqliteVec from "sqlite-vec"
+import { chmod, copyFile, lstat, mkdtemp, rm, stat } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import {
   backupDatabase,
   checkDatabaseIntegrity,
   verifyDatabaseFile,
 } from "../lib/core/db/backup.ts"
+import { openDb } from "../lib/core/db/index.ts"
+import { readUserVersion } from "../lib/core/db/migrations/index.ts"
 import { canonicalDbPath, databaseOpenPath } from "../lib/core/db/path.ts"
 import { Repo } from "../lib/core/db/repo.ts"
 import {
@@ -80,6 +85,92 @@ export function inspectDatabaseReport(db: Database.Database, now = Date.now()) {
   }
 }
 
+/**
+ * 在临时副本上验证现有运行时能否打开一份备份。不会打开、写入或替换 DB_PATH，
+ * 也不会启动任何通道；临时副本总会在返回前删除。
+ */
+export async function runRestoreDrill(backupArg: string) {
+  if (!backupArg) throw new Error("恢复演练必须显式提供备份路径")
+
+  const backup = databaseOpenPath(canonicalDbPath(backupArg))
+  const runningDatabase = databaseOpenPath(sourcePath())
+  if (backup === ":memory:") throw new Error("恢复演练不能使用内存数据库")
+  if (backup === runningDatabase) {
+    throw new Error("恢复演练只能读取备份文件，不能把正在运行的数据库作为输入")
+  }
+
+  const backupInfo = await lstat(backup)
+  if (!backupInfo.isFile() || backupInfo.isSymbolicLink()) {
+    throw new Error("恢复演练输入必须是普通备份文件，不能是符号链接")
+  }
+  const backupIntegrity = verifyDatabaseFile(backup)
+  if (!backupIntegrity.ok) {
+    throw new Error(
+      `备份完整性检查失败：${backupIntegrity.messages.join("；")}`
+    )
+  }
+
+  const temporaryDirectory = await mkdtemp(
+    join(tmpdir(), "prayer-restore-drill-")
+  )
+  const restoredPath = join(temporaryDirectory, "agent.db")
+  try {
+    await chmod(temporaryDirectory, 0o700)
+    await copyFile(backup, restoredPath)
+    await chmod(restoredPath, 0o600)
+
+    const backupBytes = (await stat(backup)).size
+    const restoredBytes = (await stat(restoredPath)).size
+    if (backupBytes !== restoredBytes) {
+      throw new Error("恢复副本大小与备份不一致")
+    }
+
+    // 迁移、repair 和 WAL 只会写入即将删除的副本；这是当前应用层可打开性的证明。
+    const restored = openDb(restoredPath)
+    let restoredSchemaVersion: number
+    try {
+      restoredSchemaVersion = readUserVersion(restored)
+    } finally {
+      restored.close()
+    }
+
+    const restoredIntegrity = verifyDatabaseFile(restoredPath)
+    if (!restoredIntegrity.ok) {
+      throw new Error(
+        `恢复副本完整性检查失败：${restoredIntegrity.messages.join("；")}`
+      )
+    }
+
+    const reportDb = new Database(databaseOpenPath(restoredPath), {
+      fileMustExist: true,
+      readonly: true,
+    })
+    try {
+      sqliteVec.load(reportDb)
+      const report = inspectDatabaseReport(reportDb)
+      const ready =
+        report.integrity.ok &&
+        report.retention.tables.every((table) => table.available)
+      if (!ready) {
+        throw new Error("恢复副本未通过当前数据库就绪检查")
+      }
+      return {
+        ok: true,
+        backup,
+        copy: { backupBytes, restoredBytes },
+        restoredSchemaVersion,
+        report,
+        temporaryCopyRemoved: true,
+      }
+    } finally {
+      reportDb.close()
+    }
+  } finally {
+    // 清理失败必须让演练失败，避免把含业务数据的临时副本悄然留在磁盘上。
+    await rm(temporaryDirectory, { recursive: true, force: true })
+  }
+}
+
 async function main(): Promise<void> {
   const args = process.argv.slice(2)
   const [command, sourceArg, destinationArg] = args
@@ -130,7 +221,11 @@ async function main(): Promise<void> {
 
   if (command === "backup") {
     const source = sourcePath(sourceArg)
-    const db = new Database(databaseOpenPath(source), { fileMustExist: true })
+    // 在线备份 API 只需读取源库；只读句柄避免维护命令改写运行中的 DB_PATH。
+    const db = new Database(databaseOpenPath(source), {
+      fileMustExist: true,
+      readonly: true,
+    })
     try {
       sqliteVec.load(db)
       const result = await backupDatabase(
@@ -143,6 +238,15 @@ async function main(): Promise<void> {
     } finally {
       db.close()
     }
+    return
+  }
+
+  if (command === "restore-drill") {
+    if (!sourceArg || destinationArg) {
+      throw new Error("用法：pnpm db:restore-drill <已验证的备份路径>")
+    }
+    const result = await runRestoreDrill(sourceArg)
+    console.log(JSON.stringify(result, null, 2))
     return
   }
 
@@ -210,7 +314,7 @@ async function main(): Promise<void> {
   }
 
   throw new Error(
-    "用法：pnpm db:check [数据库路径]；pnpm db:report [数据库路径]；pnpm db:backup [数据库路径] [备份路径]；pnpm db:retention [数据库路径] [--apply] [--transcripts=/path/to/projects --delete-transcripts]"
+    "用法：pnpm db:check [数据库路径]；pnpm db:report [数据库路径]；pnpm db:backup [数据库路径] [备份路径]；pnpm db:restore-drill <备份路径>；pnpm db:retention [数据库路径] [--apply] [--transcripts=/path/to/projects --delete-transcripts]"
   )
 }
 

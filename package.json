@@ -17,6 +17,7 @@
     "db:check": "node --experimental-transform-types scripts/db-maintenance.ts check",
     "db:report": "node --experimental-transform-types scripts/db-maintenance.ts report",
     "db:backup": "node --experimental-transform-types scripts/db-maintenance.ts backup",
+    "db:restore-drill": "node --experimental-transform-types scripts/db-maintenance.ts restore-drill",
     "db:retention": "node --experimental-transform-types scripts/db-maintenance.ts retention",
     "security:permissions": "node --experimental-transform-types scripts/check-permissions.ts",
     "kb:audit": "node --experimental-transform-types scripts/audit-kb-quality-recovery.ts",
