@@ -45,6 +45,7 @@
 - `lib/core/db/models.ts` — 新增 `KbBaseHit`。
 - `lib/core/db/repositories/knowledge.ts` — `searchBaseKb` SELECT 加 `c.doc`，返回 `KbBaseHit[]`；顺带订正 `searchKb` 的注释（正式文档已迁到 `retrieval/`）。
 - `lib/model/json-output.ts` — 新增 `pickObjectFieldDual`。
+- `lib/model/stats/usage.ts`、`app/api/usage/route.ts` — `UsageSite` 加 `"promote-compose"`（阶段二的用量站点；该联合是封闭的，不加过不了 `tsc`）。
 - `lib/knowledge/reflection/apply-promote.ts` — 入参改为"已成文单元"，merge 追加、台账/快照写入、多处安全拒绝；删除 `promotedDocRel`/`promotedMarkdown`。
 - `lib/knowledge/reflection/promoter.ts` — 新增并导出 `promoteEntry`；`runPromote` 改走它；新依赖 `composeFn`；每轮 embed 结果加缓存避免重复计算。
 - `app/api/reflection/route.ts` — 手动升格改走 `promoteEntry`。
@@ -299,14 +300,17 @@ import {
   type PromoteManifestInput,
 } from "@/lib/knowledge/reflection/promote-manifest"
 
+/** 所有路径字段都是「相对 docs/kb」的 posix 路径,渲染时才加前缀。 */
 function input(over: Partial<PromoteManifestInput> = {}): PromoteManifestInput {
   return {
     chunkId: 42,
+    variant: "promotion",
     decision: "merge",
     target: "retrieval/faq/api-errors.md",
     originalPath: "retrieval/faq/api-errors.md",
     retiredPath: null,
-    preEditSnapshot: "docs/kb/_meta/2026-09-16-promote-42-pre-edit.md.disabled",
+    relocationReason: null,
+    preEditSnapshot: "_meta/2026-09-16-promote-42-pre-edit.md.disabled",
     preSha256: "a".repeat(64),
     postSha256: "b".repeat(64),
     sourceStatus: "QQ 群客服会话反思 #42",
@@ -352,12 +356,22 @@ describe("formatDate / sha256Hex", () => {
 })
 
 describe("promoteManifest", () => {
-  it("字段齐备且含结构预检", () => {
+  it("升格 merge:每个路径字段都带 docs/kb 前缀", () => {
     const md = promoteManifest(input())
     expect(md).toContain(
       "- decision：merge（追加到既有 canonical 文档，非新建文件）"
     )
     expect(md).toContain("- target：docs/kb/retrieval/faq/api-errors.md")
+    expect(md).toContain("- original_path：docs/kb/retrieval/faq/api-errors.md")
+    expect(md).toContain("- active_path：docs/kb/retrieval/faq/api-errors.md")
+    expect(md).toContain("- retired_path：无（未发生迁移/下线）")
+    expect(md).toContain(
+      "- pre-edit snapshot：docs/kb/_meta/2026-09-16-promote-42-pre-edit.md.disabled"
+    )
+  })
+
+  it("升格:哈希、结果与结构预检", () => {
+    const md = promoteManifest(input())
     expect(md).toContain("- pre-edit SHA-256：" + "a".repeat(64))
     expect(md).toContain("- post-edit SHA-256：" + "b".repeat(64))
     expect(md).toContain("- result：committed")
@@ -365,10 +379,13 @@ describe("promoteManifest", () => {
     expect(md).toContain("无 ISOLATED_HEADING")
     expect(md).toContain("索引向量维度：512")
     expect(md).toContain("本次写入向量段数：2")
+    expect(md).toContain("- db_write：in-process applyPromote")
     expect(md).toContain("pnpm ingest：不需要")
+    expect(md).not.toContain("## 迁移说明")
+    expect(md).not.toContain("- db_write：迁移脚本")
   })
 
-  it("新建文件时快照与 pre-edit 哈希标为无", () => {
+  it("新建文件时路径与 pre-edit 哈希标为无", () => {
     const md = promoteManifest(
       input({
         decision: "new",
@@ -378,9 +395,52 @@ describe("promoteManifest", () => {
       })
     )
     expect(md).toContain("- decision：new（新建 retrieval/ 文档）")
-    expect(md).toContain("- original_path：null")
+    expect(md).toContain("- original_path：无（新建文件）")
     expect(md).toContain("- pre-edit snapshot：无（新建文件）")
     expect(md).toContain("- pre-edit SHA-256：无（新建文件）")
+  })
+
+  it("migration 变体:decision 行写明迁移并渲染迁移小节", () => {
+    const md = promoteManifest(
+      input({
+        variant: "migration",
+        originalPath: "promoted/reflection-198794.md",
+        retiredPath: "promoted/reflection-198794.md.disabled",
+        relocationReason:
+          "promoted/ 是历史层,而原文件仍是 ingest 可见的活跃语料",
+        preEditSnapshot: "_meta/2026-09-16-faq-api-errors-pre-edit.md.disabled",
+      })
+    )
+    expect(md).toContain(
+      "- decision：merge（历史迁移：原 promoted/ 文件并入既有 canonical 文档）"
+    )
+    expect(md).toContain(
+      "- original_path：docs/kb/promoted/reflection-198794.md"
+    )
+    expect(md).toContain(
+      "- retired_path：docs/kb/promoted/reflection-198794.md.disabled"
+    )
+    expect(md).toContain("## 迁移说明")
+    expect(md).toContain(
+      "- 缘由：promoted/ 是历史层,而原文件仍是 ingest 可见的活跃语料"
+    )
+    expect(md).toContain(
+      "- 退役为：docs/kb/promoted/reflection-198794.md.disabled"
+    )
+    // 迁移只改磁盘,向量要等显式授权后重建:写成"不需要"就是假记录,
+    // 且与它自己那行「本次写入向量段数」自相矛盾
+    expect(md).toContain("- db_write：迁移脚本直接改磁盘")
+    expect(md).toContain("pnpm ingest：需要（本次只改文档")
+    expect(md).not.toContain("pnpm ingest：不需要")
+  })
+
+  it("migration + new:decision 行走迁移的新建分支", () => {
+    const md = promoteManifest(
+      input({ variant: "migration", decision: "new", originalPath: null })
+    )
+    expect(md).toContain(
+      "- decision：new（历史迁移：原 promoted/ 文件改建 retrieval/ 文档）"
+    )
   })
 
   it("rollback 变体写明文件已回滚", () => {
@@ -389,9 +449,19 @@ describe("promoteManifest", () => {
     expect(md).toContain("条目保留")
   })
 
-  it("单段超限时报超限而不是通过", () => {
+  it("单段超限时报出具体最长值", () => {
     const md = promoteManifest(input({ chunks: ["x".repeat(501)] }))
-    expect(md).toContain("超限")
+    expect(md).toContain("超限（最长 501）")
+  })
+
+  it("空分块与空索引时回落成可读占位而不是 undefined", () => {
+    const md = promoteManifest(
+      input({ chunks: [], embeddedChunks: 0, dimension: null })
+    )
+    expect(md).toContain("各段字符数 无")
+    expect(md).toContain("最长 0")
+    expect(md).toContain("索引向量维度：未知（空索引）")
+    expect(md).not.toContain("undefined")
   })
 })
 ```
@@ -431,15 +501,28 @@ export function sha256Hex(text: string): string {
   return createHash("sha256").update(Buffer.from(text, "utf8")).digest("hex")
 }
 
+/**
+ * 台账的消费方有两类:自动/手动升格(Task 6 的 applyPromote)与历史升格文件迁移
+ * (把旧 promoted/ 文件归入 retrieval/)。两者的记录字段一致,差别只在 decision
+ * 行的措辞与是否有迁移缘由,所以用 variant 区分而不是各写一份正文。
+ *
+ * 所有路径字段一律是「相对 docs/kb 的 posix 路径」,渲染时统一加 `docs/kb/` 前缀。
+ * 混着裸相对路径和全路径会让同一份审计记录自相矛盾——正是台账要防的事。
+ */
 export interface PromoteManifestInput {
   chunkId: number
+  /** promotion=升格流程;migration=历史升格文件迁回 retrieval/ */
+  variant: "promotion" | "migration"
   decision: "merge" | "new"
-  /** 目标文档相对 docs/kb 的 posix 路径 */
+  /** 目标文档 */
   target: string
-  /** merge 前的原文;新建时为 null */
+  /** merge 前的目标文档;新建时为 null */
   originalPath: string | null
-  /** 被下线的旧路径(历史迁移用);升格流程恒为 null */
+  /** 被下线的旧文档;未发生下线时为 null */
   retiredPath: string | null
+  /** 迁移缘由;仅 migration 变体渲染 */
+  relocationReason: string | null
+  /** pre-edit 字节快照 */
   preEditSnapshot: string | null
   preSha256: string | null
   postSha256: string
@@ -452,6 +535,37 @@ export interface PromoteManifestInput {
   date: string
 }
 
+/** 相对 docs/kb 的路径 → 台账里的全路径;缺失时用对应文案。 */
+function kbPath(rel: string | null, absent: string): string {
+  return rel === null ? absent : `docs/kb/${rel}`
+}
+
+function decisionText(
+  variant: PromoteManifestInput["variant"],
+  decision: PromoteManifestInput["decision"]
+): string {
+  if (variant === "migration")
+    return decision === "merge"
+      ? "merge（历史迁移：原 promoted/ 文件并入既有 canonical 文档）"
+      : "new（历史迁移：原 promoted/ 文件改建 retrieval/ 文档）"
+  return decision === "merge"
+    ? "merge（追加到既有 canonical 文档，非新建文件）"
+    : "new（新建 retrieval/ 文档）"
+}
+
+/**
+ * 授权与执行段必须跟着变体走。升格是 in-process 写文件 + 同事务写向量,所以
+ * ingest 不需要;历史迁移只改磁盘、向量要等显式授权后重建,写成"不需要"就是
+ * 假记录——而且与它自己那行「本次写入向量段数：0」自相矛盾。
+ */
+function authBlock(variant: PromoteManifestInput["variant"]): string {
+  return variant === "migration"
+    ? `- db_write：迁移脚本直接改磁盘（不经 applyPromote）
+- pnpm ingest：需要（本次只改文档,向量待用户显式授权后重建）`
+    : `- db_write：in-process applyPromote（文件与向量同一轮，失败自带回滚）
+- pnpm ingest：不需要（向量已随本次事务写入 kb_vec）`
+}
+
 /**
  * 生成升格台账正文。纯函数、不碰磁盘:正文与两侧 SHA-256 在写盘前就已确定,
  * 所以"台账先于活跃语料"是可满足的,不需要先写文件再回填摘要。
@@ -460,20 +574,25 @@ export function promoteManifest(input: PromoteManifestInput): string {
   const lens = input.chunks.map((c) => c.length)
   const longest = lens.length ? Math.max(...lens) : 0
   const withinLimit = longest <= DEFAULT_KB_CHUNK_MAX_CHARS
-  const decisionText =
-    input.decision === "merge"
-      ? "merge（追加到既有 canonical 文档，非新建文件）"
-      : "new（新建 retrieval/ 文档）"
+  const migrationBlock =
+    input.variant === "migration"
+      ? `## 迁移说明
+
+- 缘由：${input.relocationReason ?? "未说明"}
+- 退役为：${kbPath(input.retiredPath, "无（未发生下线）")}
+
+`
+      : ""
 
   return `# ${input.date} 升格反思 #${input.chunkId} — 变更清单
 
 - intent：反思 #${input.chunkId} 升格为正式知识单元
-- decision：${decisionText}
-- target：docs/kb/${input.target}
-- original_path：${input.originalPath ?? "null"}
-- active_path：docs/kb/${input.target}
-- retired_path：${input.retiredPath ?? "无"}
-- pre-edit snapshot：${input.preEditSnapshot ?? "无（新建文件）"}
+- decision：${decisionText(input.variant, input.decision)}
+- target：${kbPath(input.target, "无")}
+- original_path：${kbPath(input.originalPath, "无（新建文件）")}
+- active_path：${kbPath(input.target, "无")}
+- retired_path：${kbPath(input.retiredPath, "无（未发生迁移/下线）")}
+- pre-edit snapshot：${kbPath(input.preEditSnapshot, "无（新建文件）")}
 - pre-edit SHA-256：${input.preSha256 ?? "无（新建文件）"}
 - post-edit SHA-256：${input.postSha256}
 - result：${
@@ -482,7 +601,7 @@ export function promoteManifest(input: PromoteManifestInput): string {
       : "committed"
   }
 
-## source_status
+${migrationBlock}## source_status
 
 - 来源：${input.sourceStatus}
 - 动态性：${input.volatility}
@@ -510,8 +629,7 @@ export function promoteManifest(input: PromoteManifestInput): string {
 
 ## 授权与执行
 
-- db_write：in-process applyPromote（文件与向量同一轮，失败自带回滚）
-- pnpm ingest：不需要（向量已随本次事务写入 kb_vec）
+${authBlock(input.variant)}
 `
 }
 ```
@@ -547,7 +665,7 @@ pre-edit 快照与两侧 SHA-256。文件名用 .md.disabled 后缀(不匹配 is
 
 ```ts
 import { describe, it, expect } from "vitest"
-import { readdirSync } from "node:fs"
+import { existsSync, readdirSync } from "node:fs"
 import { resolve } from "node:path"
 import {
   MAX_MERGE_CHUNKS,
@@ -559,6 +677,7 @@ import {
   validateUnit,
   type ComposeUnit,
 } from "@/lib/knowledge/reflection/promote-compose"
+import { splitCompactedFaq } from "@/lib/knowledge/reflection/compact-chunks"
 
 const unit = (over: Partial<ComposeUnit> = {}): ComposeUnit => ({
   product: "Packy",
@@ -570,15 +689,26 @@ const unit = (over: Partial<ComposeUnit> = {}): ComposeUnit => ({
   ...over,
 })
 
-describe("RETRIEVAL_DOMAINS", () => {
+// docs/kb/** 是 gitignore 的(.gitignore:47),只有 .gitkeep 进版本库,CI 是裸
+// checkout + pnpm check——所以在 CI 里这棵树根本不存在。这条不变量在 CI 无意义
+// (没有语料可比),但在任何有语料树的机器上照常生效,而域改名只会在那种机器上做。
+// 不用 existsSync 直接断言,否则 `pnpm check` 会在 CI 里 ENOENT 红掉。
+const RETRIEVAL_ROOT = resolve("docs/kb/retrieval")
+
+describe.skipIf(!existsSync(RETRIEVAL_ROOT))("RETRIEVAL_DOMAINS", () => {
   it("白名单与 docs/kb/retrieval 下的实际目录一致", () => {
-    const dirs = readdirSync(resolve("docs/kb/retrieval"), {
-      withFileTypes: true,
-    })
+    const dirs = readdirSync(RETRIEVAL_ROOT, { withFileTypes: true })
       .filter((d) => d.isDirectory())
       .map((d) => d.name)
       .sort()
     expect([...RETRIEVAL_DOMAINS].sort()).toEqual(dirs)
+  })
+})
+
+// 与语料树无关的廉价自检,CI 裸检出里也照跑:上面那条 skip 掉时,至少还有这一条。
+describe("RETRIEVAL_DOMAINS 自检", () => {
+  it("无重复项", () => {
+    expect(new Set(RETRIEVAL_DOMAINS).size).toBe(RETRIEVAL_DOMAINS.length)
   })
 })
 
@@ -607,6 +737,26 @@ describe("resolveTarget", () => {
       resolveTarget(
         { mode: "merge", doc: "promoted/reflection-1.md" },
         candidates,
+        noneExists
+      ).ok
+    ).toBe(false)
+  })
+
+  it("候选里混入非 canonical 路径时同样拒绝", () => {
+    // 不变量不能只靠上游过滤:即便调用方把 promoted/ 或带穿越的路径塞进候选,
+    // merge 也必须拒——否则"路径由程序定"这条契约就只在注释里成立。
+    // 两种拒绝原因分开:doc 在候选内却非 canonical 时若报"不在候选内"会误导排查
+    expect(
+      resolveTarget(
+        { mode: "merge", doc: "promoted/reflection-1.md" },
+        [...candidates, "promoted/reflection-1.md"],
+        noneExists
+      )
+    ).toEqual({ ok: false, reason: "目标文档非 retrieval/ canonical 路径" })
+    expect(
+      resolveTarget(
+        { mode: "merge", doc: "retrieval/../outside.md" },
+        [...candidates, "retrieval/../outside.md"],
         noneExists
       ).ok
     ).toBe(false)
@@ -675,6 +825,18 @@ describe("trustedSourceUrl", () => {
       trustedSourceUrl("ftp://docs.packyapi.ai/", "ftp://docs.packyapi.ai/")
     ).toBeNull()
   })
+
+  it("吞了中文标点的 URL 不算可信", () => {
+    // 原文「见 https://x/a。」无空格时,模型照抄会得到带全角句号的 URL;
+    // 若只查 includes,假尾巴会被一并放行到来源行
+    const raw = "见 https://x/a。"
+    expect(trustedSourceUrl("https://x/a。", raw)).toBeNull()
+    expect(trustedSourceUrl("https://x/a，", "见 https://x/a，")).toBeNull()
+    // 纯 ASCII 的同一段则放行
+    expect(trustedSourceUrl("https://x/a", "见 https://x/a")).toBe(
+      "https://x/a"
+    )
+  })
 })
 
 describe("renderUnit", () => {
@@ -732,6 +894,32 @@ describe("validateUnit / unitShapeIssue", () => {
     expect(Number.isSafeInteger(MAX_MERGE_CHUNKS)).toBe(true)
     expect(MAX_MERGE_CHUNKS).toBeGreaterThan(0)
   })
+
+  /**
+   * unitShapeIssue 的长度阈值必须与真正落库用的分块器对齐:被放行的单元要是
+   * 会被 splitCompactedFaq 硬切成两段,超长内容就以半句话的形态进向量库了。
+   * 主题长度与模板文案挂钩,所以扫一段区间而不是钉死某个字数;末尾断言两侧
+   * 都被覆盖,免得将来模板变长、窗口不再跨过边界时本测试静默退化成恒真。
+   */
+  it("放行的成文单元不会被共用分块器硬切", () => {
+    let passed = 0
+    let rejected = 0
+    for (let n = 380; n <= 460; n++) {
+      const { content } = renderUnit(unit({ body: "x".repeat(n) }), {
+        chunkId: 1,
+        date: "2026-09-16",
+        rawSources: "",
+      })
+      if (unitShapeIssue(content) === null) {
+        passed++
+        expect(splitCompactedFaq(content)).toHaveLength(1)
+      } else {
+        rejected++
+      }
+    }
+    expect(passed).toBeGreaterThan(0)
+    expect(rejected).toBeGreaterThan(0)
+  })
 })
 ```
 
@@ -745,6 +933,7 @@ Expected: FAIL —— 模块不存在。
 创建 `lib/knowledge/reflection/promote-compose.ts`：
 
 ```ts
+import { isKbRelPath } from "../kb-path"
 import { DEFAULT_KB_CHUNK_MAX_CHARS } from "./compact-chunks"
 
 /**
@@ -798,8 +987,18 @@ export type TargetDecision =
   | { ok: false; reason: string }
 
 /**
+ * 候选文档必须是 retrieval/ 下的 canonical 文档。上游 promoteEntry 已按此筛过
+ * 候选,这里再拦一道:跨函数的不变量不能只活在注释里——调用方忘了过滤时,
+ * merge 就会指向 promoted/ 历史层或别的非 canonical 位置。
+ */
+function isCanonicalTarget(rel: string): boolean {
+  return rel.startsWith("retrieval/") && isKbRelPath(rel)
+}
+
+/**
  * 目标文档由程序定,不信模型输出:
- * - merge 只能精确命中本轮真实候选 doc(候选已在上游过滤为 retrieval/ 前缀);
+ * - merge 只能精确命中本轮真实候选 doc,且该 doc 必须通过 isCanonicalTarget
+ *   (不依赖调用方已经过滤好候选);
  * - new 只能落在域名白名单内,slug 必须匹配,路径由此拼出;
  * - new 撞上已存在的文件时转 merge,绝不覆盖既有 canonical 文档。
  */
@@ -810,6 +1009,8 @@ export function resolveTarget(
 ): TargetDecision {
   if (raw.mode === "merge") {
     if (typeof raw.doc !== "string") return { ok: false, reason: "缺少 doc" }
+    if (!isCanonicalTarget(raw.doc))
+      return { ok: false, reason: "目标文档非 retrieval/ canonical 路径" }
     if (!candidateDocs.includes(raw.doc))
       return { ok: false, reason: "目标文档不在本轮候选内" }
     return { ok: true, kind: "merge", doc: raw.doc }
@@ -841,7 +1042,11 @@ export function trustedSourceUrl(
 ): string | null {
   const url = candidate.trim()
   if (!url) return null
-  if (!/^https?:\/\/\S+$/.test(url)) return null
+  // URL 必须是纯可打印 ASCII。模型照抄时容易把紧跟其后的中文标点吞进 URL
+  // (「见 https://x/a。」→ `https://x/a。`),而 \S 不排除全角标点,那样
+  // `includes` 校验会一并放行,来源行就带了个假 URL 尾巴。
+  // 代价:IDN 域名退回会话来源标注,可接受。
+  if (!/^https?:\/\/[!-~]+$/.test(url)) return null
   return rawSources.includes(url) ? url : null
 }
 
@@ -901,7 +1106,7 @@ export function unitShapeIssue(content: string): string | null {
 - [ ] **Step 4: 跑测试确认通过**
 
 Run: `pnpm vitest run tests/lib/knowledge/reflection/promote-compose.test.ts`
-Expected: PASS（全部 it 绿）。若 `RETRIEVAL_DOMAINS` 那条红，说明实际目录与白名单不一致：以 `ls docs/kb/retrieval` 的实际目录为准更新白名单，不要改测试。
+Expected: PASS。若 `RETRIEVAL_DOMAINS` 那条红，说明实际目录与白名单不一致：以 `ls docs/kb/retrieval` 的实际目录为准更新白名单，不要改测试。若本机没有 `docs/kb/retrieval`（例如 CI 等价检出），该 describe 会被 skip（显示 skipped 而非 passed），这是预期行为——**不要**为了让它是绿的而删掉 `skipIf`。
 
 - [ ] **Step 5: 提交**
 
@@ -921,11 +1126,15 @@ git commit -m "feat(reflection): 升格成文的路径与来源校验
 **Files:**
 
 - Modify: `lib/knowledge/reflection/promote-compose.ts`（追加）
+- Modify: `lib/model/stats/usage.ts`（`UsageSite` 加一个成员）
+- Modify: `app/api/usage/route.ts`（`SITE_ORDER` + `SITE_LABEL` 各加一项）
 - Test: `tests/lib/knowledge/reflection/promote-compose.test.ts`（追加）
+
+> 为什么不止两个文件：`UsageSite`（`lib/model/stats/usage.ts:10`）是**封闭联合**，`drainQuery` 的第二参数只接受它的成员，`"promote-compose"` 直接过不了 `tsc`。而阶段二是 per-entry 调用（每轮最多 `maxPerRun` 次），与阶段一的单次批量调用混在同一行会让它在管理端成本视图里消失——这个仓库明确在意 LLM 成本归因（`CLAUDE.md` 记着 prompt cache 的实测数字，且专门有用量聚合模块与页面）。所以新增站点而不是复用 `"promote"`。
 
 - [ ] **Step 1: 写失败测试**
 
-在 `tests/lib/knowledge/reflection/promote-compose.test.ts` 追加（并把顶部 import 里的 `composePromotion`、`COMPOSE_OUTPUT_SCHEMA` 补上）：
+在 `tests/lib/knowledge/reflection/promote-compose.test.ts` **末尾追加**（该文件已由 Task 4 创建；把 `composePromotion`、`COMPOSE_OUTPUT_SCHEMA` 加进已有的那条 `@/lib/knowledge/reflection/promote-compose` import，不要新起一段 import）。新增的辅助函数与常量放在文件末尾即可——`fakeQuery`/`composeDeps` 是函数声明会提升，`entry`/`candidateDocs`/`goodDecision` 是模块级 const，在本文件的测试体执行前都已求值：
 
 ```ts
 function fakeQuery(structured: unknown) {
@@ -1030,6 +1239,21 @@ describe("composePromotion", () => {
     expect(r.ok).toBe(false)
   })
 
+  it("new 分支:kind 透传且路径由白名单拼出", async () => {
+    // 其余用例都走 merge,这条闭合 target.kind → value.kind 的透传,
+    // 并证明 compose 层也真的会用 new 分支(resolveTarget 已在 Task 4 单测过)
+    const r = await composePromotion(
+      composeDeps({
+        ...goodDecision,
+        target: { mode: "new", domain: "faq", slug: "codex-encrypted-400" },
+      })
+    )
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.value.kind).toBe("new")
+    expect(r.value.doc).toBe("retrieval/faq/codex-encrypted-400.md")
+  })
+
   it("请求带上 json_schema outputFormat", async () => {
     let captured: { options?: { outputFormat?: unknown } } | undefined
     const qf = ((args: unknown) => {
@@ -1045,6 +1269,52 @@ describe("composePromotion", () => {
 })
 ```
 
+- [ ] **Step 1.5: 先加用量站点**（先加这个，否则 Step 3 的 `drainQuery(..., "promote-compose")` 过不了 `tsc`）
+
+`lib/model/stats/usage.ts` 的联合加一项：
+
+```ts
+export type UsageSite =
+  | "agent"
+  | "intent"
+  | "answerability"
+  | "reflect"
+  | "compact"
+  | "promote"
+  | "promote-compose"
+  | "topic"
+```
+
+`app/api/usage/route.ts` 的两处各加一项（顺序即展示顺序，放在 `promote` 之后）：
+
+```ts
+const SITE_ORDER = [
+  "agent",
+  "intent",
+  "answerability",
+  "reflect",
+  "compact",
+  "promote",
+  "promote-compose",
+  "topic",
+] as const
+```
+
+```ts
+const SITE_LABEL: Record<string, string> = {
+  agent: "主客服",
+  intent: "意图分类",
+  answerability: "可答判定",
+  reflect: "反思沉淀",
+  compact: "反思压缩",
+  promote: "升格评审",
+  "promote-compose": "升格成文",
+  topic: "问题归类",
+}
+```
+
+`app/api/usage/route.ts` 对未知 site 本有兜底（`SITE_LABEL[site] ?? site`），所以漏改不会报错、只会让标签落成原始 key 并排到末尾——正因如此更要在同一轮改掉，别留半成品。
+
 - [ ] **Step 2: 跑测试确认失败**
 
 Run: `pnpm vitest run tests/lib/knowledge/reflection/promote-compose.test.ts -t "composePromotion"`
@@ -1052,7 +1322,7 @@ Expected: FAIL —— `composePromotion is not a function`。
 
 - [ ] **Step 3: 实现**
 
-在 `lib/knowledge/reflection/promote-compose.ts` 顶部补 import：
+`lib/knowledge/reflection/promote-compose.ts` 已由 Task 4 创建（纯函数层）。**只在文件末尾追加，不要改动已有的任何纯函数、常量或 `isCanonicalTarget`。** 现有 import 块补上缺的行——`DEFAULT_KB_CHUNK_MAX_CHARS` 与 `isKbRelPath` Task 4 已加，别重复导入；最终 import 块应为：
 
 ```ts
 import { query as sdkQuery } from "@anthropic-ai/claude-agent-sdk"
@@ -1061,6 +1331,7 @@ import { drainQuery } from "../../model/drain"
 import { pickObjectFieldDual } from "../../model/json-output"
 import { sanitizeForModel } from "../../model/sanitize-input"
 import { withTimeout } from "../../model/timeout"
+import { isKbRelPath } from "../kb-path"
 import { DEFAULT_KB_CHUNK_MAX_CHARS } from "./compact-chunks"
 import { formatDate } from "./promote-manifest"
 ```
@@ -1200,8 +1471,12 @@ function parseUnit(raw: unknown): ComposeUnit | null {
 
 /**
  * 第二阶段:为一条已通过评审的反思选归属并成文。
- * 任何一步不成立都返回 ok:false,由调用方把该条留到下一轮重试;
- * 绝不退化成"原文直写"的老格式落盘。
+ *
+ * 失败契约分两类,调用方必须都处理:
+ * - 校验类失败(解析不出、字段为空、路径不合法、单元超长)→ 返回 ok:false,
+ *   不写盘不改状态,该条留到下一轮重试;绝不退化成"原文直写"的老格式落盘。
+ * - I/O 与超时类失败(withTimeout 超时、drainQuery 迭代抛错)→ **抛出**,本函数
+ *   不吞异常,由调用方 catch 并计入本轮失败。
  */
 export async function composePromotion(
   deps: ComposePromotionDeps
@@ -1294,11 +1569,13 @@ Expected: PASS。若 `drainQuery` 的返回结构或第二参数名与本计划�
 - [ ] **Step 5: 提交**
 
 ```bash
-git add lib/knowledge/reflection/promote-compose.ts tests/lib/knowledge/reflection/promote-compose.test.ts
+git add lib/knowledge/reflection/promote-compose.ts lib/model/stats/usage.ts app/api/usage/route.ts tests/lib/knowledge/reflection/promote-compose.test.ts
 git commit -m "feat(reflection): 升格第二阶段成文与归属
 
 在保守的升格评审之后加一次 per-entry 调用,产出 {target, unit} 并交给程序侧
-校验。成文失败或校验不过时返回失败让该条下轮重试,不会退化成原文直写。"
+校验。成文失败或校验不过时返回失败让该条下轮重试,不会退化成原文直写。
+用量站点新增 promote-compose:阶段二是 per-entry 调用,与阶段一批量调用
+混在同一行会让它在成本视图里消失。"
 ```
 
 ---
@@ -1368,11 +1645,6 @@ function unit(over: Partial<PromoteUnit> = {}): PromoteUnit {
   }
 }
 
-/** 单元的第二行;分块器按空行切段,它会被切成独立的第二段。 */
-function unitBodyLine(): string {
-  return unit().content.split("\n")[1]!
-}
-
 function fakeFs() {
   const files = new Map<string, string>()
   return {
@@ -1413,10 +1685,11 @@ describe("applyPromote", () => {
     expect(
       repo.searchBaseKb(vec(), 5).some((h) => h.content.includes("退款"))
     ).toBe(true)
-    // 标题段 + 正文段:分块器按空行切段的固有行为,不是重复写入
+    // 整条单元切成 1 块:标题行紧跟正文、中间没有空行,分块器按空行切段时
+    // 不会切出只含标题的孤立块——这正是本次改造要消灭的 ISOLATED_HEADING。
+    // (旧实现的 promotedMarkdown 在标题后有空行,所以旧测试期望 2 段;别照搬。)
     expect(repo.kbChunksByDoc(r.file).map((c) => c.content)).toEqual([
-      "# 产品：Packy；协议：任一；任务：退款到账时间",
-      unitBodyLine(),
+      unit().content.trim(),
     ])
     // 原反思条目已删
     expect(repo.countReflectionEntries()).toBe(0)
@@ -1490,8 +1763,8 @@ describe("applyPromote", () => {
 
     expect((await first).ok).toBe(true)
     expect(await second).toEqual({ ok: false, reason: "条目不存在" })
-    // The shared ingest splitter yields a heading chunk and a body chunk.
-    expect(embed).toHaveBeenCalledTimes(2)
+    // 单元无空行 → 整份文档只切出 1 段 → 只 embed 一次
+    expect(embed).toHaveBeenCalledTimes(1)
     expect(fs.writeFileFn).toHaveBeenCalledTimes(1)
   })
 
@@ -1663,8 +1936,10 @@ describe("applyPromote", () => {
       })
 
       expect(r.ok).toBe(true)
+      // 实现两个分支都是「正文 + \n」收尾:merge 是 previous.trimEnd() + "\n\n"
+      // + 单元 + "\n",而单元自己已经以 \n 结尾,所以文件末尾是 \n\n 之外多一个 \n
       expect(readFileSync(join(dir, "refund.md"), "utf8")).toBe(
-        `旧的正文\n\n${unit().content}`
+        `旧的正文\n\n${unit().content}\n`
       )
       const meta = readdirSync(join(root, "docs/kb/_meta"))
       expect(meta).toContain(`${DATE}-promote-1-pre-edit.md.disabled`)
@@ -1790,6 +2065,37 @@ describe("applyPromote", () => {
     ).rejects.toThrow("磁盘满了")
 
     expect(fs.writeFileFn).not.toHaveBeenCalled()
+    expect(repo.countReflectionEntries()).toBe(1)
+  })
+
+  it("正文写盘失败:台账改写成 rolled_back,不停在 committed", async () => {
+    const repo = makeRepo()
+    const id = seedReflection(repo)
+    const fs = fakeFs()
+    fs.writeFileFn.mockRejectedValue(new Error("磁盘满了"))
+
+    await expect(
+      applyPromote({
+        repo,
+        chunkId: id,
+        unit: unit(),
+        embed: asyncVec,
+        cwd: "/w",
+        writeFileFn: fs.writeFileFn,
+        mkdirFn: fs.mkdirFn,
+        writeMetaFn: fs.writeMetaFn,
+        now: () => NOW,
+      })
+    ).rejects.toThrow("磁盘满了")
+
+    // 台账先于正文落盘,所以正文失败时台账已经写成 committed;
+    // 不改写就等于留下一条指向从未落盘内容的"成功"记录。
+    const manifest = [...fs.files.entries()].find(([p]) =>
+      p.endsWith(`${DATE}-promote-1-manifest.md.disabled`)
+    )?.[1]
+    expect(manifest).toBeDefined()
+    expect(manifest).toContain("- result：rolled_back")
+    expect(manifest).not.toContain("- result：committed")
     expect(repo.countReflectionEntries()).toBe(1)
   })
 
@@ -1938,7 +2244,7 @@ export interface ApplyPromoteOpts {
 async function applyPromoteUnlocked(
   opts: ApplyPromoteOpts
 ): Promise<PromoteResult> {
-  const { repo, chunkId, unit } = opts
+  const { repo, chunkId, unit, embed } = opts
   // 单条取行(替代全量 reflectionEntries 拉取后再 find)
   const entry = repo.reflectionEntryDetail(chunkId)
   if (!entry) return { ok: false, reason: "条目不存在" }
@@ -2018,11 +2324,13 @@ async function applyPromoteUnlocked(
   const manifestRel = promoteManifestRel(date, chunkId)
   const manifestInput = {
     chunkId,
+    variant: "promotion" as const,
     decision: unit.kind,
     target: rel,
     originalPath: previous === undefined ? null : rel,
     retiredPath: null,
-    preEditSnapshot: previous === undefined ? null : `docs/kb/${snapshotRel}`,
+    relocationReason: null,
+    preEditSnapshot: previous === undefined ? null : snapshotRel,
     preSha256: previous === undefined ? null : sha256Hex(previous),
     postSha256: sha256Hex(body),
     sourceStatus: unit.sourceStatus,
@@ -2043,10 +2351,13 @@ async function applyPromoteUnlocked(
   // Tests may inject both filesystem operations. Keep that seam simple; the
   // production path below uses a same-directory temp file and atomic rename.
   if (!defaultFs) {
-    await writeFileFn(abs, body)
     try {
+      await writeFileFn(abs, body)
       writeKbTransaction(repo, chunkId, rel, embeddedChunks)
     } catch (err) {
+      // 台账先于正文落盘,所以正文这一步(含注入的写盘)失败时,台账已经停在
+      // committed 且 postSha256 指向从未落盘的内容。必须改写成 rolled_back,
+      // 否则留下的是一条说谎的"成功"记录。
       await writeMetaFn(
         join(kbRoot, manifestRel),
         promoteManifest({ ...manifestInput, rolledBack: true })
@@ -2079,16 +2390,24 @@ async function applyPromoteUnlocked(
     await rename(tempAbs, abs)
     tempLive = false
 
+    writeKbTransaction(repo, chunkId, rel, embeddedChunks)
+  } catch (err) {
+    // 台账先于正文落盘,所以这里任何一步失败(临时文件写、rename、safeKbAbsAt
+    // 复检、DB 事务)之后,台账都可能停在 committed——不重写就留下一条指向
+    // 未落盘内容的"成功"记录。
+    // 不拆内外两层:DB 失败也在本 catch 内,拆开会让 DB 路径重复 restoreFile
+    // 与重复写台账(幂等,但纯属死重)。
+    // restoreFile 对所有分支都安全:rename 没发生时 abs 要么不存在(new)、
+    // 要么还是 previous 原样(merge),两种情况都不破坏既有内容。
     try {
-      writeKbTransaction(repo, chunkId, rel, embeddedChunks)
-    } catch (err) {
       await restoreFile(abs, previous, kbRoot, rel)
+    } finally {
       await writeMetaFn(
         join(kbRoot, manifestRel),
         promoteManifest({ ...manifestInput, rolledBack: true })
       )
-      throw err
     }
+    throw err
   } finally {
     if (tempLive)
       await unlink(tempAbs).catch((err) => {
@@ -2182,15 +2501,22 @@ async function restoreFile(
 Run: `pnpm vitest run tests/lib/knowledge/reflection/apply-promote.test.ts`
 Expected: PASS
 
-- [ ] **Step 5: 查全仓是否还有旧 helper 引用**
+- [ ] **Step 5: 清掉已删 helper 的引用,保持全仓绿**
 
 Run: `grep -rn "promotedDocRel\|promotedMarkdown" lib app components scripts tests`
-Expected: 无输出（只剩 Step 6 的 promoter 测试引用，若该处不在本任务范围内，先记下并在 Task 7 处理）。若 `tests/lib/knowledge/reflection/promoter.test.ts` 仍有引用，本任务先不动它——Task 7 会改。
+Expected: 只剩 `tests/lib/knowledge/reflection/promoter.test.ts` 的引用。**这处必须在本任务内清掉**——两个 export 已删，留着会让 `pnpm typecheck` 与全量测试在 Task 6 与 Task 7 之间一直红，中间态不可接受。
+
+在 `tests/lib/knowledge/reflection/promoter.test.ts` 里做两处最小删除（该文件其余改动留给 Task 7）：
+
+1. 顶部 import 由 `import { applyPromote, promotedDocRel, promotedMarkdown } from "@/lib/knowledge/reflection/apply-promote"` 改为 `import { applyPromote } from "@/lib/knowledge/reflection/apply-promote"`
+2. 删掉 `describe("apply-promote helpers", ...)` 整个块（它的两个 it 断言的就是被删的两个 helper）
+
+改完 `pnpm typecheck` 应干净、`pnpm vitest run` 应全绿。promoter.test.ts 里那些调用 `applyPromote({chunkId, ...})` 的用例此刻仍会因缺 `unit` 而类型不通过——**若确实如此，把该文件里 `applyPromote` 的调用临时补上 `unit` 参数**（用 Task 7 Step 1 里那个 `unit()` 帮助函数），或者**改成 `it.skip` 并加一行注释指向 Task 7**。二选一，以 `pnpm typecheck` 干净为准；在报告里说明你选了哪种。
 
 - [ ] **Step 6: 提交**
 
 ```bash
-git add lib/knowledge/reflection/apply-promote.ts tests/lib/knowledge/reflection/apply-promote.test.ts
+git add lib/knowledge/reflection/apply-promote.ts tests/lib/knowledge/reflection/apply-promote.test.ts tests/lib/knowledge/reflection/promoter.test.ts
 git commit -m "refactor(reflection): 升格落盘改写为合规单元 + 台账
 
 入参从 chunkId 变为已成文单元;merge 先读旧正文再追加,读不到就失败而不静默
@@ -2211,6 +2537,8 @@ git commit -m "refactor(reflection): 升格落盘改写为合规单元 + 台账
 - [ ] **Step 1: 改写测试**
 
 `tests/lib/knowledge/reflection/promoter.test.ts`：
+
+> Task 6 Step 5 已经清掉了已删 helper 的 import 与 `describe("apply-promote helpers", ...)` 块（为了让中间态保持绿）。若你发现那两处已经不在，说明 Task 6 已做，跳过即可——下面这段是对该文件 import 的最终形态描述。
 
 顶部 import 改为：
 
@@ -2502,6 +2830,11 @@ export async function promoteEntry(
     })
   }
 
+  // composePromotion 的失败契约是两类:校验类失败返回 ok:false(下面这行接住),
+  // I/O 与超时类失败直接抛出。这里**不吞**异常——定时路径由 runPromote 的
+  // try/catch 兜底(它会 emitErrorSafely 并把本轮标 failed),手动路径由
+  // app/api/reflection/route.ts 的外层 try/catch 兜底。别在这里加 catch:
+  // 吞掉会让超时既不进错误总线、也不告诉调用方本轮为什么没升格。
   const composed = await (deps.composeFn ?? composePromotion)({
     entry: {
       id: entry.id,
@@ -2912,20 +3245,34 @@ Expected: 只剩 `.md.disabled` 文件与 `_archive/` 目录，没有 `.md`。
 
 - [ ] **Step 5: 写 manifest**
 
-为每条升格生成 `docs/kb/_meta/2026-09-16-migrate-promoted-<id>-manifest.md.disabled`，字段沿用 Task 3 的 `promoteManifest()` 结构，并额外补上迁移专属字段：
+为每条升格生成 `docs/kb/_meta/2026-09-16-migrate-promoted-<id>-manifest.md.disabled`。
 
+**用 Task 3 的 `promoteManifest()` 生成，不要手写。** 手写会让迁移记录与自动升格记录在字段和措辞上漂移，而台账存在的意义正是让每次写入可追溯且同形。写一个小的一次性脚本（`node --experimental-transform-types`，导入 `promoteManifest` 与 `sha256Hex`），对 7 条各调一次：
+
+```ts
+promoteManifest({
+  chunkId: id,
+  variant: "migration",
+  decision: "merge" | "new",
+  target: "<相对 docs/kb 的目标路径，如 retrieval/faq/api-errors.md>",
+  originalPath: `promoted/reflection-${id}.md`,
+  retiredPath: `promoted/reflection-${id}.md.disabled`,
+  relocationReason:
+    "adding-kb-knowledge 规定当前知识落 retrieval/，promoted/ 为历史层；原文件是 ingest 可见的活跃语料，构成重复 canonical 入口",
+  preEditSnapshot: "_meta/2026-09-16-<target>-pre-edit.md.disabled",
+  preSha256: "<Step 2 输出的目标文件旧哈希>",
+  postSha256: "<改完目标文件后的 sha256>",
+  sourceStatus: `QQ 群客服会话反思 #${id}`,
+  volatility: "<该条单元写进正文的动态性说明>",
+  chunks: splitCompactedFaq(改完后的目标文件全文),
+  embeddedChunks: 0,
+  dimension: null,
+  rolledBack: false,
+  date: "2026-09-16",
+})
 ```
-- decision：merge（历史迁移）或 new（历史迁移）
-- target：docs/kb/<目标路径>
-- original_path：docs/kb/promoted/reflection-<id>.md
-- active_path：docs/kb/<目标路径>
-- retired_path：docs/kb/promoted/reflection-<id>.md.disabled
-- relocation_reason：adding-kb-knowledge 规定当前知识落 retrieval/，promoted/ 为历史层；原文件是 ingest 可见的活跃语料，构成重复 canonical 入口
-- pre-edit snapshot：docs/kb/_meta/2026-09-16-<target>-pre-edit.md.disabled
-- pre-edit SHA-256：<Step 2 的输出>
-- post-edit SHA-256：<改完目标文件后 shasum -a 256 的输出>
-- source_status：QQ 群客服会话反思 #<id>（非官方文档逐条核实）
-```
+
+`chunks` 用 `splitCompactedFaq`（`lib/knowledge/reflection/compact-chunks.ts`）对改完后的目标文件全文切分，这样结构预检报的是真实段数与最长段。`embeddedChunks: 0` 与 `dimension: null` 是诚实的：迁移这一步只改磁盘，向量要等 Task 11 的 `pnpm ingest` 才重建——**不要**填成已经入库的样子。
 
 - [ ] **Step 6: 结构自检**
 
