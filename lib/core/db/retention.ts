@@ -15,6 +15,7 @@ export const DEFAULT_RETENTION_POLICY = Object.freeze({
   usageDays: 730,
   sessionsDays: 365,
   outboxSentDays: 90,
+  adminAuditEventsDays: 365,
   transcriptsDays: 90,
 })
 
@@ -25,6 +26,7 @@ export type RetentionPolicy = Readonly<{
   usageDays: number
   sessionsDays: number
   outboxSentDays: number
+  adminAuditEventsDays: number
   transcriptsDays: number
 }>
 
@@ -111,6 +113,7 @@ function validatePolicy(policy: RetentionPolicy): void {
   validateDays(policy.usageDays, "usageDays")
   validateDays(policy.sessionsDays, "sessionsDays")
   validateDays(policy.outboxSentDays, "outboxSentDays")
+  validateDays(policy.adminAuditEventsDays, "adminAuditEventsDays")
   validateDays(policy.transcriptsDays, "transcriptsDays")
 }
 
@@ -171,6 +174,15 @@ const TABLES: readonly TableSpec[] = [
     args: (cutoff) => [cutoff],
     detail:
       "仅清理超过窗口的已成功投递记录；pending、sending、failed 记录保留以便重试和排障",
+  },
+  {
+    table: "admin_audit_events",
+    cutoff: (now, policy) => daysAgo(now, policy.adminAuditEventsDays),
+    countSql:
+      "SELECT COUNT(*) AS n FROM admin_audit_events WHERE started_at < ?",
+    deleteSql: "DELETE FROM admin_audit_events WHERE started_at < ?",
+    args: (cutoff) => [cutoff],
+    detail: "管理变更审计记录按开始时间保留；仅在显式保留清理时删除",
   },
 ]
 

@@ -83,11 +83,13 @@ pnpm db:retention ./data/agent.db
 pnpm db:retention ./data/agent.db --apply
 ```
 
-默认策略是：`reflect_compactions` 180 天，主题出现记录/孤立主题和非活动会话 365
-天，模型/工具日用量 730 天，已成功投递的 `outbox_messages` 记录 90 天（`pending`、
+默认策略是：`reflect_compactions` 180 天，主题出现记录/孤立主题、非活动会话和
+`admin_audit_events` 管理变更审计记录 365 天，模型/工具日用量 730 天，已成功投递的
+`outbox_messages` 记录 90 天（`pending`、
 `sending`、`failed` 会保留以便重试和排障）。会话只有在非人工、无 `resume_id` 且没有任何历史工单时才会
 清理；有工单（包括已关闭）、人工接管或续接指针的旧会话会在报告中标为 protected。现有反思
-轮询器继续负责 `resolution_events`、主动回复和入站去重表的 90/90/7 天窗口。
+轮询器继续负责 `resolution_events`、主动回复和入站去重表的 90/90/7 天窗口。审计记录按
+`started_at` 计算候选，和其它表一样只会在显式 `--apply` 时删除。
 
 Claude transcript 位于 `CLAUDE_CONFIG_DIR/projects`，默认不会被扫描。需要评估时显式
 指定目录（按文件 mtime 统计，默认 90 天）：
