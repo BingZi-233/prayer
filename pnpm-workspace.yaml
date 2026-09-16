@@ -4,6 +4,8 @@ packages: []
 overrides:
   # GHSA-vwc7-r8mq-g2x9: destination symlink overwrite; fixed in >=0.6.1
   "adm-zip@<0.6.1": "^0.6.1"
+  # GHSA-2883-xcg3-v3hh: empty YAML merge sources can exhaust CPU; fixed in >=4.3.2
+  "js-yaml@<4.3.2": "4.3.2"
   "fast-uri@<3.1.6": "^3.1.6"
   "sharp@<0.35.0": "^0.35.4"
 
