@@ -166,7 +166,7 @@ export class KnowledgeRepository {
 
   // 向量近邻检索。驳回/已升格的反思不参与命中:
   // - rejected:人工纠错须立刻从检索消失
-  // - promoted:知识已固化到正式文档(promoted/*.md),避免与正式 chunk 重复占 top-k
+  // - promoted:知识已固化到正式文档(retrieval/**),避免与正式 chunk 重复占 top-k
   // 无 meta / 非反思文档一律视为可检索(沉淀默认 approved)。
   searchKb(query: Float32Array, k: number): KbHit[] {
     const rows = this.sql
