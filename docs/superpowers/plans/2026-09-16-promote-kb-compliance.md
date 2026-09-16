@@ -2702,7 +2702,7 @@ const composeStub = vi.fn(async ({ entry }: { entry: { id: number } }) => ({
 
 ```ts
 describe("promoteEntry", () => {
-  it("已升格/已驳回 直接短路,不调成文", async () => {
+  it("已驳回 直接短路,不调成文", async () => {
     const id = seedApproved(1)[0]!
     repo.setReflectionStatus(id, "rejected")
     const composeFn = vi.fn()
@@ -2714,6 +2714,45 @@ describe("promoteEntry", () => {
     })
     expect(r).toEqual({ ok: false, reason: "已驳回,不可升格" })
     expect(composeFn).not.toHaveBeenCalled()
+  })
+
+  it("已升格 直接短路:file 留空(无从得知当初落到哪个文档)", async () => {
+    // 正常流程升格即物理删 chunk,这个状态只防御历史残留形态;此时无从得知
+    // 当初落到哪个文档,所以 file 为空而不是瞎猜。
+    const id = seedApproved(1)[0]!
+    repo.setReflectionStatus(id, "promoted")
+    const composeFn = vi.fn()
+    const r = await promoteEntry({
+      repo,
+      chunkId: id,
+      embed,
+      composeFn: composeFn as never,
+    })
+    expect(r).toEqual({
+      ok: true,
+      file: "",
+      content: expect.any(String),
+      already: true,
+    })
+    expect(composeFn).not.toHaveBeenCalled()
+  })
+
+  it("成文抛错(超时/流错误)原样上抛,不被吞掉", async () => {
+    const id = seedApproved(1)[0]!
+    // composePromotion 的失败契约:校验类失败返回 ok:false,I/O 与超时类失败是
+    // 抛出且它自己不 catch。promoteEntry 必须同样不吞——定时路径靠 runPromote 的
+    // try/catch 兜底(emitErrorSafely + 标 failed),手动路径靠路由的外层 catch。
+    // 吞掉会让超时既不进错误总线、也不告诉调用方本轮为什么没升格。
+    await expect(
+      promoteEntry({
+        repo,
+        chunkId: id,
+        embed,
+        composeFn: (async () => {
+          throw new Error("超时(180000ms)")
+        }) as never,
+      })
+    ).rejects.toThrow("超时(180000ms)")
   })
 
   it("成文失败 → 该条不升格,状态仍 approved", async () => {
@@ -2996,21 +3035,75 @@ for (const e of candidates) {
 }
 ```
 
-`runPromote` 里调用升格实现的那段（原 `const r = await d.promoteFn({...})`）替换为：
+`runPromote` 里调用升格实现的那段（原 `const r = await d.promoteFn({...})`）替换为下面这段。**注意 per-entry 必须自带 try/catch**：
 
 ```ts
-const r = await promoteEntry({
-  repo: d.repo,
-  chunkId: id,
-  embed: embedCached,
-  queryFn: d.queryFn,
-  queryTimeoutMs: d.queryTimeoutMs,
-  composeFn: d.composeFn,
-  promoteFn: d.promoteFn,
-  candidateK: d.baseContextK,
-  cwd: d.cwd,
-  now: d.now,
-})
+// 单条抛错(成文超时/流错误、写盘失败)不能击穿整轮。Task 7 起每条升格多了一次
+// 可抛的成文调用,不隔离的话第 3 条抛出会让第 4、5 条本轮不再尝试;更糟的是
+// 外层 catch 硬编码 promoted: 0,而第 1、2 条此时已落盘入库——手动触发路由
+// (app/api/reflection/promote/route.ts)把这个值原样回给操作员,就成了
+// "503 + 升格 0 条",实则已经升了 2 条。所以这里记错误、标 failed、继续。
+// 外层 catch 只留给第一阶段(那里失败整轮中止才是对的,且此时确实一条没升)。
+try {
+  const r = await promoteEntry({
+    repo: d.repo,
+    chunkId: id,
+    embed: embedCached,
+    queryFn: d.queryFn,
+    queryTimeoutMs: d.queryTimeoutMs,
+    composeFn: d.composeFn,
+    promoteFn: d.promoteFn,
+    // 用 d.candidateK 而不是 d.baseContextK:上面刚把 candidateK 加进
+    // ReflectionPromoterDeps/Resolved,接成 baseContextK 会让新字段只写不读。
+    // 两者缺省都是 3,生产行为不变。收尾时若仍无人设置 candidateK,可并回
+    // baseContextK 减一个字段。
+    candidateK: d.candidateK,
+    cwd: d.cwd,
+    now: d.now,
+  })
+  if (r.ok && !r.already) {
+    promoted++
+    if (d.notifyAdmin && d.adminSurface) {
+      const preview =
+        r.content.slice(0, 40) + (r.content.length > 40 ? "…" : "")
+      bus.emit("action.send", {
+        channel: d.adminSurface.channel,
+        chatId: d.adminSurface.chatId,
+        text: `反思自动升格: #${id} → ${r.file}\n${preview}`,
+      })
+    }
+  } else if (!r.ok) {
+    failed = true
+    logger.log("warn", `[reflection-promote] 升格 #${id} 失败: ${r.reason}`)
+  }
+} catch (err) {
+  failed = true
+  logger.log(
+    "warn",
+    `[reflection-promote] 升格 #${id} 抛错: ${
+      err instanceof Error ? err.message : String(err)
+    }`
+  )
+  emitErrorSafely({
+    scope: "reflection-promote",
+    err,
+    userVisible: false,
+  })
+}
+```
+
+**并给 `candidateK` 的注释补一句实话**（审查指出它数的是命中 chunk 数、去重后可能少于 k——方向安全但名不符实）：
+
+```ts
+  /** 成文阶段给模型看的候选**命中条数**(searchBaseKb 返回的是 chunk 命中,
+   *  按 doc 去重后文档数可能少于它)。缺省 3。 */
+  candidateK?: number
+```
+
+**并把那条弱命名改掉**：`promoter.ts` 里 `it("promoteEntry 只 embed 反思正文一次", ...)` 名不副实——`promoteEntry` 内部根本没有缓存(缓存在 `runPromote`)。它真正证明的是「promoteEntry 内部不会二次 embed」。改名为：
+
+```ts
+  it("promoteEntry 内部不重复 embed 反思正文", async () => {
 ```
 
 - [ ] **Step 4: 跑测试确认通过**
@@ -3113,7 +3206,13 @@ promoteEntryMock.mockResolvedValue({
 })
 ```
 
-**其四**，在 `describe("manual reflection routes", ...)` 末尾追加两个用例：
+**其四**，文件里已有 `vi.mock("@/lib/model/embed", () => ({ embed: vi.fn() }))`，为了下面那条身份断言，补一行把它取出来：
+
+```ts
+import { embed as embedMock } from "@/lib/model/embed"
+```
+
+**其五**，在 `describe("manual reflection routes", ...)` 末尾追加两个用例：
 
 ```ts
 it("promote 走 promoteEntry(与定时升格同一路径)", async () => {
@@ -3131,6 +3230,10 @@ it("promote 走 promoteEntry(与定时升格同一路径)", async () => {
     chunkId: 7,
     embed: expect.anything(),
   })
+  // 单靠上面的 expect.anything() 断言不出 embed 是否还被超时包着。手动路径没有
+  // resolve() 那层包装,裸 embed 会让 HTTP 请求一直等一个挂死的本地 embedding,
+  // 所以这里按身份比较:传进去的必须不是模块导出的那个裸 embed。
+  expect(promoteEntryMock.mock.calls[0][0].embed).not.toBe(embedMock)
   expect((await response.json()).data).toMatchObject({
     id: 7,
     status: "promoted",
@@ -3168,6 +3271,7 @@ Expected: FAIL —— `promoteEntryMock` 未被调用（当前路由直接调 `a
 
 ```ts
 import { promoteEntry } from "@/lib/knowledge/reflection/promoter"
+import { DEFAULT_EMBED_TIMEOUT_MS, withTimeoutFn } from "@/lib/model/timeout"
 ```
 
 第 130-133 行那段改为：
@@ -3176,8 +3280,64 @@ import { promoteEntry } from "@/lib/knowledge/reflection/promoter"
 // promote: 成文 → 写文件 + 向量入库 + status=promoted
 // 必须与定时升格走同一条路径,否则手动升格会产出不合规的旧格式文档。
 const { repo: r } = getAppContext()
-const promo = await promoteEntry({ repo: r, chunkId: id, embed })
+const promo = await promoteEntry({
+  repo: r,
+  chunkId: id,
+  // 手动路径没有 resolve() 那层包装,裸 embed 会让 HTTP 请求一直等一个挂死的
+  // 本地 embedding(冷启动加载模型实测可达 20s+);定时路径由 promoter 的
+  // resolve() 负责套超时,这里得自己套。
+  embed: withTimeoutFn(DEFAULT_EMBED_TIMEOUT_MS, embed),
+})
+if (!promo.ok) {
+  // 精确匹配,不用 includes("不存在"):applyPromote 在「索引里有该 doc、磁盘上
+  // 文件却丢了」时返回「目标文档不存在」,也含这三个字。用子串判断会把这种内部
+  // 一致性故障报成 404,让操作员以为条目 id 不存在——而这是本特性最不该撒的谎
+  // (首次让手动路径可走通之后才暴露)。
+  const status =
+    promo.reason === "条目不存在"
+      ? 404
+      : INTERNAL_FAULT_REASONS.has(promo.reason)
+        ? 409
+        : 400
+  return NextResponse.json(fail(promo.reason), { status })
+}
 ```
+
+文件顶部（`patchSchema` 之前）加：
+
+```ts
+/**
+ * 这些 reason 表示系统内部不一致(不是调用方请求有问题),映射成 409 而不是 400,
+ * 免得把「磁盘与索引对不上」误导成「你参数写错了」。刻意用白名单而不是前缀/子串
+ * 匹配:reason 是文案,子串判断会随文案改动静默失效。
+ *
+ * 入选依据:文件系统/索引一致性、路径守卫、容量上限——都发生在表单参数与条目 id
+ * 校验通过之后,失败源于系统自身状态。**排除**两类:「已驳回,不可升格」属正常
+ * 业务状态;成文校验类(单元超长/含空行/域不在白名单内/缺少 doc…)属模型产出不
+ * 合规,仍归 400。
+ */
+const INTERNAL_FAULT_REASONS = new Set([
+  "目标文档不存在",
+  "目标文档过大,拒绝合并",
+  "目标文档已存在",
+  "知识库文件过大",
+  "知识库路径非法",
+  "台账目录非法",
+])
+```
+
+PATCH 的外层 catch 补上错误总线（`promoter.ts` 的注释声称手动路径靠它兜底，原实现只兜了「告诉调用方」）：
+
+```ts
+  } catch (err) {
+    // promoter.ts 的注释把手动路径的兜底记在这里,那就得真的兜:只回 500 而不进
+    // 错误总线,超时/流错误在运维侧零痕迹(定时路径有 emitErrorSafely,手动没有)。
+    emitErrorSafely({ scope: "reflection-promote", err, userVisible: false })
+    return NextResponse.json(fail(safeApiError(err)), { status: 500 })
+  }
+```
+
+顶部 import 相应加 `import { emitErrorSafely } from "@/lib/core/bus"`。
 
 - [ ] **Step 4: 跑测试确认通过**
 
@@ -3201,12 +3361,21 @@ git commit -m "feat(api): 手动升格改走 promoteEntry
 **Files:**
 
 - Modify: `lib/core/db/repositories/knowledge.ts`（`searchKb` 上方注释）
-- Modify: `docs/data-access.md:47`、`docs/development.md:78`（先核实措辞）
+- Modify: `docs/data-access.md:47`（升格写盘的补偿策略缺了新机制）
+- `docs/development.md`：**核实后无需改动**
 
-- [ ] **Step 1: 核实实际措辞**
+> **订正本计划原先的错误前提。** 本计划曾断言 `docs/data-access.md` 与 `docs/development.md`「都写了升格落 `promoted/`」。实测不成立——两份文档都没有任何落盘位置的表述。真正过期的只有 `knowledge.ts` 那句注释；`development.md:78` 讲的是周期开关，与本改动无关。下面的步骤已按实情重写。教训与 [[guardrail-path-literals]] 同源：**写「同步文档」这类任务前必须先用 grep 核实被同步的文本真的存在**。
 
-Run: `grep -n "promoted\|升格\|human-reflection" docs/data-access.md docs/development.md lib/core/db/repositories/knowledge.ts lib/knowledge/kb.ts`
-Expected: 列出所有提到升格落盘位置或反思文档的地方。**以输出为准**决定改哪几行——本计划只保证上面两处行号。
+- [ ] **Step 1: 核实实际措辞（已完成，保留供复核）**
+
+```
+$ grep -rn "promoted/\|升格" docs/*.md
+docs/data-access.md:47 / :52
+docs/development.md:78
+（外加两份 dated assessment 文档，属快照，不动）
+$ grep -n "promoted/\*" lib/core/db/repositories/knowledge.ts
+knowledge.ts:169
+```
 
 - [ ] **Step 2: 改注释**
 
@@ -3222,19 +3391,32 @@ Expected: 列出所有提到升格落盘位置或反思文档的地方。**以�
   // - promoted:知识已固化到正式文档(retrieval/**),避免与正式 chunk 重复占 top-k
 ```
 
-- [ ] **Step 3: 改文档**
+`lib/core/db/kb-sql.ts` **不要动**：它头部禁止实质改动（cs 插件子进程按路径以 strip-only 模式加载），且它自己的注释说的是 `reflection_meta.status === 'promoted'`，仍然准确。
 
-按 Step 1 的输出更新 `docs/data-access.md`、`docs/development.md` 中描述升格产物位置/流程的句子：升格产物落 `docs/kb/retrieval/<domain>/`，写入前在 `docs/kb/_meta/` 落 manifest 与快照，不再写 `docs/kb/promoted/`。若某处措辞与本计划假设不同，按实际语义改，不要机械替换。
+- [ ] **Step 3: 改 `docs/data-access.md`**
+
+`:47` 那句「独立的补偿策略」仍然成立，但缺了新机制。在它后面补 4 行（按 `apply-promote.ts` 的实际顺序）：
+
+```
+- SQLite 事务只覆盖数据库。反思升格流程中的文件写入仍需独立的补偿策略，
+-   不能因为数据库事务成功就宣称文件与数据库具备共同事务。
++   不能因为数据库事务成功就宣称文件与数据库具备共同事务。该策略是：动
++   `docs/kb/retrieval/` 的活跃语料之前，先在 `docs/kb/_meta/` 落 pre-edit
++   快照与 manifest（两侧 SHA-256）；写盘或入库失败时还原文件并把 manifest
++   改记为 `rolled_back`。这些 `*.md.disabled` 不属于可入库语料。
+```
+
+`docs/development.md` 与 `docs/database-operations.md` 经独立 grep 确认无第二处描述升格产物位置或轮次行为的句子，**不改**。「不改」在这里是有据的判断，不是跳过。
 
 - [ ] **Step 4: 校验没有新的 ingest 可见目录被引入**
 
 Run: `find docs/kb -name '*.md' -not -path '*_archive*' | sort`
-Expected: 与迁移前相比，只应多出 Task 10 新建的 retrieval 文档；不应出现 `_meta/*.md`。
+Expected: 与迁移前相比，只应多出 Task 10 新建的 retrieval 文档；不应出现 `_meta/*.md`（台账是 `.md.disabled`）。此时仍会列出 7 个 `docs/kb/promoted/reflection-*.md`——那是 Task 10 的职责，非本任务引入。
 
 - [ ] **Step 5: 提交**
 
 ```bash
-git add docs/data-access.md docs/development.md lib/core/db/repositories/knowledge.ts
+git add docs/data-access.md lib/core/db/repositories/knowledge.ts
 git commit -m "docs: 同步升格落盘位置到 retrieval 层"
 ```
 
