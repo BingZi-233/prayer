@@ -187,3 +187,32 @@ export function previewJsonPayload(
     .replace(/\s+/g, " ")
     .trim()
 }
+
+/**
+ * 从 structured / 文本抽出**对象**(如 {target, unit})：所有 required 字段都在才认。
+ * 与 pickArrayFieldDual 的区别是根节点是对象而不是数组——升格成文的结果是一个
+ * 整体对象,拿半截 JSON 当合法结果会让归属决策落空。
+ */
+export function pickObjectFieldDual(
+  structured: unknown | undefined | null,
+  rawText: string,
+  required: readonly string[]
+): Record<string, unknown> | null {
+  const complete = (v: unknown): Record<string, unknown> | null => {
+    if (!v || typeof v !== "object" || Array.isArray(v)) return null
+    const o = v as Record<string, unknown>
+    return required.every((f) => o[f] !== undefined) ? o : null
+  }
+
+  const direct = complete(structured)
+  if (direct) return direct
+
+  const text = rawText ?? ""
+  if (!text.trim()) return null
+  const values = extractJsonValues(text)
+  for (let i = values.length - 1; i >= 0; i--) {
+    const hit = complete(values[i])
+    if (hit) return hit
+  }
+  return null
+}

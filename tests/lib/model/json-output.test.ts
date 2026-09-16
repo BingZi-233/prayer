@@ -3,6 +3,7 @@ import {
   extractJsonValues,
   findBalancedEnd,
   pickArrayFieldDual,
+  pickObjectFieldDual,
   previewJsonPayload,
   salvageArrayObjects,
 } from "@/lib/model/json-output"
@@ -98,5 +99,42 @@ describe("salvageArrayObjects / previewJsonPayload", () => {
     expect(previewJsonPayload({ items: [] }, "  hello world  ", 5)).toBe(
       "hello"
     )
+  })
+})
+
+describe("pickObjectFieldDual", () => {
+  it("structured 优先且要求字段齐全", () => {
+    expect(
+      pickObjectFieldDual(
+        { target: { mode: "new" }, unit: { body: "x" } },
+        "",
+        ["target", "unit"]
+      )
+    ).toEqual({ target: { mode: "new" }, unit: { body: "x" } })
+    // 缺 unit → 不认
+    expect(
+      pickObjectFieldDual({ target: {} }, "", ["target", "unit"])
+    ).toBeNull()
+  })
+
+  it("structured 缺失时从文本兜底,取最后一个合法对象", () => {
+    const text = [
+      "先解释一下：",
+      '{"target":{"mode":"new"}}',
+      "```json",
+      '{"target":{"mode":"merge","doc":"retrieval/faq/a.md"},"unit":{"body":"y"}}',
+      "```",
+    ].join("\n")
+    expect(pickObjectFieldDual(undefined, text, ["target", "unit"])).toEqual({
+      target: { mode: "merge", doc: "retrieval/faq/a.md" },
+      unit: { body: "y" },
+    })
+  })
+
+  it("数组与空输入都返回 null", () => {
+    expect(
+      pickObjectFieldDual([{ target: {}, unit: {} }], "", ["target"])
+    ).toBeNull()
+    expect(pickObjectFieldDual(undefined, "  ", ["target"])).toBeNull()
   })
 })
