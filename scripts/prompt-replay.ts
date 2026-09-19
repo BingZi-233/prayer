@@ -369,6 +369,71 @@ function sampleQuestions(repo: Repo, limit: number): QuestionSample {
   }
 }
 
+/** KB top-1 距离分桶阈值:≤ 记为「有据可依」,> 或无命中记为「无据需兜底」 */
+const KB_BUCKET_THRESHOLD = 0.8
+
+interface PreparedQuestion {
+  question: string
+  /** 已按 maxDistance 过滤的候选,searchKb 已 ORDER BY distance(近→远) */
+  hits: { distance: number; content: string }[]
+  kbBlock: string
+  /** 检索失败的原因;失败时退化为不注入候选,该题照跑 */
+  error?: string
+}
+
+/**
+ * 先把全部样本的 KB 候选算出来(本地嵌入,不烧 API),再写报告头 ——
+ * 头部要给出本次样本的分桶摘要,判读时才知道哪几题本身就没有依据可用。
+ */
+async function prepareQuestions(
+  repo: Repo,
+  questions: string[],
+  topK: number,
+  maxDistance: number
+): Promise<PreparedQuestion[]> {
+  const out: PreparedQuestion[] = []
+  for (const question of questions) {
+    try {
+      const vec = await embed(question)
+      const hits = repo
+        .searchKb(vec, topK)
+        .filter((h) => h.distance <= maxDistance)
+      // 与 makeKbPrefetch 对齐:先清洗再截断(预检索每轮注入,不清洗可能整请求 500)
+      const contents = hits.map((h) =>
+        sanitizeForModel(h.content).slice(0, DEFAULT_KB_PREFETCH_MAX_CHARS)
+      )
+      out.push({
+        question,
+        hits,
+        kbBlock: formatKbBlock(contents.map((content) => ({ content }))),
+      })
+    } catch (e) {
+      // 单题检索失败不该毁掉整轮回放:记下来,该题退回纯工具路径继续跑
+      out.push({
+        question,
+        hits: [],
+        kbBlock: "",
+        error: e instanceof Error ? e.message : String(e),
+      })
+    }
+  }
+  return out
+}
+
+/** 本次样本按 KB top-1 距离分桶,写进报告头供判读直接分组 */
+function bucketSummary(prepared: PreparedQuestion[]): string {
+  let grounded = 0
+  let weak = 0
+  let none = 0
+  for (const p of prepared) {
+    const top1 = p.hits[0]?.distance
+    if (top1 === undefined) none += 1
+    else if (top1 <= KB_BUCKET_THRESHOLD) grounded += 1
+    else weak += 1
+  }
+  return `≤${KB_BUCKET_THRESHOLD} 有据可依 ${grounded} 题;>${KB_BUCKET_THRESHOLD} 弱相关 ${weak} 题;无命中 ${none} 题`
+}
+
 interface ToolRecord {
   name: string
   decision: "allow" | "deny"
@@ -551,6 +616,13 @@ async function main(): Promise<void> {
       )
     }
 
+    const prepared = await prepareQuestions(
+      repo,
+      sample.picked,
+      topK,
+      maxDistance
+    )
+
     const stamp = new Date().toISOString().replace(/[:.]/g, "-")
     const outDir = join(ARTIFACT_DIR, stamp)
     const renderedDir = join(outDir, "variants")
@@ -570,6 +642,9 @@ async function main(): Promise<void> {
       `- 题目数: ${sample.picked.length}(--limit ${args.limit})`,
       `- 样本来源: proactive_replies 共 ${sample.total} 行,按长度 ${MIN_QUESTION_CHARS}~${MAX_QUESTION_CHARS} 字符(JS 长度)过滤得 ${sample.eligible} 条,按 id 升序等距抽样`,
       "  - 有偏:只含主动补位链路记录过的问题,且仅限生效群白名单,不代表真实提问分布",
+      "- 判读口径: 单题结果受采样随机性支配(实测同题同 prompt 三次运行,old 的工具调用数为 0/3/0),不得按单题判读;",
+      "  必须按批次聚合,并按每题 KB top-1 距离分桶看(有据可依 / 无据需兜底)。",
+      `- 样本分桶(KB top-1 距离): ${bucketSummary(prepared)}`,
       `- 模型: ANTHROPIC_MODEL=${prod.env.ANTHROPIC_MODEL ?? "(未设置)"};settings.model=${JSON.stringify(prod.settings.model ?? null)}`,
       `- 预算: maxTurns=${MAX_TURNS};单题超时=${RUN_TIMEOUT_MS}ms(对齐 agent.ts)`,
       `- KB: topK=${topK};maxDistance=${maxDistance};每片截断=${DEFAULT_KB_PREFETCH_MAX_CHARS} 字符(对齐 makeKbPrefetch)`,
@@ -587,35 +662,32 @@ async function main(): Promise<void> {
     // 先落一份头,之后每个变体跑完都重写一次:任何中断都保住已完成结果
     flush()
 
-    for (const q of sample.picked) {
-      lines.push(`---`, "", `## ${redactForReport(q, 200)}`, "")
-      let kbBlock = ""
-      try {
-        const vec = await embed(q)
-        const hits = repo
-          .searchKb(vec, topK)
-          .filter((h) => h.distance <= maxDistance)
-        // 与 makeKbPrefetch 对齐:先清洗再截断(预检索每轮注入,不清洗可能整请求 500)
-        const contents = hits.map((h) =>
-          sanitizeForModel(h.content).slice(0, DEFAULT_KB_PREFETCH_MAX_CHARS)
+    for (const item of prepared) {
+      const q = item.question
+      const top1 = item.hits[0]
+      lines.push(
+        `---`,
+        "",
+        `## ${redactForReport(q, 200)}`,
+        "",
+        `- KB top-1 距离: ${top1 ? top1.distance.toFixed(4) : "无命中"}`
+      )
+      if (item.error) {
+        lines.push(
+          `- KB 检索失败,本题不注入候选: ${redactForReport(item.error)}`
         )
-        kbBlock = formatKbBlock(contents.map((content) => ({ content })))
-        lines.push(`- KB 命中 ${hits.length} 条:`)
-        if (!hits.length) lines.push("  - (无)")
-        hits.forEach((h, i) => {
-          lines.push(
-            `  - [${i + 1}] distance=${h.distance.toFixed(4)} | ${redactForReport(h.content, MAX_KB_PREVIEW_CHARS)}`
-          )
-        })
-      } catch (e) {
-        // 单题检索失败不该毁掉整轮回放:记下来,该题退回纯工具路径继续跑
-        const msg = redactForReport(e instanceof Error ? e.message : String(e))
-        lines.push(`- KB 检索失败,本题不注入候选: ${msg}`)
       }
+      lines.push(`- KB 命中 ${item.hits.length} 条:`)
+      if (!item.hits.length) lines.push("  - (无)")
+      item.hits.forEach((h, i) => {
+        lines.push(
+          `  - [${i + 1}] distance=${h.distance.toFixed(4)} | ${redactForReport(h.content, MAX_KB_PREVIEW_CHARS)}`
+        )
+      })
       lines.push("")
 
       for (const [name, systemPrompt] of variants) {
-        const r = await runOnce(systemPrompt, q, kbBlock, prod.env)
+        const r = await runOnce(systemPrompt, q, item.kbBlock, prod.env)
         lines.push(
           `### ${name}`,
           "",
