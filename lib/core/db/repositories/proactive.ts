@@ -49,11 +49,15 @@ export class ProactiveRepository {
     return Number(info.lastInsertRowid)
   }
 
-  /** 回放/统计用:按 id 升序取历史问题文本(只读) */
+  /**
+   * 回放/统计用:按 id 升序取全部历史问题文本(只读)。
+   * 不过滤长度 —— 取数口径(过滤条件)由调用方决定并记录,避免这里硬编码一个
+   * 消费方看不见的筛选,让样本集无法在报告里复现。
+   */
   listQuestions(): string[] {
     return this.sql
       .prepare<{ question: string }>(
-        "select question from proactive_replies where length(question) between 8 and 200 order by id"
+        "select question from proactive_replies order by id"
       )
       .all()
       .map((r) => r.question)

@@ -56,3 +56,6 @@ servers.json
 .agents/
 .playwright-mcp/
 .codegraph/
+# prompt 回放的运行产物(沙箱 config 与报告);基准变体文本是已跟踪的
+# scripts/fixtures/prompt-replay/,不在这个目录里
+.kb-artifacts/
