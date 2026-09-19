@@ -52,6 +52,11 @@ describe("buildDefaultSystem 弱模型契约", () => {
     expect(s).toContain("不调工具")
   })
 
+  it("业务边界与冲突仲裁在位", () => {
+    expect(s).toContain("不承接与产品无关的写代码")
+    expect(s).toContain("以工具当前值为准")
+  })
+
   it("账户、转人工、歧义追问与多问题规则在位", () => {
     expect(s).toContain("不能查、不能办账户")
     expect(s).toContain("不说已经转接")
