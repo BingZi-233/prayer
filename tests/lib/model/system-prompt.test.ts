@@ -69,10 +69,11 @@ describe("buildDefaultSystem 弱模型契约", () => {
     expect(s.slice(0, 400)).toContain("三条铁律")
     expect(s.slice(-400)).toContain("# 再强调一次")
     expect(s.slice(-400)).toContain("一、没依据就说没查到")
+    expect(s.slice(-400)).toContain("多问分条答全")
   })
 
   it("长度不超过上限，防止无节制膨胀", () => {
-    expect(SYSTEM_PROMPT_MAX_CHARS).toBeLessThanOrEqual(2000)
+    expect(SYSTEM_PROMPT_MAX_CHARS).toBe(2000)
     expect(s.length).toBeLessThanOrEqual(SYSTEM_PROMPT_MAX_CHARS)
   })
 
