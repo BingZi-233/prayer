@@ -331,17 +331,58 @@ function gitProvenance(): string {
 /**
  * 落盘前脱敏。relay 可能把凭据回显进错误串或模型正文(用户也可能把 token 贴进问题),
  * 报告是磁盘产物,不能持久化凭据。中文不受影响(不在 token 字符集里)。
+ *
+ * 两档规则,精度不同:
+ * - 高精度:形态本身就是凭据(sk- 前缀、Bearer),任何位置都替换;
+ * - 低精度:32+ 无分隔长串。它同时会命中 `<MODEL_ID_FROM_CURRENT_PLAZA>` 这类
+ *   占位符,而占位符正是判读要看的内容,故对「被 <> 或反引号包裹的串」整段豁免,
+ *   只对普通正文生效。豁免只针对低精度规则:被反引号包住的真 token 仍由 sk- 规则拦下。
  */
-const REDACT_PATTERNS: readonly RegExp[] = [
+const CREDENTIAL_PATTERNS: readonly RegExp[] = [
   /sk-[A-Za-z0-9_-]{8,}/g,
   /Bearer\s+[A-Za-z0-9._~+/=-]{8,}/gi,
-  /[A-Za-z0-9_-]{32,}/g,
 ]
+const LONG_RUN = /[A-Za-z0-9_-]{32,}/g
+/** 豁免段:`<...>` 或反引号包裹的串,整体不适用长串规则 */
+const PROTECTED_SPAN = /<[^<>\n]*>|`[^`\n]*`/g
 
+/** 只在保护段之外替换长串 */
+function redactLongRuns(text: string): string {
+  let out = ""
+  let last = 0
+  for (const m of text.matchAll(PROTECTED_SPAN)) {
+    out += text.slice(last, m.index).replace(LONG_RUN, "<redacted>")
+    out += m[0]
+    last = m.index + m[0].length
+  }
+  return out + text.slice(last).replace(LONG_RUN, "<redacted>")
+}
+
+const REDACTED = "<redacted>"
+
+/**
+ * 截断。脱敏把长串压成标记后再截,截点可能正好落在标记内部,留下 `<redacte`
+ * 这种半截标记 —— 判读的人会以为报告坏了。落在标记内部就把它补全。
+ */
+function truncateAfterRedaction(text: string, maxChars: number): string {
+  if (text.length <= maxChars) return text
+  const cut = text.slice(0, maxChars)
+  const start = cut.lastIndexOf("<")
+  if (start < 0) return cut
+  const tail = cut.slice(start)
+  return tail.length >= 2 && REDACTED.startsWith(tail)
+    ? cut.slice(0, start) + REDACTED
+    : cut
+}
+
+/**
+ * 顺序是「先脱敏、后截断」——反过来的话,跨截断边界的凭据会留下碎片
+ * (实测尾部残留 `sk-BB`),而碎片的形态恰好逃过所有凭据规则。
+ */
 function redactForReport(value: string, maxChars = MAX_ERROR_CHARS): string {
-  let out = value.slice(0, maxChars)
-  for (const re of REDACT_PATTERNS) out = out.replace(re, "<redacted>")
-  return out
+  let out = redactLongRuns(value)
+  for (const re of CREDENTIAL_PATTERNS) out = out.replace(re, REDACTED)
+  return truncateAfterRedaction(out, maxChars)
 }
 
 interface QuestionSample {
@@ -443,9 +484,20 @@ interface ToolRecord {
 interface RunResult {
   text: string
   tools: ToolRecord[]
-  /** 模型消息里观察到、但没经过 canUseTool 的工具名(正常应为空) */
-  undecided: string[]
+  /** 模型消息里观察到、但没经过 canUseTool 的调用(正常应为空) */
+  undecided: UndecidedTool[]
   error?: string
+}
+
+/**
+ * 未经判定的调用。带上 tool_result 原文作证据:光有工具名只能看出「名字不对」,
+ * 无法定性是模型拼错名(CLI 判未知工具)还是权限被绕过 —— 报告里必须能回答这个。
+ */
+interface UndecidedTool {
+  name: string
+  toolUseId: string
+  /** CLI 对该 tool_use 的应答;没等到结果则为 undefined */
+  result?: { isError: boolean; content: string }
 }
 
 /**
@@ -464,6 +516,36 @@ function bumpTool(
   else records.push({ name, decision, count: 1 })
 }
 
+/** tool_result 的 content 是 string 或 block 数组,统一压成纯文本 */
+function toolResultText(content: unknown): string {
+  if (typeof content === "string") return content
+  if (!Array.isArray(content)) return ""
+  return content
+    .map((c) =>
+      c &&
+      typeof c === "object" &&
+      typeof (c as { text?: unknown }).text === "string"
+        ? (c as { text: string }).text
+        : ""
+    )
+    .filter(Boolean)
+    .join(" ")
+}
+
+/** 取出「有 tool_use 记录、但 canUseTool 从未见过该名字」的调用,并附上 CLI 应答 */
+function undecidedTools(
+  observed: Map<string, string>,
+  toolResults: Map<string, { isError: boolean; content: string }>,
+  records: ToolRecord[]
+): UndecidedTool[] {
+  const out: UndecidedTool[] = []
+  for (const [id, name] of observed) {
+    if (!name || records.some((r) => r.name === name)) continue
+    out.push({ name, toolUseId: id, result: toolResults.get(id) })
+  }
+  return out
+}
+
 async function runOnce(
   systemPrompt: string,
   question: string,
@@ -472,7 +554,8 @@ async function runOnce(
 ): Promise<RunResult> {
   const abortController = new AbortController()
   const records: ToolRecord[] = []
-  const observed = new Set<string>()
+  const observed = new Map<string, string>() // tool_use id → 名字
+  const toolResults = new Map<string, { isError: boolean; content: string }>()
   const state: AssistantTextState = { text: "" }
   let timer: ReturnType<typeof setTimeout> | undefined
   try {
@@ -507,9 +590,30 @@ async function runOnce(
         if (msg.type === "assistant" && Array.isArray(msg.message?.content)) {
           consumeAssistantContent(state, msg.message.content)
           for (const block of msg.message.content) {
-            if (block.type === "tool_use") {
-              observed.add(String((block as { name?: unknown }).name ?? ""))
+            const loose = block as {
+              type?: unknown
+              id?: unknown
+              name?: unknown
             }
+            if (loose.type === "tool_use") {
+              observed.set(String(loose.id ?? ""), String(loose.name ?? ""))
+            }
+          }
+        }
+        // tool_result 由 CLI 以 user 消息回灌;只留与本次调用相关的文本作证据
+        if (msg.type === "user" && Array.isArray(msg.message?.content)) {
+          for (const block of msg.message.content) {
+            const loose = block as {
+              type?: unknown
+              tool_use_id?: unknown
+              is_error?: unknown
+              content?: unknown
+            }
+            if (loose.type !== "tool_result") continue
+            toolResults.set(String(loose.tool_use_id ?? ""), {
+              isError: loose.is_error === true,
+              content: toolResultText(loose.content),
+            })
           }
         }
       }
@@ -526,17 +630,13 @@ async function runOnce(
     return {
       text: finalAssistantText(state).trim(),
       tools: records,
-      undecided: [...observed].filter(
-        (name) => name && !records.some((r) => r.name === name)
-      ),
+      undecided: undecidedTools(observed, toolResults, records),
     }
   } catch (e) {
     return {
       text: finalAssistantText(state).trim(),
       tools: records,
-      undecided: [...observed].filter(
-        (name) => name && !records.some((r) => r.name === name)
-      ),
+      undecided: undecidedTools(observed, toolResults, records),
       error: e instanceof Error ? e.message : String(e),
     }
   } finally {
@@ -575,6 +675,7 @@ async function main(): Promise<void> {
       brandName?: string
       brandDescription?: string
       supportUrl?: string
+      kbPrefetchEnabled?: boolean
       kbPrefetchTopK?: number
       kbPrefetchMaxDistance?: number
     }
@@ -587,6 +688,8 @@ async function main(): Promise<void> {
     const topK = cfg.kbPrefetchTopK ?? DEFAULT_KB_PREFETCH_TOP_K
     const maxDistance =
       cfg.kbPrefetchMaxDistance ?? DEFAULT_KB_PREFETCH_MAX_DISTANCE
+    // 回放一律注入候选;若生产关了预检索,这条差异必须在报告头显式说出来
+    const kbPrefetchEnabled = cfg.kbPrefetchEnabled ?? true
 
     const variants = new Map<string, string>()
     for (const name of args.variants) {
@@ -650,8 +753,16 @@ async function main(): Promise<void> {
       `- KB: topK=${topK};maxDistance=${maxDistance};每片截断=${DEFAULT_KB_PREFETCH_MAX_CHARS} 字符(对齐 makeKbPrefetch)`,
       `- 沙箱 config: ${SANDBOX_CONFIG_DIR}(无 hooks;插件: ${Object.keys(prod.plugins).join(", ")})`,
       `- 沙箱行为开关: ${SANDBOX_SETTING_KEYS.map((k) => `${k}=${JSON.stringify(prod.settings[k] ?? null)}`).join(";")}`,
-      `- 渲染后正文: ${args.variants.map((n) => `variants/${n}.txt`).join(", ")}`,
+      `- 预检索开关: kbPrefetchEnabled=${kbPrefetchEnabled}`,
     ]
+    if (!kbPrefetchEnabled) {
+      lines.push(
+        "- ⚠ 生产未启用预检索,本次回放仍注入候选片段,**与生产分叉**,结论不可直接外推到线上。"
+      )
+    }
+    lines.push(
+      `- 渲染后正文: ${args.variants.map((n) => `variants/${n}.txt`).join(", ")}`
+    )
     for (const [name, text] of variants) {
       lines.push(`  - ${name}: ${text.length} chars, sha256=${sha256(text)}`)
     }
@@ -695,8 +806,16 @@ async function main(): Promise<void> {
           `- 工具被拒: ${toolSummary(r.tools, "deny")}`,
           `- 结果: ${r.text.length} chars${r.error ? `;错误: ${redactForReport(r.error)}` : ""}`
         )
-        if (r.undecided.length) {
-          lines.push(`- 未经判定的工具(异常,请排查): ${r.undecided.join(", ")}`)
+        for (const u of r.undecided) {
+          lines.push(
+            `- 未经判定的工具(异常,请排查): ${u.name} (tool_use_id=${u.toolUseId})`
+          )
+          // CLI 的应答是定性依据:未知工具名 vs 权限被绕过,只能靠它区分
+          lines.push(
+            u.result
+              ? `  - tool_result: is_error=${u.result.isError} | ${redactForReport(u.result.content)}`
+              : "  - tool_result: 未收到(该 tool_use 无应答)"
+          )
         }
         lines.push(
           "",
@@ -708,7 +827,10 @@ async function main(): Promise<void> {
           ""
         )
         flush()
-        console.log(`[${name}] ${q.slice(0, 40)} → ${r.text.length} chars`)
+        // stdout 也可能被重定向落盘:同样先脱敏再截断,不能直出原始题面
+        console.log(
+          `[${name}] ${redactForReport(q, 40)} → ${r.text.length} chars`
+        )
       }
     }
     console.log(`报告: ${reportPath}`)
