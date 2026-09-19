@@ -39,26 +39,13 @@ export class ProactiveRepository {
     userId: string,
     question: string,
     answer: string,
-    opts: {
-      deliveryKey?: string
-      deliveryStatus?: string
-      deliveryExpected?: number
-    } = {}
+    opts: { deliveryKey?: string; deliveryStatus?: string; deliveryExpected?: number } = {}
   ): number {
     const info = this.sql
       .prepare(
         "INSERT OR IGNORE INTO proactive_replies (channel, group_id, user_id, question, answer, delivery_key, delivery_status, delivery_expected) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
       )
-      .run(
-        channel,
-        chatId,
-        userId,
-        question,
-        answer,
-        opts.deliveryKey ?? null,
-        opts.deliveryStatus ?? "sent",
-        opts.deliveryExpected ?? null
-      )
+      .run(channel, chatId, userId, question, answer, opts.deliveryKey ?? null, opts.deliveryStatus ?? "sent", opts.deliveryExpected ?? null)
     return Number(info.lastInsertRowid)
   }
 
@@ -118,9 +105,7 @@ export class ProactiveRepository {
     return this.sql
       .prepare<{
         n: number
-      }>(
-        "SELECT COUNT(*) n FROM proactive_replies WHERE delivery_status = 'sent'"
-      )
+      }>("SELECT COUNT(*) n FROM proactive_replies WHERE delivery_status = 'sent'")
       .get()!.n
   }
 

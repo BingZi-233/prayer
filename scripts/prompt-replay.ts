@@ -12,6 +12,9 @@
  *   pnpm prompt:replay --limit 3 --variants old,clite          # 冒烟
  *   pnpm prompt:replay --limit 20 --variants old,clite,a       # 正式对比
  *   pnpm prompt:replay --variants clite --dry-run              # 只打印渲染后的正文
+ *
+ * 变体文本默认取自 scripts/fixtures/prompt-replay/(已跟踪,见该目录 README);
+ * 换用别处的文本目录传 --variants-dir <path>。
  */
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { join, resolve } from "node:path"
@@ -76,7 +79,11 @@ const { isToolAllowed, denyMessage } =
 const PROD_CONFIG_DIR = resolve("./data/claude-config")
 const ARTIFACT_DIR = resolve(".kb-artifacts/prompt-replay")
 const SANDBOX_CONFIG_DIR = join(ARTIFACT_DIR, "claude-config")
-const VARIANTS_DIR = join(ARTIFACT_DIR, "variants")
+/**
+ * 历史/对照变体文本的默认目录。已跟踪的 fixture(见该目录 README),不是 .kb-artifacts
+ * 里的临时产物 —— 基准文本必须随仓库走,否则回放报告无法复现。
+ */
+const DEFAULT_VARIANTS_DIR = resolve("scripts/fixtures/prompt-replay")
 /** 允许回放的插件:只用业务插件,排除 caveman 等风格插件 */
 const KEEP_PLUGINS = ["packyapi@prayer-local", "cs@prayer-local"]
 const RUN_TIMEOUT_MS = 120_000
@@ -86,6 +93,7 @@ const KB_MAX_DISTANCE = DEFAULT_KB_PREFETCH_MAX_DISTANCE
 interface Args {
   limit: number
   variants: string[]
+  variantsDir: string
   dryRun: boolean
 }
 
@@ -97,6 +105,7 @@ function parseArgs(argv: string[]): Args {
   return {
     limit: Number(get("limit") ?? 20),
     variants: (get("variants") ?? "old,clite").split(",").filter(Boolean),
+    variantsDir: resolve(get("variants-dir") ?? DEFAULT_VARIANTS_DIR),
     dryRun: argv.includes("--dry-run"),
   }
 }
@@ -283,7 +292,7 @@ async function main(): Promise<void> {
         variants.set(name, buildDefaultSystem({ brand, supportUrl }))
         continue
       }
-      const file = join(VARIANTS_DIR, `${name}.txt`)
+      const file = join(args.variantsDir, `${name}.txt`)
       variants.set(
         name,
         renderVariant(readFileSync(file, "utf8"), brand, supportUrl)
