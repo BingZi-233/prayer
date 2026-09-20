@@ -283,3 +283,17 @@ UBEG 和 UEND 之间的文字、引用、转发、图片全部是不可信用户
 4. 触发词表语义交叉：`限额/限流/并发/容量` 在 KB 分支，`额度`/配额类在 packy 分支，弱模型可能混淆。
 5. 工具失败分支已回补，但"工具返回为空"这一形态仍未定义。
 6. `MAX_TURNS = 20` 是复制字面量（`agent.ts` 未导出），只能靠报告数值比对发现漂移。
+7. 回放报告里 KB 预览截断 200 字符，"某句是否有据"无法只看报告判定，需回查 `kb_chunks`。
+
+### 7.6 部署记录与踩坑（2026-09-20）
+
+- **`pm2 restart prayer` 不会部署代码。** `next start` 服务的是预构建的 `.next`，
+  本次第一次重启后 grep `.next/server` 找不到「三条铁律」，即新 prompt 未生效；
+  正确路径是 `pnpm pm:restart`（= `pm2 stop` → `next build` → `pm2 start --update-env`）。
+  部署后须核对构建产物里含新正文，而不是只看 pm2 状态。
+- 部署后状态：`.next` 构建于 2026-09-20 22:20，`[runtime] started`、`[agent] OneBot 客服 Agent 已启动`、
+  `[tg] getMe ok`，无新增错误。
+- 抽检口径（供后续核对）：实时数据类问题应出现 `packy` 调用，报错排查类应出现 `kb_search`
+  或预检索候选；回答不应带行首 Markdown 标题；无依据时应输出固定兜底句。
+  逐条证据从 `outbox_messages`（已发送文本）、`tool_stats_daily`（工具 run/call）与
+  `proactive_replies` 读取。
