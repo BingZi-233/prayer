@@ -124,9 +124,12 @@ class UsageError extends Error {}
 const USAGE = `用法:
   pnpm prompt:replay --limit 3 --variants old,clite           冒烟
   pnpm prompt:replay --limit 20 --variants old,clite,a        正式对比
-  pnpm prompt:replay --variants clite --dry-run               只打印渲染后的正文
+  pnpm prompt:replay --variants clite --dry-run               只渲染并打印,不调用模型
 
   --limit <n>        正整数,默认 20
+  --seed <int>       抽样种子,默认 1;按 md5("<seed>:<id>") 升序取前 N 条,
+                     库增长时样本多数不变(详见报告头)
+  --ids <a,b,c>      显式钉住题目 id(按给定顺序),忽略 --seed 与 --limit
   --variants <a,b>   逗号分隔;clite = 当前 buildDefaultSystem,其余读
                      <variants-dir>/<name>.txt,默认 old,clite
   --variants-dir <p> 变体文本目录,默认 scripts/fixtures/prompt-replay
@@ -134,6 +137,9 @@ const USAGE = `用法:
 
 interface Args {
   limit: number
+  seed: number
+  /** 显式钉住的题目 id;null = 按 seed 抽样 */
+  ids: number[] | null
   variants: string[]
   variantsDir: string
   dryRun: boolean
@@ -144,7 +150,13 @@ interface Args {
  * 宽松匹配(在 argv 里 indexOf("--limit"))会让 `--limit 0` 被引号包成一个 token 时
  * 静默失效、退回默认 20 题 —— 对要烧真实 API 额度的回放来说是不可接受的静默降级。
  */
-const VALUE_FLAGS = ["limit", "variants", "variants-dir"] as const
+const VALUE_FLAGS = [
+  "limit",
+  "seed",
+  "ids",
+  "variants",
+  "variants-dir",
+] as const
 
 function parseArgs(argv: string[]): Args {
   const values = new Map<string, string>()
@@ -173,6 +185,24 @@ function parseArgs(argv: string[]): Args {
       `--limit 必须是正整数,收到 ${JSON.stringify(limitRaw ?? "")}`
     )
   }
+  const seedRaw = values.get("seed")
+  const seed = Number(seedRaw ?? 1)
+  if (!Number.isInteger(seed)) {
+    throw new UsageError(
+      `--seed 必须是整数,收到 ${JSON.stringify(seedRaw ?? "")}`
+    )
+  }
+  const idsRaw = values.get("ids")
+  let ids: number[] | null = null
+  if (idsRaw !== undefined) {
+    const parts = idsRaw.split(",").map((v) => v.trim())
+    if (!parts.length || parts.some((p) => !/^\d+$/.test(p))) {
+      throw new UsageError(
+        `--ids 必须是逗号分隔的正整数 id,收到 ${JSON.stringify(idsRaw)}`
+      )
+    }
+    ids = parts.map(Number)
+  }
   const variants = (values.get("variants") ?? "old,clite")
     .split(",")
     .map((v) => v.trim())
@@ -180,6 +210,8 @@ function parseArgs(argv: string[]): Args {
   if (!variants.length) throw new UsageError("--variants 不能为空")
   return {
     limit,
+    seed,
+    ids,
     variants,
     variantsDir: resolve(values.get("variants-dir") ?? DEFAULT_VARIANTS_DIR),
     dryRun,
@@ -385,28 +417,80 @@ function redactForReport(value: string, maxChars = MAX_ERROR_CHARS): string {
   return truncateAfterRedaction(out, maxChars)
 }
 
+interface QuestionRow {
+  id: number
+  question: string
+}
+
 interface QuestionSample {
   /** 库内问题总行数(过滤前) */
   total: number
-  /** 通过长度过滤的条数 */
+  /** 通过长度过滤的条数(ids 模式下为库内总候选数,仅作参考) */
   eligible: number
-  picked: string[]
+  picked: QuestionRow[]
+  /** 抽样方式,写进报告头以便核对两轮是否同一批题 */
+  mode: "seed" | "ids"
+  seed: number
 }
 
-/** 确定性抽样:按 id 升序等距取 limit 条,保证多变体跑同一批题 */
-function sampleQuestions(repo: Repo, limit: number): QuestionSample {
+function md5(text: string): string {
+  return createHash("md5").update(text).digest("hex")
+}
+
+/**
+ * 取样。
+ *
+ * `--seed` 模式:按 `md5("<seed>:<id>")` 升序取前 limit 条。旧实现是
+ * `floor(eligible/limit)` 等距取索引 —— 库一长(3240→3273 行)步长就从 149 变 151,
+ * 20 题里 19 题整体错位,跨轮聚合再也对不上。改成按 id 哈希排名后,新增行只有在
+ * 哈希排名挤进前 N 时才会改变样本,多数情况下跨轮稳定;同 seed 同库完全可复现。
+ * (哈希排序不是"永久不变"的保证:库里新增行仍可能挤进前 N —— 这是它的固有性质。)
+ *
+ * `--ids` 模式:按给定顺序原样取,不套长度过滤(调用方已显式点名,静默丢弃更糟)。
+ */
+function sampleQuestions(repo: Repo, args: Args): QuestionSample {
   const all = repo.proactive.listQuestions()
+  const byId = new Map(all.map((r) => [r.id, r]))
   const eligible = all.filter(
-    (q) => q.length >= MIN_QUESTION_CHARS && q.length <= MAX_QUESTION_CHARS
+    (r) =>
+      r.question.length >= MIN_QUESTION_CHARS &&
+      r.question.length <= MAX_QUESTION_CHARS
   )
-  if (eligible.length <= limit) {
-    return { total: all.length, eligible: eligible.length, picked: eligible }
+
+  if (args.ids) {
+    const missing = args.ids.filter((id) => !byId.has(id))
+    if (missing.length) {
+      throw new UsageError(
+        `--ids 里有 ${missing.length} 个 id 不在库中: ${missing.join(", ")}` +
+          `\n(库内问题 id 范围 ${all[0]?.id ?? "-"}~${all[all.length - 1]?.id ?? "-"},共 ${all.length} 行)`
+      )
+    }
+    return {
+      total: all.length,
+      eligible: eligible.length,
+      picked: args.ids.map((id) => byId.get(id)!),
+      mode: "ids",
+      seed: args.seed,
+    }
   }
-  const step = Math.floor(eligible.length / limit)
+
+  const picked =
+    eligible.length <= args.limit
+      ? eligible
+      : eligible
+          .map((row) => ({ row, rank: md5(`${args.seed}:${row.id}`) }))
+          // 同哈希时按 id 兜底,保证排序是全序、结果唯一
+          .sort((a, b) =>
+            a.rank < b.rank ? -1 : a.rank > b.rank ? 1 : a.row.id - b.row.id
+          )
+          .slice(0, args.limit)
+          .map((x) => x.row)
   return {
     total: all.length,
     eligible: eligible.length,
-    picked: Array.from({ length: limit }, (_, i) => eligible[i * step]),
+    picked,
+    mode: "seed",
+    seed: args.seed,
   }
 }
 
@@ -414,6 +498,8 @@ function sampleQuestions(repo: Repo, limit: number): QuestionSample {
 const KB_BUCKET_THRESHOLD = 0.8
 
 interface PreparedQuestion {
+  /** proactive_replies.id:报告里带出来,便于两轮人工核对是否同一批题 */
+  id: number
   question: string
   /** 已按 maxDistance 过滤的候选,searchKb 已 ORDER BY distance(近→远) */
   hits: { distance: number; content: string }[]
@@ -428,12 +514,12 @@ interface PreparedQuestion {
  */
 async function prepareQuestions(
   repo: Repo,
-  questions: string[],
+  rows: QuestionRow[],
   topK: number,
   maxDistance: number
 ): Promise<PreparedQuestion[]> {
   const out: PreparedQuestion[] = []
-  for (const question of questions) {
+  for (const { id, question } of rows) {
     try {
       const vec = await embed(question)
       const hits = repo
@@ -444,6 +530,7 @@ async function prepareQuestions(
         sanitizeForModel(h.content).slice(0, DEFAULT_KB_PREFETCH_MAX_CHARS)
       )
       out.push({
+        id,
         question,
         hits,
         kbBlock: formatKbBlock(contents.map((content) => ({ content }))),
@@ -451,6 +538,7 @@ async function prepareQuestions(
     } catch (e) {
       // 单题检索失败不该毁掉整轮回放:记下来,该题退回纯工具路径继续跑
       out.push({
+        id,
         question,
         hits: [],
         kbBlock: "",
@@ -701,22 +789,30 @@ async function main(): Promise<void> {
       )
     }
 
+    // 抽样只读库、不烧 API,故 dry-run 也走一遍:这样能只核样本不跑模型
+    const sample = sampleQuestions(repo, args)
+    if (!sample.picked.length) {
+      throw new Error(
+        `样本为空:proactive_replies 共 ${sample.total} 行,` +
+          `通过长度过滤(${MIN_QUESTION_CHARS}~${MAX_QUESTION_CHARS} 字符)的有 ${sample.eligible} 条。` +
+          `\n--limit=${args.limit} 没有可跑的题,拒绝写空报告。`
+      )
+    }
+
     if (args.dryRun) {
       for (const [name, text] of variants) {
         console.log(
           `\n===== ${name} (chars=${text.length} sha256=${sha256(text)}) =====\n${text}`
         )
       }
-      return
-    }
-
-    const sample = sampleQuestions(repo, args.limit)
-    if (sample.picked.length === 0) {
-      throw new Error(
-        `样本为空:proactive_replies 共 ${sample.total} 行,` +
-          `通过长度过滤(${MIN_QUESTION_CHARS}~${MAX_QUESTION_CHARS} 字符)的有 ${sample.eligible} 条。` +
-          `\n--limit=${args.limit} 没有可跑的题,拒绝写空报告。`
+      console.log(
+        `\n===== 样本(${sample.mode === "ids" ? `--ids 显式指定` : `--seed ${sample.seed}`},共 ${sample.picked.length} 题) =====`
       )
+      console.log(`选中 id: ${sample.picked.map((r) => r.id).join(", ")}`)
+      for (const row of sample.picked) {
+        console.log(`  #${row.id} ${row.question.slice(0, 40)}`)
+      }
+      return
     }
 
     const prepared = await prepareQuestions(
@@ -742,8 +838,14 @@ async function main(): Promise<void> {
       "",
       `- git: ${gitProvenance()}`,
       `- 变体: ${args.variants.join(", ")}`,
-      `- 题目数: ${sample.picked.length}(--limit ${args.limit})`,
-      `- 样本来源: proactive_replies 共 ${sample.total} 行,按长度 ${MIN_QUESTION_CHARS}~${MAX_QUESTION_CHARS} 字符(JS 长度)过滤得 ${sample.eligible} 条,按 id 升序等距抽样`,
+      `- 题目数: ${sample.picked.length}(${sample.mode === "ids" ? `--ids 显式指定,--limit ${args.limit} 被忽略` : `--limit ${args.limit}`})`,
+      `- 样本来源: proactive_replies 共 ${sample.total} 行,按长度 ${MIN_QUESTION_CHARS}~${MAX_QUESTION_CHARS} 字符(JS 长度)过滤得 ${sample.eligible} 条${sample.mode === "ids" ? ";--ids 模式不套该长度过滤,按给定 id 原样取" : ""}`,
+      sample.mode === "ids"
+        ? `- 抽样: --ids 显式钉住(按给定顺序;--seed ${sample.seed} 被忽略)`
+        : `- 抽样: --seed ${sample.seed}(按 md5("${sample.seed}:<id>") 升序取前 ${sample.picked.length} 条)`,
+      `- 选中 id (${sample.picked.length}): ${sample.picked.map((r) => r.id).join(", ")}`,
+      "  - 稳定性:同 seed 同库完全可复现;库增长时仅当新行的哈希排名挤进前 N 才会改变样本",
+      "    —— 这是哈希排序的固有性质,不是 bug。跨轮对比前先核对上面这行 id 是否一致。",
       "  - 有偏:只含主动补位链路记录过的问题,且仅限生效群白名单,不代表真实提问分布",
       "- 判读口径: 单题结果受采样随机性支配(实测同题同 prompt 三次运行,old 的工具调用数为 0/3/0),不得按单题判读;",
       "  必须按批次聚合,并按每题 KB top-1 距离分桶看(有据可依 / 无据需兜底)。",
@@ -779,7 +881,7 @@ async function main(): Promise<void> {
       lines.push(
         `---`,
         "",
-        `## ${redactForReport(q, 200)}`,
+        `## #${item.id} ${redactForReport(q, 200)}`,
         "",
         `- KB top-1 距离: ${top1 ? top1.distance.toFixed(4) : "无命中"}`
       )

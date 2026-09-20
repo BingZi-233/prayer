@@ -50,17 +50,18 @@ export class ProactiveRepository {
   }
 
   /**
-   * 回放/统计用:按 id 升序取全部历史问题文本(只读)。
-   * 不过滤长度 —— 取数口径(过滤条件)由调用方决定并记录,避免这里硬编码一个
+   * 回放/统计用:按 id 升序取全部历史问题(只读)。
+   * 带 id 是因为回放的抽样按 `md5(seed:id)` 排序决定样本,需要稳定标识 ——
+   * 只用问题文本抽样会在库增长时整体错位(跨轮报告不再可比)。
+   * 不过滤长度:取数口径(过滤条件)由调用方决定并记录,避免这里硬编码一个
    * 消费方看不见的筛选,让样本集无法在报告里复现。
    */
-  listQuestions(): string[] {
+  listQuestions(): { id: number; question: string }[] {
     return this.sql
-      .prepare<{ question: string }>(
-        "select question from proactive_replies order by id"
+      .prepare<{ id: number; question: string }>(
+        "select id, question from proactive_replies order by id"
       )
       .all()
-      .map((r) => r.question)
   }
 
   setProactiveQuality(id: number, quality: "ok" | "bad"): boolean {
