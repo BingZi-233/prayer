@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest"
 import {
+  DEFAULT_SYSTEM,
   buildDefaultSystem,
   SYSTEM_PROMPT_MAX_CHARS,
 } from "@/lib/model/system-prompt"
@@ -56,6 +57,8 @@ describe("buildDefaultSystem 弱模型契约", () => {
   it("业务边界与冲突仲裁在位", () => {
     expect(s).toContain("不承接与产品无关的写代码")
     expect(s).toContain("以工具当前值为准")
+    expect(s).toContain("工具调用失败或没有对应工具时")
+    expect(s).toContain("可以给解决产品问题所必需的配置片段")
   })
 
   it("账户、转人工、歧义追问与多问题规则在位", () => {
@@ -104,5 +107,17 @@ describe("buildDefaultSystem 弱模型契约", () => {
     ]) {
       expect(s).not.toContain(banned)
     }
+  })
+
+  it("默认品牌形态也在预算内", () => {
+    expect(DEFAULT_SYSTEM.length).toBeLessThanOrEqual(SYSTEM_PROMPT_MAX_CHARS)
+  })
+
+  it("超长品牌配置被限长,不会撑破预算", () => {
+    const long = buildDefaultSystem({
+      brand: { name: "N".repeat(80), description: "D".repeat(500) },
+      supportUrl: "https://support.example",
+    })
+    expect(long.length).toBeLessThanOrEqual(SYSTEM_PROMPT_MAX_CHARS)
   })
 })
