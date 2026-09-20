@@ -64,6 +64,7 @@ describe("buildDefaultSystem 弱模型契约", () => {
     expect(s).toContain("不提工单")
     expect(s).toContain("只问一个")
     expect(s).toContain("多问分条答全")
+    expect(s).toContain("不要用 Markdown 标题")
   })
 
   it("关键铁律在开头与结尾各现一次（位置效应）", () => {
