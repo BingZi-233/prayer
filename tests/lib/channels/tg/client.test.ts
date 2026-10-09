@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest"
+import { GrammyError } from "grammy"
 import type { Update } from "grammy/types"
 import { bus } from "@/lib/core/bus"
 import type {
@@ -311,6 +312,48 @@ describe("TelegramChannel", () => {
     })
     await delay(30)
     expect(api.sent.length).toBe(before)
+  })
+
+  it("被引用的 Telegram 消息不存在时，去掉引用重发同一条文本", async () => {
+    const api = makeMockApi({ updatesQueue: [[]] })
+    const attempts: (number | undefined)[] = []
+    api.sendMessage = async (_chatId, _text, other) => {
+      attempts.push(other?.reply_to_message_id)
+      if (other?.reply_to_message_id) {
+        throw new GrammyError(
+          "Call to 'sendMessage' failed!",
+          {
+            ok: false,
+            error_code: 400,
+            description: "Bad Request: message to be replied not found",
+          },
+          "sendMessage",
+          {}
+        )
+      }
+      return {}
+    }
+    const ch = track(
+      new TelegramChannel("tok", {
+        getOffset: () => offset,
+        setOffset: (n) => {
+          offset = n
+        },
+        api,
+        pollTimeoutSec: 0,
+        sleep: delay,
+      })
+    )
+    await ch.start()
+    await waitFor(() => ch.isConnected(), "connected")
+
+    await ch.send({
+      channel: "tg",
+      chatId: "-100111",
+      text: "answer",
+      replyToId: "42",
+    })
+    expect(attempts).toEqual([42, undefined])
   })
 
   it("未完成 getMe 握手时 send 拒绝，避免出站消息静默丢失", async () => {

@@ -495,19 +495,29 @@ export class TelegramChannel implements Channel {
     for (let i = 0; i < chunks.length; i++) {
       const text = chunks[i]!
       try {
-        await withDeadline(
-          (signal) =>
-            this.api.sendMessage(
-              a.chatId,
-              text,
-              // 仅首条带 reply_to，避免刷一串引用
-              i === 0 && replyTo != null && Number.isFinite(replyTo)
-                ? { reply_to_message_id: replyTo }
-                : undefined,
-              signal
-            ),
-          API_DEADLINE_MS
-        )
+        const reply =
+          i === 0 && replyTo != null && Number.isFinite(replyTo)
+            ? { reply_to_message_id: replyTo }
+            : undefined
+        try {
+          await withDeadline(
+            (signal) => this.api.sendMessage(a.chatId, text, reply, signal),
+            API_DEADLINE_MS
+          )
+        } catch (err) {
+          if (
+            !reply ||
+            !(err instanceof GrammyError) ||
+            err.error_code !== 400 ||
+            err.description !== "Bad Request: message to be replied not found"
+          )
+            throw err
+          // 原消息已删除或不可访问；只重发被拒绝的首条，不重复已发送的分块。
+          await withDeadline(
+            (signal) => this.api.sendMessage(a.chatId, text, undefined, signal),
+            API_DEADLINE_MS
+          )
+        }
       } catch (err) {
         const m = err instanceof Error ? err.message : String(err)
         logger.log("error", `[tg] sendMessage failed: ${m}`)
