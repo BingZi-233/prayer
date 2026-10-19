@@ -11,6 +11,7 @@ import { readJsonBody, REQUEST_BODY_TOO_LARGE } from "@/lib/core/http-security"
 import { withKbMutationLock } from "@/lib/knowledge/mutation-lock"
 import { emitErrorSafely } from "@/lib/core/bus"
 import { withAdminMutationAudit } from "@/lib/core/admin-audit-route"
+import { withAdminJob } from "@/lib/core/admin-jobs"
 
 function chatKey(channel: string, chatId: string): string {
   return `${channel}:${chatId}`
@@ -173,47 +174,49 @@ export async function PATCH(req: NextRequest): Promise<NextResponse> {
     // promote: 成文 → 写文件 + 向量入库 + status=promoted
     // 必须与定时升格走同一条路径,否则手动升格会产出不合规的旧格式文档。
     const { repo: r } = getAppContext()
-    return withAdminMutationAudit(
-      r,
-      {
-        action: reflectionAuditAction.promote,
-        route: "/api/reflection",
-        method: "PATCH",
-      },
-      async () => {
-        try {
-          const promo = await promoteEntry({
-            repo: r,
-            chunkId: id,
-            // 手动路径没有 resolve() 那层包装,裸 embed 会让 HTTP 请求一直等一个挂死的
-            // 本地 embedding(冷启动加载模型实测可达 20s+);定时路径由 promoter 的
-            // resolve() 负责套超时,这里得自己套。
-            embed: withTimeoutFn(DEFAULT_EMBED_TIMEOUT_MS, embed),
-          })
-          if (!promo.ok) {
-            // 精确匹配,不用 includes("不存在"):「目标文档不存在」也含这三个字,用子串
-            // 判断会把「索引里有该 doc、磁盘上文件却丢了」这种内部一致性故障报成 404,
-            // 让操作员以为条目 id 不存在——而这是本特性最不该撒的谎。
-            const status =
-              promo.reason === "条目不存在"
-                ? 404
-                : INTERNAL_FAULT_REASONS.has(promo.reason)
-                  ? 409
-                  : 400
-            return NextResponse.json(fail(promo.reason), { status })
-          }
-          return NextResponse.json(
-            ok({
-              id,
-              status: "promoted",
-              file: promo.file,
-              already: promo.already ?? false,
+    return withAdminJob(req, r, `reflection.entry_promote:${id}`, () =>
+      withAdminMutationAudit(
+        r,
+        {
+          action: reflectionAuditAction.promote,
+          route: "/api/reflection",
+          method: "PATCH",
+        },
+        async () => {
+          try {
+            const promo = await promoteEntry({
+              repo: r,
+              chunkId: id,
+              // 手动路径没有 resolve() 那层包装,裸 embed 会让 HTTP 请求一直等一个挂死的
+              // 本地 embedding(冷启动加载模型实测可达 20s+);定时路径由 promoter 的
+              // resolve() 负责套超时,这里得自己套。
+              embed: withTimeoutFn(DEFAULT_EMBED_TIMEOUT_MS, embed),
             })
-          )
-        } catch (err) {
-          return reflectionMutationFailure(err)
+            if (!promo.ok) {
+              // 精确匹配,不用 includes("不存在"):「目标文档不存在」也含这三个字,用子串
+              // 判断会把「索引里有该 doc、磁盘上文件却丢了」这种内部一致性故障报成 404,
+              // 让操作员以为条目 id 不存在——而这是本特性最不该撒的谎。
+              const status =
+                promo.reason === "条目不存在"
+                  ? 404
+                  : INTERNAL_FAULT_REASONS.has(promo.reason)
+                    ? 409
+                    : 400
+              return NextResponse.json(fail(promo.reason), { status })
+            }
+            return NextResponse.json(
+              ok({
+                id,
+                status: "promoted",
+                file: promo.file,
+                already: promo.already ?? false,
+              })
+            )
+          } catch (err) {
+            return reflectionMutationFailure(err)
+          }
         }
-      }
+      )
     )
   } catch (err) {
     return reflectionMutationFailure(err)

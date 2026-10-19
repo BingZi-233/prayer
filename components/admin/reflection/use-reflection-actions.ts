@@ -1,9 +1,11 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { toast } from "sonner"
 import { usePolling } from "@/components/admin/use-polling"
+import { fetchApi } from "@/lib/core/http-client"
 import type { Data } from "./types"
+import { runReflectionAction } from "./request-action"
 
 /**
  * reflection 页的数据、派生计数与三个动作。
@@ -22,6 +24,13 @@ export function useReflectionActions() {
   const [busy, setBusy] = useState(false)
   const [promoteBusy, setPromoteBusy] = useState(false)
   const [acting, setActing] = useState<number | null>(null)
+  const lifecycle = useRef<AbortController | null>(null)
+  useEffect(() => {
+    // StrictMode 会先清理再重新装配;每次装配都创建新的控制器。
+    const controller = new AbortController()
+    lifecycle.current = controller
+    return () => controller.abort()
+  }, [])
   // 3s 轮询 + 操作都会触发 render:计数只随数据变化重算
   const { entryCount, approvedCount } = useMemo(() => {
     const es = d?.entries ?? []
@@ -37,11 +46,24 @@ export function useReflectionActions() {
     : false
 
   async function compact() {
+    const controller = lifecycle.current
+    if (!controller || controller.signal.aborted) return
     setBusy(true)
     try {
-      const r = await fetch("/api/reflection/compact", { method: "POST" }).then(
-        (x) => x.json()
+      const r = await runReflectionAction<{
+        ran: boolean
+        before: number
+        after: number
+      }>(
+        "/api/reflection/compact",
+        { method: "POST" },
+        () => {
+          if (!controller.signal.aborted)
+            toast.info("整理任务已提交，正在等待结果。")
+        },
+        controller.signal
       )
+      if (controller.signal.aborted) return
       if (r.ok) {
         toast.success(
           r.data.ran
@@ -49,22 +71,39 @@ export function useReflectionActions() {
             : "整理完成:无变化(未达阈值或结果不变)"
         )
       } else {
-        toast.error(`整理失败:${r.error}`)
+        toast.error(
+          `${r.outcomeUnknown ? "整理结果待确认" : "整理失败"}:${r.error}`
+        )
       }
     } catch (e) {
-      toast.error(`整理失败:${e instanceof Error ? e.message : String(e)}`)
+      if (!controller.signal.aborted)
+        toast.error(`整理失败:${e instanceof Error ? e.message : String(e)}`)
     } finally {
-      await refresh({ force: true })
-      setBusy(false)
+      if (!controller.signal.aborted) {
+        await refresh({ force: true })
+        if (!controller.signal.aborted) setBusy(false)
+      }
     }
   }
 
   async function autoPromote() {
+    const controller = lifecycle.current
+    if (!controller || controller.signal.aborted) return
     setPromoteBusy(true)
     try {
-      const r = await fetch("/api/reflection/promote", { method: "POST" }).then(
-        (x) => x.json()
+      const r = await runReflectionAction<{
+        considered: number
+        promoted: number
+      }>(
+        "/api/reflection/promote",
+        { method: "POST" },
+        () => {
+          if (!controller.signal.aborted)
+            toast.info("升格任务已提交，正在等待结果。")
+        },
+        controller.signal
       )
+      if (controller.signal.aborted) return
       if (r.ok) {
         toast.success(
           r.data.promoted > 0
@@ -72,24 +111,50 @@ export function useReflectionActions() {
             : `升格评审完成:候选 ${r.data.considered} 条,无需升格`
         )
       } else {
-        toast.error(`升格失败:${r.error}`)
+        toast.error(
+          `${r.outcomeUnknown ? "升格结果待确认" : "升格失败"}:${r.error}`
+        )
       }
     } catch (e) {
-      toast.error(`升格失败:${e instanceof Error ? e.message : String(e)}`)
+      if (!controller.signal.aborted)
+        toast.error(`升格失败:${e instanceof Error ? e.message : String(e)}`)
     } finally {
-      await refresh({ force: true })
-      setPromoteBusy(false)
+      if (!controller.signal.aborted) {
+        await refresh({ force: true })
+        if (!controller.signal.aborted) setPromoteBusy(false)
+      }
     }
   }
 
   async function act(id: number, action: "approve" | "reject" | "promote") {
+    const controller = lifecycle.current
+    if (!controller || controller.signal.aborted) return
     setActing(id)
     try {
-      const r = await fetch("/api/reflection", {
+      const init = {
         method: "PATCH",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ id, action }),
-      }).then((x) => x.json())
+      }
+      const r =
+        action === "promote"
+          ? await runReflectionAction<{ file: string }>(
+              "/api/reflection",
+              init,
+              () => {
+                if (!controller.signal.aborted)
+                  toast.info("升格任务已提交，正在等待结果。")
+              },
+              controller.signal
+            )
+          : await fetchApi<{ file?: string }>("/api/reflection", {
+              ...init,
+              signal: AbortSignal.any([
+                controller.signal,
+                AbortSignal.timeout(30_000),
+              ]),
+            })
+      if (controller.signal.aborted) return
       if (r.ok) {
         if (action === "promote")
           toast.success(`已升格为正式文档：${r.data.file}`)
@@ -97,9 +162,10 @@ export function useReflectionActions() {
         await refresh({ force: true })
       } else toast.error(r.error || "操作失败")
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : String(e))
+      if (!controller.signal.aborted)
+        toast.error(e instanceof Error ? e.message : String(e))
     } finally {
-      setActing(null)
+      if (!controller.signal.aborted) setActing(null)
     }
   }
 
