@@ -4,6 +4,7 @@ import { runCompactWithOutcome } from "@/lib/knowledge/reflection/compactor"
 import { ok, fail, safeApiError } from "@/lib/core/api"
 import { resolveAdminSurface } from "@/lib/core/chat/enabled-chats"
 import { emptyBodyFailure, readEmptyBody } from "@/lib/core/http-security"
+import { withAdminJob } from "@/lib/core/admin-jobs"
 import {
   markAdminAuditPartial,
   withAdminMutationAudit,
@@ -20,40 +21,44 @@ export async function POST(req: Request): Promise<NextResponse> {
     })
   try {
     const { cfg, repo } = getAppContext()
-    return withAdminMutationAudit(
-      repo,
-      {
-        action: "reflection.compact",
-        route: "/api/reflection/compact",
-        method: "POST",
-      },
-      async () => {
-        try {
-          const before = repo.reflectionEntries().length
-          const outcome = await runCompactWithOutcome({
-            repo,
-            adminSurface: resolveAdminSurface(cfg),
-            minEntries: cfg.reflectCompactMinEntries,
-            notifyAdmin: cfg.reflectNotifyAdmin,
-          })
-          if (outcome !== "completed") {
-            const response = NextResponse.json(
-              fail("反思整理失败，请查看运维日志"),
-              {
-                status: 503,
-              }
+    return withAdminJob(req, repo, "reflection.compact", () =>
+      withAdminMutationAudit(
+        repo,
+        {
+          action: "reflection.compact",
+          route: "/api/reflection/compact",
+          method: "POST",
+        },
+        async () => {
+          try {
+            const before = repo.reflectionEntries().length
+            const outcome = await runCompactWithOutcome({
+              repo,
+              adminSurface: resolveAdminSurface(cfg),
+              minEntries: cfg.reflectCompactMinEntries,
+              notifyAdmin: cfg.reflectNotifyAdmin,
+            })
+            if (outcome !== "completed") {
+              const response = NextResponse.json(
+                fail("反思整理失败，请查看运维日志"),
+                {
+                  status: 503,
+                }
+              )
+              return outcome === "partial"
+                ? markAdminAuditPartial(response)
+                : response
+            }
+            repo.setCompactAt(Date.now()) // 手动整理也推进游标,避免紧接着定时任务重复跑
+            const after = repo.reflectionEntries().length
+            return NextResponse.json(
+              ok({ before, after, ran: after !== before })
             )
-            return outcome === "partial"
-              ? markAdminAuditPartial(response)
-              : response
+          } catch (err) {
+            return NextResponse.json(fail(safeApiError(err)), { status: 500 })
           }
-          repo.setCompactAt(Date.now()) // 手动整理也推进游标,避免紧接着定时任务重复跑
-          const after = repo.reflectionEntries().length
-          return NextResponse.json(ok({ before, after, ran: after !== before }))
-        } catch (err) {
-          return NextResponse.json(fail(safeApiError(err)), { status: 500 })
         }
-      }
+      )
     )
   } catch (err) {
     return NextResponse.json(fail(safeApiError(err)), { status: 500 })

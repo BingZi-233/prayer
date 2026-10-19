@@ -1,6 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useRef, useState } from "react"
+import { fetchApi } from "@/lib/core/http-client"
 
 /** 连续失败时的退避上限:间隔翻倍但不超过 intervalMs 的这个倍数 */
 const MAX_BACKOFF_FACTOR = 10
@@ -33,7 +34,7 @@ export function usePolling<T>(url: string, intervalMs = 3000) {
   const run = useCallback(async () => {
     const p = (async () => {
       try {
-        const r = await fetch(url).then((x) => x.json())
+        const r = await fetchApi<T>(url)
         if (!active.current || url !== urlRef.current) return
         if (r.ok) {
           setData(r.data as T)

@@ -62,10 +62,11 @@
 
 ## Flow ledger
 
-| Operation         | Trigger                | Pending                         | Success destination | Success feedback | Failure recovery                                       | Focus outcome      | Source ref                      |
-| ----------------- | ---------------------- | ------------------------------- | ------------------- | ---------------- | ------------------------------------------------------ | ------------------ | ------------------------------- |
-| Read audit window | 进入审计页 / 30 秒刷新 | 首屏 Skeleton；后台刷新保留数据 | 当前页              | 最新状态直接显示 | `DataState` 的重试；未结束事件需核对仍在执行与异常路径 | 重试按钮或当前表格 | `app/api/audit/route.ts`        |
-| Admin mutation    | 各已有管理页           | 按原页面的忙碌状态              | 原页面或既有列表    | API 终结结果     | 失败不伪称成功；检查审计页的 started/partial           | 维持原页面契约     | `lib/core/admin-audit-route.ts` |
+| Operation              | Trigger                | Pending                         | Success destination | Success feedback                 | Failure recovery                                                     | Focus outcome      | Source ref                                                                |
+| ---------------------- | ---------------------- | ------------------------------- | ------------------- | -------------------------------- | -------------------------------------------------------------------- | ------------------ | ------------------------------------------------------------------------- |
+| Read audit window      | 进入审计页 / 30 秒刷新 | 首屏 Skeleton；后台刷新保留数据 | 当前页              | 最新状态直接显示                 | `DataState` 的重试；未结束事件需核对仍在执行与异常路径               | 重试按钮或当前表格 | `app/api/audit/route.ts`                                                  |
+| Admin mutation         | 各已有管理页           | 按原页面的忙碌状态              | 原页面或既有列表    | API 终结结果                     | 失败不伪称成功；检查审计页的 started/partial                         | 维持原页面契约     | `lib/core/admin-audit-route.ts`                                           |
+| Reflection maintenance | 整理、自动或单条升格   | 提交后保持忙碌，轮询后台任务    | 当前页              | 服务端最终结果，202 仅表示已接收 | 查询中断或任务记录缺失时显示结果待确认，先刷新并核对审计，不自动重发 | 保持当前操作位置   | `lib/core/admin-jobs.ts`、`components/admin/reflection/request-action.ts` |
 
 ## Navigation and responsive behavior
 
@@ -87,6 +88,8 @@
 
 - Mutation default: 管理变更悲观确认；不为非幂等或外部副作用自动重试。
 - Idempotency and duplicate-submit policy: 由既有 API 和按钮 busy 状态负责；审计只反映服务端所返回的 HTTP 结果。
+- Reflection long jobs: 浏览器用 `Prefer: respond-async` 提交后查询任务状态；同一数据库连接与操作键的在途请求共享任务。状态仅保留在当前服务进程，完成记录最多保留一小时；进程重启或记录过期时不伪称操作失败，需核对条目与审计记录。
+- Response parsing: `lib/core/http-client.ts` 是后台响应解析的共享实现。HTML 网关错误页、非法 JSON、会话失效与网络超时显示安全的中文恢复提示，不把原始 HTML、JSON 解析异常或响应地址带入 toast。写请求结果未知时不自动重试。
 - Offline/read-stale/write behavior: `usePolling` 在隐藏页暂停、失败退避，后台刷新保留最后成功数据；审计页用 `Notice` 和重试保留该失败上下文，写失败不进入队列。
 - Retry/backoff/timeout behavior: `usePolling` 复用在飞请求并退避；`DataState` 提供明确重试。
 - Version conflict and multi-tab behavior: 未提供通用版本协议；高风险编辑需要领域 API 单独定义。

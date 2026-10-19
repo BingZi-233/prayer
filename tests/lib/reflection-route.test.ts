@@ -18,6 +18,7 @@ const {
   setPromoteAtMock,
   beginMock,
   finishMock,
+  scheduledJobs,
 } = vi.hoisted(() => {
   const reflectionEntries = vi.fn(() => [])
   const begin = vi.fn(() => 1)
@@ -59,8 +60,16 @@ const {
     setPromoteAtMock: repo.setPromoteAt,
     beginMock: begin,
     finishMock: finish,
+    scheduledJobs: [] as (() => Promise<void>)[],
   }
 })
+
+vi.mock("next/server", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("next/server")>()),
+  after: (work: () => Promise<void>) => {
+    scheduledJobs.push(work)
+  },
+}))
 
 vi.mock("@/lib/core/app-context", () => ({
   getAppContext: getAppContextMock,
@@ -91,6 +100,7 @@ vi.mock("@/lib/core/bus", async (importOriginal) => ({
 import { POST as compact } from "@/app/api/reflection/compact/route"
 import { POST as promote } from "@/app/api/reflection/promote/route"
 import { PATCH } from "@/app/api/reflection/route"
+import { GET as jobStatus } from "@/app/api/reflection/jobs/[id]/route"
 import { embed as embedMock } from "@/lib/model/embed"
 import { DEFAULT_EMBED_TIMEOUT_MS } from "@/lib/model/timeout"
 
@@ -104,6 +114,7 @@ function expectRequestId(response: Response): string {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  scheduledJobs.length = 0
   reflectionEntriesMock.mockReturnValue([])
   reflectionEntryDetailMock.mockReturnValue({
     id: 7,
@@ -121,6 +132,87 @@ beforeEach(() => {
 })
 
 describe("manual reflection routes", () => {
+  it("异步升格在模型开始前返回202,重复请求复用任务,状态接口返回最终结果", async () => {
+    const request = () =>
+      new Request("http://x/api/reflection/promote", {
+        method: "POST",
+        headers: { Prefer: "respond-async" },
+      })
+    runPromoteMock.mockResolvedValue({ considered: 3, promoted: 1 })
+    const response = await promote(request())
+    const { data } = await response.json()
+    expect(response.status).toBe(202)
+    expect(response.headers.get("preference-applied")).toBe("respond-async")
+    expect(data.status).toBe("running")
+    expect(runPromoteMock).not.toHaveBeenCalled()
+    expect(beginMock).not.toHaveBeenCalled()
+    expect((await (await promote(request())).json()).data.jobId).toBe(
+      data.jobId
+    )
+    expect(scheduledJobs).toHaveLength(1)
+    const status = () =>
+      jobStatus(new Request("http://x"), {
+        params: Promise.resolve({ id: data.jobId }),
+      })
+    expect((await (await status()).json()).data.status).toBe("running")
+    await scheduledJobs[0]()
+    expect((await (await status()).json()).data).toMatchObject({
+      status: "completed",
+      httpStatus: 200,
+      result: { ok: true, data: { considered: 3, promoted: 1 } },
+    })
+    expect(finishMock).toHaveBeenCalledWith(
+      1,
+      expect.objectContaining({ httpStatus: 200, result: "accepted" })
+    )
+  })
+
+  it("异步整理及单条升格保持失败、部分成功与审计语义", async () => {
+    runCompactMock.mockResolvedValue("partial")
+    const response = await compact(
+      new Request("http://x", {
+        method: "POST",
+        headers: { Prefer: "respond-async" },
+      })
+    )
+    const { data } = await response.json()
+    await scheduledJobs[0]()
+    const status = await jobStatus(new Request("http://x"), {
+      params: Promise.resolve({ id: data.jobId }),
+    })
+    expect((await status.json()).data).toMatchObject({
+      status: "completed",
+      httpStatus: 503,
+      result: { ok: false },
+    })
+    expect(setCompactAtMock).not.toHaveBeenCalled()
+    expect(finishMock).toHaveBeenCalledWith(
+      1,
+      expect.objectContaining({ result: "partial" })
+    )
+    const patch = await PATCH(
+      new Request("http://x", {
+        method: "PATCH",
+        headers: {
+          Prefer: "respond-async",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ id: 7, action: "promote" }),
+      }) as never
+    )
+    expect(patch.status).toBe(202)
+    expect(promoteEntryMock).not.toHaveBeenCalled()
+    await scheduledJobs[1]()
+    expect(promoteEntryMock).toHaveBeenCalledTimes(1)
+  })
+
+  it("找不到异步任务时明确提示结果未知,不伪称任务失败", async () => {
+    const response = await jobStatus(new Request("http://x"), {
+      params: Promise.resolve({ id: "unknown" }),
+    })
+    expect(response.status).toBe(404)
+    expect((await response.json()).error).toContain("执行结果无法确认")
+  })
   it("compact failure returns 503 and does not consume its cursor", async () => {
     runCompactMock.mockResolvedValue("failed")
 
