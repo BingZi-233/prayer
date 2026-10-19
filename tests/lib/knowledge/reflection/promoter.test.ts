@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, vi } from "vitest"
 import { openDb } from "@/lib/core/db/index"
 import { Repo } from "@/lib/core/db/repo"
 import { MAX_MERGE_CHUNKS } from "@/lib/knowledge/reflection/promote-compose"
+import { splitCompactedFaq } from "@/lib/knowledge/reflection/compact-chunks"
 import {
   promoteEntry,
   runPromote,
@@ -88,6 +89,190 @@ describe("selectPromoteIds", () => {
 })
 
 describe("runPromote", () => {
+  it("大候选库分批评审,每批最多 20 条且不遗漏", async () => {
+    const ids = seedApproved(45)
+    const batches: number[][] = []
+    const qf = ({ prompt }: { prompt: string }) => {
+      const block = prompt
+        .split("<CANDIDATE_REFLECTIONS_JSONL>\n")[1]
+        .split("\n</CANDIDATE_REFLECTIONS_JSONL>")[0]
+      const batch = block
+        .split("\n")
+        .map((line) => JSON.parse(line).id as number)
+      batches.push(batch)
+      return fakeQuery({
+        decisions: batch.map((id) => ({
+          id,
+          promote: false,
+          reason: "已覆盖",
+        })),
+      })()
+    }
+    const result = await runPromote({
+      repo,
+      adminSurface: null,
+      embed,
+      queryFn: qf as never,
+    })
+    expect(result).toEqual({ considered: 45, promoted: 0 })
+    expect(batches).toHaveLength(3)
+    expect(batches.every((batch) => batch.length <= 20)).toBe(true)
+    expect(batches.flat().sort((a, b) => a - b)).toEqual(ids)
+  })
+
+  it("某批超时取消 SDK,保留此前成功计数且继续后续批次", async () => {
+    seedApproved(45)
+    let calls = 0
+    let timedOutSignal: AbortSignal | undefined
+    const qf = ({
+      prompt,
+      options,
+    }: {
+      prompt: string
+      options: { abortController: AbortController }
+    }) => {
+      calls++
+      if (calls === 2) {
+        timedOutSignal = options.abortController?.signal
+        return (async function* () {
+          await new Promise(() => {})
+          yield {}
+        })()
+      }
+      const block = prompt
+        .split("<CANDIDATE_REFLECTIONS_JSONL>\n")[1]
+        .split("\n</CANDIDATE_REFLECTIONS_JSONL>")[0]
+      const id = JSON.parse(block.split("\n")[0]).id
+      return fakeQuery({
+        decisions: [{ id, promote: true, reason: "稳定步骤" }],
+      })()
+    }
+    const promoteFn = vi.fn(async () => ({
+      ok: true as const,
+      file: "retrieval/faq/test.md",
+      content: "完整步骤",
+    }))
+    const result = await runPromote({
+      repo,
+      adminSurface: null,
+      embed,
+      queryFn: qf as never,
+      queryTimeoutMs: 20,
+      composeFn: composeStub as never,
+      promoteFn,
+      maxPerRun: 5,
+    })
+    expect(result).toEqual({ considered: 45, promoted: 2, failed: true })
+    expect(promoteFn).toHaveBeenCalledTimes(2)
+    expect(timedOutSignal?.aborted).toBe(true)
+  })
+
+  it("手动与定时并发调用复用同一轮升格", async () => {
+    const db = openDb(":memory:", 3)
+    repo = new Repo(db)
+    seedApproved(1)
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const qf = vi.fn(() =>
+      (async function* () {
+        await gate
+        yield {
+          type: "result",
+          subtype: "success",
+          structured_output: { decisions: [] },
+        }
+      })()
+    )
+    const deps = { repo, adminSurface: null, embed, queryFn: qf as never }
+    const first = runPromote(deps)
+    const second = runPromote({ ...deps, repo: new Repo(db) })
+    release()
+    expect(await first).toEqual(await second)
+    expect(qf).toHaveBeenCalledTimes(1)
+    db.close()
+  })
+
+  it("长来源问答按字符预算拆批,达到本轮上限后停止后续评审", async () => {
+    const ids = seedApproved(6)
+    for (const id of ids)
+      repo.insertReflectionMeta(id, "qq", "100", "问", "来源".repeat(4_000))
+    const batches: number[][] = []
+    const qf = ({ prompt }: { prompt: string }) => {
+      const block = prompt
+        .split("<CANDIDATE_REFLECTIONS_JSONL>\n")[1]
+        .split("\n</CANDIDATE_REFLECTIONS_JSONL>")[0]
+      const batch = block
+        .split("\n")
+        .map((line) => JSON.parse(line).id as number)
+      batches.push(batch)
+      return fakeQuery({
+        decisions: batch.map((id) => ({
+          id,
+          promote: batches.length > 1,
+          reason: "完整",
+        })),
+      })()
+    }
+    const promoteFn = vi.fn(async () => ({
+      ok: true as const,
+      file: "retrieval/faq/test.md",
+      content: "正文",
+    }))
+    const result = await runPromote({
+      repo,
+      adminSurface: null,
+      embed,
+      queryFn: qf as never,
+      maxPerRun: 1,
+      composeFn: composeStub as never,
+      promoteFn,
+    })
+    expect(result).toEqual({ considered: 6, promoted: 1 })
+    expect(batches).toHaveLength(2)
+    expect(batches.every((batch) => batch.length < 6)).toBe(true)
+    expect(promoteFn).toHaveBeenCalledTimes(1)
+  })
+
+  it("单条来源超预算时保留原条目,不阻断其他候选", async () => {
+    const [small, large] = seedApproved(2)
+    repo.insertReflectionMeta(
+      large,
+      "qq",
+      "100",
+      "问题",
+      "超长来源".repeat(7_000)
+    )
+    const qf = vi.fn(
+      fakeQuery({ decisions: [{ id: small, promote: true, reason: "稳定" }] })
+    )
+    const result = await runPromote({
+      repo,
+      adminSurface: null,
+      embed,
+      queryFn: qf as never,
+      composeFn: composeStub as never,
+      promoteFn: async () => ({ ok: true, file: "x", content: "y" }),
+    })
+    expect(result).toEqual({ considered: 2, promoted: 1, failed: true })
+    expect(qf).toHaveBeenCalledTimes(1)
+    expect(repo.reflectionEntryDetail(large)?.status).toBe("approved")
+    const composeFn = vi.fn()
+    expect(
+      await promoteEntry({
+        repo,
+        chunkId: large,
+        embed,
+        composeFn: composeFn as never,
+      })
+    ).toEqual({
+      ok: false,
+      reason: "升格来源超过单批字符预算,保留原条目",
+    })
+    expect(composeFn).not.toHaveBeenCalled()
+  })
+
   it("少于 minEntries → 不调 LLM", async () => {
     seedApproved(1)
     const qf = vi.fn(fakeQuery({ decisions: [] }))
@@ -274,6 +459,32 @@ describe("runPromote", () => {
 })
 
 describe("registerReflectionPromoter", () => {
+  it("失败不推进完成游标,下次扫描可以重试", async () => {
+    vi.useFakeTimers()
+    try {
+      seedApproved(1)
+      const qf = vi.fn(fakeQuery({ invalid: true }))
+      repo.setPromoteAt(1)
+      const stop = registerReflectionPromoter({
+        repo,
+        adminSurface: null,
+        embed,
+        now: () => 10_000,
+        promoteMs: 1_000,
+        scanMs: 1_000,
+        firstDelayMs: 10,
+        queryFn: qf as never,
+      })
+      await vi.advanceTimersByTimeAsync(10)
+      expect(qf).toHaveBeenCalledTimes(1)
+      expect(repo.promoteAt()).toBe(1)
+      await vi.advanceTimersByTimeAsync(1_000)
+      expect(qf).toHaveBeenCalledTimes(2)
+      stop()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
   it("到期跑一次并推进游标", async () => {
     vi.useFakeTimers()
     try {
@@ -311,6 +522,35 @@ describe("registerReflectionPromoter", () => {
 })
 
 describe("promoteEntry", () => {
+  it("成文等待期间兄弟块被驳回,提交前中止且不写文件或删除当前反思", async () => {
+    const faq = "操作步骤甲".repeat(90) + "操作步骤乙".repeat(90)
+    const pieces = splitCompactedFaq(faq)
+    repo.replaceReflectionEntries(
+      [],
+      pieces.map((content) => ({ content, faq, embedding: vec() })),
+      123
+    )
+    const entries = repo.reflectionEntries()
+    const [entry, sibling] = entries
+    expect(entries.length).toBeGreaterThan(1)
+    const result = await promoteEntry({
+      repo,
+      chunkId: entry.id,
+      embed,
+      composeFn: (async ({ entry: input }: { entry: { answer: string } }) => {
+        expect(input.answer).toBe(faq)
+        repo.setReflectionStatus(sibling.id, "rejected")
+        return composeStub({ entry: { id: entry.id } })
+      }) as never,
+    })
+    expect(result).toEqual({
+      ok: false,
+      reason: "反思来源在升格期间已变化,保留原条目",
+    })
+    expect(repo.reflectionEntryDetail(entry.id)?.status).toBe("approved")
+    expect(repo.kbChunksByDoc("retrieval/faq/api-errors.md")).toEqual([])
+  })
+
   it("已驳回 直接短路,不调成文", async () => {
     const id = seedApproved(1)[0]!
     repo.setReflectionStatus(id, "rejected")

@@ -81,7 +81,7 @@ export class ReflectionRepository {
   }
 
   // 反思沉淀的知识条目(doc='human-reflection');source 见 parseReflectionSource。
-  // LEFT JOIN reflection_meta 带出来源问答(整理后条目 chatId=0、无 meta → question/answer 为 null)
+  // 整理后条目 chatId=0,answer 保存切块前的完整 FAQ;旧条目可能无 meta。
   // 无 meta / 未知 status 一律视为 approved(沉淀即入库,无需审核)
   reflectionEntries(): ReflectionEntry[] {
     const rows = this.sql
@@ -248,7 +248,7 @@ export class ReflectionRepository {
   // source 统一 human-reflection:qq:0:{ts}(chatId 0 = 已压缩,全局归属)。
   replaceReflectionEntries(
     oldIds: number[],
-    entries: { content: string; embedding: Float32Array }[],
+    entries: { content: string; embedding: Float32Array; faq?: string }[],
     sourceTs: number,
     beforeContents: string[] = [],
     afterContents: string[] = [],
@@ -282,7 +282,7 @@ export class ReflectionRepository {
         this.sql
           .prepare(`DELETE FROM kb_chunks WHERE id IN (${ph})`)
           .run(...oldIds)
-        // 删被替换 chunk 的来源 meta,避免孤儿(整理后条目 chatId=0、无 meta)
+        // 删被替换 chunk 的来源 meta,避免孤儿。
         this.sql
           .prepare(`DELETE FROM reflection_meta WHERE chunk_id IN (${ph})`)
           .run(...oldIds)
@@ -294,6 +294,14 @@ export class ReflectionRepository {
           `human-reflection:qq:0:${sourceTs}`
         )
         this.knowledge.insertKbVec(id, e.embedding)
+        if (e.faq) {
+          // 向量仍按 500 字分块,升格/下轮整理需要完整 FAQ 的步骤、条件和例外。
+          this.sql
+            .prepare(
+              "INSERT INTO reflection_meta (chunk_id, channel, group_id, question, answer, status) VALUES (?, 'qq', '0', NULL, ?, 'approved')"
+            )
+            .run(id, e.faq)
+        }
       }
       this.sql
         .prepare(

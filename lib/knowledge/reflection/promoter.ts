@@ -27,6 +27,14 @@ import {
   withTimeoutFn,
 } from "../../model/timeout"
 import type { ChatRef } from "../../core/chat/enabled-chats"
+import {
+  reflectionMaintenanceKey,
+  withReflectionMaintenanceLock,
+} from "./maintenance-lock"
+import { promotionSourceAnswer } from "./source-context"
+
+const MAX_REVIEW_ENTRIES = 20
+const MAX_REVIEW_CHARS = 24_000
 
 export interface ReflectionPromoterDeps {
   repo: Repo
@@ -215,7 +223,13 @@ export interface PromoteEntryDeps {
  * 单条升格:先成文(含归属决策),再落盘入库。
  * 手动 PATCH 与定时升格共用这一条路径——绕过它就会产出不合规的旧格式文档。
  */
-export async function promoteEntry(
+export function promoteEntry(deps: PromoteEntryDeps): Promise<PromoteResult> {
+  return withReflectionMaintenanceLock(deps.repo, () =>
+    promoteEntryUnlocked(deps)
+  )
+}
+
+async function promoteEntryUnlocked(
   deps: PromoteEntryDeps
 ): Promise<PromoteResult> {
   const { repo, chunkId } = deps
@@ -227,6 +241,15 @@ export async function promoteEntry(
   // 此时已无从得知当初落到哪个文档,故 file 留空——不为了避免一次 LLM 调用而瞎猜。
   if (entry.status === "promoted")
     return { ok: true, file: "", content: entry.content, already: true }
+
+  const sourceAnswer = promotionSourceAnswer(
+    entry,
+    entry.chatId === "0" ? repo.reflectionEntries() : []
+  )
+  if (
+    JSON.stringify({ ...entry, answer: sourceAnswer }).length > MAX_REVIEW_CHARS
+  )
+    return { ok: false, reason: "升格来源超过单批字符预算,保留原条目" }
 
   const now = deps.now ?? (() => Date.now())
   const cwd = deps.cwd ?? process.cwd()
@@ -261,7 +284,7 @@ export async function promoteEntry(
       id: entry.id,
       content: entry.content,
       question: entry.question,
-      answer: entry.answer,
+      answer: sourceAnswer,
     },
     candidateDocs,
     queryFn: deps.queryFn ?? sdkQuery,
@@ -279,177 +302,222 @@ export async function promoteEntry(
     embed: deps.embed,
     cwd: deps.cwd,
     now,
+    validateSource: () => {
+      const current = repo.reflectionEntryDetail(chunkId)
+      return (
+        current?.content === entry.content &&
+        promotionSourceAnswer(
+          current,
+          current.chatId === "0" ? repo.reflectionEntries() : []
+        ) === sourceAnswer
+      )
+    },
   })
 }
 
-export async function runPromote(
+type PromoteRunResult = { considered: number; promoted: number; failed?: true }
+type ReflectionEntry = ReturnType<Repo["reflectionEntries"]>[number]
+const promotionRoot = globalThis as typeof globalThis & {
+  __prayerPromoteRuns?: WeakMap<object, Promise<PromoteRunResult>>
+}
+const promoteRuns =
+  promotionRoot.__prayerPromoteRuns ??
+  (promotionRoot.__prayerPromoteRuns = new WeakMap())
+
+/** 同时限制评审条数和字符数；来源问答也占输入预算。 */
+function reviewBatches(entries: ReflectionEntry[]): ReflectionEntry[][] {
+  const batches: ReflectionEntry[][] = []
+  let batch: ReflectionEntry[] = []
+  let chars = 0
+  for (const entry of entries) {
+    const size = JSON.stringify(entry).length
+    if (
+      batch.length &&
+      (batch.length >= MAX_REVIEW_ENTRIES || chars + size > MAX_REVIEW_CHARS)
+    ) {
+      batches.push(batch)
+      batch = []
+      chars = 0
+    }
+    batch.push(entry)
+    chars += size
+  }
+  if (batch.length) batches.push(batch)
+  return batches
+}
+
+export function runPromote(
   deps: ReflectionPromoterDeps
-): Promise<{ considered: number; promoted: number; failed?: true }> {
+): Promise<PromoteRunResult> {
+  const key = reflectionMaintenanceKey(deps.repo)
+  const running = promoteRuns.get(key)
+  if (running) return running
+  const task = withReflectionMaintenanceLock(deps.repo, () =>
+    runPromoteUnlocked(deps)
+  )
+  promoteRuns.set(key, task)
+  void task
+    .finally(() => {
+      if (promoteRuns.get(key) === task) promoteRuns.delete(key)
+    })
+    .catch(() => {})
+  return task
+}
+
+async function runPromoteUnlocked(
+  deps: ReflectionPromoterDeps
+): Promise<PromoteRunResult> {
   const d = resolve(deps)
-  const candidates = d.repo
-    .reflectionEntries()
+  const entries = d.repo.reflectionEntries()
+  const candidates = entries
     .filter((e) => e.status === "approved")
-  if (candidates.length < d.minEntries)
+    .map((entry) => ({
+      ...entry,
+      answer: promotionSourceAnswer(entry, entries),
+    }))
+  if (candidates.length < d.minEntries || d.maxPerRun <= 0)
     return { considered: candidates.length, promoted: 0 }
 
-  try {
-    // 同一条反思在第一阶段(候选人上下文)与第二阶段(成文)各要一次向量。
-    // 本地 bge-small 虽在进程内,也没必要算两遍:本轮按文本记忆,循环结束即释放。
-    const embedCache = new Map<string, Float32Array>()
-    const embedCached = async (text: string): Promise<Float32Array> => {
-      const cached = embedCache.get(text)
-      if (cached) return cached
-      const v = await d.embed(text)
-      embedCache.set(text, v)
-      return v
-    }
-
-    const ctx = new Map<number, string>()
-    for (const e of candidates) {
-      for (const h of d.repo.searchBaseKb(
-        await embedCached(e.content),
-        d.baseContextK
-      )) {
-        ctx.set(h.id, h.content)
-      }
-    }
-    const baseBlock = [...ctx.values()]
-      .map((c, i) =>
-        JSON.stringify({ index: i + 1, text: sanitizeForModel(c) })
+  const embedCache = new Map<string, Float32Array>()
+  const embedCached = async (text: string): Promise<Float32Array> => {
+    const cached = embedCache.get(text)
+    if (cached) return cached
+    const v = await d.embed(text)
+    embedCache.set(text, v)
+    return v
+  }
+  let promoted = 0
+  let attempted = 0
+  let failed = false
+  const batches = reviewBatches(candidates)
+  for (const [index, batch] of batches.entries()) {
+    if (attempted >= d.maxPerRun) break
+    try {
+      if (
+        batch.some((entry) => JSON.stringify(entry).length > MAX_REVIEW_CHARS)
       )
-      .join("\n")
-    const candBlock = candidates
-      .map((e) =>
-        JSON.stringify({
-          id: e.id,
-          faq: sanitizeForModel(e.content),
-          sourceQuestion: sanitizeForModel(e.question ?? ""),
-          sourceAnswer: sanitizeForModel(e.answer ?? ""),
-        })
-      )
-      .join("\n")
-    const prompt = `<AUTHORITATIVE_DOCS_JSONL>\n${baseBlock}\n</AUTHORITATIVE_DOCS_JSONL>\n\n<CANDIDATE_REFLECTIONS_JSONL>\n${candBlock}\n</CANDIDATE_REFLECTIONS_JSONL>\n\n任务:按系统规则逐条决策并返回结构化结果。`
-
-    const { text: out, structuredOutput } = await withTimeout(
-      d.queryTimeoutMs,
-      drainQuery(
-        d.queryFn({
-          prompt,
-          options: noToolQueryOptions({
-            systemPrompt: PROMOTE_SYSTEM,
-            outputFormat: {
-              type: "json_schema",
-              schema: PROMOTE_OUTPUT_SCHEMA,
-            },
-            thinking: { type: "disabled" },
-            canUseTool: async () => ({
-              behavior: "deny" as const,
-              message: "升格阶段不使用工具",
-            }),
-            maxTurns: 2,
-          }) as never,
-        }),
-        "promote"
-      )
-    )
-
-    const decisions = decisionsFromPayload(structuredOutput, out)
-    const selected = selectPromoteIds(
-      decisions,
-      candidates.map((c) => c.id),
-      d.maxPerRun
-    )
-    if (!selected.ok) {
-      const preview = previewJsonPayload(structuredOutput, out)
-      logger.log(
-        "warn",
-        `[reflection-promote] 校验失败(${selected.reason}),本轮不升格。预览: ${preview || "(空)"}`
-      )
-      emitErrorSafely({
-        scope: "reflection-promote",
-        err: new Error(`LLM 产出未过校验:${selected.reason}`),
-        userVisible: false,
-      })
-      return { considered: candidates.length, promoted: 0, failed: true }
-    }
-
-    let promoted = 0
-    let failed = false
-    for (const id of selected.ids) {
-      // 单条抛错(成文超时/流错误、写盘失败)不能击穿整轮。Task 7 起每条升格多了一次
-      // 可抛的成文调用,不隔离的话第 3 条抛出会让第 4、5 条本轮不再尝试;更糟的是
-      // 外层 catch 硬编码 promoted: 0,而第 1、2 条此时已落盘入库——手动触发路由
-      // (app/api/reflection/promote/route.ts)把这个值原样回给操作员,就成了
-      // "503 + 升格 0 条",实则已经升了 2 条。所以这里记错误、标 failed、继续。
-      // 外层 catch 只留给第一阶段(那里失败整轮中止才是对的,且此时确实一条没升)。
-      try {
-        const r = await promoteEntry({
-          repo: d.repo,
-          chunkId: id,
-          embed: embedCached,
-          queryFn: d.queryFn,
-          queryTimeoutMs: d.queryTimeoutMs,
-          composeFn: d.composeFn,
-          promoteFn: d.promoteFn,
-          // 用 d.candidateK 而不是 d.baseContextK:上面刚把 candidateK 加进
-          // ReflectionPromoterDeps/Resolved,接成 baseContextK 会让新字段只写不读。
-          // 两者缺省都是 3,生产行为不变。收尾时若仍无人设置 candidateK,可并回
-          // baseContextK 减一个字段。
-          candidateK: d.candidateK,
-          cwd: d.cwd,
-          now: d.now,
-        })
-        if (r.ok && !r.already) {
-          promoted++
-          if (d.notifyAdmin && d.adminSurface) {
-            const preview =
-              r.content.slice(0, 40) + (r.content.length > 40 ? "…" : "")
-            bus.emit("action.send", {
-              channel: d.adminSurface.channel,
-              chatId: d.adminSurface.chatId,
-              text: `反思自动升格: #${id} → ${r.file}\n${preview}`,
-            })
-          }
-        } else if (!r.ok) {
-          failed = true
-          logger.log(
-            "warn",
-            `[reflection-promote] 升格 #${id} 失败: ${r.reason}`
-          )
+        throw new Error("升格来源超过单批字符预算,保留原条目")
+      const ctx = new Map<number, string>()
+      for (const e of batch) {
+        for (const h of d.repo.searchBaseKb(
+          await embedCached(e.content),
+          d.baseContextK
+        )) {
+          ctx.set(h.id, h.content)
         }
-      } catch (err) {
-        failed = true
+      }
+      const baseBlock = [...ctx.values()]
+        .map((c, i) =>
+          JSON.stringify({ index: i + 1, text: sanitizeForModel(c) })
+        )
+        .join("\n")
+      const candBlock = batch
+        .map((e) =>
+          JSON.stringify({
+            id: e.id,
+            faq: sanitizeForModel(e.content),
+            sourceQuestion: sanitizeForModel(e.question ?? ""),
+            sourceAnswer: sanitizeForModel(e.answer ?? ""),
+          })
+        )
+        .join("\n")
+      const prompt = `<AUTHORITATIVE_DOCS_JSONL>\n${baseBlock}\n</AUTHORITATIVE_DOCS_JSONL>\n\n<CANDIDATE_REFLECTIONS_JSONL>\n${candBlock}\n</CANDIDATE_REFLECTIONS_JSONL>\n\n任务:按系统规则逐条决策并返回结构化结果。`
+      const controller = new AbortController()
+      const { text: out, structuredOutput } = await withTimeout(
+        d.queryTimeoutMs,
+        drainQuery(
+          d.queryFn({
+            prompt,
+            options: noToolQueryOptions({
+              abortController: controller,
+              systemPrompt: PROMOTE_SYSTEM,
+              outputFormat: {
+                type: "json_schema",
+                schema: PROMOTE_OUTPUT_SCHEMA,
+              },
+              thinking: { type: "disabled" },
+              canUseTool: async () => ({
+                behavior: "deny" as const,
+                message: "升格阶段不使用工具",
+              }),
+              maxTurns: 2,
+            }) as never,
+          }),
+          "promote"
+        )
+      ).finally(() => controller.abort())
+      const selected = selectPromoteIds(
+        decisionsFromPayload(structuredOutput, out),
+        batch.map((c) => c.id),
+        d.maxPerRun - attempted
+      )
+      if (!selected.ok) {
         logger.log(
           "warn",
-          `[reflection-promote] 升格 #${id} 抛错: ${
-            err instanceof Error ? err.message : String(err)
-          }`
+          `[reflection-promote] 第 ${index + 1}/${batches.length} 批校验失败: ${previewJsonPayload(structuredOutput, out) || "(空)"}`
         )
-        emitErrorSafely({
-          scope: "reflection-promote",
-          err,
-          userVisible: false,
-        })
+        throw new Error(`LLM 产出未过校验:${selected.reason}`)
       }
+      for (const id of selected.ids) {
+        attempted++
+        try {
+          const r = await promoteEntryUnlocked({
+            repo: d.repo,
+            chunkId: id,
+            embed: embedCached,
+            queryFn: d.queryFn,
+            queryTimeoutMs: d.queryTimeoutMs,
+            composeFn: d.composeFn,
+            promoteFn: d.promoteFn,
+            candidateK: d.candidateK,
+            cwd: d.cwd,
+            now: d.now,
+          })
+          if (r.ok && !r.already) {
+            promoted++
+            if (d.notifyAdmin && d.adminSurface) {
+              const preview =
+                r.content.slice(0, 40) + (r.content.length > 40 ? "…" : "")
+              bus.emit("action.send", {
+                channel: d.adminSurface.channel,
+                chatId: d.adminSurface.chatId,
+                text: `反思自动升格: #${id} → ${r.file}\n${preview}`,
+              })
+            }
+          } else if (!r.ok) {
+            failed = true
+            logger.log(
+              "warn",
+              `[reflection-promote] 升格 #${id} 失败: ${r.reason}`
+            )
+            emitErrorSafely({
+              scope: "reflection-promote",
+              err: new Error(r.reason),
+              userVisible: false,
+            })
+          }
+        } catch (err) {
+          failed = true
+          emitErrorSafely({
+            scope: "reflection-promote",
+            err,
+            userVisible: false,
+          })
+        }
+      }
+    } catch (err) {
+      failed = true
+      emitErrorSafely({ scope: "reflection-promote", err, userVisible: false })
     }
-
-    if (promoted > 0) {
-      logger.log(
-        "info",
-        `[reflection-promote] ${candidates.length} 候选 → 升格 ${promoted} 条`
-      )
-    }
-    return failed
-      ? { considered: candidates.length, promoted, failed: true }
-      : { considered: candidates.length, promoted }
-  } catch (err) {
-    emitErrorSafely({
-      scope: "reflection-promote",
-      err,
-      userVisible: false,
-    })
-    return { considered: candidates.length, promoted: 0, failed: true }
   }
+  if (promoted > 0)
+    logger.log(
+      "info",
+      `[reflection-promote] ${candidates.length} 候选 → 升格 ${promoted} 条`
+    )
+  return failed
+    ? { considered: candidates.length, promoted, failed: true }
+    : { considered: candidates.length, promoted }
 }
 
 export function registerReflectionPromoter(
@@ -487,13 +555,11 @@ export function registerReflectionPromoter(
     running = true
     logger.log("info", "[reflection-promote] due, running")
     void runPromote(deps)
+      .then((result) => {
+        if (!result.failed) repo.setPromoteAt(now())
+      })
       .catch(reportTimerError)
       .finally(() => {
-        try {
-          repo.setPromoteAt(now())
-        } catch (err) {
-          reportTimerError(err)
-        }
         running = false
       })
   }

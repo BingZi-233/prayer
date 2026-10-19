@@ -14,19 +14,42 @@ import {
   DEFAULT_COMPACT_MS,
 } from "@/lib/knowledge/reflection/compactor"
 import type { ActionSend, ErrorOccurred } from "@/lib/core/chat/events"
+import { splitCompactedFaq } from "@/lib/knowledge/reflection/compact-chunks"
 
 let repo: Repo
 const vec = () => new Float32Array([1, 0, 0])
 const embed = async () => vec()
 
 // 假 query:只返回 structured_output(SDK 强制路径;不再走文本 JSON)
-function fakeQuery(structured?: unknown) {
-  return () =>
+function fakeQuery(structured?: unknown, includeSources = true) {
+  return (args?: { prompt?: string }) =>
     (async function* () {
+      let output = structured
+      const count = Number(/共 (\d+) 条/.exec(args?.prompt ?? "")?.[1] ?? 0)
+      const items = (
+        structured as { items?: { faq?: string; sourceIndices?: number[] }[] }
+      )?.items
+      if (
+        includeSources &&
+        count &&
+        Array.isArray(items) &&
+        items.length &&
+        items.every((item) => item?.sourceIndices == null)
+      ) {
+        output = {
+          items: items.map((item, index) => ({
+            ...item,
+            sourceIndices: Array.from(
+              { length: count },
+              (_, i) => i + 1
+            ).filter((i) => (i - 1) % items.length === index),
+          })),
+        }
+      }
       yield {
         type: "result",
         subtype: "success",
-        ...(structured !== undefined ? { structured_output: structured } : {}),
+        ...(output !== undefined ? { structured_output: output } : {}),
       }
     })()
 }
@@ -71,6 +94,18 @@ describe("partitionBatches", () => {
   })
   it("空数组 → 空", () => {
     expect(partitionBatches([], 10)).toEqual([])
+  })
+  it("正小数批大小至少为 1,避免步长 0 的无限循环", () => {
+    expect(partitionBatches([1, 2], 0.5)).toEqual([[1], [2]])
+  })
+  it("同时限制条数与字符;单条超预算不截断、不丢弃", () => {
+    const items = ["甲甲", "乙乙", "丙丙", "超出预算的独立 FAQ", "丁丁"]
+    expect(partitionBatches(items, 30, 4, (text) => text.length)).toEqual([
+      ["甲甲", "乙乙"],
+      ["丙丙"],
+      ["超出预算的独立 FAQ"],
+      ["丁丁"],
+    ])
   })
 })
 
@@ -126,6 +161,12 @@ describe("runCompact", () => {
     expect(contents).toHaveLength(4)
     expect(contents).toContain("短 FAQ")
     expect(contents.every((content) => content.length <= 500)).toBe(true)
+    expect(
+      repo
+        .reflectionEntries()
+        .filter((entry) => entry.content !== "短 FAQ")
+        .every((entry) => entry.answer === longFaq)
+    ).toBe(true)
     expect(repo.recentCompactions(1)[0]).toMatchObject({
       beforeCount: 3,
       afterCount: 2,
@@ -135,9 +176,12 @@ describe("runCompact", () => {
   it("query 带 outputFormat.json_schema + 用 structured_output", async () => {
     seedReflections(5)
     let captured: { options?: { outputFormat?: unknown } } | undefined
-    const qf = (args: { options?: { outputFormat?: unknown } }) => {
+    const qf = (args: {
+      prompt: string
+      options?: { outputFormat?: unknown }
+    }) => {
       captured = args
-      return fakeQuery(faqsItems(3, "结构化"))()
+      return fakeQuery(faqsItems(3, "结构化"))(args)
     }
     await runCompact(opts({ queryFn: qf as never }))
     expect(captured?.options?.outputFormat).toEqual({
@@ -246,7 +290,7 @@ describe("runCompact", () => {
     const err = new Promise<ErrorOccurred>((res) =>
       bus.once("error.occurred", res)
     )
-    await runCompact(opts({ queryFn: fakeQuery(faqsItems(2)) as never }))
+    await runCompact(opts({ queryFn: fakeQuery(faqsItems(2), false) as never }))
     const e = (await err).err as Error
     expect(e.message).toMatch(/过度删除|下限/)
     expect(repo.reflectionEntries()).toHaveLength(10)
@@ -267,7 +311,7 @@ describe("runCompact", () => {
     const qf = (args: { prompt: string }) => {
       captured = args.prompt
       // 3 条输入 floor=ceil(3*0.4)=2,产出 2 条即可
-      return fakeQuery(faqsItems(2, "甲"))()
+      return fakeQuery(faqsItems(2, "甲"))(args)
     }
     await runCompact(opts({ queryFn: qf as never }))
     expect(captured).toContain("<AUTHORITATIVE_DOCS_JSONL>")
@@ -314,7 +358,7 @@ describe("runCompact", () => {
       const m = /共 (\d+) 条/.exec(args.prompt)
       const n = m ? Number(m[1]) : 3
       const out = Math.max(2, Math.ceil(n * 0.5))
-      return fakeQuery(faqsItems(out, `批${qf.mock.calls.length}`))()
+      return fakeQuery(faqsItems(out, `批${qf.mock.calls.length}`))(args)
     })
     const notice = new Promise<ActionSend>((res) =>
       bus.once("action.send", res)
@@ -340,10 +384,10 @@ describe("runCompact", () => {
     seedReflections(6)
     bus.on("error.occurred", () => {})
     let call = 0
-    const qf = vi.fn(() => {
+    const qf = vi.fn((args: { prompt: string }) => {
       call++
-      if (call === 1) return fakeQuery({ items: [] })() // 第 1 批失败
-      return fakeQuery(faqsItems(2, "乙"))() // 第 2 批 3→2 成功
+      if (call === 1) return fakeQuery({ items: [] })(args) // 第 1 批失败
+      return fakeQuery(faqsItems(2, "乙"))(args) // 第 2 批 3→2 成功
     })
     const outcome = await runCompactWithOutcome(
       opts({
@@ -377,15 +421,250 @@ describe("runCompact", () => {
     expect(repo.recentCompactions(10)).toHaveLength(0)
   })
 
+  it("分批:一批 query 抛错仍保留原文并继续其它批", async () => {
+    seedReflections(6)
+    bus.on("error.occurred", () => {})
+    let call = 0
+    const qf = vi.fn((args: { prompt: string }) => {
+      if (call++ === 0) throw new Error("relay disconnected")
+      return fakeQuery(faqsItems(2, "成功"))(args)
+    })
+
+    const outcome = await runCompactWithOutcome(
+      opts({ batchSize: 3, queryFn: qf as never })
+    )
+
+    expect(outcome).toBe("partial")
+    expect(qf).toHaveBeenCalledTimes(2)
+    expect(
+      repo
+        .reflectionEntries()
+        .map((r) => r.content)
+        .sort()
+    ).toEqual(["反思3", "反思4", "反思5", "成功0", "成功1"].sort())
+  })
+
+  it("手动与定时整理复用同一轮,只调一次 LLM、提交一次", async () => {
+    seedReflections(5)
+    let release!: () => void
+    let started!: () => void
+    const gate = new Promise<void>((resolve) => (release = resolve))
+    const called = new Promise<void>((resolve) => (started = resolve))
+    const qf = vi.fn(() =>
+      (async function* () {
+        started()
+        await gate
+        yield {
+          type: "result",
+          subtype: "success",
+          structured_output: {
+            items: [
+              { faq: "合并0", sourceIndices: [1, 2] },
+              { faq: "合并1", sourceIndices: [3, 4] },
+              { faq: "合并2", sourceIndices: [5] },
+            ],
+          },
+        }
+      })()
+    )
+    const first = runCompactWithOutcome(opts({ queryFn: qf as never }))
+    await called
+    // Runtime timer and API routes construct separate repositories over one DB.
+    const db = (repo as unknown as { db: import("better-sqlite3").Database }).db
+    const second = runCompactWithOutcome(
+      opts({ repo: new Repo(db), queryFn: qf as never })
+    )
+    expect(second).toBe(first)
+    release()
+    expect(await Promise.all([first, second])).toEqual([
+      "completed",
+      "completed",
+    ])
+    expect(qf).toHaveBeenCalledTimes(1)
+    expect(repo.recentCompactions(10)).toHaveLength(1)
+  })
+
+  it("30 个检索块合成 9 条 FAQ:完整来源覆盖允许合并,无需凑足 12 条", async () => {
+    seedReflections(30)
+    const items = Array.from({ length: 9 }, (_, i) => ({
+      faq: `合并${i}`,
+      sourceIndices: Array.from({ length: i < 3 ? 4 : 3 }, (_, n) =>
+        i < 3 ? i * 4 + n + 1 : 12 + (i - 3) * 3 + n + 1
+      ),
+    }))
+    expect(
+      await runCompactWithOutcome(
+        opts({ queryFn: fakeQuery({ items }) as never })
+      )
+    ).toBe("completed")
+    expect(repo.reflectionEntries()).toHaveLength(9)
+    expect(repo.recentCompactions(1)[0]).toMatchObject({
+      beforeCount: 30,
+      afterCount: 9,
+    })
+  })
+
+  it("生产整理即使产出达到旧 40% 下限也必须验证来源,缺索引不写库", async () => {
+    seedReflections(30)
+    bus.on("error.occurred", () => {})
+    const before = repo.reflectionEntries()
+    expect(
+      await runCompactWithOutcome(
+        opts({
+          queryFn: fakeQuery(faqsItems(12), false) as never,
+        })
+      )
+    ).toBe("failed")
+    expect(repo.reflectionEntries()).toEqual(before)
+    expect(repo.recentCompactions(1)).toHaveLength(0)
+  })
+
+  it("LLM query 完成后取消控制器,超时时也能终止 SDK 子进程", async () => {
+    seedReflections(3)
+    let controller: AbortController | undefined
+    const qf = (args: {
+      prompt: string
+      options: { abortController: AbortController }
+    }) => {
+      controller = args.options.abortController
+      return fakeQuery(faqsItems(2))(args)
+    }
+    expect(await runCompact(opts({ queryFn: qf as never }))).toBe(true)
+    expect(controller?.signal.aborted).toBe(true)
+  })
+
+  it("LLM 超时会 abort SDK,保留旧库且不写成功记录", async () => {
+    vi.useFakeTimers()
+    try {
+      seedReflections(3)
+      bus.on("error.occurred", () => {})
+      let controller: AbortController | undefined
+      const qf = (args: { options: { abortController: AbortController } }) => {
+        controller = args.options.abortController
+        return (async function* () {
+          await new Promise<void>((_, reject) => {
+            controller!.signal.addEventListener("abort", () =>
+              reject(new Error("aborted"))
+            )
+          })
+          yield { type: "result", subtype: "success" }
+        })()
+      }
+      const pending = runCompact(
+        opts({ queryFn: qf as never, queryTimeoutMs: 10 })
+      )
+      await vi.advanceTimersByTimeAsync(10)
+      expect(await pending).toBe(false)
+      expect(controller?.signal.aborted).toBe(true)
+      expect(repo.reflectionEntries()).toHaveLength(3)
+      expect(repo.recentCompactions(1)).toHaveLength(0)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it.each([true, false])(
+    "同一 FAQ 的检索碎片只作为一个完整输入,历史快照可精确恢复: metadata=%s",
+    async (metadata) => {
+      const faq = `问:完整步骤?答:${"必须保留所有条件与例外。".repeat(55)}`
+      repo.replaceReflectionEntries(
+        [],
+        splitCompactedFaq(faq).map((content) => ({
+          content,
+          embedding: vec(),
+          ...(metadata ? { faq } : {}),
+        })),
+        100,
+        [],
+        [faq]
+      )
+      repo.insertKbEntry(
+        "human-reflection",
+        "另一条知识",
+        "human-reflection:qq:123:200",
+        vec()
+      )
+      let prompt = ""
+      const qf = (args: { prompt: string }) => {
+        prompt = args.prompt
+        return fakeQuery(faqsItems(2))(args)
+      }
+      expect(
+        await runCompact(opts({ minEntries: 2, queryFn: qf as never }))
+      ).toBe(true)
+      expect(prompt).toContain("共 2 条")
+      expect(prompt.split(faq)).toHaveLength(2)
+    }
+  )
+
+  it.each(["rejected", "promoted"] as const)(
+    "完整 FAQ 有一个碎片已 %s 时不重新引入该片内容",
+    async (status) => {
+      const faq = `问:完整步骤?答:${"需要分别审核的细节。".repeat(60)}`
+      repo.replaceReflectionEntries(
+        [],
+        splitCompactedFaq(faq).map((content) => ({
+          content,
+          faq,
+          embedding: vec(),
+        })),
+        100,
+        [],
+        [faq]
+      )
+      const blocked = repo.reflectionEntries()[0]
+      repo.setReflectionStatus(blocked.id, status)
+      repo.insertKbEntry(
+        "human-reflection",
+        "另一条知识",
+        "human-reflection:qq:123:200",
+        vec()
+      )
+      let prompt = ""
+      const qf = (args: { prompt: string }) => {
+        prompt = args.prompt
+        return fakeQuery(faqsItems(2))(args)
+      }
+      expect(
+        await runCompact(opts({ minEntries: 2, queryFn: qf as never }))
+      ).toBe(true)
+      expect(prompt).not.toContain(faq)
+      expect(repo.reflectionEntryDetail(blocked.id)?.status).toBe(status)
+    }
+  )
+
+  it("只剩一个逻辑 FAQ 时历史恢复也会持久化,无需额外调 LLM", async () => {
+    const faq = `问:完整步骤?答:${"必须保留的细节。".repeat(80)}`
+    repo.replaceReflectionEntries(
+      [],
+      splitCompactedFaq(faq).map((content) => ({
+        content,
+        embedding: vec(),
+      })),
+      100,
+      [],
+      [faq]
+    )
+    const qf = vi.fn(fakeQuery({ items: [] }))
+    expect(
+      await runCompact(opts({ minEntries: 2, queryFn: qf as never }))
+    ).toBe(true)
+    expect(qf).not.toHaveBeenCalled()
+    expect(
+      repo.reflectionEntries().every((entry) => entry.answer === faq)
+    ).toBe(true)
+    expect(repo.recentCompactions(1)[0].after).toEqual([faq])
+  })
+
   it("LLM 等待期间条目被驳回 → 拒绝快照替换并保留原条目", async () => {
     seedReflections(3)
     const snap = repo.reflectionEntries()
     const changedId = snap[0].id
     bus.on("error.occurred", () => {})
-    const qf = () => {
+    const qf = (args: { prompt: string }) => {
       // 模拟审核请求在 LLM 等待期间完成。
       expect(repo.setReflectionStatus(changedId, "rejected")).toBe(true)
-      return fakeQuery(faqsItems(2, "不应覆盖"))()
+      return fakeQuery(faqsItems(2, "不应覆盖"))(args)
     }
 
     const completed = await runCompact(opts({ queryFn: qf as never }))
@@ -398,6 +677,29 @@ describe("runCompact", () => {
 })
 
 describe("validateCompacted(structured 优先 + 文本兜底)", () => {
+  it("完整来源覆盖允许低于条数比例的近义合并", () => {
+    expect(
+      validateCompacted(
+        { items: [{ faq: "完整合并", sourceIndices: [1, 2, 3, 4, 5] }] },
+        5
+      )
+    ).toEqual(["完整合并"])
+  })
+  it.each([
+    [{ faq: "漏掉来源", sourceIndices: [1, 2, 3, 4] }],
+    [{ faq: "来源重复", sourceIndices: [1, 2, 3, 4, 5, 5] }],
+    [{ faq: "来源越界", sourceIndices: [0, 1, 2, 3, 4, 5] }],
+    [{ faq: "来源非整数", sourceIndices: [1, 2, 3, 4, 5.1] }],
+    [{ faq: "来源形状错误", sourceIndices: "1,2,3,4,5" }],
+    [{ faq: "混合缺失", sourceIndices: [1, 2, 3, 4] }, { faq: "缺来源" }],
+    [{ faq: "", sourceIndices: [1, 2, 3, 4, 5] }],
+  ])("来源索引不完整或非法时拒绝整批: %j", (...items) => {
+    expect(validateCompacted({ items }, 5)).toBeNull()
+  })
+  it("截断输出即使已解析条数达旧 salvage 下限也不得替换整批", () => {
+    const raw = '{"items":[{"faq":"甲"},{"faq":"乙"},{"faq":"半截'
+    expect(validateCompacted(undefined, 5, raw)).toBeNull()
+  })
   it("正常 → 返回 trim 后非空 faq 列表", () => {
     expect(
       validateCompacted(
@@ -485,7 +787,13 @@ describe("registerReflectionCompactor 防重入", () => {
           yield {
             type: "result",
             subtype: "success",
-            structured_output: faqsItems(3, "甲"),
+            structured_output: {
+              items: [
+                { faq: "甲0", sourceIndices: [1, 2] },
+                { faq: "甲1", sourceIndices: [3, 4] },
+                { faq: "甲2", sourceIndices: [5] },
+              ],
+            },
           }
         })()
       )
@@ -506,6 +814,33 @@ describe("registerReflectionCompactor 防重入", () => {
 })
 
 describe("registerReflectionCompactor 到期判定 + 持久游标(修复重启清零)", () => {
+  it("整理失败不推进成功游标,下次扫描仍可重试", async () => {
+    const { registerReflectionCompactor } =
+      await import("@/lib/knowledge/reflection/compactor")
+    vi.useFakeTimers()
+    try {
+      seedReflections(5)
+      bus.on("error.occurred", () => {})
+      const qf = vi.fn(fakeQuery({ items: [] }))
+      const stop = registerReflectionCompactor(
+        opts({
+          compactMs: 1000,
+          scanMs: 1000,
+          firstDelayMs: 10,
+          queryFn: qf as never,
+        })
+      )
+      await vi.advanceTimersByTimeAsync(10)
+      expect(qf).toHaveBeenCalledTimes(1)
+      expect(repo.compactAt()).toBe(0)
+      await vi.advanceTimersByTimeAsync(990)
+      expect(qf).toHaveBeenCalledTimes(2)
+      stop()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it("首刷:装配后延迟 firstDelayMs 到期即跑一次(不必等满 scanMs)", async () => {
     const { registerReflectionCompactor } =
       await import("@/lib/knowledge/reflection/compactor")

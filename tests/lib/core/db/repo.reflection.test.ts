@@ -127,6 +127,56 @@ describe("reflection_meta / reflectionEntries", () => {
     const rc = repo.recentCompactions(2)
     expect(rc.map((r) => r.ts)).toEqual([300, 200])
   })
+
+  it("整理切块与完整 FAQ 元数据同事务写入,后续可恢复完整上下文", () => {
+    const faq = "问:如何操作?\n答:先配置,再校验;失败时回退,保留所有步骤与例外。"
+    expect(
+      repo.replaceReflectionEntries(
+        [],
+        [
+          { content: "问:如何操作?", faq, embedding: vec() },
+          { content: "答:先配置,再校验", faq, embedding: vec() },
+        ],
+        123,
+        [],
+        [faq]
+      )
+    ).toBe(true)
+    expect(repo.reflectionEntries()).toHaveLength(2)
+    for (const entry of repo.reflectionEntries()) {
+      expect(entry).toMatchObject({
+        chatId: "0",
+        question: null,
+        answer: faq,
+        status: "approved",
+      })
+    }
+  })
+
+  it("整理事务向量写入失败时回滚 chunk、元数据与整理记录", () => {
+    expect(() =>
+      repo.replaceReflectionEntries(
+        [],
+        [
+          { content: "第一块", faq: "完整 FAQ", embedding: vec() },
+          {
+            content: "第二块",
+            faq: "完整 FAQ",
+            embedding: new Float32Array([1, 0]),
+          },
+        ],
+        123,
+        [],
+        ["完整 FAQ"]
+      )
+    ).toThrow()
+    expect(repo.reflectionEntries()).toHaveLength(0)
+    expect(repo.recentCompactions(10)).toHaveLength(0)
+    const db = (repo as unknown as { db: import("better-sqlite3").Database }).db
+    expect(
+      db.prepare("SELECT COUNT(*) AS n FROM reflection_meta").get()
+    ).toEqual({ n: 0 })
+  })
 })
 
 describe("整理记录摘要 / 详情分离", () => {
