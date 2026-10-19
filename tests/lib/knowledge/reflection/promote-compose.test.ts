@@ -258,8 +258,15 @@ describe("validateUnit / unitShapeIssue", () => {
   })
 })
 
-function fakeQuery(structured: unknown) {
-  return () =>
+function fakeQuery(
+  structured: unknown,
+  support: unknown = { supported: true, reason: "来源支持" }
+) {
+  return (args?: {
+    options?: {
+      outputFormat?: { schema?: { properties?: Record<string, unknown> } }
+    }
+  }) =>
     (async function* () {
       yield {
         type: "assistant",
@@ -268,7 +275,10 @@ function fakeQuery(structured: unknown) {
       yield {
         type: "result",
         subtype: "success",
-        structured_output: structured,
+        structured_output: args?.options?.outputFormat?.schema?.properties
+          ?.supported
+          ? support
+          : structured,
       }
     })()
 }
@@ -308,6 +318,104 @@ const goodDecision = {
 }
 
 describe("composePromotion", () => {
+  it("成文新增原文未支持的否定限制时拒绝升格", async () => {
+    const decision = {
+      ...goodDecision,
+      unit: {
+        ...goodDecision.unit,
+        body: "可导出 Markdown；该操作仅针对单条笔记，不涉及批量导出与跨设备同步",
+      },
+    }
+    let verificationPrompt = ""
+    let verificationSystem = ""
+    const controllers: AbortController[] = []
+    const queryFn = (args: {
+      prompt: string
+      options: {
+        systemPrompt: string
+        abortController: AbortController
+        outputFormat: { schema: unknown }
+      }
+    }) => {
+      controllers.push(args.options.abortController)
+      if (args.options.outputFormat.schema !== COMPOSE_OUTPUT_SCHEMA) {
+        verificationPrompt = args.prompt
+        verificationSystem = args.options.systemPrompt
+      }
+      return fakeQuery(decision, {
+        supported: false,
+        reason: "无直接来源的适用范围限制",
+      })(args as never)
+    }
+    const result = await composePromotion({
+      ...composeDeps(decision),
+      entry: {
+        id: 42,
+        content: "纸舟笔记可以在笔记菜单导出 Markdown",
+        question: null,
+        answer: null,
+      },
+      queryFn: queryFn as never,
+    })
+    expect(result).toEqual({
+      ok: false,
+      reason: "成文含来源未支持的事实或限制,保留原条目",
+    })
+    expect(verificationPrompt).toContain("<SOURCE_JSON>")
+    expect(verificationPrompt).toContain("不涉及批量导出与跨设备同步")
+    expect(verificationSystem).toContain("来源没有提及不等于")
+    expect(controllers).toHaveLength(2)
+    expect(controllers.every((controller) => controller.signal.aborted)).toBe(
+      true
+    )
+  })
+
+  it("来源核验输出非法时保留反思,不当作默认通过", async () => {
+    const result = await composePromotion({
+      ...composeDeps(goodDecision),
+      queryFn: fakeQuery(goodDecision, {
+        supported: "true",
+        reason: "",
+      }) as never,
+    })
+    expect(result).toEqual({
+      ok: false,
+      reason: "无法解析成文来源核验结果,保留原条目",
+    })
+  })
+
+  it("来源核验超时会取消查询且不返回可提交的单元", async () => {
+    let verificationController: AbortController | undefined
+    const queryFn = (args: {
+      options: {
+        outputFormat: { schema: unknown }
+        abortController: AbortController
+      }
+    }) => {
+      if (args.options.outputFormat.schema === COMPOSE_OUTPUT_SCHEMA)
+        return fakeQuery(goodDecision)(args as never)
+      verificationController = args.options.abortController
+      return (async function* () {
+        await new Promise<void>((resolve) =>
+          verificationController!.signal.addEventListener(
+            "abort",
+            () => resolve(),
+            { once: true }
+          )
+        )
+        yield { type: "result", subtype: "success" }
+      })()
+    }
+    await expect(
+      composePromotion({
+        ...composeDeps(goodDecision),
+        queryFn: queryFn as never,
+        queryTimeoutMs: 10,
+      })
+    ).rejects.toThrow("超时(10ms)")
+    expect(verificationController?.signal.aborted).toBe(true)
+  })
+
   it("合规结果:merge 到候选文档并成文", async () => {
     const r = await composePromotion(composeDeps(goodDecision))
     expect(r.ok).toBe(true)
@@ -375,16 +483,59 @@ describe("composePromotion", () => {
     expect(r.value.doc).toBe("retrieval/faq/codex-encrypted-400.md")
   })
 
-  it("请求带上 json_schema outputFormat", async () => {
-    let captured: { options?: { outputFormat?: unknown } } | undefined
+  it("请求向模型给出可用域名和 schema,结束后释放查询", async () => {
+    let captured:
+      | {
+          options?: {
+            outputFormat?: unknown
+            systemPrompt?: string
+            abortController?: AbortController
+          }
+        }
+      | undefined
     const qf = ((args: unknown) => {
-      captured = args as { options?: { outputFormat?: unknown } }
-      return fakeQuery(goodDecision)()
+      const input = args as {
+        options?: { outputFormat?: { schema?: unknown } }
+      }
+      if (input.options?.outputFormat?.schema === COMPOSE_OUTPUT_SCHEMA)
+        captured = args as typeof captured
+      return fakeQuery(goodDecision)(args as never)
     }) as never
     await composePromotion({ ...composeDeps(goodDecision), queryFn: qf })
     expect(captured?.options?.outputFormat).toEqual({
       type: "json_schema",
       schema: COMPOSE_OUTPUT_SCHEMA,
     })
+    expect(
+      COMPOSE_OUTPUT_SCHEMA.properties.target.properties.domain.enum
+    ).toEqual(RETRIEVAL_DOMAINS)
+    for (const domain of RETRIEVAL_DOMAINS)
+      expect(captured?.options?.systemPrompt).toContain(domain)
+    expect(captured?.options?.abortController?.signal.aborted).toBe(true)
+  })
+
+  it("成文超时会取消 SDK 查询", async () => {
+    let controller: AbortController | undefined
+    const queryFn = ((args: {
+      options: { abortController: AbortController }
+    }) => {
+      controller = args.options.abortController
+      return (async function* () {
+        await new Promise<void>((resolve) => {
+          controller!.signal.addEventListener("abort", () => resolve(), {
+            once: true,
+          })
+        })
+        yield { type: "result", subtype: "success" }
+      })()
+    }) as never
+    await expect(
+      composePromotion({
+        ...composeDeps(goodDecision),
+        queryFn,
+        queryTimeoutMs: 10,
+      })
+    ).rejects.toThrow("超时(10ms)")
+    expect(controller?.signal.aborted).toBe(true)
   })
 })

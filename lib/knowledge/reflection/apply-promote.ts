@@ -48,6 +48,8 @@ export interface ApplyPromoteOpts {
   mkdirFn?: (dir: string) => Promise<void>
   /** 台账/快照写盘,测试可注入;缺省真实写盘 */
   writeMetaFn?: (abs: string, body: string) => Promise<void>
+  /** 取到写锁后复核模型所用来源，避免等待期间的驳回被重新写入。 */
+  validateSource?: () => boolean
 }
 
 const promotionGlobal = globalThis as unknown as {
@@ -145,6 +147,9 @@ async function applyPromoteUnlocked(
       already: true,
     }
   }
+
+  if (opts.validateSource && !opts.validateSource())
+    return { ok: false, reason: "反思来源在升格期间已变化,保留原条目" }
 
   const shapeIssue = unitShapeIssue(unit.content)
   if (shapeIssue) return { ok: false, reason: shapeIssue }

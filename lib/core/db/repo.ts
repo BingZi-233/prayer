@@ -60,6 +60,11 @@ export class Repo {
     this.adminAudit = new AdminAuditRepository(this.sql)
   }
 
+  /** 同一连接上的不同仓储实例共用后台任务协调标识。 */
+  get coordinationKey(): object {
+    return this.db
+  }
+
   /** 回调必须同步；异步计算和文件 IO 应在事务前完成。 */
   transaction<T>(fn: () => T): T {
     return this.sql.transaction(fn)
