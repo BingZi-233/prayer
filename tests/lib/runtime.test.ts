@@ -40,6 +40,7 @@ const cfg: AppConfig = {
   kbPrefetchMaxDistance: 1.0,
   supportUrl: "https://www.packyapi.ai",
   ackEnabled: true,
+  conciseReply: true,
   maxReplyChars: 900,
   topicScanMs: 300000,
   topicSettleMs: 60000,

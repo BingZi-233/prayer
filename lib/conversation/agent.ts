@@ -40,6 +40,8 @@ export interface AgentDeps {
   brand?: BrandProfile
   /** 办不了事务时引导的支持链接,注入 system prompt */
   supportUrl?: string
+  /** 精简回复:system prompt 追加「回复要短」段 */
+  concise?: boolean
   // 本仓库 local plugin 目录绝对路径。通常不传:插件统一由
   // CLAUDE_CONFIG_DIR/settings.json 的 enabledPlugins(settingSources:["user"])加载,含其 MCP server。
   // 若显式传,则本地加载并开启 MCP 发现(与 enabledPlugins 二选一,避免双加载)。
@@ -57,6 +59,9 @@ export interface AgentDeps {
    */
   timeoutMs?: number
 }
+
+// claude CLI 内置输出风格名(大小写敏感)
+export const CONCISE_OUTPUT_STYLE = "Concise"
 
 // run 默认超时:留足 maxTurns=20 + 工具往返;超过基本是 relay 挂死而非慢
 export const DEFAULT_RUN_TIMEOUT_MS = 180_000
@@ -81,10 +86,11 @@ export class Agent {
 
   private resolvedSystem(): string {
     if (this.deps.systemPrompt) return this.deps.systemPrompt
-    if (this.deps.supportUrl || this.deps.brand) {
+    if (this.deps.supportUrl || this.deps.brand || this.deps.concise) {
       return buildDefaultSystem({
         supportUrl: this.deps.supportUrl,
         brand: this.deps.brand,
+        concise: this.deps.concise,
       })
     }
     return DEFAULT_SYSTEM
@@ -152,6 +158,12 @@ export class Agent {
           // system prompt 恒定(无按调用方拼接的后缀)—— 主动/正常两条路径共享同一前缀,
           // TTL 内可跨路径命中缓存;主动模式的行为指令改由未答复轮询并入 user prompt。
           systemPrompt: this.resolvedSystem(),
+          // 内置 Concise 风格:自定义 systemPrompt 下其 system 段不生效,但每轮 reminder
+          // 走 user 侧 meta 消息注入,不动 system 前缀缓存。英文泛化规则单用压不住长答,
+          // 与 system prompt 的中文「回复要短」段配合使用。
+          ...(this.deps.concise
+            ? { settings: { outputStyle: CONCISE_OUTPUT_STYLE } }
+            : {}),
           // 业务插件及其 MCP server 由 enabledPlugins(settingSources:["user"])加载,不在此显式装配。
           // 仅当显式传 pluginPaths 时本地加载并开启 MCP 发现(默认发现,不设 skipMcpDiscovery)。
           plugins: (this.deps.pluginPaths ?? []).map((p) => ({

@@ -112,6 +112,8 @@ export const appConfigBaseSchema = z.object({
   proactiveCandidateBudget: proactiveCandidateCount.default(12),
   supportUrl: z.string().default(""),
   ackEnabled: z.boolean().default(true),
+  /** 精简回复：system prompt 追加字数与禁写约束，并设 SDK 内置 Concise 输出风格。 */
+  conciseReply: z.boolean().default(true),
   /** 0 不拆分；开启拆分时至少 50 字，避免发送大量碎片消息。 */
   maxReplyChars: z.union([z.literal(0), safeInteger(50)]).default(900),
   topicScanMs: scanMs.default(300_000),
@@ -170,7 +172,11 @@ const groupPolicyKeys = [
 // Object records arrive from JSON and may contain prototype-mutating names.
 // They are not valid chat policy identifiers; reject them instead of assigning
 // into an ordinary object and invoking Object.prototype setters.
-const UNSAFE_GROUP_POLICY_KEYS = new Set(["__proto__", "prototype", "constructor"])
+const UNSAFE_GROUP_POLICY_KEYS = new Set([
+  "__proto__",
+  "prototype",
+  "constructor",
+])
 
 export function isSafeGroupPolicyKey(key: string): boolean {
   return !UNSAFE_GROUP_POLICY_KEYS.has(key)

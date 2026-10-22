@@ -123,6 +123,7 @@ async function defaultBuilders(): Promise<RuntimeBuilders> {
           description: cfg.brandDescription,
         }),
         supportUrl: cfg.supportUrl,
+        concise: cfg.conciseReply,
         // 预检索注入:每轮先给候选片段,避免 resume 长会话凭记忆跳过检索
         // (实测覆盖率曾掉到 11%~70%)。候选不是最终依据,易变业务数据仍须调对应工具;
         // 关掉则退回纯知识库 / 业务工具路径。

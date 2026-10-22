@@ -400,6 +400,37 @@ describe("Agent.run systemPrompt", () => {
     })
     expect(captured.options!.systemPrompt).toBe("BASE")
   })
+
+  it("concise:system prompt 带「回复要短」段并设 Concise 输出风格;关闭则都不带", async () => {
+    const calls: QueryArgs[] = []
+    const queryFn = ((args: QueryArgs) => {
+      calls.push(args)
+      return (async function* () {
+        yield {
+          type: "assistant",
+          message: { content: [{ type: "text", text: "ok" }] },
+        }
+      })()
+    }) as unknown as QueryFn
+    const ctx = { sessionKey: "1:2", groupId: 1, userId: 2 }
+    await new Agent({ systemPrompt: "", concise: true, queryFn }).run(
+      "hi",
+      undefined,
+      ctx
+    )
+    await new Agent({ systemPrompt: "", supportUrl: "https://x", queryFn }).run(
+      "hi",
+      undefined,
+      ctx
+    )
+    const [on, off] = calls.map(
+      (c) => c.options as Record<string, unknown> & { systemPrompt: string }
+    )
+    expect(on.systemPrompt).toContain("# 回复要短")
+    expect(on.settings).toEqual({ outputStyle: "Concise" })
+    expect(off.systemPrompt).not.toContain("# 回复要短")
+    expect(off.settings).toBeUndefined()
+  })
 })
 
 describe("Agent.run 用量记账", () => {

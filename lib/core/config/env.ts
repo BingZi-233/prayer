@@ -91,6 +91,8 @@ export function seedFromEnv(
     ),
     supportUrl: env.SUPPORT_URL ?? defaults.supportUrl,
     ackEnabled: env.ACK_ENABLED !== "false",
+    // 默认开:env 显式 "false" 才关
+    conciseReply: env.CONCISE_REPLY !== "false",
     maxReplyChars: num("MAX_REPLY_CHARS", defaults.maxReplyChars),
     topicScanMs: num("TOPIC_SCAN_MS", defaults.topicScanMs),
     topicSettleMs: num("TOPIC_SETTLE_MS", defaults.topicSettleMs),
