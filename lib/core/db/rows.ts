@@ -46,22 +46,6 @@ export interface ReflectionSummaryRow {
   review_note: string | null
 }
 
-export interface CompactionSummaryRow {
-  id: number
-  ts: number
-  before_count: number
-  after_count: number
-}
-
-export interface CompactionRow {
-  id: number
-  ts: number
-  before_count: number
-  after_count: number
-  before_json: string
-  after_json: string
-}
-
 export interface OpenTicketRow {
   id: number
   session_key: string

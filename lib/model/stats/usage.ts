@@ -14,7 +14,7 @@ export type UsageSite =
   | "intent"
   | "answerability"
   | "reflect"
-  | "compact"
+  | "compact" // 历史站点,整理环节已删除,保留以显示历史用量
   | "promote"
   | "promote-compose"
   | "topic"

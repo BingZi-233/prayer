@@ -21,8 +21,6 @@ function baseCfg(over: Partial<AppConfig> = {}): AppConfig {
     reflectLookbackMs: 7200000,
     reflectSettleMs: 600000,
     reflectWindowMax: 60,
-    reflectCompactMs: 86_400_000,
-    reflectCompactMinEntries: 10,
     reflectPromoteMs: 86_400_000,
     reflectPromoteMinEntries: 1,
     reflectPromoteMaxPerRun: 5,

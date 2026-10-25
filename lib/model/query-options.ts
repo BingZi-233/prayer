@@ -9,7 +9,7 @@ import {
 /**
  * 读取 CLAUDE_CONFIG_DIR/settings.json 的 env,供隔离型后台 LLM 调用使用。
  *
- * 后台分类/整理任务需要 auth / relay / model 配置,但不应加载 user settings 中的
+ * 后台分类/反思任务需要 auth / relay / model 配置,但不应加载 user settings 中的
  * plugins、skills 与 hooks（尤其面向用户回复的风格 hook 会干扰 JSON 输出）。
  * 这里只搬运 env 字符串,不读取或返回 settings 的其它字段,也不记录任何值。
  */
@@ -45,7 +45,7 @@ function configuredSdkEnv(
  * 218 次 cache_read>1k,命中侧累计 2.72M vs 未缓存 input 1.33M),别当无用功删掉。
  *
  * settingSources:[]:不加载 user settings 的 plugins / skills / hooks,避免面向用户的
- * 风格插件污染 JSON 分类与知识整理。认证、relay 与模型配置由 configuredSdkEnv
+ * 风格插件污染 JSON 分类与知识升格。认证、relay 与模型配置由 configuredSdkEnv
  * 只读 settings.json.env 后显式传入。
  * strictMcpConfig + 空 mcpServers:双保险,不让其它 MCP 进入 prompt。
  * tools:[] / skills:[]:内置工具与技能均不注入。

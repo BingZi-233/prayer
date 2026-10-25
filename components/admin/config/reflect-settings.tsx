@@ -17,8 +17,7 @@ export function ReflectSettings({
   setCfg,
   updateField,
   fieldValue,
-}: Pick<ConfigForm, "cfg" | "setCfg" | "updateField" | "fieldValue"> & {
-}) {
+}: Pick<ConfigForm, "cfg" | "setCfg" | "updateField" | "fieldValue"> & {}) {
   return (
     <SectionCard
       title="反思(知识沉淀)"
@@ -71,35 +70,6 @@ export function ReflectSettings({
             inputMode="numeric"
             value={fieldValue("reflectWindowMax")}
             onChange={(e) => updateField("reflectWindowMax", e.target.value)}
-          />
-        </Field>
-        <Field>
-          <FieldLabel>整理周期(小时)</FieldLabel>
-          <Input
-            inputMode="numeric"
-            value={msToHr(cfg.reflectCompactMs)}
-            onChange={(e) =>
-              setCfg({
-                ...cfg,
-                reflectCompactMs: hrToMs(e.target.value),
-              })
-            }
-          />
-          <FieldDescription>
-            默认 1 小时。设 0 关闭自动整理。超 30 条时自动分批整理。
-          </FieldDescription>
-        </Field>
-        <Field>
-          <FieldLabel htmlFor="reflectCompactMinEntries">
-            整理最少条目
-          </FieldLabel>
-          <Input
-            id="reflectCompactMinEntries"
-            inputMode="numeric"
-            value={fieldValue("reflectCompactMinEntries")}
-            onChange={(e) =>
-              updateField("reflectCompactMinEntries", e.target.value)
-            }
           />
         </Field>
         <Field>

@@ -69,16 +69,6 @@ export interface ReflectionEntry {
 export interface ReflectionSummary extends ReflectionEntry {
   contentLen: number
 }
-export interface CompactionSummary {
-  id: number
-  ts: number
-  beforeCount: number
-  afterCount: number
-}
-export interface CompactionDetail extends CompactionSummary {
-  before: string[]
-  after: string[]
-}
 export interface ProactiveReply extends ChatRef {
   id: number
   userId: string

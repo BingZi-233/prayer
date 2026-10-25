@@ -233,7 +233,7 @@ export class Repo {
     return this.knowledge.searchBaseKb(...args)
   }
 
-  // 反思来源、审核状态与整理记录；与知识库共享事务连接。
+  // 反思来源、审核状态与一次性拆分审计记录；与知识库共享事务连接。
   groupReflectCursor(
     ...args: Parameters<ReflectionRepository["groupReflectCursor"]>
   ) {
@@ -243,12 +243,6 @@ export class Repo {
     ...args: Parameters<ReflectionRepository["setGroupReflectCursor"]>
   ) {
     return this.reflection.setGroupReflectCursor(...args)
-  }
-  compactAt(...args: Parameters<ReflectionRepository["compactAt"]>) {
-    return this.reflection.compactAt(...args)
-  }
-  setCompactAt(...args: Parameters<ReflectionRepository["setCompactAt"]>) {
-    return this.reflection.setCompactAt(...args)
   }
   promoteAt(...args: Parameters<ReflectionRepository["promoteAt"]>) {
     return this.reflection.promoteAt(...args)
@@ -306,21 +300,6 @@ export class Repo {
     ...args: Parameters<ReflectionRepository["promoteReflection"]>
   ) {
     return this.reflection.promoteReflection(...args)
-  }
-  recentCompactionSummaries(
-    ...args: Parameters<ReflectionRepository["recentCompactionSummaries"]>
-  ) {
-    return this.reflection.recentCompactionSummaries(...args)
-  }
-  compactionDetail(
-    ...args: Parameters<ReflectionRepository["compactionDetail"]>
-  ) {
-    return this.reflection.compactionDetail(...args)
-  }
-  recentCompactions(
-    ...args: Parameters<ReflectionRepository["recentCompactions"]>
-  ) {
-    return this.reflection.recentCompactions(...args)
   }
   replaceReflectionEntries(
     ...args: Parameters<ReflectionRepository["replaceReflectionEntries"]>

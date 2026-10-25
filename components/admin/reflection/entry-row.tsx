@@ -9,7 +9,7 @@ import { ItemCard } from "@/components/admin/item-card"
 import type { Entry, EntryDetail } from "./types"
 
 // 单条条目行:列表只带预览截断(SQL 内截断),首次展开才拉单条详情拿全文
-// (compactions 同款修法:摘要常驻 3 秒轮询,全文按需,避免响应到 MB 级)
+// (摘要常驻 3 秒轮询,全文按需,避免响应到 MB 级)
 export function EntryRow({
   e,
   acting,

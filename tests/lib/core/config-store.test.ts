@@ -146,25 +146,34 @@ describe("config-store", () => {
     expect(cfg.reflectWindowMax).toBe(60)
   })
 
-  it("反思压缩默认值 + env 覆盖", () => {
+  it("库里含已删除整理键的旧配置能加载,保存后不再写出这两个键", () => {
     const repo = mkRepo()
-    const cfg = getConfig(repo, {
+    const base = getConfig(repo, {
       ONEBOT_WS_URL: "ws://x:1",
       BOT_QQ: "1",
       ADMIN_GROUP_ID: "2",
     })
-    expect(cfg.reflectCompactMs).toBe(3_600_000)
-    expect(cfg.reflectCompactMinEntries).toBe(10)
-    const repo2 = mkRepo()
-    const cfg2 = getConfig(repo2, {
-      ONEBOT_WS_URL: "ws://x:1",
-      BOT_QQ: "1",
-      ADMIN_GROUP_ID: "2",
-      REFLECT_COMPACT_MS: "1800000",
-      REFLECT_COMPACT_MIN_ENTRIES: "5",
-    })
-    expect(cfg2.reflectCompactMs).toBe(1_800_000)
-    expect(cfg2.reflectCompactMinEntries).toBe(5)
+    // 模拟删除整理前落库的配置:多出 reflectCompactMs / reflectCompactMinEntries
+    repo.setConfigRow(
+      "app",
+      JSON.stringify({
+        ...base,
+        reflectCompactMs: 1_800_000,
+        reflectCompactMinEntries: 5,
+        reflectSettleMs: 1234,
+      })
+    )
+    const loaded = getConfig(repo)
+    expect(loaded.reflectSettleMs).toBe(1234)
+    expect(loaded).not.toHaveProperty("reflectCompactMs")
+    expect(loaded).not.toHaveProperty("reflectCompactMinEntries")
+
+    setConfig(repo, { reflectWindowMax: 7 })
+    const saved = JSON.parse(repo.getConfigRow("app") as string)
+    expect(saved.reflectWindowMax).toBe(7)
+    expect(saved.reflectSettleMs).toBe(1234)
+    expect(saved).not.toHaveProperty("reflectCompactMs")
+    expect(saved).not.toHaveProperty("reflectCompactMinEntries")
   })
 
   it("自动升格默认值 + env 覆盖", () => {

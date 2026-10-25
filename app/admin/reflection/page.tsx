@@ -1,6 +1,6 @@
 "use client"
 
-import { Brain, GitCompareArrows, Wand2, Sparkles } from "lucide-react"
+import { Brain, Sparkles } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Spinner } from "@/components/ui/spinner"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -12,20 +12,9 @@ import {
   TableRow,
 } from "@/components/ui/table"
 import { TableShell } from "@/components/admin/table-shell"
-import {
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog"
 import { RelativeTime } from "@/components/relative-time"
 import { PageShell } from "@/components/admin/page-shell"
 import { PageHeader } from "@/components/admin/page-header"
-import { CompactionRow } from "@/components/admin/reflection/compaction-row"
 import { EntryList } from "@/components/admin/reflection/entry-list"
 import { useReflectionActions } from "@/components/admin/reflection/use-reflection-actions"
 import { MetricRows } from "@/components/admin/stat"
@@ -40,14 +29,10 @@ export default function ReflectionPage() {
     error,
     loading,
     refresh,
-    busy,
     promoteBusy,
     acting,
-    entryCount,
     approvedCount,
-    willCompact,
     willPromote,
-    compact,
     autoPromote,
     act,
   } = useReflectionActions()
@@ -71,39 +56,6 @@ export default function ReflectionPage() {
               )}
               {promoteBusy ? "升格评审中…" : "立即升格评审"}
             </Button>
-            <Dialog>
-              <DialogTrigger
-                render={
-                  <Button disabled={busy || !willCompact} variant="outline" />
-                }
-              >
-                {busy ? (
-                  <Spinner data-icon="inline-start" />
-                ) : (
-                  <Wand2 data-icon="inline-start" />
-                )}
-                {busy ? "整理中…" : "立即整理"}
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>立即整理反思条目</DialogTitle>
-                  <DialogDescription>
-                    对当前 {entryCount}{" "}
-                    条知识做一次近义去重合并（保留细节，不因基础文档已覆盖而删除）。
-                  </DialogDescription>
-                </DialogHeader>
-                <DialogFooter>
-                  <DialogClose render={<Button variant="outline" />}>
-                    取消
-                  </DialogClose>
-                  <DialogClose
-                    render={<Button onClick={compact} disabled={busy} />}
-                  >
-                    确认整理
-                  </DialogClose>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
           </div>
         }
       />
@@ -129,16 +81,6 @@ export default function ReflectionPage() {
             label: "窗口上限",
             value: d ? d.config.windowMax : "—",
             hint: "单轮提炼的对话条数上限。",
-          },
-          {
-            label: "整理周期",
-            value: d ? formatDuration(d.config.compactMs) : "—",
-            hint: "近义去重合并的自动执行周期。",
-          },
-          {
-            label: "可整理 / 门槛",
-            value: d ? `${approvedCount}/${d.config.compactMinEntries}` : "—",
-            hint: "已入库条目数与触发整理的门槛。",
           },
           {
             label: "升格周期",
@@ -207,28 +149,6 @@ export default function ReflectionPage() {
               ))}
             </TableBody>
           </TableShell>
-        </DataState>
-      </SectionCard>
-
-      <SectionCard
-        title={`整理记录${d ? ` (${d.compactions.length})` : ""}`}
-        description="每次整理的时间与条目变化。"
-      >
-        <DataState
-          loading={loading}
-          error={error}
-          empty={!d || d.compactions.length === 0}
-          onRetry={refresh}
-          emptyIcon={GitCompareArrows}
-          emptyTitle="暂无整理记录"
-          emptyDescription={`已入库条目达到门槛（${d?.config.compactMinEntries ?? "—"} 条）后按整理周期自动分批去重；阈值不是目标条数。`}
-          skeleton={<Skeleton className="h-32 w-full" />}
-        >
-          <div className="flex max-h-48 flex-col gap-2 overflow-y-auto pr-1">
-            {d?.compactions.map((c) => (
-              <CompactionRow key={c.id} c={c} />
-            ))}
-          </div>
         </DataState>
       </SectionCard>
 

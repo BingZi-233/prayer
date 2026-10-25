@@ -5,6 +5,22 @@ import { Repo } from "@/lib/core/db/repo"
 let repo: Repo
 const vec = () => new Float32Array([1, 0, 0])
 
+/** reflect_compactions 现在只记一次性拆分审计;直接读表断言(仓储已无读取方法)。 */
+function auditRows(): {
+  ts: number
+  before_count: number
+  after_count: number
+  before_json: string
+  after_json: string
+}[] {
+  const db = (repo as unknown as { db: import("better-sqlite3").Database }).db
+  return db
+    .prepare(
+      "SELECT ts, before_count, after_count, before_json, after_json FROM reflect_compactions ORDER BY ts DESC"
+    )
+    .all() as ReturnType<typeof auditRows>
+}
+
 beforeEach(() => {
   repo = new Repo(openDb(":memory:", 3))
 })
@@ -83,7 +99,7 @@ describe("reflection_meta / reflectionEntries", () => {
     )
   })
 
-  it("replaceReflectionEntries → 删旧 meta(不留孤儿)+ 记 compaction", () => {
+  it("replaceReflectionEntries → 删旧 meta(不留孤儿)+ 写拆分审计", () => {
     const id = repo.insertKbEntry(
       "human-reflection",
       "旧条目",
@@ -109,26 +125,18 @@ describe("reflection_meta / reflectionEntries", () => {
       answer: null,
       status: "approved",
     })
-    const rc = repo.recentCompactions(5)
+    const rc = auditRows()
     expect(rc).toHaveLength(1)
     expect(rc[0]).toMatchObject({
       ts: 9_000_000,
-      beforeCount: 1,
-      afterCount: 1,
-      before: ["旧条目"],
-      after: ["新条目"],
+      before_count: 1,
+      after_count: 1,
     })
+    expect(JSON.parse(rc[0].before_json)).toEqual(["旧条目"])
+    expect(JSON.parse(rc[0].after_json)).toEqual(["新条目"])
   })
 
-  it("recentCompactions 按 ts 倒序、limit 生效", () => {
-    for (const ts of [100, 300, 200]) {
-      repo.replaceReflectionEntries([], [], ts, [`b${ts}`], [`a${ts}`])
-    }
-    const rc = repo.recentCompactions(2)
-    expect(rc.map((r) => r.ts)).toEqual([300, 200])
-  })
-
-  it("整理切块与完整 FAQ 元数据同事务写入,后续可恢复完整上下文", () => {
+  it("替换切块与完整 FAQ 元数据同事务写入,后续可恢复完整上下文", () => {
     const faq = "问:如何操作?\n答:先配置,再校验;失败时回退,保留所有步骤与例外。"
     expect(
       repo.replaceReflectionEntries(
@@ -153,7 +161,7 @@ describe("reflection_meta / reflectionEntries", () => {
     }
   })
 
-  it("整理事务向量写入失败时回滚 chunk、元数据与整理记录", () => {
+  it("替换事务向量写入失败时回滚 chunk、元数据与审计记录", () => {
     expect(() =>
       repo.replaceReflectionEntries(
         [],
@@ -171,77 +179,11 @@ describe("reflection_meta / reflectionEntries", () => {
       )
     ).toThrow()
     expect(repo.reflectionEntries()).toHaveLength(0)
-    expect(repo.recentCompactions(10)).toHaveLength(0)
+    expect(auditRows()).toHaveLength(0)
     const db = (repo as unknown as { db: import("better-sqlite3").Database }).db
     expect(
       db.prepare("SELECT COUNT(*) AS n FROM reflection_meta").get()
     ).toEqual({ n: 0 })
-  })
-})
-
-describe("整理记录摘要 / 详情分离", () => {
-  // 需要直接改库造坏 JSON,单独持有 Database 句柄
-  let db: ReturnType<typeof openDb>
-  beforeEach(() => {
-    db = openDb(":memory:", 3)
-    repo = new Repo(db)
-  })
-
-  it("recentCompactionSummaries 不带 before/after 全文", () => {
-    repo.replaceReflectionEntries([], [], 1_000, ["旧甲", "旧乙"], ["新甲"])
-    const rows = repo.recentCompactionSummaries(10)
-    expect(rows).toHaveLength(1)
-    expect(rows[0]).toEqual({
-      id: rows[0].id,
-      ts: 1_000,
-      beforeCount: 2,
-      afterCount: 1,
-    })
-    // 摘要行绝不能夹带全文字段(轮询体积失控的根因)
-    expect(Object.keys(rows[0]).sort()).toEqual([
-      "afterCount",
-      "beforeCount",
-      "id",
-      "ts",
-    ])
-  })
-
-  it("recentCompactionSummaries 按 ts 倒序、limit 生效", () => {
-    for (const ts of [100, 300, 200]) {
-      repo.replaceReflectionEntries([], [], ts, [`b${ts}`], [`a${ts}`])
-    }
-    expect(repo.recentCompactionSummaries(2).map((r) => r.ts)).toEqual([
-      300, 200,
-    ])
-  })
-
-  it("compactionDetail 按 id 取单条全文", () => {
-    repo.replaceReflectionEntries([], [], 2_000, ["旧甲", "旧乙"], ["新甲"])
-    const id = repo.recentCompactionSummaries(1)[0].id
-    expect(repo.compactionDetail(id)).toEqual({
-      id,
-      ts: 2_000,
-      beforeCount: 2,
-      afterCount: 1,
-      before: ["旧甲", "旧乙"],
-      after: ["新甲"],
-    })
-  })
-
-  it("compactionDetail 查不到返回 null", () => {
-    expect(repo.compactionDetail(999999)).toBeNull()
-  })
-
-  it("compactionDetail 遇坏 JSON 回退空数组", () => {
-    repo.replaceReflectionEntries([], [], 3_000, ["旧"], ["新"])
-    const id = repo.recentCompactionSummaries(1)[0].id
-    db.prepare(
-      "UPDATE reflect_compactions SET before_json = '{坏', after_json = 'null' WHERE id = ?"
-    ).run(id)
-    expect(repo.compactionDetail(id)).toMatchObject({
-      before: [],
-      after: [],
-    })
   })
 })
 

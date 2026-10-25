@@ -29,7 +29,7 @@ export async function GET(): Promise<NextResponse> {
 
     const { cursors, msg, sed } = buildGroupChatStats(repo)
     // 条目列表仍需展示,但只带预览截断(SQL 内截断):全文按需走
-    // /api/reflection/entries/[id],3 秒轮询不背全量全文(compactions 同款修法)
+    // /api/reflection/entries/[id],3 秒轮询不背全量全文
     // SQL 层只取最近一页摘要;全文仍可通过 entries/[id] 按需读取。
     const entries = repo.reflectionEntrySummaries(300, 200, 500)
 
@@ -65,7 +65,7 @@ export async function GET(): Promise<NextResponse> {
           a.channel.localeCompare(b.channel) || a.chatId.localeCompare(b.chatId)
       )
 
-    // 条目:附 groupId 兼容旧 UI(chatId="0" = 整理后全局归属)
+    // 条目:附 groupId 兼容旧 UI(chatId="0" = 存量整理块的全局归属)
     const entryRows = entries.map((e) => {
       const gid = e.chatId != null ? Number(e.chatId) : NaN
       return {
@@ -81,16 +81,12 @@ export async function GET(): Promise<NextResponse> {
           lookbackMs: cfg.reflectLookbackMs,
           settleMs: cfg.reflectSettleMs,
           windowMax: cfg.reflectWindowMax,
-          compactMs: cfg.reflectCompactMs,
-          compactMinEntries: cfg.reflectCompactMinEntries,
           promoteMs: cfg.reflectPromoteMs,
           promoteMinEntries: cfg.reflectPromoteMinEntries,
           promoteMaxPerRun: cfg.reflectPromoteMaxPerRun,
         },
         groups,
         entries: entryRows,
-        // 只给摘要:全文走 /api/reflection/compactions/[id](本页 3 秒轮询,全文会把响应顶到 MB 级)
-        compactions: repo.recentCompactionSummaries(10),
       })
     )
   } catch (err) {

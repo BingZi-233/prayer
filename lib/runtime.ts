@@ -306,8 +306,6 @@ export class RuntimeManager {
         reflectLookbackMs: cfg.reflectLookbackMs,
         reflectSettleMs: cfg.reflectSettleMs,
         reflectWindowMax: cfg.reflectWindowMax,
-        reflectCompactMs: cfg.reflectCompactMs,
-        reflectCompactMinEntries: cfg.reflectCompactMinEntries,
         reflectPromoteMs: cfg.reflectPromoteMs,
         reflectPromoteMinEntries: cfg.reflectPromoteMinEntries,
         reflectPromoteMaxPerRun: cfg.reflectPromoteMaxPerRun,

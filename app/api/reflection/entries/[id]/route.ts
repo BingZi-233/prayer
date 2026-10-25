@@ -3,7 +3,7 @@ import { getAppContext } from "@/lib/core/app-context"
 import { ok, fail, safeApiError } from "@/lib/core/api"
 
 // 单条沉淀条目全文。列表接口只给预览截断(SQL 内截断),前端展开时才来这里拉,
-// 避免每次轮询都带上全部条目的 content/question/answer 全文(compactions 同款修法)。
+// 避免每次轮询都带上全部条目的 content/question/answer 全文(列表响应曾因全文顶到 MB 级)。
 export async function GET(
   _req: NextRequest,
   ctx: { params: Promise<{ id: string }> }

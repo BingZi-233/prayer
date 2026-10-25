@@ -2,7 +2,7 @@
  * agent 侧共用的硬超时原语。
  *
  * 背景:主链路(classify/agent.run/kb-prefetch)早有超时防护,但后台循环
- * (反思/主题/整理/升格)与判官的 drainQuery/embed 一度是裸 await —— relay
+ * (反思/主题/升格)与判官的 drainQuery/embed 一度是裸 await —— relay
  * 挂起时 promise 永不 settle,`running` 防重入标志在 finally 里永不复位,
  * 该循环从此每次 tick 直接 return,静默停摆到进程重启。所有后台外部调用
  * 都应套本函数(或 keepalive 的 withDeadline)。

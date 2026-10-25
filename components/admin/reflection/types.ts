@@ -26,30 +26,16 @@ export interface EntryDetail {
   answer: string | null
   status: "pending" | "approved" | "rejected" | "promoted"
 }
-// 列表只拿摘要:before/after 全文是整批知识条目,曾把 3 秒轮询的响应顶到 8MB+
-export interface Compaction {
-  id: number
-  ts: number
-  beforeCount: number
-  afterCount: number
-}
-export interface CompactionDetail extends Compaction {
-  before: string[]
-  after: string[]
-}
 export interface Data {
   config: {
     scanMs: number
     lookbackMs: number
     settleMs: number
     windowMax: number
-    compactMs: number
-    compactMinEntries: number
     promoteMs: number
     promoteMinEntries: number
     promoteMaxPerRun: number
   }
   groups: GroupRow[]
   entries: Entry[]
-  compactions: Compaction[]
 }

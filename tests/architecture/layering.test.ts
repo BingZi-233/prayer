@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync, statSync } from "node:fs"
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs"
 import { dirname, join, relative, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
@@ -111,6 +111,8 @@ const RETIRED_PREFIXES: string[] = [
   "lib/agent/reflection-poller.ts",
   "lib/agent/reflection-compactor.ts",
   "lib/agent/reflection-promoter.ts",
+  // 反思整理环节已整体删除(现行路径,父目录 lib/knowledge/ 规则仍存活,必须登记)
+  "lib/knowledge/reflection/compactor.ts",
   "lib/reflect-promote.ts",
   "lib/reflect-stats.ts",
   "lib/agent/",
@@ -240,6 +242,16 @@ describe("分层结构契约", () => {
     expect(hits).toEqual([])
   })
 
+  // 退役扫描只遍历 lib/;整理环节在 app/ 下的路由也不得复活,单独查。
+  it("已删除的整理路由文件不存在", () => {
+    for (const rel of [
+      "app/api/reflection/compact/route.ts",
+      "app/api/reflection/compactions/[id]/route.ts",
+      "components/admin/reflection/compaction-row.tsx",
+    ])
+      expect(existsSync(join(REPO_ROOT, rel)), rel).toBe(false)
+  })
+
   it("每条精确文件规则都命中真实存在的文件", () => {
     const files = new Set(
       listFiles(LIB_DIR).map((abs) => relative(REPO_ROOT, abs))
@@ -339,7 +351,11 @@ describe("分层结构契约", () => {
       for (const n of nodes) {
         const deps = new Set<string>()
         for (const r of n.rawDeps) {
-          const hit = keys.has(r) ? r : keys.has(`${r}/index`) ? `${r}/index` : null
+          const hit = keys.has(r)
+            ? r
+            : keys.has(`${r}/index`)
+              ? `${r}/index`
+              : null
           if (hit) deps.add(hit)
         }
         edges.set(n.rel, [...deps])

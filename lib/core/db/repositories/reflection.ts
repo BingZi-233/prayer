@@ -1,16 +1,8 @@
-import { mapCompactionSummary, mapCompactionDetail } from "../row-mappers.ts"
-import type {
-  ReflectionRow,
-  ReflectionSummaryRow,
-  CompactionSummaryRow,
-  CompactionRow,
-} from "../rows.ts"
+import type { ReflectionRow, ReflectionSummaryRow } from "../rows.ts"
 import type {
   ChatCursor,
   ReflectionEntry,
   ReflectionSummary,
-  CompactionSummary,
-  CompactionDetail,
   ReflectionStatus,
   ReviewState,
 } from "../models.ts"
@@ -22,7 +14,7 @@ import {
 import type { KnowledgeRepository } from "./knowledge.ts"
 import type { ConfigRepository } from "./config.ts"
 
-/** 反思来源、审核状态与整理记录；与知识库共享事务连接。 */
+/** 反思来源、审核状态与一次性拆分审计记录；与知识库共享事务连接。 */
 export class ReflectionRepository {
   static readonly MAX_SUMMARY_ROWS = 500
 
@@ -41,15 +33,6 @@ export class ReflectionRepository {
 
   setGroupReflectCursor(channel: string, chatId: string, ts: number): void {
     this.config.setConfigRow(`reflect_cursor:${channel}:${chatId}`, String(ts))
-  }
-
-  // 全局反思整理游标(上次整理完成时间戳),复用 config 表。
-  compactAt(): number {
-    return Number(this.config.getConfigRow("reflect_compact_at") ?? "0")
-  }
-
-  setCompactAt(ts: number): void {
-    this.config.setConfigRow("reflect_compact_at", String(ts))
   }
 
   // 全局反思自动升格游标(上次升格评审完成时间戳)
@@ -82,7 +65,7 @@ export class ReflectionRepository {
   }
 
   // 反思沉淀的知识条目(doc='human-reflection');source 见 parseReflectionSource。
-  // 整理后条目 chatId=0,answer 保存切块前的完整 FAQ;旧条目可能无 meta。
+  // 存量整理块 chatId=0,answer 保存切块前的完整 FAQ;旧条目可能无 meta。
   // 无 meta / 未知 status 一律视为 approved(沉淀即入库,无需审核)
   reflectionEntries(): ReflectionEntry[] {
     const rows = this.sql
@@ -97,7 +80,7 @@ export class ReflectionRepository {
   }
 
   // 沉淀条目列表摘要(反思专页 3s 轮询):content/question/answer 在 SQL 内截断,
-  // 全文走 reflectionEntryDetail —— 全量全文曾把响应顶到 MB 级(compactions 同款事故)。
+  // 全文走 reflectionEntryDetail —— 全量全文曾把响应顶到 MB 级(曾因整理记录全文同款事故)。
   // contentLen 供前端判断是否截断(展开后拉全文)。
   reflectionEntrySummaries(
     contentCap = 300,
@@ -261,41 +244,10 @@ export class ReflectionRepository {
     return { ok: true, content: row.content, status }
   }
 
-  // 最近 N 次整理记录的摘要(倒序),不含 before/after 全文。
-  // 反思专页每 3 秒轮询,每条记录的 before_json/after_json 是整批知识条目全文,
-  // 30 条曾把响应顶到 8MB+ / 单请求 30~90s 把进程打死 → 列表只给计数,全文走 compactionDetail。
-  recentCompactionSummaries(limit: number): CompactionSummary[] {
-    const rows = this.sql
-      .prepare<CompactionSummaryRow>(
-        "SELECT id, ts, before_count, after_count FROM reflect_compactions ORDER BY ts DESC LIMIT ?"
-      )
-      .all(limit)
-    return rows.map(mapCompactionSummary)
-  }
-
-  // 单条整理记录详情(含 before/after 全文);查不到返回 null。前端展开时按需拉取。
-  compactionDetail(id: number): CompactionDetail | null {
-    const r = this.sql
-      .prepare<CompactionRow>(
-        "SELECT id, ts, before_count, after_count, before_json, after_json FROM reflect_compactions WHERE id = ?"
-      )
-      .get(id)
-    return r ? mapCompactionDetail(r) : null
-  }
-
-  // 最近 N 次整理记录(倒序),before/after 内容内联(解析 JSON)
-  recentCompactions(limit: number): CompactionDetail[] {
-    const rows = this.sql
-      .prepare<CompactionRow>(
-        "SELECT id, ts, before_count, after_count, before_json, after_json FROM reflect_compactions ORDER BY ts DESC LIMIT ?"
-      )
-      .all(limit)
-    return rows.map(mapCompactionDetail)
-  }
-
-  // 整体替换反思库(压缩整理用):单事务只删“快照内”的 human-reflection 条目(按 id,不按 doc),
-  // 再插入整理结果 —— 避免删掉压缩 await 期间 poller 并发新增的条目。
-  // source 统一 human-reflection:qq:0:{ts}(chatId 0 = 已压缩,全局归属)。
+  // 整体替换反思库(一次性拆分存量整理块用):单事务只删“快照内”的 human-reflection 条目(按 id,不按 doc),
+  // 再插入替换结果 —— 避免删掉 await 期间 poller 并发新增的条目。
+  // source 统一 human-reflection:qq:0:{ts}(chatId 0 = 全局归属)。
+  // reflect_compactions 现在只记一次性拆分的审计。
   replaceReflectionEntries(
     oldIds: number[],
     entries: { content: string; embedding: Float32Array; faq?: string }[],
@@ -303,7 +255,7 @@ export class ReflectionRepository {
     beforeContents: string[] = [],
     afterContents: string[] = [],
     /**
-     * Optional optimistic guard used by compaction.  The LLM runs outside
+     * Optional optimistic guard used by callers that run the LLM outside the transaction.  The LLM runs outside
      * this transaction, so a reviewer may change one of the snapshotted
      * entries while it is waiting.  Refuse the replacement instead of
      * deleting a now-rejected/promoted entry.
@@ -345,7 +297,7 @@ export class ReflectionRepository {
         )
         this.knowledge.insertKbVec(id, e.embedding)
         if (e.faq) {
-          // 向量仍按 500 字分块,升格/下轮整理需要完整 FAQ 的步骤、条件和例外。
+          // 向量仍按 500 字分块,升格需要完整 FAQ 的步骤、条件和例外。
           this.sql
             .prepare(
               "INSERT INTO reflection_meta (chunk_id, channel, group_id, question, answer, status) VALUES (?, 'qq', '0', NULL, ?, 'approved')"
