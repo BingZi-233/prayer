@@ -35,7 +35,7 @@ function configuredSdkEnv(
 }
 
 /**
- * 无工具 JSON 任务(intent / answerability / reflect / compact / topic / promote)共用的 query options 基座。
+ * 无工具 JSON 任务(intent / answerability / reflect / topic / promote / promote-compose / legacy-split)共用的 query options 基座。
  *
  * 目标:压住 prompt cache 前缀抖动与体积 —— 这些调用点从不需要业务工具,却曾默认带上
  * Claude Code 全套内置工具 schema + enabledPlugins 的 MCP/skills,导致:

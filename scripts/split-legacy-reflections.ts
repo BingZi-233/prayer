@@ -15,7 +15,8 @@
  *     (先 pnpm pm:restart 让应用完成迁移);
  *   - 应用配置 reflectPromoteMs 必须为 0(先在管理端停用自动升格);
  *   - 应用配置 claudeConfigDir 下必须有 settings.json——模型凭据只在那里,绝不回落 ~/.claude;
- *   - --apply 时计划的 legacyBefore 必须等于本脚本的 LEGACY_SPLIT_CUTOFF。
+ *   - --apply 时计划的 legacyBefore 必须等于 LEGACY_SPLIT_CUTOFF
+ *     (lib/knowledge/reflection/legacy-split.ts)。
  *
  * 注意:
  *   - dry-run 与 apply 之间不要在管理端操作反思、不要跑 pnpm ingest。进程内锁不跨进程,
@@ -32,13 +33,6 @@ import * as sqliteVec from "sqlite-vec"
 // 纯类型导入在擦除后不留运行时说明符,不受下方模块解析限制
 import type { Repo as RepoType } from "../lib/core/db/repo.ts"
 import type { SerializedSplitPlan } from "../lib/knowledge/reflection/legacy-split.ts"
-
-/**
- * 存量整理块的截止时间(不含)。生产库里最后一批整理块的 ts 为 1792929187654,取其 + 1:
- * 只选它之前的块。拆分产物同为 chatId=0,固定截止保证重跑不会把新条目再拆一遍;
- * 不能用 Date.now(),否则 dry-run 之后新写入的 chatId=0 条目会被卷进来。
- */
-const LEGACY_SPLIT_CUTOFF = 1792929187655
 
 /** 与 lib/core/config/schema.ts 的 claudeConfigDir 默认值一致 */
 const DEFAULT_CLAUDE_CONFIG_DIR = "./data/claude-config"
@@ -151,7 +145,7 @@ async function resolveEmbed(
 async function main(): Promise<void> {
   const mode = parseArgs(process.argv.slice(2))
   const dbPath = canonicalDbPath(process.env.DB_PATH ?? "./data/agent.db")
-  const { loadSplitPlan } =
+  const { loadSplitPlan, LEGACY_SPLIT_CUTOFF } =
     await import("../lib/knowledge/reflection/legacy-split.ts")
 
   // --apply:先校验计划文件,不合法就不碰数据库
@@ -173,6 +167,11 @@ async function main(): Promise<void> {
   try {
     const repo = new Repo(db)
     const embed = await resolveEmbed(DIM)
+    // 预热嵌入模型(dry-run 与 apply 相同):首次加载可能超过 lib 内单次嵌入的 60s 超时,
+    // 不预热会让前几组 failed / errored。这里不套超时,等它加载完。
+    const warmStart = Date.now()
+    await embed("嵌入预热")
+    console.log(`嵌入预热完成,耗时 ${Date.now() - warmStart}ms`)
     if (plan) await runApply(db, repo, dbPath, plan, embed)
     else await runDryRun(repo, dbPath, embed)
   } finally {
@@ -188,8 +187,13 @@ async function runDryRun(
 ): Promise<void> {
   const { bindUsagePersistence } = await import("../lib/model/stats/usage.ts")
   const { DEFAULT_QUERY_TIMEOUT_MS } = await import("../lib/model/timeout.ts")
-  const { planLegacySplit, serializeSplitPlan, renderSplitReport } =
-    await import("../lib/knowledge/reflection/legacy-split.ts")
+  const {
+    planLegacySplit,
+    serializeSplitPlan,
+    renderSplitReport,
+    splitSummaryLines,
+    LEGACY_SPLIT_CUTOFF,
+  } = await import("../lib/knowledge/reflection/legacy-split.ts")
 
   const unbind = bindUsagePersistence(repo)
   try {
@@ -213,15 +217,9 @@ async function runDryRun(
       flag: "wx",
     })
     await writeFile(`${base}.md`, renderSplitReport(serialized), { flag: "wx" })
-    const counts = new Map<string, number>()
-    for (const g of serialized.groups)
-      counts.set(g.status, (counts.get(g.status) ?? 0) + 1)
     console.log(`计划:${base}.json`)
     console.log(`报告:${base}.md`)
-    console.log(
-      `组数 ${serialized.groups.length}:` +
-        [...counts].map(([s, n]) => `${s} ${n}`).join(" / ")
-    )
+    for (const line of splitSummaryLines(serialized)) console.log(line)
     console.log(
       `审阅报告无误后执行:pnpm kb:split-legacy-reflections --apply ${base}.json`
     )
@@ -241,12 +239,6 @@ async function runApply(
   const { defaultBackupPath } = await import("./db-maintenance.ts")
   const { applyLegacySplit } =
     await import("../lib/knowledge/reflection/legacy-split.ts")
-
-  // 预热嵌入模型:首次加载可能超过 lib 内单次嵌入的 60s 超时,
-  // 不预热会让前几组 errored。这里不套超时,等它加载完。
-  const warmStart = Date.now()
-  await embed("嵌入预热")
-  console.log(`嵌入预热完成,耗时 ${Date.now() - warmStart}ms`)
 
   const backup = await backupDatabase(db, defaultBackupPath(dbPath))
   console.log(`已备份:${backup.path}(请长期保留,这是撤销本次替换的唯一手段)`)

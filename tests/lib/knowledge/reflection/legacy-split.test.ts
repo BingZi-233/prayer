@@ -14,6 +14,7 @@ import {
   serializeSplitPlan,
   loadSplitPlan,
   renderSplitReport,
+  summarizeSplitPlan,
   SPLIT_SYSTEM,
   SPLIT_VERIFY_SYSTEM,
   SPLIT_UNIT_MAX_CHARS,
@@ -476,6 +477,46 @@ describe("planLegacySplit", () => {
     expect(fallbackUnits.every((u) => u.text.length <= 380)).toBe(true)
   })
 
+  it("每段产出全部因重复被丢弃 → covered,无条目", async () => {
+    seedLegacy(faq, [faq.slice(0, 20), faq.slice(20)])
+    for (const u of goodUnits)
+      repo.insertKbEntry(
+        "retrieval/foundation/groups.md",
+        u.text,
+        "retrieval/foundation/groups.md",
+        vec()
+      )
+    const [p] = await plan(stubQuery(() => goodUnits).queryFn)
+    expect(p.status).toBe("covered")
+    expect(p.units).toEqual([])
+    expect(p.dropped.map((x) => x.reason).every((r) => /重复/.test(r))).toBe(
+      true
+    )
+    expect(p.segments).toEqual([
+      { chars: faq.length, units: 0, fallback: false, empty: false },
+    ])
+  })
+
+  it("部分段已覆盖、其它段有产出 → 仍为 split", async () => {
+    seedLegacy(twoSeg, [twoSeg.slice(0, 500), twoSeg.slice(500)])
+    const unitB: Unit = {
+      text: "退款申请须通过工单提交。",
+      sourceQuotes: ["乙段说明。乙段说明。"],
+    }
+    repo.insertKbEntry(
+      "retrieval/foundation/groups.md",
+      unitB.text,
+      "retrieval/foundation/groups.md",
+      vec()
+    )
+    const [p] = await plan(
+      stubQuery((text) => (text.startsWith("甲") ? [unitA] : [unitB])).queryFn
+    )
+    expect(p.status).toBe("split")
+    expect(p.units.map((u) => u.text)).toEqual([unitA.text])
+    expect(p.segments.map((s) => s.units)).toEqual([1, 0])
+  })
+
   it("一段被模型判为无稳定知识(空数组) → needs_review,不替换", async () => {
     const ids = seedLegacy(twoSeg, [twoSeg.slice(0, 500), twoSeg.slice(500)])
     const { queryFn } = stubQuery((text) =>
@@ -631,6 +672,36 @@ describe("serializeSplitPlan / loadSplitPlan", () => {
     expect(() =>
       loadSplitPlan(mutate((p) => (p.groups[0].segments[0].empty = "no")))
     ).toThrow(/empty/)
+    // covered 不得带条目,也不得有产出 > 0 或 empty 的段
+    expect(() =>
+      loadSplitPlan(mutate((p) => (p.groups[0].status = "covered")))
+    ).toThrow(/covered/)
+    expect(() =>
+      loadSplitPlan(
+        mutate((p) => {
+          p.groups[0].status = "covered"
+          p.groups[0].units = []
+        })
+      )
+    ).toThrow(/covered/)
+    expect(() =>
+      loadSplitPlan(
+        mutate((p) => {
+          p.groups[0].status = "covered"
+          p.groups[0].units = []
+          p.groups[0].segments = []
+        })
+      )
+    ).toThrow(/covered/)
+    expect(
+      loadSplitPlan(
+        mutate((p) => {
+          p.groups[0].status = "covered"
+          p.groups[0].units = []
+          p.groups[0].segments[0].units = 0
+        })
+      ).groups[0].status
+    ).toBe("covered")
   })
 })
 
@@ -801,7 +872,69 @@ describe("applyLegacySplit", () => {
     ).toBeNull()
   })
 
-  it("只有 split/fallback 且有条目的组会被替换", async () => {
+  /** 两组:第一组产出全部与正式文档重复(covered),第二组正常 split */
+  const coveredAndSplit = async () => {
+    const old1 = seedLegacy(faq, [faq.slice(0, 18), faq.slice(18)], 1000)
+    const old2 = seedLegacy(faq2, [faq2], 1001)
+    const formal = repo.insertKbEntry(
+      "retrieval/foundation/groups.md",
+      units[0].text,
+      "retrieval/foundation/groups.md",
+      vec()
+    )
+    const plans = await plan(
+      stubQuery((t) => (t === faq ? units : units2)).queryFn
+    )
+    return { old1, old2, formal, saved: persist(plans) }
+  }
+
+  it("covered 组以空条目替换:旧块删除、不写新条目、审计 after 为空数组", async () => {
+    const { old1, old2, formal, saved } = await coveredAndSplit()
+    expect(saved.groups.map((g) => g.status)).toEqual(["covered", "split"])
+    const res = await apply(saved)
+    expect(res).toMatchObject({ replaced: 2, refused: 0, errored: 0 })
+    const entries = repo.reflectionEntries()
+    for (const id of [...old1, ...old2])
+      expect(entries.find((e) => e.id === id)).toBeUndefined()
+    expect(entries.map((e) => e.content)).toEqual([units2[0].text])
+    // 正式文档不受影响
+    expect(
+      db.prepare("SELECT COUNT(*) AS n FROM kb_chunks WHERE id = ?").get(formal)
+    ).toEqual({ n: 1 })
+    const audits = db
+      .prepare(
+        "SELECT before_count, after_count, before_json, after_json FROM reflect_compactions ORDER BY id"
+      )
+      .all() as {
+      before_count: number
+      after_count: number
+      before_json: string
+      after_json: string
+    }[]
+    expect(audits).toHaveLength(2)
+    expect(audits[0]).toMatchObject({ before_count: 2, after_count: 0 })
+    expect(JSON.parse(audits[0].after_json)).toEqual([])
+    expect(JSON.parse(audits[0].before_json)).toEqual([
+      { id: old1[0], content: faq.slice(0, 18), faq },
+      { id: old1[1], content: faq.slice(18) },
+    ])
+  })
+
+  it("covered 组同样做前置核对:旧块被改 → refused,DB 不变", async () => {
+    const { old1, saved } = await coveredAndSplit()
+    repo.setReflectionStatus(old1[0], "rejected")
+    const res = await apply({ ...saved, groups: [saved.groups[0]] })
+    expect(res).toMatchObject({ replaced: 0, refused: 1, errored: 0 })
+    expect(res.details[0].reason).toMatch(/rejected/)
+    const entries = repo.reflectionEntries()
+    for (const id of old1)
+      expect(entries.find((e) => e.id === id)).toBeDefined()
+    expect(
+      db.prepare("SELECT COUNT(*) AS n FROM reflect_compactions").get()
+    ).toEqual({ n: 0 })
+  })
+
+  it("只有 split/fallback 有条目或 covered 的组会被替换", async () => {
     seedLegacy(faq, [faq])
     const plans = await plan(stubQuery(() => units).queryFn)
     const saved = persist(plans)
@@ -839,5 +972,52 @@ describe("renderSplitReport", () => {
     expect(md).toContain("条目含指代词")
     expect(md).toContain(`段 1:输入 ${faq.length} 字 → 产出 1 条`)
     expect(md).not.toContain(faq)
+  })
+
+  it("总览列出各状态组数、将替换与不替换仍留在检索的旧块数", () => {
+    const g = (
+      status: SerializedSplitPlan["groups"][number]["status"],
+      chunks: number,
+      units = 0
+    ): SerializedSplitPlan["groups"][number] => ({
+      chunkIds: Array.from(
+        { length: chunks },
+        (_, i) => status.length * 10 + i
+      ),
+      contentSha256: [],
+      faqSha256: "0".repeat(64),
+      faqChars: 1,
+      faqPreview: status,
+      status,
+      units: Array.from({ length: units }, () => ({ text: "t", answer: "a" })),
+      dropped: [],
+      segments: [],
+    })
+    const p: SerializedSplitPlan = {
+      version: 1,
+      legacyBefore: BEFORE,
+      createdAt: 1,
+      groups: [
+        g("split", 2, 3),
+        g("covered", 1),
+        g("needs_review", 4),
+        g("failed", 5),
+        g("skipped", 6),
+      ],
+    }
+    expect(summarizeSplitPlan(p)).toMatchObject({
+      groups: 5,
+      replaceGroups: 2,
+      replaceChunks: 3,
+      newUnits: 3,
+      keptChunks: 15,
+      keptChunksByStatus: { needs_review: 4, failed: 5, skipped: 6 },
+    })
+    const md = renderSplitReport(p)
+    expect(md).toMatch(/covered:1/)
+    expect(md).toContain("将替换组:2(旧块 3 个)")
+    expect(md).toContain(
+      "不替换、仍留在检索的旧块:15 个(needs_review 4 / failed 5 / skipped 6)"
+    )
   })
 })

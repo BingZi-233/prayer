@@ -32,6 +32,14 @@ export const SPLIT_SEGMENT_CHARS = 4000
 /** 摘录太短(如「支持」)无法证明出处 */
 export const SPLIT_QUOTE_MIN_CHARS = 6
 export const SPLIT_PLAN_VERSION = 1
+
+/**
+ * 存量整理块的截止时间(不含)。生产库里最后一批整理块的 ts 为 1792929187654,取其 + 1:
+ * 只选它之前的块。拆分产物同为 chatId=0,固定截止保证重跑不会把新条目再拆一遍;
+ * 不能用 Date.now(),否则 dry-run 之后新写入的 chatId=0 条目会被卷进来。
+ * 升格来源取值(source-context.ts)也按它区分拆分产物(ts ≥ 截止)与旧整理块。
+ */
+export const LEGACY_SPLIT_CUTOFF = 1792929187655
 /** sqlite-vec KNN 候选上限,与 searchBaseKb 一致 */
 const MAX_DEDUP_CANDIDATES = 2000
 
@@ -120,23 +128,30 @@ export interface SplitUnit {
 }
 
 /**
- * 组级状态,只有 split 与 fallback 可替换:
- * - split:各段都由模型拆出有效条目(或有效条目全因重复被丢弃 = 已覆盖)
+ * 组级状态,只有 split、fallback 与 covered 可替换:
+ * - split:各段都由模型拆出有效条目(个别段的条目可能全因重复被丢弃 = 该段已覆盖)
  * - fallback:至少一段的条目全部未过程序校验/语义核验,该段按句末确定性重切
+ * - covered:每一段的产出条目都因与已有知识重复被丢弃(组内无 empty/failed 段),
+ *   以空条目替换——删除旧碎片、只写审计,不让句中硬切的碎片留在检索里
  * - needs_review:至少一段模型判定无稳定知识(空数组),不替换,留给阶段 2 人工处置
  * - failed:调用失败或输出无法解析,不替换(避免残缺结果吞掉未处理段)
  * - skipped:组内有非 approved 块,不调模型
  */
 export type SplitStatus =
-  "split" | "fallback" | "needs_review" | "failed" | "skipped"
+  "split" | "fallback" | "covered" | "needs_review" | "failed" | "skipped"
 const SPLIT_STATUSES: readonly SplitStatus[] = [
   "split",
   "fallback",
+  "covered",
   "needs_review",
   "failed",
   "skipped",
 ]
-const REPLACEABLE: ReadonlySet<SplitStatus> = new Set(["split", "fallback"])
+const REPLACEABLE: ReadonlySet<SplitStatus> = new Set([
+  "split",
+  "fallback",
+  "covered",
+])
 
 export interface SegmentInfo {
   /** 段输入字数 */
@@ -487,7 +502,7 @@ export async function planLegacySplit(d: SplitDeps): Promise<SplitGroupPlan[]> {
         })
       }
       if (verified.length) {
-        // 全因重复被丢弃 = 已被现有知识覆盖,安全
+        // 全因重复被丢弃 = 本段已被现有知识覆盖;整组都如此时组状态为 covered(空条目替换)
         for (const u of verified) await consider(u.text, u.quotes.join("\n"))
       } else {
         // 条目全部未过校验:不保留句中硬切的旧碎片,本段按句末确定性重切(不新增事实)
@@ -517,11 +532,14 @@ export async function planLegacySplit(d: SplitDeps): Promise<SplitGroupPlan[]> {
           )
         }
       }
+      // 没有 empty 段时,units 为空只可能是每段产出全因重复被丢弃(兜底段同理)
       status = segments.some((s) => s.empty)
         ? "needs_review"
-        : segments.some((s) => s.fallback)
-          ? "fallback"
-          : "split"
+        : segments.length > 0 && units.length === 0
+          ? "covered"
+          : segments.some((s) => s.fallback)
+            ? "fallback"
+            : "split"
     } catch (err) {
       dropped.unshift({
         text: preview(group.faq),
@@ -675,6 +693,14 @@ export function loadSplitPlan(json: unknown): SerializedSplitPlan {
         empty: bool(s.empty, `${sp}.empty`),
       }
     })
+    // covered 会删除旧块且不写新条目:必须确有段、且每段都无产出、无 empty
+    if (
+      status === "covered" &&
+      (units.length > 0 ||
+        !segments.length ||
+        segments.some((s) => s.units > 0 || s.empty))
+    )
+      fail(p, "covered 组应有段、无条目,且每段产出为 0、非 empty")
     return {
       chunkIds,
       contentSha256,
@@ -757,13 +783,21 @@ export interface ApplyResult {
   replaced: number
   refused: number
   errored: number
-  /** 只含尝试替换的组(split/fallback 且有条目) */
+  /** 只含尝试替换的组(见 willReplace:split/fallback 有条目,或 covered) */
   details: { chunkIds: number[]; outcome: ApplyOutcome; reason?: string }[]
+}
+
+/** 是否替换:split/fallback 需有条目;covered 以空条目替换(只删旧块、写审计)。 */
+function willReplace(g: SerializedSplitGroup): boolean {
+  return (
+    REPLACEABLE.has(g.status) && (g.units.length > 0 || g.status === "covered")
+  )
 }
 
 /**
  * 按持久化计划逐组替换,全程不调用 LLM:先在事务外重算本地嵌入,再在 KB 锁内重读核对
- * 旧块,最后单个 IMMEDIATE 事务内二次核对 + 替换 + 审计。单组异常记 errored 继续下一组。
+ * 旧块,最后单个 IMMEDIATE 事务内二次核对 + 替换 + 审计。covered 组条目为空,
+ * 同样走锁内 + 事务内核对。单组异常记 errored 继续下一组。
  */
 export async function applyLegacySplit(
   repo: Repo,
@@ -778,7 +812,7 @@ export async function applyLegacySplit(
     details: [],
   }
   for (const g of plan.groups) {
-    if (!REPLACEABLE.has(g.status) || !g.units.length) continue
+    if (!willReplace(g)) continue
     const record = (outcome: ApplyOutcome, reason?: string) => {
       result[outcome]++
       result.details.push({ chunkIds: g.chunkIds, outcome, reason })
@@ -834,29 +868,86 @@ export async function applyLegacySplit(
 const STATUS_LABEL: Record<SplitStatus, string> = {
   split: "split(模型拆分)",
   fallback: "fallback(含句末重切段)",
+  covered: "covered(产出全部与已有知识重复,删除旧块、不写新条目)",
   needs_review: "needs_review(有段被判无稳定知识,不替换,留阶段 2 人工处置)",
   failed: "failed(调用失败或输出无法解析,不替换)",
   skipped: "skipped(组内有非 approved 块,整组跳过)",
 }
 
-function willReplace(g: SerializedSplitGroup): boolean {
-  return REPLACEABLE.has(g.status) && g.units.length > 0
+export interface SplitPlanSummary {
+  groups: number
+  /** 各状态组数(含 0) */
+  statusGroups: Record<SplitStatus, number>
+  replaceGroups: number
+  /** 将被替换(删除)的旧块数 */
+  replaceChunks: number
+  newUnits: number
+  /** 不替换、继续留在检索里的旧块数 */
+  keptChunks: number
+  /** keptChunks 按组状态拆分(含 0) */
+  keptChunksByStatus: Record<SplitStatus, number>
+  dropped: number
+}
+
+/** 计划总览:报告顶部与脚本 dry-run 输出共用。 */
+export function summarizeSplitPlan(
+  plan: SerializedSplitPlan
+): SplitPlanSummary {
+  const zero = () =>
+    Object.fromEntries(SPLIT_STATUSES.map((s) => [s, 0])) as Record<
+      SplitStatus,
+      number
+    >
+  const sum: SplitPlanSummary = {
+    groups: plan.groups.length,
+    statusGroups: zero(),
+    replaceGroups: 0,
+    replaceChunks: 0,
+    newUnits: 0,
+    keptChunks: 0,
+    keptChunksByStatus: zero(),
+    dropped: 0,
+  }
+  for (const g of plan.groups) {
+    sum.statusGroups[g.status]++
+    sum.dropped += g.dropped.length
+    if (willReplace(g)) {
+      sum.replaceGroups++
+      sum.replaceChunks += g.chunkIds.length
+      sum.newUnits += g.units.length
+    } else {
+      sum.keptChunks += g.chunkIds.length
+      sum.keptChunksByStatus[g.status] += g.chunkIds.length
+    }
+  }
+  return sum
+}
+
+/** 总览行(不带 Markdown 列表符),报告与脚本输出共用。 */
+export function splitSummaryLines(plan: SerializedSplitPlan): string[] {
+  const s = summarizeSplitPlan(plan)
+  const kept = SPLIT_STATUSES.filter((st) => s.keptChunksByStatus[st] > 0)
+  return [
+    `组数:${s.groups}`,
+    `状态:${SPLIT_STATUSES.map((st) => `${st}:${s.statusGroups[st]}`).join(" / ")}`,
+    `将替换组:${s.replaceGroups}(旧块 ${s.replaceChunks} 个)`,
+    `不替换、仍留在检索的旧块:${s.keptChunks} 个` +
+      (kept.length
+        ? `(${kept.map((st) => `${st} ${s.keptChunksByStatus[st]}`).join(" / ")})`
+        : ""),
+    `新条目:${s.newUnits}`,
+    `丢弃:${s.dropped}`,
+  ]
 }
 
 /** dry-run 报告(Markdown):总览 + 逐组明细(含段级覆盖)。 */
 export function renderSplitReport(plan: SerializedSplitPlan): string {
   const { groups } = plan
-  const count = (s: SplitStatus) => groups.filter((g) => g.status === s).length
-  const replacing = groups.filter(willReplace)
   const lines: string[] = [
     "# 存量整理块拆分报告",
     "",
     `- 截止:ts < ${plan.legacyBefore}`,
-    `- 组数:${groups.length}`,
-    `- 状态:${SPLIT_STATUSES.map((s) => `${s}:${count(s)}`).join(" / ")}`,
-    `- 将替换组:${replacing.length}(旧块 ${replacing.reduce((n, g) => n + g.chunkIds.length, 0)} 个)`,
-    `- 新条目:${replacing.reduce((n, g) => n + g.units.length, 0)}`,
-    `- 丢弃:${groups.reduce((n, g) => n + g.dropped.length, 0)}`,
+    ...splitSummaryLines(plan).map((l) => `- ${l}`),
     "",
   ]
   for (const [i, g] of groups.entries()) {

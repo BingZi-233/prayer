@@ -124,7 +124,7 @@ const TABLES: readonly TableSpec[] = [
     countSql: "SELECT COUNT(*) AS n FROM reflect_compactions WHERE ts < ?",
     deleteSql: "DELETE FROM reflect_compactions WHERE ts < ?",
     args: (cutoff) => [cutoff],
-    detail: "保留整理快照，避免大 JSON 长期占用数据库",
+    detail: "反思替换审计(旧整理快照与存量拆分记录),避免大 JSON 长期占用数据库",
   },
   {
     table: "question_occurrences",

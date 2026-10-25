@@ -136,6 +136,38 @@ describe("reflection_meta / reflectionEntries", () => {
     expect(JSON.parse(rc[0].after_json)).toEqual(["新条目"])
   })
 
+  it("replaceReflectionEntries 空条目 → 只删旧块与 meta,审计 after 为空数组", () => {
+    const id = repo.insertKbEntry(
+      "human-reflection",
+      "旧碎片",
+      "human-reflection:qq:0:1",
+      vec()
+    )
+    repo.insertReflectionMeta(id, "qq", "0", "q", "完整 FAQ")
+    expect(
+      repo.replaceReflectionEntries(
+        [id],
+        [],
+        9_000_000,
+        [{ id, content: "旧碎片", faq: "完整 FAQ" }],
+        [],
+        { expectedStatus: "approved", reviewState: "legacy" }
+      )
+    ).toBe(true)
+    expect(repo.reflectionEntries()).toHaveLength(0)
+    const db = (repo as unknown as { db: import("better-sqlite3").Database }).db
+    expect(
+      db.prepare("SELECT COUNT(*) AS n FROM reflection_meta").get()
+    ).toEqual({ n: 0 })
+    expect(db.prepare("SELECT COUNT(*) AS n FROM kb_vec").get()).toEqual({
+      n: 0,
+    })
+    const rc = auditRows()
+    expect(rc).toHaveLength(1)
+    expect(rc[0]).toMatchObject({ before_count: 1, after_count: 0 })
+    expect(JSON.parse(rc[0].after_json)).toEqual([])
+  })
+
   it("替换切块与完整 FAQ 元数据同事务写入,后续可恢复完整上下文", () => {
     const faq = "问:如何操作?\n答:先配置,再校验;失败时回退,保留所有步骤与例外。"
     expect(

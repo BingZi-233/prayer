@@ -413,7 +413,9 @@ function parseUnit(raw: unknown): ComposeUnit | null {
  *
  * 失败契约分两类,调用方必须都处理:
  * - 校验类失败(解析不出、字段为空、路径不合法、单元超长)→ 返回 ok:false,
- *   不写盘不改状态,该条留到下一轮重试;绝不退化成"原文直写"的老格式落盘。
+ *   不写盘不改状态;定时路径由调用方计入评审账本次数(promote-failure.ts 判定),
+ *   累计 MAX_PROMOTE_ATTEMPTS 次转 failed 不再自动重试,未满则下一轮重试;手动路径
+ *   只记原因不计次。绝不退化成"原文直写"的老格式落盘。
  * - I/O 与超时类失败(withTimeout 超时、drainQuery 迭代抛错)→ **抛出**,本函数
  *   不吞异常,由调用方 catch 并计入本轮失败。
  */

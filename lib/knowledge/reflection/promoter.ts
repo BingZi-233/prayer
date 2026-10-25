@@ -36,6 +36,17 @@ import { countsAsEntryFailure, MAX_PROMOTE_ATTEMPTS } from "./promote-failure"
 
 const MAX_REVIEW_ENTRIES = 20
 const MAX_REVIEW_CHARS = 24_000
+
+/** 超预算失败原因:手动路径作为失败 reason 返回,自动路径写入 review_note。 */
+export const OVER_REVIEW_BUDGET_REASON = "升格来源超过单批字符预算"
+
+/**
+ * 单条(answer 已替换为升格来源)序列化后是否超过单批评审字符预算。
+ * 单条就撑爆批预算时重试也不会变小;手动与自动两条路径共用这一判断。
+ */
+function exceedsReviewBudget(entry: ReflectionEntry): boolean {
+  return JSON.stringify(entry).length > MAX_REVIEW_CHARS
+}
 /** 单轮最多评审批数:评审是定时花费的主体,封顶让每天的 LLM 调用有上界 */
 const MAX_REVIEW_BATCHES_PER_RUN = 3
 
@@ -228,10 +239,8 @@ async function promoteEntryUnlocked(
     entry,
     entry.chatId === "0" ? repo.reflectionEntries() : []
   )
-  if (
-    JSON.stringify({ ...entry, answer: sourceAnswer }).length > MAX_REVIEW_CHARS
-  )
-    return { ok: false, reason: "升格来源超过单批字符预算,保留原条目" }
+  if (exceedsReviewBudget({ ...entry, answer: sourceAnswer }))
+    return { ok: false, reason: OVER_REVIEW_BUDGET_REASON }
 
   const now = deps.now ?? (() => Date.now())
   const cwd = deps.cwd ?? process.cwd()
@@ -458,11 +467,11 @@ async function runPromoteUnlocked(
   // 不属于整轮失败。
   const reviewable: typeof unreviewed = []
   for (const e of shouldReview ? unreviewed : []) {
-    if (JSON.stringify(e).length > MAX_REVIEW_CHARS) {
-      d.repo.setReviewState(e.id, "failed", "升格来源超过单批字符预算")
+    if (exceedsReviewBudget(e)) {
+      d.repo.setReviewState(e.id, "failed", OVER_REVIEW_BUDGET_REASON)
       logger.log(
         "warn",
-        `[reflection-promote] #${e.id} 升格来源超过单批字符预算,记为 failed`
+        `[reflection-promote] #${e.id} ${OVER_REVIEW_BUDGET_REASON},记为 failed`
       )
       continue
     }
@@ -613,7 +622,8 @@ export function registerReflectionPromoter(
       })
   }
   const timer = setInterval(tick, scanMs)
-  const kick = setTimeout(tick, deps.firstDelayMs ?? 45_000) // 略晚于 compact 首刷
+  // 启动后默认约 45 秒跑首轮
+  const kick = setTimeout(tick, deps.firstDelayMs ?? 45_000)
   return () => {
     clearInterval(timer)
     clearTimeout(kick)

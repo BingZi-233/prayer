@@ -13,7 +13,7 @@ import {
 import { withKbMutationLock } from "../lib/knowledge/mutation-lock.ts"
 import { splitCompactedFaq } from "../lib/knowledge/reflection/compact-chunks.ts"
 
-// 保留 CLI/测试的旧导出名；知识库与反思整理共用同一分块实现。
+// 保留 CLI/测试的旧导出名；知识库 ingest 与升格落盘共用同一分块实现。
 export const chunkText = splitCompactedFaq
 
 export interface IngestResult {

@@ -8,10 +8,9 @@ import { promisify } from "node:util"
 import { afterEach, describe, expect, it } from "vitest"
 import { DIM, openDb } from "@/lib/core/db/index"
 import { Repo } from "@/lib/core/db/repo"
+import { LEGACY_SPLIT_CUTOFF as CUTOFF } from "@/lib/knowledge/reflection/legacy-split"
 
 const run = promisify(execFile)
-/** 与脚本内 LEGACY_SPLIT_CUTOFF 一致 */
-const CUTOFF = 1792929187655
 const directories: string[] = []
 
 afterEach(async () => {
@@ -143,7 +142,9 @@ describe("split-legacy-reflections CLI --apply", () => {
     )
     expect(files.filter((n) => n.endsWith(".json"))).toHaveLength(1)
     expect(files.filter((n) => n.endsWith(".md"))).toHaveLength(1)
-    expect(stdout).toContain("组数 0")
+    expect(stdout).toContain("嵌入预热完成")
+    expect(stdout).toContain("组数:0")
+    expect(stdout).toContain("不替换、仍留在检索的旧块:0 个")
     const planPath = join(
       f.dir,
       files.find((n) => n.endsWith(".json"))!

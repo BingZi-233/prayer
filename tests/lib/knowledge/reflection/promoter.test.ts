@@ -259,7 +259,7 @@ describe("runPromote", () => {
       })
     ).toEqual({
       ok: false,
-      reason: "升格来源超过单批字符预算,保留原条目",
+      reason: "升格来源超过单批字符预算",
     })
     expect(composeFn).not.toHaveBeenCalled()
   })

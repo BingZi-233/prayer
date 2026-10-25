@@ -1,12 +1,20 @@
 import type { ReflectionEntry } from "../../core/db/models"
 import { splitCompactedFaq } from "./compact-chunks"
+import { LEGACY_SPLIT_CUTOFF } from "./legacy-split"
 
-/** 升格来源取值:存量整理块(chatId 0)只有在原 FAQ 的全部检索块仍获准保留时才能用于升格。 */
+/**
+ * 升格来源取值:
+ * - 普通反思(chatId≠0):原始回答;
+ * - 一次性拆分产物(chatId 0 且 ts ≥ LEGACY_SPLIT_CUTOFF):answer 即原文逐字摘录
+ *   (兜底条目为原文片段本身),直接作为来源,供成文核验;
+ * - 旧整理块(chatId 0 且 ts < 截止):只有在原 FAQ 的全部检索块仍获准保留时才能用于升格。
+ */
 export function promotionSourceAnswer(
   entry: ReflectionEntry,
   siblings: ReflectionEntry[]
 ): string | null {
   if (entry.chatId !== "0") return entry.answer
+  if (entry.ts != null && entry.ts >= LEGACY_SPLIT_CUTOFF) return entry.answer
   if (!entry.answer || entry.ts == null || entry.status !== "approved")
     return null
 

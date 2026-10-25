@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import type { ReflectionEntry } from "@/lib/core/db/models"
 import { splitCompactedFaq } from "@/lib/knowledge/reflection/compact-chunks"
+import { LEGACY_SPLIT_CUTOFF } from "@/lib/knowledge/reflection/legacy-split"
 import { promotionSourceAnswer } from "@/lib/knowledge/reflection/source-context"
 
 function entry(overrides: Partial<ReflectionEntry> = {}): ReflectionEntry {
@@ -83,6 +84,35 @@ describe("promotionSourceAnswer", () => {
     expect(
       promotionSourceAnswer(siblings[0], [siblings[0], siblings[0]])
     ).toBeNull()
+  })
+
+  it("拆分产物(ts ≥ 截止)直接返回摘录,不做兄弟块核对", () => {
+    const split = entry({
+      id: 7,
+      content: "PackyAPI 的 cc-sale 分组支持第三方客户端接入。",
+      ts: LEGACY_SPLIT_CUTOFF,
+      answer: "cc-sale 分组支持第三方客户端接入。\n第二句摘录。",
+      reviewState: "legacy",
+    })
+    expect(promotionSourceAnswer(split, [])).toBe(split.answer)
+    expect(promotionSourceAnswer(split, [split])).toBe(split.answer)
+    expect(
+      promotionSourceAnswer({ ...split, ts: LEGACY_SPLIT_CUTOFF + 5 }, [])
+    ).toBe(split.answer)
+    // 兜底条目:answer 即原文片段本身
+    const fallback = entry({
+      id: 8,
+      content: "原文句末重切片段。",
+      answer: "原文句末重切片段。",
+      ts: LEGACY_SPLIT_CUTOFF + 1,
+    })
+    expect(promotionSourceAnswer(fallback, [])).toBe("原文句末重切片段。")
+  })
+
+  it("截止前的旧整理块仍走兄弟核对", () => {
+    const old = entry({ ts: LEGACY_SPLIT_CUTOFF - 1, answer: "完整 FAQ" })
+    expect(promotionSourceAnswer(old, [old])).toBe("完整 FAQ")
+    expect(promotionSourceAnswer(old, [])).toBeNull()
   })
 
   it("缺少完整来源或批次时间的旧整理条目不猜测来源", () => {
