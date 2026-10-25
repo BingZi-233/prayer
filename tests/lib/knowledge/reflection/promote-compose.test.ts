@@ -2,7 +2,9 @@ import { describe, it, expect } from "vitest"
 import { existsSync, readdirSync } from "node:fs"
 import { resolve } from "node:path"
 import {
+  COMPOSE_FIELD_MAX,
   COMPOSE_OUTPUT_SCHEMA,
+  composeBodyBudget,
   composePromotion,
   MAX_MERGE_CHUNKS,
   RETRIEVAL_DOMAINS,
@@ -13,7 +15,10 @@ import {
   validateUnit,
   type ComposeUnit,
 } from "@/lib/knowledge/reflection/promote-compose"
-import { splitCompactedFaq } from "@/lib/knowledge/reflection/compact-chunks"
+import {
+  DEFAULT_KB_CHUNK_MAX_CHARS,
+  splitCompactedFaq,
+} from "@/lib/knowledge/reflection/compact-chunks"
 
 const unit = (over: Partial<ComposeUnit> = {}): ComposeUnit => ({
   product: "Packy",
@@ -255,6 +260,75 @@ describe("validateUnit / unitShapeIssue", () => {
     }
     expect(passed).toBeGreaterThan(0)
     expect(rejected).toBeGreaterThan(0)
+  })
+})
+
+describe("composeBodyBudget", () => {
+  /** 四个短字段顶满 maxLength、正文顶满预算、来源取 sourceUrl 时的渲染结果 */
+  const worstRender = (
+    opts: { chunkId: number; date: string; rawSources: string },
+    sourceUrl: string,
+    bodyChar = "正"
+  ) =>
+    renderUnit(
+      {
+        product: "P".repeat(COMPOSE_FIELD_MAX.product),
+        protocol: "R".repeat(COMPOSE_FIELD_MAX.protocol),
+        task: "T".repeat(COMPOSE_FIELD_MAX.task),
+        // 正文不以句末标点结尾,渲染时会补一个「。」,这是最坏情况
+        body: bodyChar.repeat(composeBodyBudget(opts)),
+        sourceUrl,
+        volatility: "V".repeat(COMPOSE_FIELD_MAX.volatility),
+      },
+      opts
+    ).content
+
+  it("最坏字段 + 预算正文 + 会话来源标注渲染后不超上限且恰好顶满", () => {
+    for (const chunkId of [1, 42, 333321, 9_999_999_999]) {
+      const opts = { chunkId, date: "2026-10-25", rawSources: "" }
+      const content = worstRender(opts, "")
+      expect(content.length).toBe(DEFAULT_KB_CHUNK_MAX_CHARS)
+      expect(unitShapeIssue(content)).toBeNull()
+      expect(splitCompactedFaq(content)).toHaveLength(1)
+    }
+    expect(
+      composeBodyBudget({ chunkId: 333321, date: "2026-10-25", rawSources: "" })
+    ).toBeGreaterThan(250)
+  })
+
+  it("来源原文里的最长可信 URL 计入最坏来源行", () => {
+    const longUrl = `https://www.packyapi.ai/${"a".repeat(80)}`
+    const rawSources = `见 ${longUrl}。另见 https://x.cn/b`
+    const opts = { chunkId: 1, date: "2026-10-25", rawSources }
+    const base = composeBodyBudget({ ...opts, rawSources: "" })
+    const withUrl = composeBodyBudget(opts)
+    expect(withUrl).toBeLessThan(base)
+    // 模型取最长 URL 作来源时也不超
+    const content = worstRender(opts, longUrl)
+    expect(content).toContain(`来源：${longUrl}；`)
+    expect(content.length).toBe(DEFAULT_KB_CHUNK_MAX_CHARS)
+    // 取较短 URL 或退回会话标注时更不会超
+    expect(worstRender(opts, "https://x.cn/b").length).toBeLessThan(
+      DEFAULT_KB_CHUNK_MAX_CHARS
+    )
+    expect(worstRender(opts, "").length).toBeLessThan(
+      DEFAULT_KB_CHUNK_MAX_CHARS
+    )
+  })
+
+  it("短 URL 不比会话来源标注长时不缩小预算", () => {
+    const opts = { chunkId: 42, date: "2026-10-25", rawSources: "" }
+    expect(composeBodyBudget({ ...opts, rawSources: "见 https://x.cn" })).toBe(
+      composeBodyBudget(opts)
+    )
+  })
+
+  it("schema 四个短字段带固定 maxLength", () => {
+    const props = COMPOSE_OUTPUT_SCHEMA.properties.unit.properties
+    expect(props.product.maxLength).toBe(COMPOSE_FIELD_MAX.product)
+    expect(props.protocol.maxLength).toBe(COMPOSE_FIELD_MAX.protocol)
+    expect(props.task.maxLength).toBe(COMPOSE_FIELD_MAX.task)
+    expect(props.volatility.maxLength).toBe(COMPOSE_FIELD_MAX.volatility)
   })
 })
 
@@ -537,5 +611,146 @@ describe("composePromotion", () => {
       })
     ).rejects.toThrow("超时(10ms)")
     expect(controller?.signal.aborted).toBe(true)
+  })
+
+  describe("正文预算与超长重试", () => {
+    type Call = { prompt: string; systemPrompt: string; compose: boolean }
+    /** 成文调用依次返回 decisions 里的结果(用完后重复最后一个),核验恒通过 */
+    function scripted(decisions: unknown[]) {
+      const calls: Call[] = []
+      let i = 0
+      const queryFn = (args: {
+        prompt: string
+        options: { systemPrompt: string; outputFormat: { schema: unknown } }
+      }) => {
+        const compose =
+          args.options.outputFormat.schema === COMPOSE_OUTPUT_SCHEMA
+        calls.push({
+          prompt: args.prompt,
+          systemPrompt: args.options.systemPrompt,
+          compose,
+        })
+        const decision = compose
+          ? decisions[Math.min(i++, decisions.length - 1)]
+          : null
+        return fakeQuery(decision)(args as never)
+      }
+      return { calls, queryFn: queryFn as never }
+    }
+    const withBody = (body: string) => ({
+      ...goodDecision,
+      unit: { ...goodDecision.unit, body },
+    })
+    const date = "2026-09-16"
+
+    it("首版超长、重试合规 → 成功,重试提示写明超出字数", async () => {
+      const { calls, queryFn } = scripted([
+        withBody("长".repeat(600)),
+        goodDecision,
+      ])
+      const r = await composePromotion({
+        ...composeDeps(goodDecision),
+        queryFn,
+      })
+      expect(r.ok).toBe(true)
+      const compose = calls.filter((c) => c.compose)
+      expect(compose).toHaveLength(2)
+      // 超出字数按首版真实渲染结果实算
+      const overflow =
+        renderUnit(withBody("长".repeat(600)).unit, {
+          chunkId: entry.id,
+          date,
+          rawSources: [entry.content, entry.question, entry.answer].join("\n"),
+        }).content.length - DEFAULT_KB_CHUNK_MAX_CHARS
+      expect(overflow).toBeGreaterThan(0)
+      expect(compose[0].prompt).not.toContain("超出")
+      expect(compose[1].prompt).toContain(`超出上限 ${overflow} 字符`)
+      // 核验只对合规的第二版调用一次
+      expect(calls.filter((c) => !c.compose)).toHaveLength(1)
+    })
+
+    it("两次都超长 → 单元超长失败,成文调用 2 次且不调用核验", async () => {
+      const { calls, queryFn } = scripted([withBody("长".repeat(600))])
+      const r = await composePromotion({
+        ...composeDeps(goodDecision),
+        queryFn,
+      })
+      expect(r.ok).toBe(false)
+      if (r.ok) return
+      expect(r.reason).toMatch(/^单元超长\(\d+ > 500\)$/)
+      expect(calls.filter((c) => c.compose)).toHaveLength(2)
+      expect(calls.filter((c) => !c.compose)).toHaveLength(0)
+    })
+
+    it("非超长失败不重试", async () => {
+      const { calls, queryFn } = scripted([
+        { ...goodDecision, target: { mode: "merge", doc: "retrieval/x/y.md" } },
+      ])
+      const r = await composePromotion({
+        ...composeDeps(goodDecision),
+        queryFn,
+      })
+      expect(r.ok).toBe(false)
+      expect(calls).toHaveLength(1)
+    })
+
+    it("正文空行被折叠,不再报单元含空行", async () => {
+      const { calls, queryFn } = scripted([
+        withBody("第一步新建会话\n\n  \n第二步重试"),
+      ])
+      const r = await composePromotion({
+        ...composeDeps(goodDecision),
+        queryFn,
+      })
+      expect(r.ok).toBe(true)
+      if (!r.ok) return
+      expect(/\n\s*\n/.test(r.value.content)).toBe(false)
+      expect(r.value.content).toContain("第一步新建会话\n第二步重试")
+      expect(calls.filter((c) => c.compose)).toHaveLength(1)
+    })
+
+    it("系统提示对不同条目逐字恒定,预算只进 user prompt", async () => {
+      const a = scripted([goodDecision])
+      await composePromotion({
+        ...composeDeps(goodDecision),
+        queryFn: a.queryFn,
+      })
+      const longUrl = `https://docs.packyapi.ai/${"z".repeat(60)}`
+      const otherEntry = {
+        id: 987654,
+        content: `另一条反思,见 ${longUrl}`,
+        question: "别的问题",
+        answer: null,
+      }
+      const b = scripted([goodDecision])
+      await composePromotion({
+        ...composeDeps(goodDecision),
+        entry: otherEntry,
+        queryFn: b.queryFn,
+      })
+      const sysA = a.calls.find((c) => c.compose)!.systemPrompt
+      const sysB = b.calls.find((c) => c.compose)!.systemPrompt
+      expect(sysA).toBe(sysB)
+
+      const budgetA = composeBodyBudget({
+        chunkId: entry.id,
+        date,
+        rawSources: [entry.content, entry.question, entry.answer].join("\n"),
+      })
+      const budgetB = composeBodyBudget({
+        chunkId: otherEntry.id,
+        date,
+        rawSources: [otherEntry.content, otherEntry.question, ""].join("\n"),
+      })
+      expect(budgetA).not.toBe(budgetB)
+      expect(a.calls.find((c) => c.compose)!.prompt).toContain(
+        `正文 body 不超过 ${budgetA} 字符`
+      )
+      expect(b.calls.find((c) => c.compose)!.prompt).toContain(
+        `正文 body 不超过 ${budgetB} 字符`
+      )
+      expect(sysA).not.toContain(String(budgetA))
+      expect(sysA).not.toContain(String(budgetB))
+    })
   })
 })
