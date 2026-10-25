@@ -132,8 +132,10 @@ pnpm db:retention ./data/agent.db \
 1. `pnpm db:backup`：备份当前库。
 2. `pnpm pm:restart`：重启并执行 v11 迁移（拆分脚本要求 schema 为当前版本）。
 3. 管理端确认 `reflectPromoteMs` 为 0（停用自动升格，脚本前置条件）。
-4. `pnpm kb:split-legacy-reflections`（dry-run）：生成 `data/split-legacy-<ts>.json` 与
-   `.md`，人工审阅 `.md`。
+4. `pnpm kb:split-legacy-reflections`（dry-run，模型花费约 $8–10）：生成
+   `data/split-legacy-<ts>.json` 与 `.md`，人工审阅 `.md`。重点看总览里「不替换、
+   仍留在检索的旧块」数（`needs_review` / `failed` / `skipped` 组）；`covered` 组
+   会删除旧块而不写新条目。
 5. `pnpm kb:split-legacy-reflections --apply data/split-legacy-<ts>.json`：先自动备份并
    打印备份路径，请长期保留。dry-run 与 apply 之间不要操作反思、不要跑 `pnpm ingest`。
 6. 管理端把 `reflectPromoteMs` 设回 `86400000`。
