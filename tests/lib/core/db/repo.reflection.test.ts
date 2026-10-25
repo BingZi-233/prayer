@@ -346,9 +346,28 @@ describe("升格评审账本", () => {
     })
 
     const legacy = seed("human-reflection:qq:0:9")
-    repo.setReviewState(legacy, "legacy")
+    repo.setReviewState(legacy, "legacy", "存量")
+    repo.recordPromoteFailure(legacy, "存量", true, 3)
     repo.setReflectionStatus(legacy, "approved")
-    expect(entry(legacy).reviewState).toBe("legacy")
+    expect(entry(legacy)).toMatchObject({
+      reviewState: "legacy",
+      reviewAttempts: 1,
+      reviewNote: "存量",
+    })
+  })
+
+  it("不计次调用不会改变状态,即使 attempts 已达上限", () => {
+    const id = seed()
+    repo.recordPromoteFailure(id, "a", true, 3)
+    repo.recordPromoteFailure(id, "a", true, 3)
+    repo.recordPromoteFailure(id, "a", true, 3)
+    repo.setReviewState(id, "accepted")
+    repo.recordPromoteFailure(id, "超时", false, 3)
+    expect(entry(id)).toMatchObject({
+      reviewState: "accepted",
+      reviewAttempts: 3,
+      reviewNote: "超时",
+    })
   })
 
   it("对不存在的 chunk 记账不会造孤儿 meta", () => {

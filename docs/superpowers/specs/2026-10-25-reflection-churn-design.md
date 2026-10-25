@@ -74,8 +74,9 @@
 
 ### B. 升格评审账本
 
-迁移 v11（沿用 v9 的加列写法：`tableColumns` 判断后 `ALTER TABLE`，`up` 与 `repair` 同一函数，
-可重复执行）给 `reflection_meta` 加三列：
+迁移 v11（沿用 v9 的加列写法：`tableColumns` 判断后 `ALTER TABLE`）：`up` = 补列 + 标 `legacy`，
+`repair` 只补列、可重复执行。理由：runner 每次启动都会对已升级的库跑 `repair`，它不能改业务数据。
+给 `reflection_meta` 加三列：
 
 | 列 | 取值 |
 |---|---|

@@ -115,7 +115,7 @@ export class ReflectionRepository {
         `SELECT c.id, substr(c.content, 1, ?) AS content, length(c.content) AS contentLen,
               c.source, substr(m.question, 1, ?) AS question, substr(m.answer, 1, ?) AS answer,
               COALESCE(m.status, 'approved') AS status,
-                m.review_state, COALESCE(m.review_attempts, 0) AS review_attempts, m.review_note
+              m.review_state, COALESCE(m.review_attempts, 0) AS review_attempts, m.review_note
          FROM kb_chunks c LEFT JOIN reflection_meta m ON m.chunk_id = c.id
          WHERE c.doc = 'human-reflection' ORDER BY c.id DESC LIMIT ?`
       )
