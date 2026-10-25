@@ -242,6 +242,12 @@ async function runApply(
   const { applyLegacySplit } =
     await import("../lib/knowledge/reflection/legacy-split.ts")
 
+  // 预热嵌入模型:首次加载可能超过 lib 内单次嵌入的 60s 超时,
+  // 不预热会让前几组 errored。这里不套超时,等它加载完。
+  const warmStart = Date.now()
+  await embed("嵌入预热")
+  console.log(`嵌入预热完成,耗时 ${Date.now() - warmStart}ms`)
+
   const backup = await backupDatabase(db, defaultBackupPath(dbPath))
   console.log(`已备份:${backup.path}(请长期保留,这是撤销本次替换的唯一手段)`)
 
