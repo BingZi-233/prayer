@@ -1,7 +1,7 @@
 import type { ReflectionEntry } from "../../core/db/models"
 import { splitCompactedFaq } from "./compact-chunks"
 
-/** 整理来源只有在原 FAQ 的全部检索块仍获准保留时才能用于升格。 */
+/** 升格来源取值:存量整理块(chatId 0)只有在原 FAQ 的全部检索块仍获准保留时才能用于升格。 */
 export function promotionSourceAnswer(
   entry: ReflectionEntry,
   siblings: ReflectionEntry[]

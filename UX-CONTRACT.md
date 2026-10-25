@@ -66,7 +66,7 @@
 | ---------------------- | ---------------------- | ------------------------------- | ------------------- | -------------------------------- | -------------------------------------------------------------------- | ------------------ | ------------------------------------------------------------------------- |
 | Read audit window      | 进入审计页 / 30 秒刷新 | 首屏 Skeleton；后台刷新保留数据 | 当前页              | 最新状态直接显示                 | `DataState` 的重试；未结束事件需核对仍在执行与异常路径               | 重试按钮或当前表格 | `app/api/audit/route.ts`                                                  |
 | Admin mutation         | 各已有管理页           | 按原页面的忙碌状态              | 原页面或既有列表    | API 终结结果                     | 失败不伪称成功；检查审计页的 started/partial                         | 维持原页面契约     | `lib/core/admin-audit-route.ts`                                           |
-| Reflection maintenance | 整理、自动或单条升格   | 提交后保持忙碌，轮询后台任务    | 当前页              | 服务端最终结果，202 仅表示已接收 | 查询中断或任务记录缺失时显示结果待确认，先刷新并核对审计，不自动重发 | 保持当前操作位置   | `lib/core/admin-jobs.ts`、`components/admin/reflection/request-action.ts` |
+| Reflection maintenance | 自动或单条升格         | 提交后保持忙碌，轮询后台任务    | 当前页              | 服务端最终结果，202 仅表示已接收 | 查询中断或任务记录缺失时显示结果待确认，先刷新并核对审计，不自动重发 | 保持当前操作位置   | `lib/core/admin-jobs.ts`、`components/admin/reflection/request-action.ts` |
 
 ## Navigation and responsive behavior
 

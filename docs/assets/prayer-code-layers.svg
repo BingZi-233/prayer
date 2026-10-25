@@ -90,7 +90,7 @@
   <rect x="792" y="382" width="458" height="124" rx="21" fill="#FFF" stroke="#D9DFF0" filter="url(#shadow)" />
   <rect x="792" y="382" width="9" height="124" rx="4" fill="#C49AF4" />
   <text x="829" y="420" class="font card-title" fill="#6042A8">L2 · knowledge / 知识</text>
-  <text x="829" y="448" class="font card-copy" fill="#687398">知识库检索、反思整理与内容升格</text>
+  <text x="829" y="448" class="font card-copy" fill="#687398">知识库检索、反思与内容升格</text>
   <text x="829" y="477" class="font small">只依赖 core；与 channels 互不依赖</text>
   <text x="1212" y="420" text-anchor="end" class="font rank" fill="#8A64D6">L2</text>
   <path d="M519 506V532M1021 506V532" fill="none" stroke="#7180B4" stroke-width="2.5" marker-end="url(#arrow)" />
