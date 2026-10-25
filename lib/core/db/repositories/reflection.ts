@@ -247,24 +247,31 @@ export class ReflectionRepository {
   // 整体替换反思库(一次性拆分存量整理块用):单事务只删“快照内”的 human-reflection 条目(按 id,不按 doc),
   // 再插入替换结果 —— 避免删掉 await 期间 poller 并发新增的条目。
   // source 统一 human-reflection:qq:0:{ts}(chatId 0 = 全局归属)。
-  // reflect_compactions 现在只记一次性拆分的审计。
+  // reflect_compactions 现在只记一次性拆分的审计:before_json/after_json 是任意 JSON 数组,
+  // before_count/after_count 为数组长度。旧整理记录是字符串数组;存量拆分写对象数组
+  // (before = 旧块 [{id, content, faq?}],首元素带组完整 FAQ;after = [{text, answer}])。
+  // BEGIN IMMEDIATE:校验与删除/插入之间不会被其它连接插入写。
   replaceReflectionEntries(
     oldIds: number[],
     entries: { content: string; embedding: Float32Array; faq?: string }[],
     sourceTs: number,
-    beforeContents: string[] = [],
-    afterContents: string[] = [],
-    /**
-     * Optional optimistic guard used by callers that run the LLM outside the transaction.  The LLM runs outside
-     * this transaction, so a reviewer may change one of the snapshotted
-     * entries while it is waiting.  Refuse the replacement instead of
-     * deleting a now-rejected/promoted entry.
-     */
-    expectedStatus?: ReflectionStatus,
-    /** 新块 meta 的 review_state(拆分产物传 legacy);指定时无 faq 也写 meta */
-    reviewState?: ReviewState
+    beforeContents: readonly unknown[] = [],
+    afterContents: readonly unknown[] = [],
+    opts: {
+      /**
+       * 乐观校验:LLM 在事务外运行,期间旧块可能被人工驳回/升格/删除;
+       * 任一旧块不存在或状态不符即拒绝替换(返回 false)。
+       */
+      expectedStatus?: ReflectionStatus
+      /** 新块 meta 的 review_state(拆分产物传 legacy);指定时无 faq 也写 meta */
+      reviewState?: ReviewState
+      /** 事务内追加校验(同步);返回 false 则拒绝替换 */
+      precondition?: () => boolean
+    } = {}
   ): boolean {
-    return this.sql.transaction(() => {
+    const { expectedStatus, reviewState, precondition } = opts
+    return this.sql.immediateTransaction(() => {
+      if (precondition && !precondition()) return false
       if (oldIds.length) {
         const ph = oldIds.map(() => "?").join(",")
         if (expectedStatus) {

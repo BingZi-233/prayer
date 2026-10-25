@@ -197,8 +197,7 @@ describe("reflection_meta / reflectionEntries", () => {
         123,
         [],
         ["带摘录", "无摘录"],
-        undefined,
-        "legacy"
+        { reviewState: "legacy" }
       )
     ).toBe(true)
     const byContent = new Map(
@@ -234,8 +233,7 @@ describe("reflection_meta / reflectionEntries", () => {
         99,
         ["旧甲", "旧乙"],
         ["新"],
-        "approved",
-        "legacy"
+        { expectedStatus: "approved", reviewState: "legacy" }
       )
 
     it("旧块有一个已被驳回 → 返回 false,不删不插不写审计", () => {
@@ -257,6 +255,47 @@ describe("reflection_meta / reflectionEntries", () => {
       expect(replace(ids)).toBe(false)
       expect(repo.reflectionEntries().map((e) => e.content)).toEqual(["旧乙"])
       expect(auditRows()).toHaveLength(0)
+    })
+
+    it("precondition 返回 false → 拒绝替换", () => {
+      const ids = seedOld()
+      expect(
+        repo.replaceReflectionEntries(
+          ids,
+          [{ content: "新", embedding: vec() }],
+          99,
+          [],
+          [],
+          { precondition: () => false }
+        )
+      ).toBe(false)
+      expect(repo.reflectionEntries()).toHaveLength(2)
+      expect(auditRows()).toHaveLength(0)
+    })
+
+    it("审计列可承载对象数组", () => {
+      const ids = seedOld()
+      repo.replaceReflectionEntries(
+        ids,
+        [{ content: "新", faq: "摘录", embedding: vec() }],
+        99,
+        [
+          { id: ids[0], content: "旧甲", faq: "完整" },
+          { id: ids[1], content: "旧乙" },
+        ],
+        [{ text: "新", answer: "摘录" }]
+      )
+      const [row] = auditRows()
+      expect(row.before_count).toBe(2)
+      expect(row.after_count).toBe(1)
+      expect(JSON.parse(row.before_json)[0]).toEqual({
+        id: ids[0],
+        content: "旧甲",
+        faq: "完整",
+      })
+      expect(JSON.parse(row.after_json)).toEqual([
+        { text: "新", answer: "摘录" },
+      ])
     })
 
     it("全部仍为 approved → 替换并写审计", () => {
