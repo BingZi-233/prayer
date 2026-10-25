@@ -24,7 +24,8 @@ function sourcePath(value?: string): string {
   return canonicalDbPath(value ?? process.env.DB_PATH ?? "./data/agent.db")
 }
 
-function defaultBackupPath(source: string): string {
+/** 默认备份命名 <db>.<ISO 时间>.bak;scripts/split-legacy-reflections.ts 复用同一命名。 */
+export function defaultBackupPath(source: string): string {
   const timestamp = new Date().toISOString().replaceAll(":", "-")
   return `${databaseOpenPath(source)}.${timestamp}.bak`
 }

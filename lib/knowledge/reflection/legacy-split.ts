@@ -267,19 +267,34 @@ export function segmentFaq(
   return pack(pieces, maxChars, false)
 }
 
+/** 条目基本形状:非空、≤上限、无空行;通过返回 null。 */
+function unitBasicIssue(text: string): string | null {
+  const t = text.trim()
+  if (!t) return "条目为空"
+  if (t.length > SPLIT_UNIT_MAX_CHARS)
+    return `条目超长(${t.length} > ${SPLIT_UNIT_MAX_CHARS})`
+  if (/\n\s*\n/.test(t)) return "条目含空行"
+  return null
+}
+
+/** 模型条目的正文校验(基本形状 + 指代词 + 脱敏占位符);通过返回 null。 */
+function unitTextIssue(text: string): string | null {
+  const basic = unitBasicIssue(text)
+  if (basic) return basic
+  const t = text.trim()
+  if (REFERENCE_RE.test(t)) return "条目含指代词"
+  if (SANITIZE_PLACEHOLDER_RE.test(t)) return "条目含脱敏占位符"
+  return null
+}
+
 /** 条目形状与摘录校验;通过返回 null。 */
 export function unitIssue(
   text: string,
   quotes: string[],
   source: string
 ): string | null {
-  const t = text.trim()
-  if (!t) return "条目为空"
-  if (t.length > SPLIT_UNIT_MAX_CHARS)
-    return `条目超长(${t.length} > ${SPLIT_UNIT_MAX_CHARS})`
-  if (/\n\s*\n/.test(t)) return "条目含空行"
-  if (REFERENCE_RE.test(t)) return "条目含指代词"
-  if (SANITIZE_PLACEHOLDER_RE.test(t)) return "条目含脱敏占位符"
+  const textIssue = unitTextIssue(text)
+  if (textIssue) return textIssue
   if (!quotes.length) return "缺少原文摘录"
   if (quotes.some((q) => q.trim().length < SPLIT_QUOTE_MIN_CHARS))
     return `原文摘录过短(< ${SPLIT_QUOTE_MIN_CHARS} 字)`
@@ -710,6 +725,32 @@ function readPlannedGroup(
   return { faq, contents }
 }
 
+/**
+ * apply 前对计划条目的防御性复核(计划 JSON 可能被手改或损坏),通过返回 null。
+ * - 兜底条目(answer === text):本身就是原文逐字片段,计划阶段不做指代/占位符校验
+ *   (原文可能本来就含「上述」等词),这里只复核基本形状且必须是当前 FAQ 的子串。
+ * - 模型条目:复核正文(长度/空行/指代/占位符),且 answer 的每一行都必须是当前 FAQ
+ *   的逐字子串。按行而非按摘录判断:摘录本身可能跨行,拆行后的每段仍是子串;
+ *   不在这里复查摘录最短字数,避免跨行摘录拆出的短行误伤 dry-run 已接受的条目。
+ */
+export function plannedUnitIssue(
+  unit: { text: string; answer: string },
+  faq: string
+): string | null {
+  if (unit.answer === unit.text) {
+    return (
+      unitBasicIssue(unit.text) ??
+      (faq.includes(unit.text) ? null : "兜底条目不是当前 FAQ 的逐字子串")
+    )
+  }
+  return (
+    unitTextIssue(unit.text) ??
+    (unit.answer.split("\n").every((line) => faq.includes(line))
+      ? null
+      : "摘录不是当前 FAQ 的逐字子串")
+  )
+}
+
 export type ApplyOutcome = "replaced" | "refused" | "errored"
 
 export interface ApplyResult {
@@ -748,6 +789,10 @@ export async function applyLegacySplit(
       const refusal = await withKbMutationLock(async () => {
         const snap = readPlannedGroup(repo, g, plan.legacyBefore)
         if ("refused" in snap) return snap.refused
+        for (const [i, u] of g.units.entries()) {
+          const issue = plannedUnitIssue(u, snap.faq)
+          if (issue) return `条目 ${i + 1} 复核未通过:${issue}`
+        }
         let raced = "事务内核对未通过"
         const ok = repo.replaceReflectionEntries(
           g.chunkIds,

@@ -8,6 +8,7 @@ import {
   segmentFaq,
   sentenceChunks,
   unitIssue,
+  plannedUnitIssue,
   planLegacySplit,
   applyLegacySplit,
   serializeSplitPlan,
@@ -743,6 +744,61 @@ describe("applyLegacySplit", () => {
     expect(
       repo.reflectionEntries().find((e) => e.id === old2[0])
     ).toBeUndefined()
+  })
+
+  const q = units[0].sourceQuotes[0]
+  it.each([
+    ["指代词", { text: "同上,cc-sale 支持第三方。", answer: q }, /指代词/],
+    ["占位符", { text: "cc-sale 支持 [TOKEN] 接入。", answer: q }, /占位符/],
+    ["超长", { text: "长".repeat(381), answer: q }, /超长/],
+    [
+      "摘录非子串",
+      { text: q, answer: `${q}\n原文里没有这句话。` },
+      /摘录不是当前 FAQ 的逐字子串/,
+    ],
+    // 兜底条目(answer === text)必须是 FAQ 原文片段
+    [
+      "兜底非子串",
+      { text: "原文里没有这句话。", answer: "原文里没有这句话。" },
+      /兜底条目/,
+    ],
+  ])(
+    "计划条目被手改(%s)→ 该组 refused,其余组照常替换",
+    async (_name, unit, reason) => {
+      const { old1, old2, saved } = await twoGroups()
+      const tampered: SerializedSplitPlan = {
+        ...saved,
+        groups: [{ ...saved.groups[0], units: [unit] }, saved.groups[1]],
+      }
+      const res = await apply(tampered)
+      expect(res).toMatchObject({ replaced: 1, refused: 1, errored: 0 })
+      const refused = res.details.find((d) => d.outcome === "refused")!
+      expect(refused.chunkIds).toEqual(old1)
+      expect(refused.reason).toMatch(/条目 1 复核未通过/)
+      expect(refused.reason).toMatch(reason)
+      const entries = repo.reflectionEntries()
+      for (const id of old1)
+        expect(entries.find((e) => e.id === id)).toBeDefined()
+      expect(entries.find((e) => e.id === old2[0])).toBeUndefined()
+      expect(entries.find((e) => e.content === unit.text)).toBeUndefined()
+    }
+  )
+
+  it("复核:合法的兜底条目与跨行摘录条目可通过", () => {
+    // 兜底条目是原文片段,原文含「上述」也不误伤
+    expect(
+      plannedUnitIssue(
+        { text: "如上述配置。", answer: "如上述配置。" },
+        "前文。如上述配置。后文。"
+      )
+    ).toBeNull()
+    // 跨行摘录拆出的短行不受最短摘录限制
+    expect(
+      plannedUnitIssue(
+        { text: "PackyAPI 的说明。", answer: "第一行说明很长的内容\n短" },
+        "第一行说明很长的内容\n短\n第三行。"
+      )
+    ).toBeNull()
   })
 
   it("只有 split/fallback 且有条目的组会被替换", async () => {
