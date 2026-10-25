@@ -17,6 +17,10 @@ export interface Entry {
   question: string | null
   answer: string | null
   status?: "pending" | "approved" | "rejected" | "promoted"
+  // 升格评审账本(GET /api/reflection 的条目摘要已带;null = 未评审)
+  reviewState?: "accepted" | "declined" | "failed" | "legacy" | null
+  reviewAttempts?: number
+  reviewNote?: string | null
 }
 // 单条条目全文(/api/reflection/entries/[id] 的响应),列表只带预览截断
 export interface EntryDetail {
@@ -25,6 +29,9 @@ export interface EntryDetail {
   question: string | null
   answer: string | null
   status: "pending" | "approved" | "rejected" | "promoted"
+  reviewState?: "accepted" | "declined" | "failed" | "legacy" | null
+  reviewAttempts?: number
+  reviewNote?: string | null
 }
 export interface Data {
   config: {

@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { RelativeTime } from "@/components/relative-time"
 import { ItemCard } from "@/components/admin/item-card"
+import { reviewBadge, reviewNoteLine } from "./review-label"
 import type { Entry, EntryDetail } from "./types"
 
 // 单条条目行:列表只带预览截断(SQL 内截断),首次展开才拉单条详情拿全文
@@ -28,6 +29,9 @@ export function EntryRow({
   const truncated = e.contentLen != null && e.contentLen > e.content.length
   const hasSource = Boolean(e.question || e.answer)
   const st = e.status ?? "approved"
+  const badge = reviewBadge(e)
+  // 详情接口与列表同源,展开后以详情为准(列表是 3s 轮询,可能已更新)
+  const noteLine = reviewNoteLine(detail ?? e)
 
   async function load() {
     if (detail || pending) return
@@ -50,9 +54,7 @@ export function EntryRow({
     <ItemCard
       meta={
         <>
-          {e.groupId === 0 ? (
-            <Badge variant="outline">已整理</Badge>
-          ) : e.groupId != null ? (
+          {e.groupId != null && e.groupId !== 0 ? (
             <Badge variant="secondary">{groupName(e.groupId)}</Badge>
           ) : null}
           {st === "rejected" ? (
@@ -64,6 +66,11 @@ export function EntryRow({
           ) : (
             <Badge variant="default">已入库</Badge>
           )}
+          {badge ? (
+            <Badge variant={badge.variant} title={badge.title}>
+              {badge.text}
+            </Badge>
+          ) : null}
           <RelativeTime ts={e.ts} />
           <span className="ml-auto flex gap-1">
             {st !== "approved" && st !== "promoted" && (
@@ -110,7 +117,7 @@ export function EntryRow({
         {e.content}
         {truncated ? "…" : ""}
       </p>
-      {(hasSource || truncated) && (
+      {(hasSource || truncated || noteLine) && (
         <details
           className="mt-2"
           onToggle={(ev) => {
@@ -122,9 +129,16 @@ export function EntryRow({
               ? "全文与来源问答"
               : truncated
                 ? "查看全文"
-                : "来源问答"}
+                : hasSource
+                  ? "来源问答"
+                  : "升格情况"}
           </summary>
           <div className="mt-1.5 flex flex-col gap-1 border-l-2 pl-2 text-xs">
+            {noteLine && (
+              <p className="whitespace-pre-wrap text-muted-foreground">
+                {noteLine}
+              </p>
+            )}
             {truncated && (
               <p className="whitespace-pre-wrap">
                 {err ? `加载失败:${err}` : (detail?.content ?? "加载中…")}
