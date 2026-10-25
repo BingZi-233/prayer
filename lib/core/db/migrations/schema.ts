@@ -1295,3 +1295,35 @@ export function migrateToVersion10(db: Database.Database): void {
       ON admin_audit_events(result, started_at DESC, id DESC);
   `)
 }
+
+const REVIEW_LEDGER_COLUMNS = [
+  "review_state TEXT",
+  "review_attempts INTEGER NOT NULL DEFAULT 0",
+  "review_note TEXT",
+] as const
+
+/** v11 结构补齐:升格评审账本三列(可重复执行,只补结构不改数据)。 */
+export function repairVersion11(db: Database.Database): void {
+  if (!tableExists(db, "reflection_meta")) return
+  const existing = tableColumns(db, "reflection_meta")
+  for (const col of REVIEW_LEDGER_COLUMNS)
+    if (!existing.has(col.split(" ")[0]!))
+      db.exec(`ALTER TABLE reflection_meta ADD COLUMN ${col}`)
+}
+
+/**
+ * v11:反思升格评审账本。存量整理块(source 为 human-reflection:qq:0:*)标 legacy,
+ * 部署即退出自动升格,等一次性拆分与阶段 2 人工处置。数据改写只在 up 里做一次,
+ * repair 只补结构,不改变业务语义。
+ */
+export function migrateToVersion11(db: Database.Database): void {
+  repairVersion11(db)
+  if (!tableExists(db, "reflection_meta")) return
+  db.exec(`
+    UPDATE reflection_meta SET review_state = 'legacy'
+    WHERE review_state IS NULL AND chunk_id IN (
+      SELECT id FROM kb_chunks
+      WHERE doc = 'human-reflection' AND source LIKE 'human-reflection:qq:0:%'
+    )
+  `)
+}

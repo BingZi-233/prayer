@@ -17,6 +17,10 @@ export interface Entry {
   question: string | null
   answer: string | null
   status?: "pending" | "approved" | "rejected" | "promoted"
+  // 升格评审账本(GET /api/reflection 的条目摘要已带;null = 未评审)
+  reviewState?: "accepted" | "declined" | "failed" | "legacy" | null
+  reviewAttempts?: number
+  reviewNote?: string | null
 }
 // 单条条目全文(/api/reflection/entries/[id] 的响应),列表只带预览截断
 export interface EntryDetail {
@@ -25,17 +29,9 @@ export interface EntryDetail {
   question: string | null
   answer: string | null
   status: "pending" | "approved" | "rejected" | "promoted"
-}
-// 列表只拿摘要:before/after 全文是整批知识条目,曾把 3 秒轮询的响应顶到 8MB+
-export interface Compaction {
-  id: number
-  ts: number
-  beforeCount: number
-  afterCount: number
-}
-export interface CompactionDetail extends Compaction {
-  before: string[]
-  after: string[]
+  reviewState?: "accepted" | "declined" | "failed" | "legacy" | null
+  reviewAttempts?: number
+  reviewNote?: string | null
 }
 export interface Data {
   config: {
@@ -43,13 +39,10 @@ export interface Data {
     lookbackMs: number
     settleMs: number
     windowMax: number
-    compactMs: number
-    compactMinEntries: number
     promoteMs: number
     promoteMinEntries: number
     promoteMaxPerRun: number
   }
   groups: GroupRow[]
   entries: Entry[]
-  compactions: Compaction[]
 }

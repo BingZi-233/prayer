@@ -28,6 +28,9 @@ export interface ReflectionRow {
   question: string | null
   answer: string | null
   status: string
+  review_state: string | null
+  review_attempts: number
+  review_note: string | null
 }
 
 export interface ReflectionSummaryRow {
@@ -38,22 +41,9 @@ export interface ReflectionSummaryRow {
   question: string | null
   answer: string | null
   status: string
-}
-
-export interface CompactionSummaryRow {
-  id: number
-  ts: number
-  before_count: number
-  after_count: number
-}
-
-export interface CompactionRow {
-  id: number
-  ts: number
-  before_count: number
-  after_count: number
-  before_json: string
-  after_json: string
+  review_state: string | null
+  review_attempts: number
+  review_note: string | null
 }
 
 export interface OpenTicketRow {

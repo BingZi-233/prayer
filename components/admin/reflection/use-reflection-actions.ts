@@ -8,9 +8,9 @@ import type { Data } from "./types"
 import { runReflectionAction } from "./request-action"
 
 /**
- * reflection 页的数据、派生计数与三个动作。
+ * reflection 页的数据、派生计数与两个动作。
  *
- * 三者互不依赖:compact 用 busy,autoPromote 用 promoteBusy,act 用 acting(各管各的
+ * 两者互不依赖:autoPromote 用 promoteBusy,act 用 acting(各管各的
  * 「正在操作哪一行」的锁,彼此不读对方的状态)。共享的只有 /api/reflection 这一份
  * 轮询数据与 refresh —— 所以整体收进一个 hook,不必按动作再拆。
  */
@@ -21,7 +21,6 @@ export function useReflectionActions() {
     loading,
     refresh,
   } = usePolling<Data>("/api/reflection")
-  const [busy, setBusy] = useState(false)
   const [promoteBusy, setPromoteBusy] = useState(false)
   const [acting, setActing] = useState<number | null>(null)
   const lifecycle = useRef<AbortController | null>(null)
@@ -32,59 +31,15 @@ export function useReflectionActions() {
     return () => controller.abort()
   }, [])
   // 3s 轮询 + 操作都会触发 render:计数只随数据变化重算
-  const { entryCount, approvedCount } = useMemo(() => {
-    const es = d?.entries ?? []
-    return {
-      entryCount: es.length,
-      approvedCount: es.filter((e) => (e.status ?? "approved") === "approved")
+  const approvedCount = useMemo(
+    () =>
+      (d?.entries ?? []).filter((e) => (e.status ?? "approved") === "approved")
         .length,
-    }
-  }, [d])
-  const willCompact = d ? approvedCount >= d.config.compactMinEntries : false
+    [d]
+  )
   const willPromote = d
     ? approvedCount >= d.config.promoteMinEntries && d.config.promoteMs > 0
     : false
-
-  async function compact() {
-    const controller = lifecycle.current
-    if (!controller || controller.signal.aborted) return
-    setBusy(true)
-    try {
-      const r = await runReflectionAction<{
-        ran: boolean
-        before: number
-        after: number
-      }>(
-        "/api/reflection/compact",
-        { method: "POST" },
-        () => {
-          if (!controller.signal.aborted)
-            toast.info("整理任务已提交，正在等待结果。")
-        },
-        controller.signal
-      )
-      if (controller.signal.aborted) return
-      if (r.ok) {
-        toast.success(
-          r.data.ran
-            ? `已整理:${r.data.before} → ${r.data.after} 条`
-            : "整理完成:无变化(未达阈值或结果不变)"
-        )
-      } else {
-        toast.error(
-          `${r.outcomeUnknown ? "整理结果待确认" : "整理失败"}:${r.error}`
-        )
-      }
-    } catch (e) {
-      if (!controller.signal.aborted)
-        toast.error(`整理失败:${e instanceof Error ? e.message : String(e)}`)
-    } finally {
-      if (!controller.signal.aborted) {
-        await refresh({ force: true })
-        if (!controller.signal.aborted) setBusy(false)
-      }
-    }
-  }
 
   async function autoPromote() {
     const controller = lifecycle.current
@@ -174,14 +129,10 @@ export function useReflectionActions() {
     error,
     loading,
     refresh,
-    busy,
     promoteBusy,
     acting,
-    entryCount,
     approvedCount,
-    willCompact,
     willPromote,
-    compact,
     autoPromote,
     act,
   }

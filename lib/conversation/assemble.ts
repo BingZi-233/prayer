@@ -8,7 +8,6 @@ import { registerReplyMapper } from "./reply-mapper"
 import { registerMessageBuffer } from "./message-buffer"
 import { registerTopicPoller } from "./pollers/topic"
 import { registerReflectionPoller } from "../knowledge/reflection/poller"
-import { registerReflectionCompactor } from "../knowledge/reflection/compactor"
 import { registerReflectionPromoter } from "../knowledge/reflection/promoter"
 import { registerErrorHandler } from "./error-handler"
 import { registerUnansweredPoller } from "./pollers/unanswered"
@@ -41,12 +40,10 @@ export interface AssembleDeps {
   reflectLookbackMs?: number
   reflectSettleMs?: number
   reflectWindowMax?: number
-  reflectCompactMs?: number
-  reflectCompactMinEntries?: number
   reflectPromoteMs?: number
   reflectPromoteMinEntries?: number
   reflectPromoteMaxPerRun?: number
-  // 反思沉淀/整理后是否通知管理群。缺省 true(保持既有行为)
+  // 反思沉淀/升格后是否通知管理群。缺省 true(保持既有行为)
   reflectNotifyAdmin?: boolean
   // 会话空闲超时(ms):超时则下条消息开全新对话,不 resume 旧会话。缺省 5 分钟
   resumeTtlMs?: number
@@ -186,17 +183,6 @@ export function assemble(deps: AssembleDeps): () => void {
         isBypassEnabled: deps.isBypassEnabled,
       })
     )
-    if ((deps.reflectCompactMs ?? 3_600_000) > 0) {
-      cleanups.push(
-        registerReflectionCompactor({
-          repo,
-          adminSurface,
-          compactMs: deps.reflectCompactMs,
-          minEntries: deps.reflectCompactMinEntries,
-          notifyAdmin,
-        })
-      )
-    }
     if ((deps.reflectPromoteMs ?? 86_400_000) > 0) {
       cleanups.push(
         registerReflectionPromoter({

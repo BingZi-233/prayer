@@ -9,7 +9,9 @@ import {
   migrateToVersion8,
   migrateToVersion9,
   migrateToVersion10,
+  migrateToVersion11,
   repairVersion2,
+  repairVersion11,
 } from "./schema.ts"
 
 /**
@@ -70,6 +72,12 @@ export const MIGRATIONS: readonly MigrationStep[] = [
     name: "管理变更运维审计",
     up: migrateToVersion10,
     repair: migrateToVersion10,
+  },
+  {
+    version: 11,
+    name: "反思升格评审账本",
+    up: migrateToVersion11,
+    repair: repairVersion11,
   },
 ]
 

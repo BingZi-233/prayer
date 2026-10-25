@@ -5,6 +5,22 @@ import { Repo } from "@/lib/core/db/repo"
 let repo: Repo
 const vec = () => new Float32Array([1, 0, 0])
 
+/** reflect_compactions 现在只记一次性拆分审计;直接读表断言(仓储已无读取方法)。 */
+function auditRows(): {
+  ts: number
+  before_count: number
+  after_count: number
+  before_json: string
+  after_json: string
+}[] {
+  const db = (repo as unknown as { db: import("better-sqlite3").Database }).db
+  return db
+    .prepare(
+      "SELECT ts, before_count, after_count, before_json, after_json FROM reflect_compactions ORDER BY ts DESC"
+    )
+    .all() as ReturnType<typeof auditRows>
+}
+
 beforeEach(() => {
   repo = new Repo(openDb(":memory:", 3))
 })
@@ -83,7 +99,7 @@ describe("reflection_meta / reflectionEntries", () => {
     )
   })
 
-  it("replaceReflectionEntries → 删旧 meta(不留孤儿)+ 记 compaction", () => {
+  it("replaceReflectionEntries → 删旧 meta(不留孤儿)+ 写拆分审计", () => {
     const id = repo.insertKbEntry(
       "human-reflection",
       "旧条目",
@@ -109,26 +125,50 @@ describe("reflection_meta / reflectionEntries", () => {
       answer: null,
       status: "approved",
     })
-    const rc = repo.recentCompactions(5)
+    const rc = auditRows()
     expect(rc).toHaveLength(1)
     expect(rc[0]).toMatchObject({
       ts: 9_000_000,
-      beforeCount: 1,
-      afterCount: 1,
-      before: ["旧条目"],
-      after: ["新条目"],
+      before_count: 1,
+      after_count: 1,
     })
+    expect(JSON.parse(rc[0].before_json)).toEqual(["旧条目"])
+    expect(JSON.parse(rc[0].after_json)).toEqual(["新条目"])
   })
 
-  it("recentCompactions 按 ts 倒序、limit 生效", () => {
-    for (const ts of [100, 300, 200]) {
-      repo.replaceReflectionEntries([], [], ts, [`b${ts}`], [`a${ts}`])
-    }
-    const rc = repo.recentCompactions(2)
-    expect(rc.map((r) => r.ts)).toEqual([300, 200])
+  it("replaceReflectionEntries 空条目 → 只删旧块与 meta,审计 after 为空数组", () => {
+    const id = repo.insertKbEntry(
+      "human-reflection",
+      "旧碎片",
+      "human-reflection:qq:0:1",
+      vec()
+    )
+    repo.insertReflectionMeta(id, "qq", "0", "q", "完整 FAQ")
+    expect(
+      repo.replaceReflectionEntries(
+        [id],
+        [],
+        9_000_000,
+        [{ id, content: "旧碎片", faq: "完整 FAQ" }],
+        [],
+        { expectedStatus: "approved", reviewState: "legacy" }
+      )
+    ).toBe(true)
+    expect(repo.reflectionEntries()).toHaveLength(0)
+    const db = (repo as unknown as { db: import("better-sqlite3").Database }).db
+    expect(
+      db.prepare("SELECT COUNT(*) AS n FROM reflection_meta").get()
+    ).toEqual({ n: 0 })
+    expect(db.prepare("SELECT COUNT(*) AS n FROM kb_vec").get()).toEqual({
+      n: 0,
+    })
+    const rc = auditRows()
+    expect(rc).toHaveLength(1)
+    expect(rc[0]).toMatchObject({ before_count: 1, after_count: 0 })
+    expect(JSON.parse(rc[0].after_json)).toEqual([])
   })
 
-  it("整理切块与完整 FAQ 元数据同事务写入,后续可恢复完整上下文", () => {
+  it("替换切块与完整 FAQ 元数据同事务写入,后续可恢复完整上下文", () => {
     const faq = "问:如何操作?\n答:先配置,再校验;失败时回退,保留所有步骤与例外。"
     expect(
       repo.replaceReflectionEntries(
@@ -153,7 +193,7 @@ describe("reflection_meta / reflectionEntries", () => {
     }
   })
 
-  it("整理事务向量写入失败时回滚 chunk、元数据与整理记录", () => {
+  it("替换事务向量写入失败时回滚 chunk、元数据与审计记录", () => {
     expect(() =>
       repo.replaceReflectionEntries(
         [],
@@ -171,76 +211,130 @@ describe("reflection_meta / reflectionEntries", () => {
       )
     ).toThrow()
     expect(repo.reflectionEntries()).toHaveLength(0)
-    expect(repo.recentCompactions(10)).toHaveLength(0)
+    expect(auditRows()).toHaveLength(0)
     const db = (repo as unknown as { db: import("better-sqlite3").Database }).db
     expect(
       db.prepare("SELECT COUNT(*) AS n FROM reflection_meta").get()
     ).toEqual({ n: 0 })
   })
-})
 
-describe("整理记录摘要 / 详情分离", () => {
-  // 需要直接改库造坏 JSON,单独持有 Database 句柄
-  let db: ReturnType<typeof openDb>
-  beforeEach(() => {
-    db = openDb(":memory:", 3)
-    repo = new Repo(db)
-  })
-
-  it("recentCompactionSummaries 不带 before/after 全文", () => {
-    repo.replaceReflectionEntries([], [], 1_000, ["旧甲", "旧乙"], ["新甲"])
-    const rows = repo.recentCompactionSummaries(10)
-    expect(rows).toHaveLength(1)
-    expect(rows[0]).toEqual({
-      id: rows[0].id,
-      ts: 1_000,
-      beforeCount: 2,
-      afterCount: 1,
+  it("reviewState 写入新块 meta(拆分产物标 legacy)", () => {
+    expect(
+      repo.replaceReflectionEntries(
+        [],
+        [
+          { content: "带摘录", faq: "摘录", embedding: vec() },
+          { content: "无摘录", embedding: vec() },
+        ],
+        123,
+        [],
+        ["带摘录", "无摘录"],
+        { reviewState: "legacy" }
+      )
+    ).toBe(true)
+    const byContent = new Map(
+      repo.reflectionEntries().map((e) => [e.content, e])
+    )
+    expect(byContent.get("带摘录")).toMatchObject({
+      answer: "摘录",
+      reviewState: "legacy",
     })
-    // 摘要行绝不能夹带全文字段(轮询体积失控的根因)
-    expect(Object.keys(rows[0]).sort()).toEqual([
-      "afterCount",
-      "beforeCount",
-      "id",
-      "ts",
-    ])
-  })
-
-  it("recentCompactionSummaries 按 ts 倒序、limit 生效", () => {
-    for (const ts of [100, 300, 200]) {
-      repo.replaceReflectionEntries([], [], ts, [`b${ts}`], [`a${ts}`])
-    }
-    expect(repo.recentCompactionSummaries(2).map((r) => r.ts)).toEqual([
-      300, 200,
-    ])
-  })
-
-  it("compactionDetail 按 id 取单条全文", () => {
-    repo.replaceReflectionEntries([], [], 2_000, ["旧甲", "旧乙"], ["新甲"])
-    const id = repo.recentCompactionSummaries(1)[0].id
-    expect(repo.compactionDetail(id)).toEqual({
-      id,
-      ts: 2_000,
-      beforeCount: 2,
-      afterCount: 1,
-      before: ["旧甲", "旧乙"],
-      after: ["新甲"],
+    // 指定 reviewState 时即使没有 faq 也要写 meta,否则账本状态丢失
+    expect(byContent.get("无摘录")).toMatchObject({
+      answer: null,
+      reviewState: "legacy",
     })
   })
 
-  it("compactionDetail 查不到返回 null", () => {
-    expect(repo.compactionDetail(999999)).toBeNull()
-  })
+  describe("expectedStatus 乐观校验", () => {
+    const seedOld = () =>
+      ["旧甲", "旧乙"].map((c) => {
+        const id = repo.insertKbEntry(
+          "human-reflection",
+          c,
+          "human-reflection:qq:0:1",
+          vec()
+        )
+        repo.insertReflectionMeta(id, "qq", "0", "q", "完整")
+        return id
+      })
+    const replace = (ids: number[]) =>
+      repo.replaceReflectionEntries(
+        ids,
+        [{ content: "新", faq: "摘录", embedding: vec() }],
+        99,
+        ["旧甲", "旧乙"],
+        ["新"],
+        { expectedStatus: "approved", reviewState: "legacy" }
+      )
 
-  it("compactionDetail 遇坏 JSON 回退空数组", () => {
-    repo.replaceReflectionEntries([], [], 3_000, ["旧"], ["新"])
-    const id = repo.recentCompactionSummaries(1)[0].id
-    db.prepare(
-      "UPDATE reflect_compactions SET before_json = '{坏', after_json = 'null' WHERE id = ?"
-    ).run(id)
-    expect(repo.compactionDetail(id)).toMatchObject({
-      before: [],
-      after: [],
+    it("旧块有一个已被驳回 → 返回 false,不删不插不写审计", () => {
+      const ids = seedOld()
+      repo.setReflectionStatus(ids[1], "rejected")
+      expect(replace(ids)).toBe(false)
+      expect(
+        repo
+          .reflectionEntries()
+          .map((e) => e.content)
+          .sort()
+      ).toEqual(["旧乙", "旧甲"].sort())
+      expect(auditRows()).toHaveLength(0)
+    })
+
+    it("旧块有一个已被删除 → 返回 false", () => {
+      const ids = seedOld()
+      repo.deleteKbChunk(ids[0])
+      expect(replace(ids)).toBe(false)
+      expect(repo.reflectionEntries().map((e) => e.content)).toEqual(["旧乙"])
+      expect(auditRows()).toHaveLength(0)
+    })
+
+    it("precondition 返回 false → 拒绝替换", () => {
+      const ids = seedOld()
+      expect(
+        repo.replaceReflectionEntries(
+          ids,
+          [{ content: "新", embedding: vec() }],
+          99,
+          [],
+          [],
+          { precondition: () => false }
+        )
+      ).toBe(false)
+      expect(repo.reflectionEntries()).toHaveLength(2)
+      expect(auditRows()).toHaveLength(0)
+    })
+
+    it("审计列可承载对象数组", () => {
+      const ids = seedOld()
+      repo.replaceReflectionEntries(
+        ids,
+        [{ content: "新", faq: "摘录", embedding: vec() }],
+        99,
+        [
+          { id: ids[0], content: "旧甲", faq: "完整" },
+          { id: ids[1], content: "旧乙" },
+        ],
+        [{ text: "新", answer: "摘录" }]
+      )
+      const [row] = auditRows()
+      expect(row.before_count).toBe(2)
+      expect(row.after_count).toBe(1)
+      expect(JSON.parse(row.before_json)[0]).toEqual({
+        id: ids[0],
+        content: "旧甲",
+        faq: "完整",
+      })
+      expect(JSON.parse(row.after_json)).toEqual([
+        { text: "新", answer: "摘录" },
+      ])
+    })
+
+    it("全部仍为 approved → 替换并写审计", () => {
+      const ids = seedOld()
+      expect(replace(ids)).toBe(true)
+      expect(repo.reflectionEntries().map((e) => e.content)).toEqual(["新"])
+      expect(auditRows()).toHaveLength(1)
     })
   })
 })
@@ -278,5 +372,108 @@ describe("deleteKbChunk", () => {
     )
     expect(repo.deleteKbChunk(id)).toBe(true)
     expect(repo.reflectionEntries()).toHaveLength(0)
+  })
+})
+
+describe("升格评审账本", () => {
+  const seed = (source = "human-reflection:qq:100:5") => {
+    const id = repo.insertKbEntry("human-reflection", "faq", source, vec())
+    repo.insertReflectionMeta(id, "qq", "100", "问", "答")
+    return id
+  }
+  const entry = (id: number) =>
+    repo.reflectionEntries().find((r) => r.id === id)!
+  let db: ReturnType<typeof openDb>
+  beforeEach(() => {
+    db = openDb(":memory:", 3)
+    repo = new Repo(db)
+  })
+
+  it("新反思默认未评审", () => {
+    const e = entry(seed())
+    expect(e.reviewState).toBeNull()
+    expect(e.reviewAttempts).toBe(0)
+    expect(e.reviewNote).toBeNull()
+  })
+
+  it("摘要与详情同样带账本字段", () => {
+    const id = seed()
+    repo.setReviewState(id, "declined", "无复用价值")
+    expect(
+      repo.reflectionEntrySummaries().find((r) => r.id === id)
+    ).toMatchObject({ reviewState: "declined", reviewNote: "无复用价值" })
+    expect(repo.reflectionEntryDetail(id)).toMatchObject({
+      reviewState: "declined",
+    })
+  })
+
+  it("可重现失败计次,达上限转 failed;不计次只写 note", () => {
+    const id = seed()
+    repo.recordPromoteFailure(id, "超时", false, 3)
+    expect(entry(id)).toMatchObject({
+      reviewAttempts: 0,
+      reviewState: null,
+      reviewNote: "超时",
+    })
+    repo.recordPromoteFailure(id, "x", true, 3)
+    repo.recordPromoteFailure(id, "x", true, 3)
+    expect(entry(id).reviewState).toBeNull()
+    repo.recordPromoteFailure(id, "单元超长(612 > 500)", true, 3)
+    expect(entry(id)).toMatchObject({
+      reviewState: "failed",
+      reviewAttempts: 3,
+      reviewNote: "单元超长(612 > 500)",
+    })
+  })
+
+  it("恢复入库清空账本;legacy 保持 legacy", () => {
+    const id = seed()
+    repo.recordPromoteFailure(id, "x", true, 1)
+    repo.setReflectionStatus(id, "rejected")
+    expect(entry(id).reviewState).toBe("failed")
+    repo.setReflectionStatus(id, "approved")
+    expect(entry(id)).toMatchObject({
+      status: "approved",
+      reviewState: null,
+      reviewAttempts: 0,
+      reviewNote: null,
+    })
+
+    const legacy = seed("human-reflection:qq:0:9")
+    repo.setReviewState(legacy, "legacy", "存量")
+    repo.recordPromoteFailure(legacy, "存量", true, 3)
+    repo.setReflectionStatus(legacy, "approved")
+    expect(entry(legacy)).toMatchObject({
+      reviewState: "legacy",
+      reviewAttempts: 1,
+      reviewNote: "存量",
+    })
+  })
+
+  it("不计次调用不会改变状态,即使 attempts 已达上限", () => {
+    const id = seed()
+    repo.recordPromoteFailure(id, "a", true, 3)
+    repo.recordPromoteFailure(id, "a", true, 3)
+    repo.recordPromoteFailure(id, "a", true, 3)
+    repo.setReviewState(id, "accepted")
+    repo.recordPromoteFailure(id, "超时", false, 3)
+    expect(entry(id)).toMatchObject({
+      reviewState: "accepted",
+      reviewAttempts: 3,
+      reviewNote: "超时",
+    })
+  })
+
+  it("对不存在的 chunk 记账不会造孤儿 meta", () => {
+    repo.setReviewState(99999, "declined", "n")
+    repo.recordPromoteFailure(99999, "n", true, 3)
+    expect(repo.reflectionEntries()).toHaveLength(0)
+    expect(
+      (
+        db.prepare("SELECT COUNT(*) AS n FROM reflection_meta").get() as {
+          n: number
+        }
+      ).n
+    ).toBe(0)
   })
 })

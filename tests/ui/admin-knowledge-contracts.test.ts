@@ -47,12 +47,11 @@ describe("admin knowledge page contracts", () => {
       read("app/admin/reflection/page.tsx"),
       read("components/admin/reflection/use-reflection-actions.ts"),
     ])
-    // 三个动作搬进了 hook,页面只做编排 —— 断言同时读两者:守的是
+    // 两个动作搬进了 hook,页面只做编排 —— 断言同时读两者:守的是
     // 「这套动作的语义仍在」,不是「必须写在某个文件里」。
     const source = `${page}\n${hook}`
 
     expect(source).toContain('action: "approve" | "reject" | "promote"')
-    expect(source).toContain('"/api/reflection/compact"')
     expect(source).toContain('"/api/reflection/promote"')
     expect(source).toContain('method: "PATCH"')
   })

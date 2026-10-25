@@ -32,9 +32,23 @@ import {
   withReflectionMaintenanceLock,
 } from "./maintenance-lock"
 import { promotionSourceAnswer } from "./source-context"
+import { countsAsEntryFailure, MAX_PROMOTE_ATTEMPTS } from "./promote-failure"
 
 const MAX_REVIEW_ENTRIES = 20
 const MAX_REVIEW_CHARS = 24_000
+
+/** 超预算失败原因:手动路径作为失败 reason 返回,自动路径写入 review_note。 */
+export const OVER_REVIEW_BUDGET_REASON = "升格来源超过单批字符预算"
+
+/**
+ * 单条(answer 已替换为升格来源)序列化后是否超过单批评审字符预算。
+ * 单条就撑爆批预算时重试也不会变小;手动与自动两条路径共用这一判断。
+ */
+function exceedsReviewBudget(entry: ReflectionEntry): boolean {
+  return JSON.stringify(entry).length > MAX_REVIEW_CHARS
+}
+/** 单轮最多评审批数:评审是定时花费的主体,封顶让每天的 LLM 调用有上界 */
+const MAX_REVIEW_BATCHES_PER_RUN = 3
 
 export interface ReflectionPromoterDeps {
   repo: Repo
@@ -179,27 +193,6 @@ function decisionsFromPayload(
   return out
 }
 
-/** 校验决策:只保留候选 id 内的;promote=true 截断到 maxPerRun */
-export function selectPromoteIds(
-  decisions: Decision[] | null,
-  candidateIds: number[],
-  maxPerRun: number
-): { ok: true; ids: number[] } | { ok: false; reason: string } {
-  if (!decisions) return { ok: false, reason: "无法解析 decisions" }
-  const allowed = new Set(candidateIds)
-  const ids: number[] = []
-  const seen = new Set<number>()
-  for (const d of decisions) {
-    if (!d.promote) continue
-    if (!allowed.has(d.id)) continue // 忽略编造 id
-    if (seen.has(d.id)) continue
-    seen.add(d.id)
-    ids.push(d.id)
-    if (ids.length >= maxPerRun) break
-  }
-  return { ok: true, ids }
-}
-
 /** rel 是否已是磁盘上的真实知识文档 */
 function kbDocExists(cwd: string, rel: string): boolean {
   const abs = safeKbAbsAt(join(cwd, "docs/kb"), rel)
@@ -246,10 +239,8 @@ async function promoteEntryUnlocked(
     entry,
     entry.chatId === "0" ? repo.reflectionEntries() : []
   )
-  if (
-    JSON.stringify({ ...entry, answer: sourceAnswer }).length > MAX_REVIEW_CHARS
-  )
-    return { ok: false, reason: "升格来源超过单批字符预算,保留原条目" }
+  if (exceedsReviewBudget({ ...entry, answer: sourceAnswer }))
+    return { ok: false, reason: OVER_REVIEW_BUDGET_REASON }
 
   const now = deps.now ?? (() => Date.now())
   const cwd = deps.cwd ?? process.cwd()
@@ -364,19 +355,40 @@ export function runPromote(
   return task
 }
 
+/**
+ * 自动升格候选:approved 且账本为未评审或 accepted。
+ * 存量整理块(chatId=0)只能人工处置:v11 已标 legacy,但缺 meta 行的整理块经
+ * LEFT JOIN 显示为 approved + reviewState=null,只看 legacy 会把它误捞进评审,
+ * 而且没有 meta 行就记不了账,会每轮重评。所以 legacy 与 chatId=0 都要排除。
+ * runPromote 与「立即升格」路由的 candidatesBefore 共用这一口径。
+ */
+export function isAutoPromoteCandidate(e: ReflectionEntry): boolean {
+  return (
+    e.status === "approved" &&
+    e.chatId !== "0" &&
+    (e.reviewState === null || e.reviewState === "accepted")
+  )
+}
+
 async function runPromoteUnlocked(
   deps: ReflectionPromoterDeps
 ): Promise<PromoteRunResult> {
   const d = resolve(deps)
   const entries = d.repo.reflectionEntries()
-  const candidates = entries
-    .filter((e) => e.status === "approved")
+  const live = entries.filter(isAutoPromoteCandidate)
+  const accepted = live.filter((e) => e.reviewState === "accepted")
+  const unreviewed = live
+    .filter((e) => e.reviewState === null)
     .map((entry) => ({
       ...entry,
       answer: promotionSourceAnswer(entry, entries),
     }))
-  if (candidates.length < d.minEntries || d.maxPerRun <= 0)
-    return { considered: candidates.length, promoted: 0 }
+  const considered = accepted.length + unreviewed.length
+  // minEntries 只是「攒够再调评审 LLM」的门槛;accepted 积压已评审过,总是成文(仍受 maxPerRun)
+  const shouldReview =
+    unreviewed.length > 0 && unreviewed.length >= d.minEntries
+  if (d.maxPerRun <= 0 || (accepted.length === 0 && !shouldReview))
+    return { considered, promoted: 0 }
 
   const embedCache = new Map<string, Float32Array>()
   const embedCached = async (text: string): Promise<Float32Array> => {
@@ -389,14 +401,90 @@ async function runPromoteUnlocked(
   let promoted = 0
   let attempted = 0
   let failed = false
-  const batches = reviewBatches(candidates)
-  for (const [index, batch] of batches.entries()) {
-    if (attempted >= d.maxPerRun) break
+
+  // 单条成文:ok:false 按 promote-failure 分类记账;抛错(超时/I/O)只写 note 不计次
+  const composeOne = async (id: number) => {
+    attempted++
     try {
-      if (
-        batch.some((entry) => JSON.stringify(entry).length > MAX_REVIEW_CHARS)
+      const r = await promoteEntryUnlocked({
+        repo: d.repo,
+        chunkId: id,
+        embed: embedCached,
+        queryFn: d.queryFn,
+        queryTimeoutMs: d.queryTimeoutMs,
+        composeFn: d.composeFn,
+        promoteFn: d.promoteFn,
+        candidateK: d.candidateK,
+        cwd: d.cwd,
+        now: d.now,
+      })
+      if (r.ok && !r.already) {
+        promoted++
+        if (d.notifyAdmin && d.adminSurface) {
+          const preview =
+            r.content.slice(0, 40) + (r.content.length > 40 ? "…" : "")
+          bus.emit("action.send", {
+            channel: d.adminSurface.channel,
+            chatId: d.adminSurface.chatId,
+            text: `反思自动升格: #${id} → ${r.file}\n${preview}`,
+          })
+        }
+      } else if (!r.ok) {
+        failed = true
+        d.repo.recordPromoteFailure(
+          id,
+          r.reason,
+          countsAsEntryFailure(r.reason),
+          MAX_PROMOTE_ATTEMPTS
+        )
+        logger.log("warn", `[reflection-promote] 升格 #${id} 失败: ${r.reason}`)
+        emitErrorSafely({
+          scope: "reflection-promote",
+          err: new Error(r.reason),
+          userVisible: false,
+        })
+      }
+    } catch (err) {
+      failed = true
+      d.repo.recordPromoteFailure(
+        id,
+        "升格调用异常(超时或 I/O),下轮重试",
+        false,
+        MAX_PROMOTE_ATTEMPTS
       )
-        throw new Error("升格来源超过单批字符预算,保留原条目")
+      emitErrorSafely({ scope: "reflection-promote", err, userVisible: false })
+    }
+  }
+
+  // ① 上轮已评审通过、待成文的条目优先,不再重审
+  for (const e of accepted) {
+    if (attempted >= d.maxPerRun) break
+    await composeOne(e.id)
+  }
+
+  // ② 超预算条目分批前直接 failed:单条就撑爆批预算,重试也不会变小,不能让它连累同批。
+  // 不置本轮 failed:有 meta 的条目转 failed 后下轮不再进来,这条失败已由账本收口,
+  // 不属于整轮失败。
+  const reviewable: typeof unreviewed = []
+  for (const e of shouldReview ? unreviewed : []) {
+    if (exceedsReviewBudget(e)) {
+      d.repo.setReviewState(e.id, "failed", OVER_REVIEW_BUDGET_REASON)
+      logger.log(
+        "warn",
+        `[reflection-promote] #${e.id} ${OVER_REVIEW_BUDGET_REASON},记为 failed`
+      )
+      continue
+    }
+    reviewable.push(e)
+  }
+
+  // ③ 评审未评审条目,单轮最多 MAX_REVIEW_BATCHES_PER_RUN 批。成文名额用完后仍照常评审:
+  // 通过的记 accepted 留待下轮成文,判不升格的记 declined 永不重审——评审花费有批次上限兜底。
+  const batches = reviewBatches(reviewable).slice(0, MAX_REVIEW_BATCHES_PER_RUN)
+  for (const [index, batch] of batches.entries()) {
+    // 结论落账前出错的条目:catch 里只写 note,不计次
+    let undecided = batch.map((c) => c.id)
+    try {
       const ctx = new Map<number, string>()
       for (const e of batch) {
         for (const h of d.repo.searchBaseKb(
@@ -446,78 +534,48 @@ async function runPromoteUnlocked(
           "promote"
         )
       ).finally(() => controller.abort())
-      const selected = selectPromoteIds(
-        decisionsFromPayload(structuredOutput, out),
-        batch.map((c) => c.id),
-        d.maxPerRun - attempted
-      )
-      if (!selected.ok) {
+      const decisions = decisionsFromPayload(structuredOutput, out)
+      if (!decisions) {
         logger.log(
           "warn",
           `[reflection-promote] 第 ${index + 1}/${batches.length} 批校验失败: ${previewJsonPayload(structuredOutput, out) || "(空)"}`
         )
-        throw new Error(`LLM 产出未过校验:${selected.reason}`)
+        throw new Error("LLM 产出未过校验:无法解析 decisions")
       }
-      for (const id of selected.ids) {
-        attempted++
-        try {
-          const r = await promoteEntryUnlocked({
-            repo: d.repo,
-            chunkId: id,
-            embed: embedCached,
-            queryFn: d.queryFn,
-            queryTimeoutMs: d.queryTimeoutMs,
-            composeFn: d.composeFn,
-            promoteFn: d.promoteFn,
-            candidateK: d.candidateK,
-            cwd: d.cwd,
-            now: d.now,
-          })
-          if (r.ok && !r.already) {
-            promoted++
-            if (d.notifyAdmin && d.adminSurface) {
-              const preview =
-                r.content.slice(0, 40) + (r.content.length > 40 ? "…" : "")
-              bus.emit("action.send", {
-                channel: d.adminSurface.channel,
-                chatId: d.adminSurface.chatId,
-                text: `反思自动升格: #${id} → ${r.file}\n${preview}`,
-              })
-            }
-          } else if (!r.ok) {
-            failed = true
-            logger.log(
-              "warn",
-              `[reflection-promote] 升格 #${id} 失败: ${r.reason}`
-            )
-            emitErrorSafely({
-              scope: "reflection-promote",
-              err: new Error(r.reason),
-              userVisible: false,
-            })
-          }
-        } catch (err) {
-          failed = true
-          emitErrorSafely({
-            scope: "reflection-promote",
-            err,
-            userVisible: false,
-          })
-        }
+      const pending = new Set(batch.map((c) => c.id))
+      const toCompose: number[] = []
+      for (const dec of decisions) {
+        if (!pending.delete(dec.id)) continue // 编造或重复的 id
+        d.repo.setReviewState(dec.id, dec.promote ? "accepted" : "declined")
+        if (dec.promote) toCompose.push(dec.id)
+      }
+      undecided = []
+      // 漏返回的 id 保持未评审,下轮再评
+      for (const id of toCompose) {
+        if (attempted >= d.maxPerRun) break // 剩余 accepted 留待下轮成文
+        await composeOne(id)
       }
     } catch (err) {
+      // 评审批次失败(超时/embed 超时/解析失败)不计次,只写 note,下轮重评
       failed = true
+      for (const id of undecided)
+        d.repo.recordPromoteFailure(
+          id,
+          "评审批次失败(超时或输出无法解析),下轮重试",
+          false,
+          MAX_PROMOTE_ATTEMPTS
+        )
       emitErrorSafely({ scope: "reflection-promote", err, userVisible: false })
     }
   }
   if (promoted > 0)
     logger.log(
       "info",
-      `[reflection-promote] ${candidates.length} 候选 → 升格 ${promoted} 条`
+      `[reflection-promote] ${considered} 候选 → 升格 ${promoted} 条`
     )
   return failed
-    ? { considered: candidates.length, promoted, failed: true }
-    : { considered: candidates.length, promoted }
+    ? { considered, promoted, failed: true }
+    : { considered, promoted }
 }
 
 export function registerReflectionPromoter(
@@ -555,16 +613,17 @@ export function registerReflectionPromoter(
     running = true
     logger.log("info", "[reflection-promote] due, running")
     void runPromote(deps)
-      .then((result) => {
-        if (!result.failed) repo.setPromoteAt(now())
-      })
+      // 逐条失败已由评审账本兜底(计次/转 failed),一轮正常结束就推进游标;
+      // 只有整轮抛出意外异常才不推进,下次扫描重试
+      .then(() => repo.setPromoteAt(now()))
       .catch(reportTimerError)
       .finally(() => {
         running = false
       })
   }
   const timer = setInterval(tick, scanMs)
-  const kick = setTimeout(tick, deps.firstDelayMs ?? 45_000) // 略晚于 compact 首刷
+  // 启动后默认约 45 秒跑首轮
+  const kick = setTimeout(tick, deps.firstDelayMs ?? 45_000)
   return () => {
     clearInterval(timer)
     clearTimeout(kick)

@@ -1,17 +1,10 @@
-import { mapCompactionSummary, mapCompactionDetail } from "../row-mappers.ts"
-import type {
-  ReflectionRow,
-  ReflectionSummaryRow,
-  CompactionSummaryRow,
-  CompactionRow,
-} from "../rows.ts"
+import type { ReflectionRow, ReflectionSummaryRow } from "../rows.ts"
 import type {
   ChatCursor,
   ReflectionEntry,
   ReflectionSummary,
-  CompactionSummary,
-  CompactionDetail,
   ReflectionStatus,
+  ReviewState,
 } from "../models.ts"
 import type { SqliteContext } from "../context.ts"
 import {
@@ -21,7 +14,7 @@ import {
 import type { KnowledgeRepository } from "./knowledge.ts"
 import type { ConfigRepository } from "./config.ts"
 
-/** 反思来源、审核状态与整理记录；与知识库共享事务连接。 */
+/** 反思来源、审核状态与一次性拆分审计记录；与知识库共享事务连接。 */
 export class ReflectionRepository {
   static readonly MAX_SUMMARY_ROWS = 500
 
@@ -40,15 +33,6 @@ export class ReflectionRepository {
 
   setGroupReflectCursor(channel: string, chatId: string, ts: number): void {
     this.config.setConfigRow(`reflect_cursor:${channel}:${chatId}`, String(ts))
-  }
-
-  // 全局反思整理游标(上次整理完成时间戳),复用 config 表。
-  compactAt(): number {
-    return Number(this.config.getConfigRow("reflect_compact_at") ?? "0")
-  }
-
-  setCompactAt(ts: number): void {
-    this.config.setConfigRow("reflect_compact_at", String(ts))
   }
 
   // 全局反思自动升格游标(上次升格评审完成时间戳)
@@ -81,12 +65,13 @@ export class ReflectionRepository {
   }
 
   // 反思沉淀的知识条目(doc='human-reflection');source 见 parseReflectionSource。
-  // 整理后条目 chatId=0,answer 保存切块前的完整 FAQ;旧条目可能无 meta。
+  // 存量整理块 chatId=0,answer 保存切块前的完整 FAQ;旧条目可能无 meta。
   // 无 meta / 未知 status 一律视为 approved(沉淀即入库,无需审核)
   reflectionEntries(): ReflectionEntry[] {
     const rows = this.sql
       .prepare<ReflectionRow>(
-        `SELECT c.id, c.content, c.source, m.question, m.answer, COALESCE(m.status, 'approved') AS status
+        `SELECT c.id, c.content, c.source, m.question, m.answer, COALESCE(m.status, 'approved') AS status,
+                m.review_state, COALESCE(m.review_attempts, 0) AS review_attempts, m.review_note
          FROM kb_chunks c LEFT JOIN reflection_meta m ON m.chunk_id = c.id
          WHERE c.doc = 'human-reflection' ORDER BY c.id DESC`
       )
@@ -95,7 +80,7 @@ export class ReflectionRepository {
   }
 
   // 沉淀条目列表摘要(反思专页 3s 轮询):content/question/answer 在 SQL 内截断,
-  // 全文走 reflectionEntryDetail —— 全量全文曾把响应顶到 MB 级(compactions 同款事故)。
+  // 全文走 reflectionEntryDetail —— 全量全文曾把响应顶到 MB 级(曾因整理记录全文同款事故)。
   // contentLen 供前端判断是否截断(展开后拉全文)。
   reflectionEntrySummaries(
     contentCap = 300,
@@ -112,7 +97,8 @@ export class ReflectionRepository {
       .prepare<ReflectionSummaryRow>(
         `SELECT c.id, substr(c.content, 1, ?) AS content, length(c.content) AS contentLen,
               c.source, substr(m.question, 1, ?) AS question, substr(m.answer, 1, ?) AS answer,
-              COALESCE(m.status, 'approved') AS status
+              COALESCE(m.status, 'approved') AS status,
+              m.review_state, COALESCE(m.review_attempts, 0) AS review_attempts, m.review_note
          FROM kb_chunks c LEFT JOIN reflection_meta m ON m.chunk_id = c.id
          WHERE c.doc = 'human-reflection' ORDER BY c.id DESC LIMIT ?`
       )
@@ -127,7 +113,8 @@ export class ReflectionRepository {
   reflectionEntryDetail(id: number): ReflectionEntry | null {
     const row = this.sql
       .prepare<ReflectionRow>(
-        `SELECT c.id, c.content, c.source, m.question, m.answer, COALESCE(m.status, 'approved') AS status
+        `SELECT c.id, c.content, c.source, m.question, m.answer, COALESCE(m.status, 'approved') AS status,
+                m.review_state, COALESCE(m.review_attempts, 0) AS review_attempts, m.review_note
          FROM kb_chunks c LEFT JOIN reflection_meta m ON m.chunk_id = c.id
          WHERE c.id = ? AND c.doc = 'human-reflection'`
       )
@@ -183,10 +170,56 @@ export class ReflectionRepository {
         .run(chunkId, status)
       return true
     }
+    // 恢复入库(approved)= 重新评审:清空账本,legacy 除外(保持存量待处置)。
+    // SQLite 的 SET 各表达式读的都是更新前的行值,三个 CASE 判断同一个旧 review_state。
     const info = this.sql
-      .prepare("UPDATE reflection_meta SET status = ? WHERE chunk_id = ?")
-      .run(status, chunkId)
+      .prepare(
+        `UPDATE reflection_meta SET status = ?,
+           review_state = CASE WHEN ? = 'approved' AND COALESCE(review_state, '') <> 'legacy'
+             THEN NULL ELSE review_state END,
+           review_attempts = CASE WHEN ? = 'approved' AND COALESCE(review_state, '') <> 'legacy'
+             THEN 0 ELSE review_attempts END,
+           review_note = CASE WHEN ? = 'approved' AND COALESCE(review_state, '') <> 'legacy'
+             THEN NULL ELSE review_note END
+         WHERE chunk_id = ?`
+      )
+      .run(status, status, status, status, chunkId)
     return info.changes > 0
+  }
+
+  // 评审结论/状态。无 meta 行(chunk 已不存在或历史脏数据)时静默不写,不补孤儿行。
+  setReviewState(
+    chunkId: number,
+    state: ReviewState | null,
+    note: string | null = null
+  ): void {
+    this.sql
+      .prepare(
+        "UPDATE reflection_meta SET review_state = ?, review_note = ? WHERE chunk_id = ?"
+      )
+      .run(state, note, chunkId)
+  }
+
+  // 升格失败记账:counted=false 只写 note(基础设施故障/并发);counted=true 计次,
+  // 累计达到 maxAttempts 转 failed。无 meta 行时静默不写。
+  recordPromoteFailure(
+    chunkId: number,
+    note: string,
+    counted: boolean,
+    maxAttempts: number
+  ): void {
+    const inc = counted ? 1 : 0
+    this.sql
+      .prepare(
+        `UPDATE reflection_meta
+         SET review_note = ?,
+             review_attempts = review_attempts + ?,
+             review_state = CASE
+               WHEN ? > 0 AND review_attempts + ? >= ? THEN 'failed'
+               ELSE review_state END
+         WHERE chunk_id = ?`
+      )
+      .run(note, inc, inc, inc, maxAttempts, chunkId)
   }
 
   // 升格为正式文档:标 promoted;写文件+向量入库由 applyPromote / API 处理
@@ -211,56 +244,34 @@ export class ReflectionRepository {
     return { ok: true, content: row.content, status }
   }
 
-  // 最近 N 次整理记录的摘要(倒序),不含 before/after 全文。
-  // 反思专页每 3 秒轮询,每条记录的 before_json/after_json 是整批知识条目全文,
-  // 30 条曾把响应顶到 8MB+ / 单请求 30~90s 把进程打死 → 列表只给计数,全文走 compactionDetail。
-  recentCompactionSummaries(limit: number): CompactionSummary[] {
-    const rows = this.sql
-      .prepare<CompactionSummaryRow>(
-        "SELECT id, ts, before_count, after_count FROM reflect_compactions ORDER BY ts DESC LIMIT ?"
-      )
-      .all(limit)
-    return rows.map(mapCompactionSummary)
-  }
-
-  // 单条整理记录详情(含 before/after 全文);查不到返回 null。前端展开时按需拉取。
-  compactionDetail(id: number): CompactionDetail | null {
-    const r = this.sql
-      .prepare<CompactionRow>(
-        "SELECT id, ts, before_count, after_count, before_json, after_json FROM reflect_compactions WHERE id = ?"
-      )
-      .get(id)
-    return r ? mapCompactionDetail(r) : null
-  }
-
-  // 最近 N 次整理记录(倒序),before/after 内容内联(解析 JSON)
-  recentCompactions(limit: number): CompactionDetail[] {
-    const rows = this.sql
-      .prepare<CompactionRow>(
-        "SELECT id, ts, before_count, after_count, before_json, after_json FROM reflect_compactions ORDER BY ts DESC LIMIT ?"
-      )
-      .all(limit)
-    return rows.map(mapCompactionDetail)
-  }
-
-  // 整体替换反思库(压缩整理用):单事务只删“快照内”的 human-reflection 条目(按 id,不按 doc),
-  // 再插入整理结果 —— 避免删掉压缩 await 期间 poller 并发新增的条目。
-  // source 统一 human-reflection:qq:0:{ts}(chatId 0 = 已压缩,全局归属)。
+  // 整体替换反思库(一次性拆分存量整理块用):单事务只删“快照内”的 human-reflection 条目(按 id,不按 doc),
+  // 再插入替换结果 —— 避免删掉 await 期间 poller 并发新增的条目。
+  // source 统一 human-reflection:qq:0:{ts}(chatId 0 = 全局归属)。
+  // reflect_compactions 现在只记一次性拆分的审计:before_json/after_json 是任意 JSON 数组,
+  // before_count/after_count 为数组长度。旧整理记录是字符串数组;存量拆分写对象数组
+  // (before = 旧块 [{id, content, faq?}],首元素带组完整 FAQ;after = [{text, answer}])。
+  // BEGIN IMMEDIATE:校验与删除/插入之间不会被其它连接插入写。
   replaceReflectionEntries(
     oldIds: number[],
     entries: { content: string; embedding: Float32Array; faq?: string }[],
     sourceTs: number,
-    beforeContents: string[] = [],
-    afterContents: string[] = [],
-    /**
-     * Optional optimistic guard used by compaction.  The LLM runs outside
-     * this transaction, so a reviewer may change one of the snapshotted
-     * entries while it is waiting.  Refuse the replacement instead of
-     * deleting a now-rejected/promoted entry.
-     */
-    expectedStatus?: ReflectionStatus
+    beforeContents: readonly unknown[] = [],
+    afterContents: readonly unknown[] = [],
+    opts: {
+      /**
+       * 乐观校验:LLM 在事务外运行,期间旧块可能被人工驳回/升格/删除;
+       * 任一旧块不存在或状态不符即拒绝替换(返回 false)。
+       */
+      expectedStatus?: ReflectionStatus
+      /** 新块 meta 的 review_state(拆分产物传 legacy);指定时无 faq 也写 meta */
+      reviewState?: ReviewState
+      /** 事务内追加校验(同步);返回 false 则拒绝替换 */
+      precondition?: () => boolean
+    } = {}
   ): boolean {
-    return this.sql.transaction(() => {
+    const { expectedStatus, reviewState, precondition } = opts
+    return this.sql.immediateTransaction(() => {
+      if (precondition && !precondition()) return false
       if (oldIds.length) {
         const ph = oldIds.map(() => "?").join(",")
         if (expectedStatus) {
@@ -294,13 +305,13 @@ export class ReflectionRepository {
           `human-reflection:qq:0:${sourceTs}`
         )
         this.knowledge.insertKbVec(id, e.embedding)
-        if (e.faq) {
-          // 向量仍按 500 字分块,升格/下轮整理需要完整 FAQ 的步骤、条件和例外。
+        if (e.faq || reviewState) {
+          // answer 保存该块的来源原文(拆分产物为逐字摘录),供升格核验来源。
           this.sql
             .prepare(
-              "INSERT INTO reflection_meta (chunk_id, channel, group_id, question, answer, status) VALUES (?, 'qq', '0', NULL, ?, 'approved')"
+              "INSERT INTO reflection_meta (chunk_id, channel, group_id, question, answer, status, review_state) VALUES (?, 'qq', '0', NULL, ?, 'approved', ?)"
             )
-            .run(id, e.faq)
+            .run(id, e.faq || null, reviewState ?? null)
         }
       }
       this.sql

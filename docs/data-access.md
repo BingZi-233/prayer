@@ -6,17 +6,17 @@
 旧代码可继续调用 `repo.getSessionId(key)`，新代码可以使用 `repo.sessions` 等
 领域入口，并用 `Pick<领域仓储, 方法名>` 声明真正需要的能力。
 
-| 入口              | 源文件                       | 职责                           |
-| ----------------- | ---------------------------- | ------------------------------ |
-| `repo.sessions`   | `repositories/sessions.ts`   | 会话状态、续接指针、空闲期限   |
-| `repo.messages`   | `repositories/messages.ts`   | 消息缓冲、时间窗查询、入站去重 |
-| `repo.knowledge`  | `repositories/knowledge.ts`  | 分块、向量、检索与物理删除     |
-| `repo.reflection` | `repositories/reflection.ts` | 反思来源、状态、整理记录与游标 |
-| `repo.proactive`  | `repositories/proactive.ts`  | 主动回复记录、质量标记与游标   |
-| `repo.topics`     | `repositories/topics.ts`     | 主题、问题归属、排行与游标     |
-| `repo.statistics` | `repositories/statistics.ts` | 处理结果、模型用量与工具统计   |
-| `repo.tickets`    | `repositories/tickets.ts`    | 工单创建、关闭与查询           |
-| `repo.config`     | `repositories/config.ts`     | 配置键值读写                   |
+| 入口              | 源文件                       | 职责                               |
+| ----------------- | ---------------------------- | ---------------------------------- |
+| `repo.sessions`   | `repositories/sessions.ts`   | 会话状态、续接指针、空闲期限       |
+| `repo.messages`   | `repositories/messages.ts`   | 消息缓冲、时间窗查询、入站去重     |
+| `repo.knowledge`  | `repositories/knowledge.ts`  | 分块、向量、检索与物理删除         |
+| `repo.reflection` | `repositories/reflection.ts` | 反思来源、状态、升格评审账本与游标 |
+| `repo.proactive`  | `repositories/proactive.ts`  | 主动回复记录、质量标记与游标       |
+| `repo.topics`     | `repositories/topics.ts`     | 主题、问题归属、排行与游标         |
+| `repo.statistics` | `repositories/statistics.ts` | 处理结果、模型用量与工具统计       |
+| `repo.tickets`    | `repositories/tickets.ts`    | 工单创建、关闭与查询               |
+| `repo.config`     | `repositories/config.ts`     | 配置键值读写                       |
 
 以上路径相对于 `lib/core/db/`。各仓储只依赖 `SqliteContext` 及必要的其他领域能力，
 不反向依赖 `Repo`、Next.js 路由或 Agent。反思模块需要知识分块写入能力，
@@ -51,8 +51,8 @@ repo.transaction(() => {
   内容故只有 manifest）；写盘或入库失败时还原文件并把 manifest 改记为
   `rolled_back`。这些 `*.md.disabled` 不属于可入库语料。
 
-已有原子操作包括：分块与向量写入、分块三表删除、文档与向量删除、反思整理
-替换及整理记录、批量工具统计、全量续接指针与会话纪元重置。跨领域业务批次
+已有原子操作包括：分块与向量写入、分块三表删除、文档与向量删除、反思库整体替换
+（一次性拆分）及其审计记录、批量工具统计、全量续接指针与会话纪元重置。跨领域业务批次
 继续由调用方确定外层事务，例如知识库重新摄入、升格和主题归类。
 
 ## 数据类型与转换
@@ -68,7 +68,8 @@ repo.transaction(() => {
   例如不分组的 `COUNT(*)` 和成功执行的 `INSERT ... RETURNING`。
 
 历史约定仍保留：数据库层的通道使用字符串；chatId 不转成数字；未知反思状态
-按 `approved` 展示；整理摘要不携带整批正文；不存在的记录保留原有 null 或
+按 `approved` 展示；账本列 `review_state` / `review_attempts` / `review_note`
+随 `reflection_meta` 读写，NULL 表示未评审，`legacy` 表示存量整理块、不参与自动升格；不存在的记录保留原有 null 或
 undefined 返回方式。不要在纯结构重构中顺便改变这些兼容行为。
 
 ## 修改与验证

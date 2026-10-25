@@ -31,7 +31,7 @@ function waitForPoll(signal?: AbortSignal): Promise<boolean> {
   })
 }
 
-/** 只提交一次写请求,之后轮询已有任务;断线不重新发起整理或升格。 */
+/** 只提交一次写请求,之后轮询已有任务;断线不重新发起升格(批量或单条)。 */
 export async function runReflectionAction<T>(
   url: string,
   init: RequestInit,

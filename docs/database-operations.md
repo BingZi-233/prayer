@@ -9,7 +9,8 @@
 - `registry.ts` 是唯一的版本注册表，记录版本号、中文名称、首次升级和幂等修复入口。
 - `schema.ts` 保留 v1/v2 历史表转换及各版本实际 SQL，避免启动入口了解迁移细节。
 - 数据库版本高于当前程序支持版本时，程序拒绝启动，防止旧程序误写新结构。
-- 不支持自动降级。回滚程序版本前，应同时恢复该版本生成的数据库备份。
+- 不支持自动降级。迁移不可逆，首选前向修复；确需回滚程序版本时，只能整库回退到该版本之前的备份，备份之后写入的数据会丢失。
+- v11：`reflection_meta` 增加评审账本列 `review_state`、`review_attempts`、`review_note`，并把存量整理块（来源 `human-reflection:qq:0:*`）标为 `legacy`。
 
 新增迁移时，只在注册表末尾追加连续版本。迁移必须是同步数据库操作，不得包含
 网络请求、文件写入或其他 SQLite 事务无法回滚的副作用。`up` 用于首次升级；只有
@@ -102,7 +103,7 @@ pnpm db:retention ./data/agent.db
 pnpm db:retention ./data/agent.db --apply
 ```
 
-默认策略是：`reflect_compactions` 180 天，主题出现记录/孤立主题、非活动会话和
+默认策略是：`reflect_compactions`（现仅作一次性拆分审计）180 天，主题出现记录/孤立主题、非活动会话和
 `admin_audit_events` 管理变更审计记录 365 天，模型/工具日用量 730 天，已成功投递的
 `outbox_messages` 记录 90 天（`pending`、
 `sending`、`failed` 会保留以便重试和排障）。会话只有在非人工、无 `resume_id` 且没有任何历史工单时才会
@@ -123,6 +124,25 @@ pnpm db:retention ./data/agent.db \
 `.jsonl` 普通文件（递归子目录）。脚本拒绝跟随符号链接，删除前会重新检查 mtime；若只是想清理数据
 库，不要传 `--delete-transcripts`。当前仓库没有自动 cron，部署方应把备份、报告、人工
 确认和 apply 编排成可审计的作业，并保留每次命令输出。
+
+## 反思流水线止转上线步骤
+
+删除整理环节并执行存量拆分的上线顺序：
+
+1. `pnpm db:backup`：备份当前库。
+2. `pnpm pm:restart`：重启并执行 v11 迁移（拆分脚本要求 schema 为当前版本）。
+3. 管理端确认 `reflectPromoteMs` 为 0（停用自动升格，脚本前置条件）。
+4. `pnpm kb:split-legacy-reflections`（dry-run，模型花费约 $8–10）：生成
+   `data/split-legacy-<ts>.json` 与 `.md`，人工审阅 `.md`。重点看总览里「不替换、
+   仍留在检索的旧块」数（`needs_review` / `failed` / `skipped` 组）；`covered` 组
+   会删除旧块而不写新条目。
+5. `pnpm kb:split-legacy-reflections --apply data/split-legacy-<ts>.json`：先自动备份并
+   打印备份路径，请长期保留。dry-run 与 apply 之间不要操作反思、不要跑 `pnpm ingest`。
+6. 管理端把 `reflectPromoteMs` 设回 `86400000`。
+7. 观察 3 天模型用量，确认每日花费回落。
+
+回滚：迁移不支持降级，首选前向修复；否则停止进程，按下文恢复流程把整库回退到
+备份（备份之后的数据会丢失）。
 
 ## 恢复流程
 

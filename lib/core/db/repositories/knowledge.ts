@@ -175,7 +175,7 @@ export class KnowledgeRepository {
     return rows
   }
 
-  // 只在基础文档(doc != human-reflection)里做向量近邻,供压缩整理取权威上下文。
+  // 只在基础文档(doc != human-reflection)里做向量近邻,供升格评审/成文取权威上下文。
   // vec0 KNN 混合反思与基础条目;反思聚集时前 N 名可能被反思占满,故逐步放大候选池
   // 直到凑够 k 条基础条目或达上限(2000),避免静默少取。
   searchBaseKb(query: Float32Array, k: number): KbBaseHit[] {

@@ -13,7 +13,7 @@ export function reflectionMaintenanceKey(repo: Repo): object {
   return repo.coordinationKey ?? repo
 }
 
-/** 串行执行完整反思任务，避免升格使正在整理的快照失效。 */
+/** 串行执行完整反思任务，避免批量升格与单条升格互相覆盖。 */
 export function withReflectionMaintenanceLock<T>(
   repo: Repo,
   fn: () => Promise<T>

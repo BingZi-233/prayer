@@ -48,12 +48,6 @@ export function seedFromEnv(
     reflectLookbackMs: num("REFLECT_LOOKBACK_MS", defaults.reflectLookbackMs),
     reflectSettleMs: num("REFLECT_SETTLE_MS", defaults.reflectSettleMs),
     reflectWindowMax: num("REFLECT_WINDOW_MAX", defaults.reflectWindowMax),
-    // 默认 1 小时一轮整理(历史默认 24h 太慢,百余条难以及时去重)
-    reflectCompactMs: num("REFLECT_COMPACT_MS", defaults.reflectCompactMs),
-    reflectCompactMinEntries: num(
-      "REFLECT_COMPACT_MIN_ENTRIES",
-      defaults.reflectCompactMinEntries
-    ),
     reflectPromoteMs: num("REFLECT_PROMOTE_MS", defaults.reflectPromoteMs),
     reflectPromoteMinEntries: num(
       "REFLECT_PROMOTE_MIN_ENTRIES",

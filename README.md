@@ -37,7 +37,7 @@ Prayer 把这三个问题做成了产品闭环：
 | 问题需要事实依据           | 自动检索知识库，将相关内容注入回答流程            |
 | 需要查价格、状态或业务数据 | 通过插件、Skill 和 MCP 接入业务工具               |
 | AI 无法可靠处理            | 转入人工队列，暂停该会话的自动回复                |
-| 人工给出了新答案           | 自动提炼为反思条目，整理、去重并可升格为正式知识  |
+| 人工给出了新答案           | 自动提炼为反思条目，去重并可升格为正式知识        |
 
 ### 核心能力
 
@@ -104,21 +104,21 @@ Prayer 的关键不是让模型“尽量回答”，而是让每一次回答都�
 
 启动服务后访问 `/admin`。后台配置保存后会触发运行时重新装配，通道、定时任务和 Agent 会按新配置重新生效。
 
-| 页面                  | 用途                                                 |
-| --------------------- | ---------------------------------------------------- |
-| `/admin`              | 运行状态、通道连接、会话数量、人工队列和今日业务结果 |
-| `/admin/logs`         | 运行日志与异常排查                                   |
-| `/admin/sessions`     | 历史会话、消息记录和会话重开                         |
-| `/admin/handoff`      | 待处理人工会话，处理完成后恢复自动答                 |
-| `/admin/proactive`    | 主动补位记录与结果                                   |
-| `/admin/kb`           | 知识文档管理、编辑和向量摄入                         |
-| `/admin/reflection`   | 反思条目、整理进度和知识升格                         |
-| `/admin/ranking`      | 高频问题排行，帮助团队发现产品与文档缺口             |
+| 页面                  | 用途                                                                   |
+| --------------------- | ---------------------------------------------------------------------- |
+| `/admin`              | 运行状态、通道连接、会话数量、人工队列和今日业务结果                   |
+| `/admin/logs`         | 运行日志与异常排查                                                     |
+| `/admin/sessions`     | 历史会话、消息记录和会话重开                                           |
+| `/admin/handoff`      | 待处理人工会话，处理完成后恢复自动答                                   |
+| `/admin/proactive`    | 主动补位记录与结果                                                     |
+| `/admin/kb`           | 知识文档管理、编辑和向量摄入                                           |
+| `/admin/reflection`   | 反思条目、升格评审状态和知识升格                                       |
+| `/admin/ranking`      | 高频问题排行，帮助团队发现产品与文档缺口                               |
 | `/admin/config`       | QQ、Telegram、回复体验、会话、反思、通知和存储路径查看（DB_PATH 只读） |
-| `/admin/groups`       | 生效会话、活动量和会话级策略覆盖                     |
-| `/admin/capabilities` | 当前 Agent 的插件、Skill、MCP 与工具能力             |
-| `/admin/plugins`      | 插件安装、更新、启停和重载                           |
-| `/admin/audit`        | 有限窗口内的管理变更轨迹与未结束审计事件             |
+| `/admin/groups`       | 生效会话、活动量和会话级策略覆盖                                       |
+| `/admin/capabilities` | 当前 Agent 的插件、Skill、MCP 与工具能力                               |
+| `/admin/plugins`      | 插件安装、更新、启停和重载                                             |
+| `/admin/audit`        | 有限窗口内的管理变更轨迹与未结束审计事件                               |
 
 <p align="center">
   <img src="docs/assets/prayer-operations.svg" alt="Prayer 管理后台能力图" width="100%" />
@@ -132,7 +132,7 @@ Prayer 以单个 Node.js 进程运行 Next.js 管理后台和客服 Agent。`ins
 
 - QQ / Telegram 通道连接与消息分发
 - Agent 会话编排、知识检索、工具调用与人工接管
-- 反思、整理、知识升格、主动补位和问题排行等后台循环
+- 反思、知识升格、主动补位和问题排行等后台循环
 - 管理后台 API 与实时状态
 - SQLite 业务数据与 sqlite-vec 向量索引
 
@@ -233,32 +233,32 @@ Telegram chat id 必须按字符串保存，尤其是超级群的负数 id，不
 
 常用环境变量：
 
-| 变量                     | 作用                                                                     |
-| ------------------------ | ------------------------------------------------------------------------ |
-| `BRAND_NAME`             | 首次启动时的品牌名称，默认 `Prayer`                                      |
-| `BRAND_DESCRIPTION`      | 首次启动时的品牌/业务简介                                                |
-| `CLAUDE_CONFIG_DIR`      | Agent SDK 配置目录，默认 `./data/claude-config`                          |
-| `DB_PATH`                | SQLite 数据库路径，默认 `./data/agent.db`                                |
-| `ONEBOT_WS_URL`          | QQ / OneBot 正向 WebSocket 地址                                          |
-| `ONEBOT_ACCESS_TOKEN`    | OneBot 鉴权 token，可选                                                  |
-| `BOT_QQ`                 | QQ 机器人账号                                                            |
-| `TELEGRAM_BOT_TOKEN`     | Telegram Bot token                                                       |
-| `TELEGRAM_ENABLED_CHATS` | 首次启动时种子的 Telegram chat id 列表，逗号或空格分隔                   |
-| `ADMIN_GROUP_ID`         | 首次启动时种子的 QQ 管理面                                               |
-| `ADMIN_TOKEN`            | 管理后台和 API 的访问口令；开发可省略，生产必填（缺失时 fail-closed）    |
-| `PRAYER_SKIP_RUNTIME_BOOT` | 在 `development` 中设为 `1` 时跳过 Next 启动钩子的自动运行时启动；仅用于隔离的只读开发验证，不能阻止管理写操作 |
-| `PRAYER_MCP_ALLOWLIST`   | 额外显式放行的完整 MCP 工具名（逗号/空格分隔）；默认仅 CS/Packy 查询工具 |
-| `TRUST_PROXY`            | 仅可信反向代理已规范化 `X-Forwarded-For`、`X-Forwarded-Host`、`X-Forwarded-Proto` 时设为 `true`，用于登录限速和 Cookie 请求的 Origin 校验 |
-| `PRAYER_BACKUP_PATHS`    | 供权限审计检查的显式备份文件路径，不会递归扫描                           |
-| `HANDOFF_TIMEOUT_MIN`    | 转人工超时后恢复自动答的分钟数                                           |
-| `RESUME_TTL_MS`          | 会话续接空闲时间，设为 `0` 关闭过期                                      |
-| `KB_PREFETCH_ENABLED`    | 是否在每轮消息前自动预检索，默认开启                                     |
-| `PROACTIVE_ENABLED`      | 是否开启无人应答主动补位，默认关闭                                       |
-| `SUPPORT_URL`            | 无法处理业务时展示的支持链接                                             |
-| `MAX_REPLY_CHARS`        | 单条回复拆分上限，`0` 表示不拆分                                         |
-| `USAGE_BUDGET_USD`       | 日用量预算，`0` 表示不告警                                               |
+| 变量                       | 作用                                                                                                                                      |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `BRAND_NAME`               | 首次启动时的品牌名称，默认 `Prayer`                                                                                                       |
+| `BRAND_DESCRIPTION`        | 首次启动时的品牌/业务简介                                                                                                                 |
+| `CLAUDE_CONFIG_DIR`        | Agent SDK 配置目录，默认 `./data/claude-config`                                                                                           |
+| `DB_PATH`                  | SQLite 数据库路径，默认 `./data/agent.db`                                                                                                 |
+| `ONEBOT_WS_URL`            | QQ / OneBot 正向 WebSocket 地址                                                                                                           |
+| `ONEBOT_ACCESS_TOKEN`      | OneBot 鉴权 token，可选                                                                                                                   |
+| `BOT_QQ`                   | QQ 机器人账号                                                                                                                             |
+| `TELEGRAM_BOT_TOKEN`       | Telegram Bot token                                                                                                                        |
+| `TELEGRAM_ENABLED_CHATS`   | 首次启动时种子的 Telegram chat id 列表，逗号或空格分隔                                                                                    |
+| `ADMIN_GROUP_ID`           | 首次启动时种子的 QQ 管理面                                                                                                                |
+| `ADMIN_TOKEN`              | 管理后台和 API 的访问口令；开发可省略，生产必填（缺失时 fail-closed）                                                                     |
+| `PRAYER_SKIP_RUNTIME_BOOT` | 在 `development` 中设为 `1` 时跳过 Next 启动钩子的自动运行时启动；仅用于隔离的只读开发验证，不能阻止管理写操作                            |
+| `PRAYER_MCP_ALLOWLIST`     | 额外显式放行的完整 MCP 工具名（逗号/空格分隔）；默认仅 CS/Packy 查询工具                                                                  |
+| `TRUST_PROXY`              | 仅可信反向代理已规范化 `X-Forwarded-For`、`X-Forwarded-Host`、`X-Forwarded-Proto` 时设为 `true`，用于登录限速和 Cookie 请求的 Origin 校验 |
+| `PRAYER_BACKUP_PATHS`      | 供权限审计检查的显式备份文件路径，不会递归扫描                                                                                            |
+| `HANDOFF_TIMEOUT_MIN`      | 转人工超时后恢复自动答的分钟数                                                                                                            |
+| `RESUME_TTL_MS`            | 会话续接空闲时间，设为 `0` 关闭过期                                                                                                       |
+| `KB_PREFETCH_ENABLED`      | 是否在每轮消息前自动预检索，默认开启                                                                                                      |
+| `PROACTIVE_ENABLED`        | 是否开启无人应答主动补位，默认关闭                                                                                                        |
+| `SUPPORT_URL`              | 无法处理业务时展示的支持链接                                                                                                              |
+| `MAX_REPLY_CHARS`          | 单条回复拆分上限，`0` 表示不拆分                                                                                                          |
+| `USAGE_BUDGET_USD`         | 日用量预算，`0` 表示不告警                                                                                                                |
 
-反思、整理、知识升格、主动补位和主题排行的完整参数见 [`.env.example`](.env.example)，也可以在 `/admin/config` 中调整。
+反思、知识升格、主动补位和主题排行的完整参数见 [`.env.example`](.env.example)，也可以在 `/admin/config` 中调整。
 
 ## 生产部署
 

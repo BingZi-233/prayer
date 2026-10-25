@@ -90,9 +90,7 @@ export const appConfigBaseSchema = z.object({
   reflectLookbackMs: durationMs.default(7_200_000),
   reflectSettleMs: durationMs.default(600_000),
   reflectWindowMax: count.default(60),
-  /** 0 关闭自动整理或升格，正数至少 1 秒。 */
-  reflectCompactMs: optionalScanMs.default(3_600_000),
-  reflectCompactMinEntries: count.default(10),
+  /** 0 关闭自动升格，正数至少 1 秒。 */
   reflectPromoteMs: optionalScanMs.default(86_400_000),
   reflectPromoteMinEntries: count.default(1),
   reflectPromoteMaxPerRun: count.default(5),

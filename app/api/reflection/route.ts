@@ -5,6 +5,10 @@ import { listEnabledChats } from "@/lib/core/chat/enabled-chats"
 import { ok, fail, safeApiError } from "@/lib/core/api"
 import { buildGroupChatStats } from "@/lib/knowledge/reflection/stats"
 import { promoteEntry } from "@/lib/knowledge/reflection/promoter"
+import {
+  INTERNAL_FAULT_REASONS,
+  MAX_PROMOTE_ATTEMPTS,
+} from "@/lib/knowledge/reflection/promote-failure"
 import { embed } from "@/lib/model/embed"
 import { DEFAULT_EMBED_TIMEOUT_MS, withTimeoutFn } from "@/lib/model/timeout"
 import { readJsonBody, REQUEST_BODY_TOO_LARGE } from "@/lib/core/http-security"
@@ -25,7 +29,7 @@ export async function GET(): Promise<NextResponse> {
 
     const { cursors, msg, sed } = buildGroupChatStats(repo)
     // 条目列表仍需展示,但只带预览截断(SQL 内截断):全文按需走
-    // /api/reflection/entries/[id],3 秒轮询不背全量全文(compactions 同款修法)
+    // /api/reflection/entries/[id],3 秒轮询不背全量全文
     // SQL 层只取最近一页摘要;全文仍可通过 entries/[id] 按需读取。
     const entries = repo.reflectionEntrySummaries(300, 200, 500)
 
@@ -61,7 +65,7 @@ export async function GET(): Promise<NextResponse> {
           a.channel.localeCompare(b.channel) || a.chatId.localeCompare(b.chatId)
       )
 
-    // 条目:附 groupId 兼容旧 UI(chatId="0" = 整理后全局归属)
+    // 条目:附 groupId 兼容旧 UI(chatId="0" = 存量整理块的全局归属)
     const entryRows = entries.map((e) => {
       const gid = e.chatId != null ? Number(e.chatId) : NaN
       return {
@@ -77,16 +81,12 @@ export async function GET(): Promise<NextResponse> {
           lookbackMs: cfg.reflectLookbackMs,
           settleMs: cfg.reflectSettleMs,
           windowMax: cfg.reflectWindowMax,
-          compactMs: cfg.reflectCompactMs,
-          compactMinEntries: cfg.reflectCompactMinEntries,
           promoteMs: cfg.reflectPromoteMs,
           promoteMinEntries: cfg.reflectPromoteMinEntries,
           promoteMaxPerRun: cfg.reflectPromoteMaxPerRun,
         },
         groups,
         entries: entryRows,
-        // 只给摘要:全文走 /api/reflection/compactions/[id](本页 3 秒轮询,全文会把响应顶到 MB 级)
-        compactions: repo.recentCompactionSummaries(10),
       })
     )
   } catch (err) {
@@ -98,28 +98,6 @@ const patchSchema = z.object({
   id: z.number(),
   action: z.enum(["approve", "reject", "promote"]),
 })
-
-/**
- * 这些 reason 表示系统内部不一致(不是调用方请求有问题),映射成 409 而不是 400,
- * 免得把「磁盘与索引对不上」误导成「你参数写错了」。
- *
- * 入选依据:文件系统/索引一致性、路径守卫、容量上限——这些都发生在表单参数与
- * 条目 id 都已校验通过之后,失败源于系统自身状态(磁盘、索引、KB 布局),调用方
- * 重试也只是撞同一堵墙。反之「已驳回,不可升格」是正常业务状态,不属故障;
- * 成文校验类(单元超长/含空行/域不在白名单内…)是模型产出不合规,仍归 400。
- *
- * 刻意用白名单而不是前缀/子串匹配:reason 是文案,子串判断会随文案改动静默失效
- * ——「目标文档不存在」含「条目不存在」的后三个字,子串判断会把它误报成 404。
- * 字符串取自 lib/knowledge/reflection/apply-promote.ts,改动那边请同步这里。
- */
-const INTERNAL_FAULT_REASONS = new Set([
-  "目标文档不存在",
-  "目标文档过大,拒绝合并",
-  "目标文档已存在",
-  "知识库文件过大",
-  "知识库路径非法",
-  "台账目录非法",
-])
 
 const reflectionAuditAction = {
   approve: "reflection.approve",
@@ -193,9 +171,19 @@ export async function PATCH(req: NextRequest): Promise<NextResponse> {
               embed: withTimeoutFn(DEFAULT_EMBED_TIMEOUT_MS, embed),
             })
             if (!promo.ok) {
+              // 手动失败只留原因供页面展示,不计次:管理员反复重试不应把条目推成 failed
+              if (promo.reason !== "条目不存在")
+                r.recordPromoteFailure(
+                  id,
+                  promo.reason,
+                  false,
+                  MAX_PROMOTE_ATTEMPTS
+                )
               // 精确匹配,不用 includes("不存在"):「目标文档不存在」也含这三个字,用子串
               // 判断会把「索引里有该 doc、磁盘上文件却丢了」这种内部一致性故障报成 404,
               // 让操作员以为条目 id 不存在——而这是本特性最不该撒的谎。
+              // INTERNAL_FAULT_REASONS 是磁盘/索引/路径守卫类系统故障(非请求参数问题),
+              // 映射 409 而非 400;成文校验类仍归 400。
               const status =
                 promo.reason === "条目不存在"
                   ? 404
@@ -213,6 +201,17 @@ export async function PATCH(req: NextRequest): Promise<NextResponse> {
               })
             )
           } catch (err) {
+            // 抛错多为超时/I/O:同样只写 note 不计次;记账本身失败不能盖掉原始错误
+            try {
+              r.recordPromoteFailure(
+                id,
+                "手动升格调用异常(超时或 I/O),可重试",
+                false,
+                MAX_PROMOTE_ATTEMPTS
+              )
+            } catch {
+              // 忽略:原始错误已由下面进错误总线
+            }
             return reflectionMutationFailure(err)
           }
         }

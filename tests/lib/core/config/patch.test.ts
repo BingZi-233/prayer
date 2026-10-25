@@ -128,15 +128,16 @@ describe("配置局部更新", () => {
     const current = currentConfig()
     const merged = mergeConfigPatch(current, wire as never)
     expect(Object.getPrototypeOf(merged.groupPolicies)).toBe(Object.prototype)
-    expect(Object.prototype.hasOwnProperty.call(merged.groupPolicies, "__proto__")).toBe(false)
+    expect(
+      Object.prototype.hasOwnProperty.call(merged.groupPolicies, "__proto__")
+    ).toBe(false)
   })
 })
 
 describe("配置边界与关闭语义", () => {
-  it("0 保留不拆分、关闭整理/升格、关闭会话过期的语义", () => {
+  it("0 保留不拆分、关闭升格、关闭会话过期的语义", () => {
     const patch = {
       maxReplyChars: 0,
-      reflectCompactMs: 0,
       reflectPromoteMs: 0,
       resumeTtlMs: 0,
     }
@@ -144,12 +145,12 @@ describe("配置边界与关闭语义", () => {
   })
 
   it("保持历史负周期关闭约定，正周期最小一秒", () => {
-    expect(
-      configPatchSchema.parse({ reflectCompactMs: -1, reflectPromoteMs: -1 })
-    ).toEqual({ reflectCompactMs: 0, reflectPromoteMs: 0 })
-    expect(
-      configPatchSchema.parse({ reflectCompactMs: 1, reflectPromoteMs: 1 })
-    ).toEqual({ reflectCompactMs: 1000, reflectPromoteMs: 1000 })
+    expect(configPatchSchema.parse({ reflectPromoteMs: -1 })).toEqual({
+      reflectPromoteMs: 0,
+    })
+    expect(configPatchSchema.parse({ reflectPromoteMs: 1 })).toEqual({
+      reflectPromoteMs: 1000,
+    })
   })
 
   it("始终运行的扫描周期不能关闭，主动回复还强制保守下限", () => {

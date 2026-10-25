@@ -50,6 +50,9 @@ export interface ChatActivity extends ChatRef {
 export interface ChatCursor extends ChatRef {
   cursor: number
 }
+/** 自动升格评审账本;null = 未评审。legacy = 存量整理产物,不参与自动升格。 */
+export type ReviewState = "accepted" | "declined" | "failed" | "legacy"
+
 export interface ReflectionEntry {
   id: number
   content: string
@@ -59,19 +62,12 @@ export interface ReflectionEntry {
   question: string | null
   answer: string | null
   status: ReflectionStatus
+  reviewState: ReviewState | null
+  reviewAttempts: number
+  reviewNote: string | null
 }
 export interface ReflectionSummary extends ReflectionEntry {
   contentLen: number
-}
-export interface CompactionSummary {
-  id: number
-  ts: number
-  beforeCount: number
-  afterCount: number
-}
-export interface CompactionDetail extends CompactionSummary {
-  before: string[]
-  after: string[]
 }
 export interface ProactiveReply extends ChatRef {
   id: number

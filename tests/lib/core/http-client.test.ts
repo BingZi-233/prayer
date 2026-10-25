@@ -166,7 +166,7 @@ describe("管理客户端响应", () => {
         new DOMException("private deadline context", "TimeoutError")
       )
     vi.stubGlobal("fetch", fetcher)
-    const result = await fetchApi("/api/reflection/compact", { method: "POST" })
+    const result = await fetchApi("/api/reflection/promote", { method: "POST" })
     expect(fetcher).toHaveBeenCalledTimes(1)
     expect(fetcher.mock.calls[0][1].signal).toBeInstanceOf(AbortSignal)
     expect(result).toMatchObject({
@@ -194,7 +194,7 @@ describe("管理客户端响应", () => {
         )
     )
     vi.stubGlobal("fetch", fetcher)
-    const pending = fetchApi("/api/reflection/compact", {
+    const pending = fetchApi("/api/reflection/promote", {
       method: "POST",
       signal: controller.signal,
     })

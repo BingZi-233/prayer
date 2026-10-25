@@ -27,4 +27,12 @@ export class SqliteContext {
   transaction<T>(fn: () => T): T {
     return this.db.transaction(fn)()
   }
+
+  /**
+   * BEGIN IMMEDIATE:开事务即取写锁,读校验与写入之间不会被其它连接(如另一进程)插入写。
+   * 嵌套在已有事务内时与 transaction 一样退化为 SAVEPOINT。
+   */
+  immediateTransaction<T>(fn: () => T): T {
+    return this.db.transaction(fn).immediate()
+  }
 }
