@@ -280,3 +280,87 @@ describe("deleteKbChunk", () => {
     expect(repo.reflectionEntries()).toHaveLength(0)
   })
 })
+
+describe("升格评审账本", () => {
+  const seed = (source = "human-reflection:qq:100:5") => {
+    const id = repo.insertKbEntry("human-reflection", "faq", source, vec())
+    repo.insertReflectionMeta(id, "qq", "100", "问", "答")
+    return id
+  }
+  const entry = (id: number) =>
+    repo.reflectionEntries().find((r) => r.id === id)!
+  let db: ReturnType<typeof openDb>
+  beforeEach(() => {
+    db = openDb(":memory:", 3)
+    repo = new Repo(db)
+  })
+
+  it("新反思默认未评审", () => {
+    const e = entry(seed())
+    expect(e.reviewState).toBeNull()
+    expect(e.reviewAttempts).toBe(0)
+    expect(e.reviewNote).toBeNull()
+  })
+
+  it("摘要与详情同样带账本字段", () => {
+    const id = seed()
+    repo.setReviewState(id, "declined", "无复用价值")
+    expect(
+      repo.reflectionEntrySummaries().find((r) => r.id === id)
+    ).toMatchObject({ reviewState: "declined", reviewNote: "无复用价值" })
+    expect(repo.reflectionEntryDetail(id)).toMatchObject({
+      reviewState: "declined",
+    })
+  })
+
+  it("可重现失败计次,达上限转 failed;不计次只写 note", () => {
+    const id = seed()
+    repo.recordPromoteFailure(id, "超时", false, 3)
+    expect(entry(id)).toMatchObject({
+      reviewAttempts: 0,
+      reviewState: null,
+      reviewNote: "超时",
+    })
+    repo.recordPromoteFailure(id, "x", true, 3)
+    repo.recordPromoteFailure(id, "x", true, 3)
+    expect(entry(id).reviewState).toBeNull()
+    repo.recordPromoteFailure(id, "单元超长(612 > 500)", true, 3)
+    expect(entry(id)).toMatchObject({
+      reviewState: "failed",
+      reviewAttempts: 3,
+      reviewNote: "单元超长(612 > 500)",
+    })
+  })
+
+  it("恢复入库清空账本;legacy 保持 legacy", () => {
+    const id = seed()
+    repo.recordPromoteFailure(id, "x", true, 1)
+    repo.setReflectionStatus(id, "rejected")
+    expect(entry(id).reviewState).toBe("failed")
+    repo.setReflectionStatus(id, "approved")
+    expect(entry(id)).toMatchObject({
+      status: "approved",
+      reviewState: null,
+      reviewAttempts: 0,
+      reviewNote: null,
+    })
+
+    const legacy = seed("human-reflection:qq:0:9")
+    repo.setReviewState(legacy, "legacy")
+    repo.setReflectionStatus(legacy, "approved")
+    expect(entry(legacy).reviewState).toBe("legacy")
+  })
+
+  it("对不存在的 chunk 记账不会造孤儿 meta", () => {
+    repo.setReviewState(99999, "declined", "n")
+    repo.recordPromoteFailure(99999, "n", true, 3)
+    expect(repo.reflectionEntries()).toHaveLength(0)
+    expect(
+      (
+        db.prepare("SELECT COUNT(*) AS n FROM reflection_meta").get() as {
+          n: number
+        }
+      ).n
+    ).toBe(0)
+  })
+})

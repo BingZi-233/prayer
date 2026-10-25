@@ -28,6 +28,9 @@ export interface ReflectionRow {
   question: string | null
   answer: string | null
   status: string
+  review_state: string | null
+  review_attempts: number
+  review_note: string | null
 }
 
 export interface ReflectionSummaryRow {
@@ -38,6 +41,9 @@ export interface ReflectionSummaryRow {
   question: string | null
   answer: string | null
   status: string
+  review_state: string | null
+  review_attempts: number
+  review_note: string | null
 }
 
 export interface CompactionSummaryRow {

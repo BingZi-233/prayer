@@ -12,6 +12,7 @@ import type {
   CompactionSummary,
   CompactionDetail,
   ReflectionStatus,
+  ReviewState,
 } from "../models.ts"
 import type { SqliteContext } from "../context.ts"
 import {
@@ -86,7 +87,8 @@ export class ReflectionRepository {
   reflectionEntries(): ReflectionEntry[] {
     const rows = this.sql
       .prepare<ReflectionRow>(
-        `SELECT c.id, c.content, c.source, m.question, m.answer, COALESCE(m.status, 'approved') AS status
+        `SELECT c.id, c.content, c.source, m.question, m.answer, COALESCE(m.status, 'approved') AS status,
+                m.review_state, COALESCE(m.review_attempts, 0) AS review_attempts, m.review_note
          FROM kb_chunks c LEFT JOIN reflection_meta m ON m.chunk_id = c.id
          WHERE c.doc = 'human-reflection' ORDER BY c.id DESC`
       )
@@ -112,7 +114,8 @@ export class ReflectionRepository {
       .prepare<ReflectionSummaryRow>(
         `SELECT c.id, substr(c.content, 1, ?) AS content, length(c.content) AS contentLen,
               c.source, substr(m.question, 1, ?) AS question, substr(m.answer, 1, ?) AS answer,
-              COALESCE(m.status, 'approved') AS status
+              COALESCE(m.status, 'approved') AS status,
+                m.review_state, COALESCE(m.review_attempts, 0) AS review_attempts, m.review_note
          FROM kb_chunks c LEFT JOIN reflection_meta m ON m.chunk_id = c.id
          WHERE c.doc = 'human-reflection' ORDER BY c.id DESC LIMIT ?`
       )
@@ -127,7 +130,8 @@ export class ReflectionRepository {
   reflectionEntryDetail(id: number): ReflectionEntry | null {
     const row = this.sql
       .prepare<ReflectionRow>(
-        `SELECT c.id, c.content, c.source, m.question, m.answer, COALESCE(m.status, 'approved') AS status
+        `SELECT c.id, c.content, c.source, m.question, m.answer, COALESCE(m.status, 'approved') AS status,
+                m.review_state, COALESCE(m.review_attempts, 0) AS review_attempts, m.review_note
          FROM kb_chunks c LEFT JOIN reflection_meta m ON m.chunk_id = c.id
          WHERE c.id = ? AND c.doc = 'human-reflection'`
       )
@@ -183,10 +187,56 @@ export class ReflectionRepository {
         .run(chunkId, status)
       return true
     }
+    // 恢复入库(approved)= 重新评审:清空账本,legacy 除外(保持存量待处置)。
+    // SQLite 的 SET 各表达式读的都是更新前的行值,三个 CASE 判断同一个旧 review_state。
     const info = this.sql
-      .prepare("UPDATE reflection_meta SET status = ? WHERE chunk_id = ?")
-      .run(status, chunkId)
+      .prepare(
+        `UPDATE reflection_meta SET status = ?,
+           review_state = CASE WHEN ? = 'approved' AND COALESCE(review_state, '') <> 'legacy'
+             THEN NULL ELSE review_state END,
+           review_attempts = CASE WHEN ? = 'approved' AND COALESCE(review_state, '') <> 'legacy'
+             THEN 0 ELSE review_attempts END,
+           review_note = CASE WHEN ? = 'approved' AND COALESCE(review_state, '') <> 'legacy'
+             THEN NULL ELSE review_note END
+         WHERE chunk_id = ?`
+      )
+      .run(status, status, status, status, chunkId)
     return info.changes > 0
+  }
+
+  // 评审结论/状态。无 meta 行(chunk 已不存在或历史脏数据)时静默不写,不补孤儿行。
+  setReviewState(
+    chunkId: number,
+    state: ReviewState | null,
+    note: string | null = null
+  ): void {
+    this.sql
+      .prepare(
+        "UPDATE reflection_meta SET review_state = ?, review_note = ? WHERE chunk_id = ?"
+      )
+      .run(state, note, chunkId)
+  }
+
+  // 升格失败记账:counted=false 只写 note(基础设施故障/并发);counted=true 计次,
+  // 累计达到 maxAttempts 转 failed。无 meta 行时静默不写。
+  recordPromoteFailure(
+    chunkId: number,
+    note: string,
+    counted: boolean,
+    maxAttempts: number
+  ): void {
+    const inc = counted ? 1 : 0
+    this.sql
+      .prepare(
+        `UPDATE reflection_meta
+         SET review_note = ?,
+             review_attempts = review_attempts + ?,
+             review_state = CASE
+               WHEN ? > 0 AND review_attempts + ? >= ? THEN 'failed'
+               ELSE review_state END
+         WHERE chunk_id = ?`
+      )
+      .run(note, inc, inc, inc, maxAttempts, chunkId)
   }
 
   // 升格为正式文档:标 promoted;写文件+向量入库由 applyPromote / API 处理

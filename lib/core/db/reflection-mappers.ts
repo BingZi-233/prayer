@@ -1,5 +1,9 @@
 import type { ReflectionRow } from "./rows.ts"
-import type { ReflectionStatus, ReflectionEntry } from "./models.ts"
+import type {
+  ReflectionStatus,
+  ReflectionEntry,
+  ReviewState,
+} from "./models.ts"
 
 /** 解析反思 source:新 human-reflection:{channel}:{chatId}:{ts};旧 human-reflection:{gid}:{ts}→qq */
 export function parseReflectionSource(
@@ -50,7 +54,19 @@ export function mapReflectionRow(r: ReflectionRow): ReflectionEntry {
     question: r.question,
     answer: r.answer,
     status: normalizeReflectionStatus(r.status),
+    reviewState: normalizeReviewState(r.review_state),
+    reviewAttempts: r.review_attempts ?? 0,
+    reviewNote: r.review_note ?? null,
   }
+}
+
+const REVIEW_STATES = new Set(["accepted", "declined", "failed", "legacy"])
+
+/** 未知取值一律视为未评审(null),不让脏值穿透到类型层。 */
+export function normalizeReviewState(
+  s: string | null | undefined
+): ReviewState | null {
+  return s && REVIEW_STATES.has(s) ? (s as ReviewState) : null
 }
 
 /** 无元数据或未知旧状态沿用 approved，避免历史知识在升级后消失。 */

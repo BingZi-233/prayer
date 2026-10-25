@@ -294,6 +294,14 @@ export class Repo {
   ) {
     return this.reflection.setReflectionStatus(...args)
   }
+  setReviewState(...args: Parameters<ReflectionRepository["setReviewState"]>) {
+    return this.reflection.setReviewState(...args)
+  }
+  recordPromoteFailure(
+    ...args: Parameters<ReflectionRepository["recordPromoteFailure"]>
+  ) {
+    return this.reflection.recordPromoteFailure(...args)
+  }
   promoteReflection(
     ...args: Parameters<ReflectionRepository["promoteReflection"]>
   ) {

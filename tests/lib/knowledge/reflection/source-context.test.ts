@@ -13,6 +13,9 @@ function entry(overrides: Partial<ReflectionEntry> = {}): ReflectionEntry {
     question: null,
     answer: "完整 FAQ",
     status: "approved",
+    reviewState: null,
+    reviewAttempts: 0,
+    reviewNote: null,
     ...overrides,
   }
 }
