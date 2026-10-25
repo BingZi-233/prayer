@@ -42,6 +42,7 @@ function baseCfg(over: Partial<AppConfig> = {}): AppConfig {
     proactiveMaxPerScan: 2,
     supportUrl: "https://www.packyapi.ai",
     ackEnabled: true,
+    conciseReply: true,
     maxReplyChars: 900,
     topicScanMs: 300000,
     topicSettleMs: 60000,

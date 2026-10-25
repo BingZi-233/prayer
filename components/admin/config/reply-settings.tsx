@@ -17,24 +17,31 @@ export function ReplySettings({
   setCfg,
   updateField,
   fieldValue,
-}: Pick<ConfigForm, "cfg" | "setCfg" | "updateField" | "fieldValue"> & {
-}) {
+}: Pick<ConfigForm, "cfg" | "setCfg" | "updateField" | "fieldValue"> & {}) {
   return (
     <SectionCard
       title="回复体验"
-      description="收到消息确认、支持链接与长文拆分。"
+      description="收到消息确认、回复长度、支持链接与长文拆分。"
     >
       <FieldGroup>
         <Field orientation="horizontal">
           <Checkbox
             id="ackEnabled"
             checked={cfg.ackEnabled !== false}
+            onCheckedChange={(v) => setCfg({ ...cfg, ackEnabled: v === true })}
+          />
+          <FieldLabel htmlFor="ackEnabled">@ 后先回「收到，查询中」</FieldLabel>
+        </Field>
+        <Field orientation="horizontal">
+          <Checkbox
+            id="conciseReply"
+            checked={cfg.conciseReply !== false}
             onCheckedChange={(v) =>
-              setCfg({ ...cfg, ackEnabled: v === true })
+              setCfg({ ...cfg, conciseReply: v === true })
             }
           />
-          <FieldLabel htmlFor="ackEnabled">
-            @ 后先回「收到，查询中」
+          <FieldLabel htmlFor="conciseReply">
+            精简回复(先给结论,约 150 字内)
           </FieldLabel>
         </Field>
         <Field>
@@ -68,9 +75,7 @@ export function ReplySettings({
             value={fieldValue("usageBudgetUsd")}
             onChange={(e) => updateField("usageBudgetUsd", e.target.value)}
           />
-          <FieldDescription>
-            超过后向管理面告警。0 = 不告警。
-          </FieldDescription>
+          <FieldDescription>超过后向管理面告警。0 = 不告警。</FieldDescription>
         </Field>
       </FieldGroup>
     </SectionCard>

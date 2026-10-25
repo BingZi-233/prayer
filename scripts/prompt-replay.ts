@@ -763,6 +763,7 @@ async function main(): Promise<void> {
       brandName?: string
       brandDescription?: string
       supportUrl?: string
+      conciseReply?: boolean
       kbPrefetchEnabled?: boolean
       kbPrefetchTopK?: number
       kbPrefetchMaxDistance?: number
@@ -784,7 +785,11 @@ async function main(): Promise<void> {
       variants.set(
         name,
         name === "clite"
-          ? buildDefaultSystem({ brand, supportUrl })
+          ? buildDefaultSystem({
+              brand,
+              supportUrl,
+              concise: cfg.conciseReply ?? true,
+            })
           : renderVariant(templates.get(name) ?? "", brand, supportUrl)
       )
     }

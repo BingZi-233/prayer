@@ -78,8 +78,23 @@ describe("buildDefaultSystem 弱模型契约", () => {
   })
 
   it("长度不超过上限，防止无节制膨胀", () => {
-    expect(SYSTEM_PROMPT_MAX_CHARS).toBe(2000)
+    expect(SYSTEM_PROMPT_MAX_CHARS).toBe(2200)
     expect(s.length).toBeLessThanOrEqual(SYSTEM_PROMPT_MAX_CHARS)
+  })
+
+  it("精简开关只追加「回复要短」段，其余正文逐字不变", () => {
+    const concise = buildDefaultSystem({
+      brand: { name: "Acme", description: "测试品牌" },
+      supportUrl: "https://support.example",
+      concise: true,
+    })
+    expect(s).not.toContain("# 回复要短")
+    expect(concise).toContain("# 回复要短")
+    expect(concise).toContain("不超过 3 句或 150 字")
+    expect(concise).toContain("不附选型建议")
+    expect(concise.replace(/\n# 回复要短\n[\s\S]*?\n(?=\n# 没依据)/, "")).toBe(
+      s
+    )
   })
 
   it("注入边界与保密规则不能被静默删掉", () => {
@@ -113,10 +128,11 @@ describe("buildDefaultSystem 弱模型契约", () => {
     expect(DEFAULT_SYSTEM.length).toBeLessThanOrEqual(SYSTEM_PROMPT_MAX_CHARS)
   })
 
-  it("超长品牌配置被限长,不会撑破预算", () => {
+  it("超长品牌配置被限长,开精简段也不会撑破预算", () => {
     const long = buildDefaultSystem({
       brand: { name: "N".repeat(80), description: "D".repeat(500) },
       supportUrl: "https://support.example",
+      concise: true,
     })
     expect(long.length).toBeLessThanOrEqual(SYSTEM_PROMPT_MAX_CHARS)
   })

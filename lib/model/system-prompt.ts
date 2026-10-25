@@ -19,11 +19,24 @@ const KB_TOOL_NAME = "kb_search"
  * 正文长度上限(字符)。生产模型上下文 ≥200K,长度不是约束,本上限只防无节制膨胀。
  * 测试与回放脚本共用同一个真源。
  */
-export const SYSTEM_PROMPT_MAX_CHARS = 2000
+export const SYSTEM_PROMPT_MAX_CHARS = 2200
+
+/**
+ * 精简回复段。caveman hook 的英文规则压不住 MiniMax-M3 的中文长答(实测照样数百字),
+ * 故改用正文内的中文硬约束:给数字上限与禁写清单,弱模型才能机械执行。
+ */
+const CONCISE_SECTION = `
+# 回复要短
+- 先给结论,整段一般不超过 3 句或 150 字;要步骤时最多 5 步,每步一句。
+- 只写回答所必需的:不铺背景、不讲原理、不附选型建议与额外提醒、不复述问题、不寒暄收尾。
+- 多问分条答,每条一两句;用户说「详细」时再展开。
+`
 
 export interface DefaultSystemOptions {
   supportUrl?: string
   brand?: BrandInput
+  /** 精简回复:追加「回复要短」段。部署级开关,不按轮次变化,不破坏缓存前缀。 */
+  concise?: boolean
 }
 
 /**
@@ -42,8 +55,8 @@ export function buildDefaultSystem(
   const options = typeof input === "string" ? { supportUrl: input } : input
   const brand = resolveBrand(options.brand)
   // 品牌字段来自后台配置(name ≤80、description ≤500)。正文里名字出现 3 次,
-  // 不限长会把最坏渲染推过 SYSTEM_PROMPT_MAX_CHARS(实测 40/120 时为 2132),
-  // 且测试用的是固定 fixture 品牌,发现不了。16/40 使最坏形态 1979,留 21 字符余量。
+  // 不限长会把最坏渲染推过 SYSTEM_PROMPT_MAX_CHARS,且测试用的是固定 fixture 品牌,
+  // 发现不了。16/40 使不含精简段的最坏形态 1979;精简段另计,由测试兜住总上限。
   const brandName = brand.name.slice(0, 16)
   const brandDescription = brand.description.slice(0, 40)
   const supportUrl = options.supportUrl?.trim() ?? ""
@@ -65,7 +78,7 @@ export function buildDefaultSystem(
 资料与工具结果冲突时,以工具当前值为准;判不了就说无法核实,不要折中猜。
 3 只答用户问的。一个问题里既要步骤又要价格时,两类依据都要取,别用一个顶另一个。
 4 发之前自检:数字都来自本轮工具结果吗?步骤都在本轮资料里吗?有没有承诺没做的事?回答直接写正文:不要用 Markdown 标题(#)和表格,短横线列表可以。
-
+${options.concise ? CONCISE_SECTION : ""}
 # 没依据时怎么说(照抄这句)
 「这个我没有查到确切依据,不猜。你可以在控制台或官方文档确认,或者 @我 后发送「人工」找群管。」
 不要用「可能」「一般」「通常」把猜的说成查的。
