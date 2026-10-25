@@ -5,7 +5,10 @@ import { listEnabledChats } from "@/lib/core/chat/enabled-chats"
 import { ok, fail, safeApiError } from "@/lib/core/api"
 import { buildGroupChatStats } from "@/lib/knowledge/reflection/stats"
 import { promoteEntry } from "@/lib/knowledge/reflection/promoter"
-import { INTERNAL_FAULT_REASONS } from "@/lib/knowledge/reflection/promote-failure"
+import {
+  INTERNAL_FAULT_REASONS,
+  MAX_PROMOTE_ATTEMPTS,
+} from "@/lib/knowledge/reflection/promote-failure"
 import { embed } from "@/lib/model/embed"
 import { DEFAULT_EMBED_TIMEOUT_MS, withTimeoutFn } from "@/lib/model/timeout"
 import { readJsonBody, REQUEST_BODY_TOO_LARGE } from "@/lib/core/http-security"
@@ -172,6 +175,14 @@ export async function PATCH(req: NextRequest): Promise<NextResponse> {
               embed: withTimeoutFn(DEFAULT_EMBED_TIMEOUT_MS, embed),
             })
             if (!promo.ok) {
+              // 手动失败只留原因供页面展示,不计次:管理员反复重试不应把条目推成 failed
+              if (promo.reason !== "条目不存在")
+                r.recordPromoteFailure(
+                  id,
+                  promo.reason,
+                  false,
+                  MAX_PROMOTE_ATTEMPTS
+                )
               // 精确匹配,不用 includes("不存在"):「目标文档不存在」也含这三个字,用子串
               // 判断会把「索引里有该 doc、磁盘上文件却丢了」这种内部一致性故障报成 404,
               // 让操作员以为条目 id 不存在——而这是本特性最不该撒的谎。

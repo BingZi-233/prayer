@@ -30,6 +30,7 @@ const {
     setReflectionStatus: vi.fn(),
     setCompactAt: vi.fn(),
     setPromoteAt: vi.fn(),
+    recordPromoteFailure: vi.fn(),
   }
   return {
     getAppContextMock: vi.fn(() => ({
@@ -282,7 +283,7 @@ describe("manual reflection routes", () => {
     }
   })
 
-  it("promote failure returns 503 and does not consume its cursor", async () => {
+  it("promote failure returns 503 but still consumes its cursor", async () => {
     runPromoteMock.mockResolvedValue({
       considered: 2,
       promoted: 0,
@@ -298,7 +299,8 @@ describe("manual reflection routes", () => {
       expect.objectContaining({ result: "failed", httpStatus: 503 })
     )
     expect((await response.json()).error).toContain("反思升格失败")
-    expect(setPromoteAtMock).not.toHaveBeenCalled()
+    // 逐条失败由评审账本兜底,一轮正常结束就推进游标
+    expect(setPromoteAtMock).toHaveBeenCalledOnce()
   })
 
   it("promote success records an accepted audit result", async () => {
@@ -327,7 +329,7 @@ describe("manual reflection routes", () => {
 
     expect(response.status).toBe(503)
     expect((await response.json()).error).toContain("已升格 2 条")
-    expect(setPromoteAtMock).not.toHaveBeenCalled()
+    expect(setPromoteAtMock).toHaveBeenCalledOnce()
   })
 
   it("promote 部分失败时将 503 如实持久化为 partial", async () => {
@@ -474,6 +476,72 @@ describe("manual reflection routes", () => {
       expect.objectContaining({ result: "rejected", httpStatus: 400 })
     )
     expect((await response.json()).error).toContain("单元超长")
+  })
+
+  it("手动升格失败写 reviewNote 但不计次", async () => {
+    const db = openDb(":memory:", 3)
+    const realRepo = new Repo(db)
+    const defaultContext = getAppContextMock.getMockImplementation()!
+    try {
+      const id = realRepo.insertKbEntry(
+        "human-reflection",
+        "FAQ",
+        "human-reflection:qq:100:1",
+        new Float32Array([1, 0, 0])
+      )
+      realRepo.insertReflectionMeta(id, "qq", "100", "问", "答")
+      getAppContextMock.mockImplementation(
+        () =>
+          ({
+            cfg: {
+              reflectCompactMinEntries: 3,
+              reflectPromoteMinEntries: 1,
+              reflectPromoteMaxPerRun: 5,
+              reflectNotifyAdmin: false,
+              adminSurface: null,
+            },
+            repo: realRepo,
+            configRepo: realRepo,
+          }) as never
+      )
+      promoteEntryMock.mockResolvedValue({
+        ok: false,
+        reason: "单元超长(600 > 500)",
+      })
+      for (let i = 0; i < 3; i++) {
+        const response = await PATCH(
+          new Request("http://x", {
+            method: "PATCH",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ id, action: "promote" }),
+          }) as never
+        )
+        expect(response.status).toBe(400)
+      }
+      const entry = realRepo.reflectionEntryDetail(id)
+      expect(entry?.reviewNote).toBe("单元超长(600 > 500)")
+      expect(entry?.reviewAttempts).toBe(0)
+      expect(entry?.reviewState).toBeNull()
+    } finally {
+      getAppContextMock.mockImplementation(defaultContext)
+      db.close()
+    }
+  })
+
+  it("手动升格报条目不存在时不写账本", async () => {
+    promoteEntryMock.mockResolvedValue({ ok: false, reason: "条目不存在" })
+    const { repo } = getAppContextMock() as unknown as {
+      repo: { recordPromoteFailure: ReturnType<typeof vi.fn> }
+    }
+    const response = await PATCH(
+      new Request("http://x", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id: 7, action: "promote" }),
+      }) as never
+    )
+    expect(response.status).toBe(404)
+    expect(repo.recordPromoteFailure).not.toHaveBeenCalled()
   })
 
   it("promoteEntry 报 already → 200 且 already 为真", async () => {

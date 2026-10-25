@@ -39,6 +39,9 @@ export async function POST(req: Request): Promise<NextResponse> {
               maxPerRun: cfg.reflectPromoteMaxPerRun,
               notifyAdmin: cfg.reflectNotifyAdmin,
             })
+            // 与定时升格同一游标规则:逐条失败由评审账本兜底,一轮正常结束就推进;
+            // 只有 runPromote 抛出(下面 catch)才不推进
+            repo.setPromoteAt(Date.now())
             if (result.failed) {
               const response = NextResponse.json(
                 fail(
@@ -54,7 +57,6 @@ export async function POST(req: Request): Promise<NextResponse> {
                 ? markAdminAuditPartial(response)
                 : response
             }
-            repo.setPromoteAt(Date.now())
             return NextResponse.json(
               ok({
                 ran:

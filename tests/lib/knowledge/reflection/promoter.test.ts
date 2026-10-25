@@ -6,7 +6,6 @@ import { splitCompactedFaq } from "@/lib/knowledge/reflection/compact-chunks"
 import {
   promoteEntry,
   runPromote,
-  selectPromoteIds,
   registerReflectionPromoter,
   PROMOTE_OUTPUT_SCHEMA,
 } from "@/lib/knowledge/reflection/promoter"
@@ -65,27 +64,6 @@ const composeStub = vi.fn(async ({ entry }: { entry: { id: number } }) => ({
 beforeEach(() => {
   bus.removeAllListeners()
   repo = new Repo(openDb(":memory:", 3))
-})
-
-describe("selectPromoteIds", () => {
-  it("只取候选内 promote=true,截断 maxPerRun,忽略编造 id", () => {
-    const r = selectPromoteIds(
-      [
-        { id: 1, promote: true, reason: "a" },
-        { id: 99, promote: true, reason: "fake" },
-        { id: 2, promote: false, reason: "no" },
-        { id: 3, promote: true, reason: "b" },
-        { id: 4, promote: true, reason: "c" },
-      ],
-      [1, 2, 3, 4],
-      2
-    )
-    expect(r.ok).toBe(true)
-    if (r.ok) expect(r.ids).toEqual([1, 3])
-  })
-  it("null decisions → fail", () => {
-    expect(selectPromoteIds(null, [1], 5).ok).toBe(false)
-  })
 })
 
 describe("runPromote", () => {
@@ -194,7 +172,7 @@ describe("runPromote", () => {
     db.close()
   })
 
-  it("长来源问答按字符预算拆批,达到本轮上限后停止后续评审", async () => {
+  it("长来源问答按字符预算拆批;成文名额用完后评审照常,通过的留待下轮成文", async () => {
     const ids = seedApproved(6)
     for (const id of ids)
       repo.insertReflectionMeta(id, "qq", "100", "问", "来源".repeat(4_000))
@@ -230,12 +208,22 @@ describe("runPromote", () => {
       promoteFn,
     })
     expect(result).toEqual({ considered: 6, promoted: 1 })
-    expect(batches).toHaveLength(2)
+    expect(batches).toHaveLength(3)
     expect(batches.every((batch) => batch.length < 6)).toBe(true)
     expect(promoteFn).toHaveBeenCalledTimes(1)
+    const states = batches
+      .flat()
+      .map((id) => repo.reflectionEntryDetail(id)?.reviewState)
+    // 第 1 批判不升格;后两批通过,其中 1 条成文(promoteFn 桩不删 chunk,仍为 accepted)
+    expect(
+      states.slice(0, batches[0].length).every((s) => s === "declined")
+    ).toBe(true)
+    expect(states.slice(batches[0].length).every((s) => s === "accepted")).toBe(
+      true
+    )
   })
 
-  it("单条来源超预算时保留原条目,不阻断其他候选", async () => {
+  it("单条来源超预算时分批前记 failed,不阻断其他候选;手动升格仍拒绝", async () => {
     const [small, large] = seedApproved(2)
     repo.insertReflectionMeta(
       large,
@@ -255,9 +243,12 @@ describe("runPromote", () => {
       composeFn: composeStub as never,
       promoteFn: async () => ({ ok: true, file: "x", content: "y" }),
     })
-    expect(result).toEqual({ considered: 2, promoted: 1, failed: true })
+    expect(result).toEqual({ considered: 2, promoted: 1 })
     expect(qf).toHaveBeenCalledTimes(1)
-    expect(repo.reflectionEntryDetail(large)?.status).toBe("approved")
+    const detail = repo.reflectionEntryDetail(large)
+    expect(detail?.status).toBe("approved")
+    expect(detail?.reviewState).toBe("failed")
+    expect(detail?.reviewNote).toContain("超过单批字符预算")
     const composeFn = vi.fn()
     expect(
       await promoteEntry({
@@ -330,7 +321,7 @@ describe("runPromote", () => {
     expect(a.text).toContain("反思自动升格")
   })
 
-  it("maxPerRun 截断", async () => {
+  it("maxPerRun 截断成文,被截掉的通过条目记 accepted 留待下轮", async () => {
     const ids = seedApproved(4)
     const promoteFn = vi.fn(async ({ chunkId }: { chunkId: number }) => ({
       ok: true as const,
@@ -351,6 +342,11 @@ describe("runPromote", () => {
       promoteFn: promoteFn as never,
     })
     expect(promoteFn).toHaveBeenCalledTimes(2)
+    const composed = new Set(promoteFn.mock.calls.map(([arg]) => arg.chunkId))
+    const rest = ids.filter((id) => !composed.has(id))
+    expect(rest).toHaveLength(2)
+    for (const id of rest)
+      expect(repo.reflectionEntryDetail(id)?.reviewState).toBe("accepted")
   })
 
   it("非法 structured → 不升格 + emit error", async () => {
@@ -458,8 +454,195 @@ describe("runPromote", () => {
   })
 })
 
+describe("runPromote 评审账本", () => {
+  const run = (extra: Record<string, unknown> = {}) =>
+    runPromote({
+      repo,
+      adminSurface: null,
+      embed,
+      notifyAdmin: false,
+      ...extra,
+    } as never)
+
+  it("判不升格 → declined,下一轮不再评审", async () => {
+    const [id] = seedApproved(1)
+    const q = vi.fn(
+      fakeQuery({ decisions: [{ id, promote: false, reason: "x" }] })
+    )
+    await run({ queryFn: q, composeFn: composeStub })
+    expect(repo.reflectionEntryDetail(id)?.reviewState).toBe("declined")
+    const r = await run({ queryFn: q, composeFn: composeStub })
+    expect(q).toHaveBeenCalledTimes(1)
+    expect(r).toEqual({ considered: 0, promoted: 0 })
+  })
+
+  it("accepted 条目下一轮直接成文,不重审", async () => {
+    const [id] = seedApproved(1)
+    repo.setReviewState(id, "accepted")
+    const q = vi.fn(fakeQuery({ decisions: [] }))
+    const promoteFn = vi.fn(async () => ({
+      ok: true as const,
+      file: "f",
+      content: "c",
+    }))
+    const r = await run({ queryFn: q, composeFn: composeStub, promoteFn })
+    expect(promoteFn).toHaveBeenCalledTimes(1)
+    expect(promoteFn.mock.calls[0]).toEqual([
+      expect.objectContaining({ chunkId: id }),
+    ])
+    expect(q).not.toHaveBeenCalled()
+    expect(r).toEqual({ considered: 1, promoted: 1 })
+  })
+
+  it("accepted 积压先占成文名额,本轮新通过的留待下轮", async () => {
+    const [old, fresh] = seedApproved(2)
+    repo.setReviewState(old, "accepted")
+    const promoteFn = vi.fn(async () => ({
+      ok: true as const,
+      file: "f",
+      content: "c",
+    }))
+    const q = vi.fn(
+      fakeQuery({ decisions: [{ id: fresh, promote: true, reason: "y" }] })
+    )
+    await run({ queryFn: q, composeFn: composeStub, promoteFn, maxPerRun: 1 })
+    expect(promoteFn).toHaveBeenCalledTimes(1)
+    expect(promoteFn.mock.calls[0]).toEqual([
+      expect.objectContaining({ chunkId: old }),
+    ])
+    expect(q).toHaveBeenCalledTimes(1)
+    expect(repo.reflectionEntryDetail(fresh)?.reviewState).toBe("accepted")
+  })
+
+  it("成文校验失败 3 次转 failed;超时不计次", async () => {
+    const [id] = seedApproved(1)
+    repo.setReviewState(id, "accepted")
+    const bad = vi.fn(async () => ({
+      ok: false as const,
+      reason: "单元超长(612 > 500)",
+    }))
+    for (let i = 0; i < 3; i++) {
+      const r = await run({
+        queryFn: fakeQuery({ decisions: [] }),
+        composeFn: bad,
+      })
+      expect(r.failed).toBe(true)
+    }
+    const e1 = repo.reflectionEntryDetail(id)
+    expect(e1?.reviewState).toBe("failed")
+    expect(e1?.reviewAttempts).toBe(3)
+    expect(e1?.reviewNote).toBe("单元超长(612 > 500)")
+    expect(bad).toHaveBeenCalledTimes(3)
+    // failed 后不再自动成文
+    await run({ queryFn: fakeQuery({ decisions: [] }), composeFn: bad })
+    expect(bad).toHaveBeenCalledTimes(3)
+
+    const [id2] = seedApproved(1)
+    repo.setReviewState(id2, "accepted")
+    const boom = vi.fn(async () => {
+      throw new Error("timeout")
+    })
+    for (let i = 0; i < 3; i++)
+      await run({ queryFn: fakeQuery({ decisions: [] }), composeFn: boom })
+    const e2 = repo.reflectionEntryDetail(id2)
+    expect(e2?.reviewState).toBe("accepted")
+    expect(e2?.reviewAttempts).toBe(0)
+    expect(e2?.reviewNote).toContain("超时")
+  })
+
+  it("系统故障类 ok:false 只写 note 不计次", async () => {
+    const [id] = seedApproved(1)
+    repo.setReviewState(id, "accepted")
+    const promoteFn = vi.fn(async () => ({
+      ok: false as const,
+      reason: "目标文档不存在",
+    }))
+    for (let i = 0; i < 3; i++)
+      await run({
+        queryFn: fakeQuery({ decisions: [] }),
+        composeFn: composeStub,
+        promoteFn,
+      })
+    const e = repo.reflectionEntryDetail(id)
+    expect(e?.reviewState).toBe("accepted")
+    expect(e?.reviewAttempts).toBe(0)
+    expect(e?.reviewNote).toBe("目标文档不存在")
+  })
+
+  it("legacy 条目不进评审也不进成文", async () => {
+    const [id] = seedApproved(1)
+    repo.setReviewState(id, "legacy")
+    const q = vi.fn(fakeQuery({ decisions: [] }))
+    const r = await run({ queryFn: q })
+    expect(q).not.toHaveBeenCalled()
+    expect(r.considered).toBe(0)
+  })
+
+  it("chatId=0 的整理块即使缺 meta(账本为 null)也不进评审", async () => {
+    // 缺 meta 行的整理块经 LEFT JOIN 显示为 approved + reviewState null
+    const orphan = repo.insertKbEntry(
+      "human-reflection",
+      "整理后的 FAQ",
+      "human-reflection:qq:0:123",
+      vec()
+    )
+    const entry = repo.reflectionEntryDetail(orphan)
+    expect(entry?.status).toBe("approved")
+    expect(entry?.reviewState).toBeNull()
+    expect(entry?.chatId).toBe("0")
+    const q = vi.fn(fakeQuery({ decisions: [] }))
+    const r = await run({ queryFn: q })
+    expect(q).not.toHaveBeenCalled()
+    expect(r.considered).toBe(0)
+  })
+
+  it("超预算条目分批前直接 failed,同批其它条目照常评审", async () => {
+    const ids = seedApproved(2)
+    // 把第一条的来源答案撑过 MAX_REVIEW_CHARS(24k)
+    repo.insertReflectionMeta(ids[0], "qq", "100", "问", "长".repeat(25_000))
+    const q = vi.fn(
+      fakeQuery({ decisions: [{ id: ids[1], promote: false, reason: "x" }] })
+    )
+    await run({ queryFn: q })
+    expect(q).toHaveBeenCalledTimes(1)
+    expect(repo.reflectionEntryDetail(ids[0])?.reviewState).toBe("failed")
+    expect(repo.reflectionEntryDetail(ids[1])?.reviewState).toBe("declined")
+  })
+
+  it("单轮最多评审 3 批", async () => {
+    seedApproved(80) // 每批 ≤20 条 → 4 批
+    const q = vi.fn(fakeQuery({ decisions: [] }))
+    await run({ queryFn: q })
+    expect(q).toHaveBeenCalledTimes(3)
+  })
+
+  it("模型漏返回或编造的 id 不记账,漏返回的保持未评审", async () => {
+    const ids = seedApproved(2)
+    const q = vi.fn(
+      fakeQuery({
+        decisions: [
+          { id: ids[0], promote: false, reason: "x" },
+          { id: 99_999, promote: true, reason: "编造" },
+        ],
+      })
+    )
+    await run({ queryFn: q })
+    expect(repo.reflectionEntryDetail(ids[0])?.reviewState).toBe("declined")
+    expect(repo.reflectionEntryDetail(ids[1])?.reviewState).toBeNull()
+  })
+
+  it("评审批次解析失败不记账,下轮重评", async () => {
+    const [id] = seedApproved(1)
+    const r = await run({ queryFn: fakeQuery({ nope: true }) })
+    expect(r.failed).toBe(true)
+    const e = repo.reflectionEntryDetail(id)
+    expect(e?.reviewState).toBeNull()
+    expect(e?.reviewAttempts).toBe(0)
+  })
+})
+
 describe("registerReflectionPromoter", () => {
-  it("失败不推进完成游标,下次扫描可以重试", async () => {
+  it("有单条失败也推进游标:逐条失败由评审账本兜底", async () => {
     vi.useFakeTimers()
     try {
       seedApproved(1)
@@ -477,9 +660,40 @@ describe("registerReflectionPromoter", () => {
       })
       await vi.advanceTimersByTimeAsync(10)
       expect(qf).toHaveBeenCalledTimes(1)
-      expect(repo.promoteAt()).toBe(1)
+      expect(repo.promoteAt()).toBe(10_000)
       await vi.advanceTimersByTimeAsync(1_000)
-      expect(qf).toHaveBeenCalledTimes(2)
+      expect(qf).toHaveBeenCalledTimes(1)
+      stop()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+  it("整轮异常不推进游标,下次扫描可以重试", async () => {
+    vi.useFakeTimers()
+    try {
+      seedApproved(1)
+      const qf = vi.fn(fakeQuery({ decisions: [] }))
+      repo.setPromoteAt(1)
+      // 取条目即抛 → runPromote reject
+      const spy = vi.spyOn(repo, "reflectionEntries").mockImplementation(() => {
+        throw new Error("db boom")
+      })
+      const stop = registerReflectionPromoter({
+        repo,
+        adminSurface: null,
+        embed,
+        now: () => 10_000,
+        promoteMs: 1_000,
+        scanMs: 1_000,
+        firstDelayMs: 10,
+        queryFn: qf as never,
+      })
+      await vi.advanceTimersByTimeAsync(10)
+      expect(repo.promoteAt()).toBe(1)
+      spy.mockRestore()
+      await vi.advanceTimersByTimeAsync(1_000)
+      expect(qf).toHaveBeenCalledTimes(1)
+      expect(repo.promoteAt()).toBe(10_000)
       stop()
     } finally {
       vi.useRealTimers()

@@ -49,6 +49,7 @@ it("定时整理与 API 升格使用不同 Repo 时仍串行,升格读取提交�
   })
   await started
   let promotionCalls = 0
+  let promotionSettled = false
   const promotion = runPromote({
     repo: apiRepo,
     adminSurface: null,
@@ -63,11 +64,17 @@ it("定时整理与 API 升格使用不同 Repo 时仍串行,升格读取提交�
         }
       })()) as never,
   })
-  await Promise.resolve()
-  expect(promotionCalls).toBe(0)
+  void promotion.then(() => {
+    promotionSettled = true
+  })
+  await new Promise((resolve) => setTimeout(resolve, 10))
+  // 整理持锁期间升格必须等待,不能拿旧快照先跑
+  expect(promotionSettled).toBe(false)
   release()
   expect(await compact).toBe("completed")
-  expect(await promotion).toEqual({ considered: 1, promoted: 0 })
-  expect(promotionCalls).toBe(1)
+  // 读到的是提交后的快照:两条 chatId=100 原条目已被整理成一条 chatId=0 的整理块,
+  // 而整理块不参与自动升格。若读了旧快照,这里会是 considered 2 并调用评审。
+  expect(await promotion).toEqual({ considered: 0, promoted: 0 })
+  expect(promotionCalls).toBe(0)
   db.close()
 })
