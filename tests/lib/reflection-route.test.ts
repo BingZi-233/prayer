@@ -78,7 +78,11 @@ vi.mock("@/lib/core/app-context", () => ({
 vi.mock("@/lib/knowledge/reflection/compactor", () => ({
   runCompactWithOutcome: runCompactMock,
 }))
-vi.mock("@/lib/knowledge/reflection/promoter", () => ({
+// 筛选口径用真实实现(candidatesBefore 与 considered 同口径),只换掉会调 LLM 的入口
+vi.mock("@/lib/knowledge/reflection/promoter", async (importOriginal) => ({
+  ...(await importOriginal<
+    typeof import("@/lib/knowledge/reflection/promoter")
+  >()),
   runPromote: runPromoteMock,
   promoteEntry: promoteEntryMock,
 }))
@@ -622,6 +626,94 @@ describe("manual reflection routes", () => {
       scope: "reflection-promote",
       userVisible: false,
     })
+  })
+
+  it("promoteEntry 抛异常时写固定文案 note,不计次", async () => {
+    promoteEntryMock.mockRejectedValue(new Error("成文超时"))
+    const { repo } = getAppContextMock() as unknown as {
+      repo: { recordPromoteFailure: ReturnType<typeof vi.fn> }
+    }
+    const response = await PATCH(
+      new Request("http://x", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id: 7, action: "promote" }),
+      }) as never
+    )
+    expect(response.status).toBe(500)
+    expect(repo.recordPromoteFailure).toHaveBeenCalledWith(
+      7,
+      "手动升格调用异常(超时或 I/O),可重试",
+      false,
+      3
+    )
+  })
+
+  it("记账本身抛错不盖掉原始错误", async () => {
+    promoteEntryMock.mockRejectedValue(new Error("成文超时"))
+    const { repo } = getAppContextMock() as unknown as {
+      repo: { recordPromoteFailure: ReturnType<typeof vi.fn> }
+    }
+    repo.recordPromoteFailure.mockImplementationOnce(() => {
+      throw new Error("db locked")
+    })
+    const response = await PATCH(
+      new Request("http://x", {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id: 7, action: "promote" }),
+      }) as never
+    )
+    expect(response.status).toBe(500)
+    expect(emitErrorSafelyMock.mock.calls[0][0].err.message).toBe("成文超时")
+  })
+
+  it("立即升格的 candidatesBefore 与 considered 同口径", async () => {
+    const base = {
+      content: "c",
+      channel: "qq",
+      ts: 1,
+      question: "q",
+      answer: "a",
+      reviewAttempts: 0,
+      reviewNote: null,
+    }
+    reflectionEntriesMock.mockReturnValue([
+      { ...base, id: 1, chatId: "100", status: "approved", reviewState: null },
+      {
+        ...base,
+        id: 2,
+        chatId: "100",
+        status: "approved",
+        reviewState: "accepted",
+      },
+      {
+        ...base,
+        id: 3,
+        chatId: "100",
+        status: "approved",
+        reviewState: "declined",
+      },
+      {
+        ...base,
+        id: 4,
+        chatId: "100",
+        status: "approved",
+        reviewState: "failed",
+      },
+      {
+        ...base,
+        id: 5,
+        chatId: "0",
+        status: "approved",
+        reviewState: "legacy",
+      },
+      { ...base, id: 6, chatId: "0", status: "approved", reviewState: null },
+      { ...base, id: 7, chatId: "100", status: "rejected", reviewState: null },
+    ] as never)
+    const response = await promote(emptyPost())
+    expect(response.status).toBe(200)
+    expect((await response.json()).data.candidatesBefore).toBe(2)
   })
 
   it("entry promote audit start failure prevents embedding and promotion", async () => {

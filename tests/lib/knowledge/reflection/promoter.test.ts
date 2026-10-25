@@ -631,13 +631,69 @@ describe("runPromote 评审账本", () => {
     expect(repo.reflectionEntryDetail(ids[1])?.reviewState).toBeNull()
   })
 
-  it("评审批次解析失败不记账,下轮重评", async () => {
-    const [id] = seedApproved(1)
+  it("评审批次解析失败不计次、只写 note,下轮重评", async () => {
+    const ids = seedApproved(2)
     const r = await run({ queryFn: fakeQuery({ nope: true }) })
+    expect(r.failed).toBe(true)
+    for (const id of ids) {
+      const e = repo.reflectionEntryDetail(id)
+      expect(e?.reviewState).toBeNull()
+      expect(e?.reviewAttempts).toBe(0)
+      expect(e?.reviewNote).toBe("评审批次失败(超时或输出无法解析),下轮重试")
+    }
+    const q = vi.fn(fakeQuery({ decisions: [] }))
+    await run({ queryFn: q })
+    expect(q).toHaveBeenCalledTimes(1)
+  })
+
+  it("评审批次超时同样只写 note", async () => {
+    const [id] = seedApproved(1)
+    const hang = () =>
+      (async function* () {
+        await new Promise(() => {})
+        yield {}
+      })()
+    const r = await run({ queryFn: hang, queryTimeoutMs: 20 })
     expect(r.failed).toBe(true)
     const e = repo.reflectionEntryDetail(id)
     expect(e?.reviewState).toBeNull()
     expect(e?.reviewAttempts).toBe(0)
+    expect(e?.reviewNote).toContain("评审批次失败")
+  })
+
+  it("minEntries 只卡未评审条目:accepted 积压不足门槛也照常成文", async () => {
+    const [id] = seedApproved(1)
+    repo.setReviewState(id, "accepted")
+    const q = vi.fn(fakeQuery({ decisions: [] }))
+    const promoteFn = vi.fn(async () => ({
+      ok: true as const,
+      file: "f",
+      content: "c",
+    }))
+    const r = await run({
+      queryFn: q,
+      composeFn: composeStub,
+      promoteFn,
+      minEntries: 5,
+    })
+    expect(promoteFn).toHaveBeenCalledTimes(1)
+    expect(q).not.toHaveBeenCalled()
+    expect(r).toEqual({ considered: 1, promoted: 1 })
+  })
+
+  it("未评审条目不足 minEntries 时不评审,但 accepted 仍成文", async () => {
+    const [old, fresh] = seedApproved(2)
+    repo.setReviewState(old, "accepted")
+    const q = vi.fn(fakeQuery({ decisions: [] }))
+    const promoteFn = vi.fn(async () => ({
+      ok: true as const,
+      file: "f",
+      content: "c",
+    }))
+    await run({ queryFn: q, composeFn: composeStub, promoteFn, minEntries: 2 })
+    expect(promoteFn).toHaveBeenCalledTimes(1)
+    expect(q).not.toHaveBeenCalled()
+    expect(repo.reflectionEntryDetail(fresh)?.reviewState).toBeNull()
   })
 })
 

@@ -346,18 +346,27 @@ export function runPromote(
   return task
 }
 
+/**
+ * 自动升格候选:approved 且账本为未评审或 accepted。
+ * 存量整理块(chatId=0)只能人工处置:v11 已标 legacy,但缺 meta 行的整理块经
+ * LEFT JOIN 显示为 approved + reviewState=null,只看 legacy 会把它误捞进评审,
+ * 而且没有 meta 行就记不了账,会每轮重评。所以 legacy 与 chatId=0 都要排除。
+ * runPromote 与「立即升格」路由的 candidatesBefore 共用这一口径。
+ */
+export function isAutoPromoteCandidate(e: ReflectionEntry): boolean {
+  return (
+    e.status === "approved" &&
+    e.chatId !== "0" &&
+    (e.reviewState === null || e.reviewState === "accepted")
+  )
+}
+
 async function runPromoteUnlocked(
   deps: ReflectionPromoterDeps
 ): Promise<PromoteRunResult> {
   const d = resolve(deps)
   const entries = d.repo.reflectionEntries()
-  // 存量整理块(chatId=0)只能人工处置:v11 已标 legacy,但缺 meta 行的整理块经
-  // LEFT JOIN 显示为 approved + reviewState=null,只看 legacy 会把它误捞进评审,
-  // 而且没有 meta 行就记不了账,会每轮重评。两个条件都要。
-  const live = entries.filter(
-    (e) =>
-      e.status === "approved" && e.reviewState !== "legacy" && e.chatId !== "0"
-  )
+  const live = entries.filter(isAutoPromoteCandidate)
   const accepted = live.filter((e) => e.reviewState === "accepted")
   const unreviewed = live
     .filter((e) => e.reviewState === null)
@@ -366,7 +375,10 @@ async function runPromoteUnlocked(
       answer: promotionSourceAnswer(entry, entries),
     }))
   const considered = accepted.length + unreviewed.length
-  if (considered < d.minEntries || d.maxPerRun <= 0)
+  // minEntries 只是「攒够再调评审 LLM」的门槛;accepted 积压已评审过,总是成文(仍受 maxPerRun)
+  const shouldReview =
+    unreviewed.length > 0 && unreviewed.length >= d.minEntries
+  if (d.maxPerRun <= 0 || (accepted.length === 0 && !shouldReview))
     return { considered, promoted: 0 }
 
   const embedCache = new Map<string, Float32Array>()
@@ -441,9 +453,11 @@ async function runPromoteUnlocked(
     await composeOne(e.id)
   }
 
-  // ② 超预算条目分批前直接 failed:单条就撑爆批预算,重试也不会变小,不能让它连累同批
+  // ② 超预算条目分批前直接 failed:单条就撑爆批预算,重试也不会变小,不能让它连累同批。
+  // 不置本轮 failed:有 meta 的条目转 failed 后下轮不再进来,这条失败已由账本收口,
+  // 不属于整轮失败。
   const reviewable: typeof unreviewed = []
-  for (const e of unreviewed) {
+  for (const e of shouldReview ? unreviewed : []) {
     if (JSON.stringify(e).length > MAX_REVIEW_CHARS) {
       d.repo.setReviewState(e.id, "failed", "升格来源超过单批字符预算")
       logger.log(
@@ -459,6 +473,8 @@ async function runPromoteUnlocked(
   // 通过的记 accepted 留待下轮成文,判不升格的记 declined 永不重审——评审花费有批次上限兜底。
   const batches = reviewBatches(reviewable).slice(0, MAX_REVIEW_BATCHES_PER_RUN)
   for (const [index, batch] of batches.entries()) {
+    // 结论落账前出错的条目:catch 里只写 note,不计次
+    let undecided = batch.map((c) => c.id)
     try {
       const ctx = new Map<number, string>()
       for (const e of batch) {
@@ -524,14 +540,22 @@ async function runPromoteUnlocked(
         d.repo.setReviewState(dec.id, dec.promote ? "accepted" : "declined")
         if (dec.promote) toCompose.push(dec.id)
       }
+      undecided = []
       // 漏返回的 id 保持未评审,下轮再评
       for (const id of toCompose) {
         if (attempted >= d.maxPerRun) break // 剩余 accepted 留待下轮成文
         await composeOne(id)
       }
     } catch (err) {
-      // 评审批次失败(超时/embed 超时/解析失败)不记账,下轮重试
+      // 评审批次失败(超时/embed 超时/解析失败)不计次,只写 note,下轮重评
       failed = true
+      for (const id of undecided)
+        d.repo.recordPromoteFailure(
+          id,
+          "评审批次失败(超时或输出无法解析),下轮重试",
+          false,
+          MAX_PROMOTE_ATTEMPTS
+        )
       emitErrorSafely({ scope: "reflection-promote", err, userVisible: false })
     }
   }

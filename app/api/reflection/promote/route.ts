@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server"
 import { getAppContext } from "@/lib/core/app-context"
 import { ok, fail, safeApiError } from "@/lib/core/api"
-import { runPromote } from "@/lib/knowledge/reflection/promoter"
+import {
+  isAutoPromoteCandidate,
+  runPromote,
+} from "@/lib/knowledge/reflection/promoter"
 import { resolveAdminSurface } from "@/lib/core/chat/enabled-chats"
 import { emptyBodyFailure, readEmptyBody } from "@/lib/core/http-security"
 import { withAdminJob } from "@/lib/core/admin-jobs"
@@ -29,9 +32,10 @@ export async function POST(req: Request): Promise<NextResponse> {
         },
         async () => {
           try {
+            // 与 runPromote 的 considered 同口径(accepted + 未评审)
             const before = repo
               .reflectionEntries()
-              .filter((e) => e.status === "approved").length
+              .filter(isAutoPromoteCandidate).length
             const result = await runPromote({
               repo,
               adminSurface: resolveAdminSurface(cfg),

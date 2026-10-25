@@ -205,6 +205,17 @@ export async function PATCH(req: NextRequest): Promise<NextResponse> {
               })
             )
           } catch (err) {
+            // 抛错多为超时/I/O:同样只写 note 不计次;记账本身失败不能盖掉原始错误
+            try {
+              r.recordPromoteFailure(
+                id,
+                "手动升格调用异常(超时或 I/O),可重试",
+                false,
+                MAX_PROMOTE_ATTEMPTS
+              )
+            } catch {
+              // 忽略:原始错误已由下面进错误总线
+            }
             return reflectionMutationFailure(err)
           }
         }
