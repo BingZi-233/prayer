@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server"
-import { usageStats, cacheHitRatio, type UsageStat } from "@/lib/model/stats/usage"
+import {
+  usageStats,
+  cacheHitRatio,
+  type UsageStat,
+} from "@/lib/model/stats/usage"
 import {
   toolStats,
   kbCoverage,
@@ -24,6 +28,7 @@ const SITE_ORDER = [
   "promote",
   "promote-compose",
   "topic",
+  "legacy-split",
 ] as const
 const SITE_LABEL: Record<string, string> = {
   agent: "主客服",
@@ -34,6 +39,7 @@ const SITE_LABEL: Record<string, string> = {
   promote: "升格评审",
   "promote-compose": "升格成文",
   topic: "问题归类",
+  "legacy-split": "存量拆分",
 }
 
 const ZERO: UsageStat = {

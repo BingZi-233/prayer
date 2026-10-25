@@ -185,6 +185,87 @@ describe("reflection_meta / reflectionEntries", () => {
       db.prepare("SELECT COUNT(*) AS n FROM reflection_meta").get()
     ).toEqual({ n: 0 })
   })
+
+  it("reviewState 写入新块 meta(拆分产物标 legacy)", () => {
+    expect(
+      repo.replaceReflectionEntries(
+        [],
+        [
+          { content: "带摘录", faq: "摘录", embedding: vec() },
+          { content: "无摘录", embedding: vec() },
+        ],
+        123,
+        [],
+        ["带摘录", "无摘录"],
+        undefined,
+        "legacy"
+      )
+    ).toBe(true)
+    const byContent = new Map(
+      repo.reflectionEntries().map((e) => [e.content, e])
+    )
+    expect(byContent.get("带摘录")).toMatchObject({
+      answer: "摘录",
+      reviewState: "legacy",
+    })
+    // 指定 reviewState 时即使没有 faq 也要写 meta,否则账本状态丢失
+    expect(byContent.get("无摘录")).toMatchObject({
+      answer: null,
+      reviewState: "legacy",
+    })
+  })
+
+  describe("expectedStatus 乐观校验", () => {
+    const seedOld = () =>
+      ["旧甲", "旧乙"].map((c) => {
+        const id = repo.insertKbEntry(
+          "human-reflection",
+          c,
+          "human-reflection:qq:0:1",
+          vec()
+        )
+        repo.insertReflectionMeta(id, "qq", "0", "q", "完整")
+        return id
+      })
+    const replace = (ids: number[]) =>
+      repo.replaceReflectionEntries(
+        ids,
+        [{ content: "新", faq: "摘录", embedding: vec() }],
+        99,
+        ["旧甲", "旧乙"],
+        ["新"],
+        "approved",
+        "legacy"
+      )
+
+    it("旧块有一个已被驳回 → 返回 false,不删不插不写审计", () => {
+      const ids = seedOld()
+      repo.setReflectionStatus(ids[1], "rejected")
+      expect(replace(ids)).toBe(false)
+      expect(
+        repo
+          .reflectionEntries()
+          .map((e) => e.content)
+          .sort()
+      ).toEqual(["旧乙", "旧甲"].sort())
+      expect(auditRows()).toHaveLength(0)
+    })
+
+    it("旧块有一个已被删除 → 返回 false", () => {
+      const ids = seedOld()
+      repo.deleteKbChunk(ids[0])
+      expect(replace(ids)).toBe(false)
+      expect(repo.reflectionEntries().map((e) => e.content)).toEqual(["旧乙"])
+      expect(auditRows()).toHaveLength(0)
+    })
+
+    it("全部仍为 approved → 替换并写审计", () => {
+      const ids = seedOld()
+      expect(replace(ids)).toBe(true)
+      expect(repo.reflectionEntries().map((e) => e.content)).toEqual(["新"])
+      expect(auditRows()).toHaveLength(1)
+    })
+  })
 })
 
 describe("deleteKbChunk", () => {

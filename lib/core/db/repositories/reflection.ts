@@ -260,7 +260,9 @@ export class ReflectionRepository {
      * entries while it is waiting.  Refuse the replacement instead of
      * deleting a now-rejected/promoted entry.
      */
-    expectedStatus?: ReflectionStatus
+    expectedStatus?: ReflectionStatus,
+    /** 新块 meta 的 review_state(拆分产物传 legacy);指定时无 faq 也写 meta */
+    reviewState?: ReviewState
   ): boolean {
     return this.sql.transaction(() => {
       if (oldIds.length) {
@@ -296,13 +298,13 @@ export class ReflectionRepository {
           `human-reflection:qq:0:${sourceTs}`
         )
         this.knowledge.insertKbVec(id, e.embedding)
-        if (e.faq) {
-          // 向量仍按 500 字分块,升格需要完整 FAQ 的步骤、条件和例外。
+        if (e.faq || reviewState) {
+          // answer 保存该块的来源原文(拆分产物为逐字摘录),供升格核验来源。
           this.sql
             .prepare(
-              "INSERT INTO reflection_meta (chunk_id, channel, group_id, question, answer, status) VALUES (?, 'qq', '0', NULL, ?, 'approved')"
+              "INSERT INTO reflection_meta (chunk_id, channel, group_id, question, answer, status, review_state) VALUES (?, 'qq', '0', NULL, ?, 'approved', ?)"
             )
-            .run(id, e.faq)
+            .run(id, e.faq || null, reviewState ?? null)
         }
       }
       this.sql
