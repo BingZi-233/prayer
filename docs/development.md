@@ -85,7 +85,7 @@ channels   knowledge    # 通道实现 / 知识库与反思(同级,互不依赖)
 - `dbPath` 是部署级存储边界的只读例外：管理 API 拒绝在线切换，迁移必须停机、备份并
   在部署环境修改 `DB_PATH`。
 
-## 反思升格与存量拆分
+## 反思升格
 
 反思入库前先做近似去重；自动升格与手动升格共用按数据库连接协调的任务队列，
 手动与定时触发同类任务时复用正在执行的一轮。整理环节已删除，不再把小反思
@@ -111,28 +111,9 @@ prompt，空行折叠后再计长度，渲染超长时同一轮重试一次。�
 `source-context.ts`。
 
 `legacy` 条目是整理环节留下的巨型 FAQ 切块（`chatId` 为 0，完整 FAQ 保存在各块
-`reflection_meta.answer`）。一次性拆分脚本 `pnpm kb:split-legacy-reflections`
-分两步：
-
-1. dry-run（无参数）：调模型生成拆分计划，写 `data/split-legacy-<ts>.json` 与同名
-   `.md` 审阅报告，不改知识库。报告顶部与脚本输出都给出各状态组数、将被替换的
-   旧块数，以及不替换（`needs_review` / `failed` / `skipped`）而继续留在检索里的
-   旧块数。模型花费按约 $8–10 估计（CLI 计价，记入 `legacy-split` 站点）；
-2. `--apply data/split-legacy-<ts>.json`：只读计划、不调模型，先自动备份数据库，
-   再逐组替换。组状态为 `split` / `fallback` / `covered` / `needs_review` /
-   `failed` / `skipped`：`split` 与 `fallback` 以新条目替换；`covered`（每段产出都
-   因与已有知识重复被丢弃）以空条目替换，即删除旧块、只写审计；其余不替换。
-   有组 refused / errored 时退出码非 0。
-
-dry-run 与 apply 开始前都先做一次嵌入预热（不套超时、打印耗时），避免首次加载
-模型撞上 60s 超时。
-
-前置条件（任一不满足即非 0 退出且不改库）：数据库存在且 schema 为当前版本（须先
-`pnpm pm:restart` 完成 v11 迁移）；`reflectPromoteMs` 为 0；`claudeConfigDir` 下有
-`settings.json`；计划的截止时间等于固定的 `LEGACY_SPLIT_CUTOFF`（`legacy-split.ts` 导出，
-`source-context.ts` 也按它识别拆分产物，直接以摘录作为升格来源）。dry-run 与
-apply 之间不要操作反思、不要跑 `pnpm ingest`。apply 打印的备份要长期保留，它是
-撤销替换的唯一手段。完整上线步骤见 [数据库迁移与备份](database-operations.md)。
+`reflection_meta.answer`），不参与自动升格。一次性拆分已完成，脚本与库代码已删除；
+`source-context.ts` 导出的 `LEGACY_SPLIT_CUTOFF` 仍用于区分拆分产物（ts ≥ 截止，直接以摘录作为
+升格来源）与旧整理块，`usage_daily` 里的 `legacy-split` 站点仅作历史用量展示。
 
 升格成文后另做一次来源忠实性复核。原文没有提到的功能不能写成“不支持”或
 “仅支持”；核验拒绝、输出非法或超时均保留原反思。提交时在知识库写锁内再次

@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest"
 import type { ReflectionEntry } from "@/lib/core/db/models"
 import { splitCompactedFaq } from "@/lib/knowledge/reflection/compact-chunks"
-import { LEGACY_SPLIT_CUTOFF } from "@/lib/knowledge/reflection/legacy-split"
-import { promotionSourceAnswer } from "@/lib/knowledge/reflection/source-context"
+import {
+  LEGACY_SPLIT_CUTOFF,
+  promotionSourceAnswer,
+} from "@/lib/knowledge/reflection/source-context"
 
 function entry(overrides: Partial<ReflectionEntry> = {}): ReflectionEntry {
   return {

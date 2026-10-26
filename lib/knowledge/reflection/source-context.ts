@@ -1,6 +1,12 @@
 import type { ReflectionEntry } from "../../core/db/models"
 import { splitCompactedFaq } from "./compact-chunks"
-import { LEGACY_SPLIT_CUTOFF } from "./legacy-split"
+
+/**
+ * 存量整理块的截止时间(不含)。生产库里最后一批整理块的 ts 为 1792929187654,取其 + 1:
+ * ts ≥ 截止的 chatId=0 条目是一次性拆分产物(answer 即原文逐字摘录),之前的是旧整理块。
+ * 拆分脚本已删除,此常量只用于升格来源取值区分两类历史条目。
+ */
+export const LEGACY_SPLIT_CUTOFF = 1792929187655
 
 /**
  * 升格来源取值:
