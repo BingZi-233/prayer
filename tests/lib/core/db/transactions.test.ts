@@ -19,7 +19,7 @@ function seedReflection(content = "原有知识") {
     "human-reflection:tg:-100:1000",
     vector()
   )
-  repo.insertReflectionMeta(id, "tg", "-100", "原问题", "原答案")
+  repo.insertReflectionMeta(id, "tg", "-100", "原问题", "原答案", "approved")
   return id
 }
 

@@ -33,7 +33,7 @@ describe("reflection_meta / reflectionEntries", () => {
       "human-reflection:qq:100:5",
       vec()
     )
-    repo.insertReflectionMeta(id, "qq", "100", "问X", "答Y")
+    repo.insertReflectionMeta(id, "qq", "100", "问X", "答Y", "approved")
     const e = repo.reflectionEntries().find((r) => r.id === id)!
     expect(e).toMatchObject({
       channel: "qq",

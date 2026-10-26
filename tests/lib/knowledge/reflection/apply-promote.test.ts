@@ -282,6 +282,26 @@ describe("applyPromote", () => {
     expect(fs.writeMetaFn).not.toHaveBeenCalled()
   })
 
+  it("待审:拒绝升格,不写盘", async () => {
+    const repo = makeRepo()
+    const id = seedReflection(repo)
+    repo.setReflectionStatus(id, "pending")
+    const fs = fakeFs()
+    const r = await applyPromote({
+      repo,
+      chunkId: id,
+      unit: unit(),
+      embed: asyncVec,
+      cwd: "/w",
+      writeFileFn: fs.writeFileFn,
+      mkdirFn: fs.mkdirFn,
+      writeMetaFn: fs.writeMetaFn,
+      now: () => NOW,
+    })
+    expect(r).toEqual({ ok: false, reason: "待审条目,请先审核入库" })
+    expect(fs.writeFileFn).not.toHaveBeenCalled()
+  })
+
   it("单元形状非法:拒绝且不写盘、不写台账", async () => {
     const repo = makeRepo()
     const id = seedReflection(repo)

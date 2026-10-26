@@ -835,6 +835,20 @@ describe("promoteEntry", () => {
     expect(composeFn).not.toHaveBeenCalled()
   })
 
+  it("待审 直接短路,不调成文;审核入库后可升格", async () => {
+    const id = seedApproved(1)[0]!
+    repo.setReflectionStatus(id, "pending")
+    const composeFn = vi.fn()
+    const r = await promoteEntry({
+      repo,
+      chunkId: id,
+      embed,
+      composeFn: composeFn as never,
+    })
+    expect(r).toEqual({ ok: false, reason: "待审条目,请先审核入库" })
+    expect(composeFn).not.toHaveBeenCalled()
+  })
+
   it("已升格 直接短路:file 留空(无从得知当初落到哪个文档)", async () => {
     const id = seedApproved(1)[0]!
     repo.setReflectionStatus(id, "promoted")

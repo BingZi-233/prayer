@@ -185,7 +185,12 @@ describe("reflection-poller runScan", () => {
     const a = await notice
     expect(a.channel).toBe("qq")
     expect(a.chatId).toBe("999")
-    const hits = repo.searchKb(new Float32Array([1, 0, 0]), 1)
+    expect(a.text).toContain("待审 1 条(当前积压 1 条)")
+    // 新沉淀默认待审:对外检索不可见,反思自身(includePending)可见
+    expect(repo.searchKb(new Float32Array([1, 0, 0]), 1)).toHaveLength(0)
+    const hits = repo.searchKb(new Float32Array([1, 0, 0]), 1, {
+      includePending: true,
+    })
     expect(hits[0].content).toContain("退款")
     expect(hits[0].source).toContain("human-reflection:qq:100:")
     expect(repo.groupReflectCursor("qq", "100")).toBe(NOW - 1000) // until = now - settle
@@ -194,6 +199,7 @@ describe("reflection-poller runScan", () => {
     expect(entry).toMatchObject({
       question: "退款多久到账",
       answer: "3个工作日",
+      status: "pending",
     })
   })
 
@@ -231,7 +237,9 @@ describe("reflection-poller runScan", () => {
       })
     )
     expect(spy).not.toHaveBeenCalled()
-    expect(repo.searchKb(new Float32Array([1, 0, 0]), 1)).toHaveLength(1)
+    expect(
+      repo.searchKb(new Float32Array([1, 0, 0]), 1, { includePending: true })
+    ).toHaveLength(1)
     expect(repo.groupReflectCursor("qq", "100")).toBe(NOW - 1000)
   })
 
@@ -295,7 +303,9 @@ describe("reflection-poller runScan", () => {
         } as never,
       })
     )
-    const hits = repo.searchKb(new Float32Array([1, 0, 0]), 5)
+    const hits = repo.searchKb(new Float32Array([1, 0, 0]), 5, {
+      includePending: true,
+    })
     expect(hits.some((h) => h.content.includes("退款一般三天"))).toBe(true)
     expect(repo.groupReflectCursor("qq", "100")).toBe(NOW - 1000)
   })
@@ -396,7 +406,9 @@ describe("reflection-poller runScan", () => {
         }) as never,
       })
     )
-    const hits = repo.searchKb(new Float32Array([1, 0, 0]), 10)
+    const hits = repo.searchKb(new Float32Array([1, 0, 0]), 10, {
+      includePending: true,
+    })
     // 相同 FAQ 第二次被硬去重
     expect(hits.filter((h) => h.content === "通用知识条")).toHaveLength(1)
     expect(repo.groupReflectCursor("qq", "100")).toBe(NOW - 1000)
@@ -469,7 +481,9 @@ describe("reflection-poller runScan", () => {
     expect(e.channel).toBe("qq")
     expect(repo.groupReflectCursor("qq", "100")).toBe(0) // 抛错群不推进
     expect(repo.groupReflectCursor("qq", "200")).toBe(NOW - 1000) // 正常群推进
-    expect(repo.searchKb(new Float32Array([1, 0, 0]), 10)).toHaveLength(1) // 只群200沉淀
+    expect(
+      repo.searchKb(new Float32Array([1, 0, 0]), 10, { includePending: true })
+    ).toHaveLength(1) // 只群200沉淀
   })
 
   it("非生效群即使有已沉降管理发言也跳过,不调用 LLM,游标不动", async () => {

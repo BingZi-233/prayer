@@ -136,6 +136,8 @@ async function applyPromoteUnlocked(
   if (!entry) return { ok: false, reason: "条目不存在" }
   if (entry.status === "rejected")
     return { ok: false, reason: "已驳回,不可升格" }
+  if (entry.status === "pending")
+    return { ok: false, reason: "待审条目,请先审核入库" }
   if (entry.status === "promoted") {
     return {
       ok: true,

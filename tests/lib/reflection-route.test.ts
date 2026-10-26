@@ -421,7 +421,7 @@ describe("manual reflection routes", () => {
         "human-reflection:qq:100:1",
         new Float32Array([1, 0, 0])
       )
-      realRepo.insertReflectionMeta(id, "qq", "100", "问", "答")
+      realRepo.insertReflectionMeta(id, "qq", "100", "问", "答", "approved")
       getAppContextMock.mockImplementation(
         () =>
           ({

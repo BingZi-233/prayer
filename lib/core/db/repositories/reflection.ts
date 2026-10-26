@@ -66,7 +66,7 @@ export class ReflectionRepository {
 
   // 反思沉淀的知识条目(doc='human-reflection');source 见 parseReflectionSource。
   // 存量整理块 chatId=0,answer 保存切块前的完整 FAQ;旧条目可能无 meta。
-  // 无 meta / 未知 status 一律视为 approved(沉淀即入库,无需审核)
+  // 无 meta / 未知 status 视为 approved(存量旧条目);新反思落 pending,需人工审核
   reflectionEntries(): ReflectionEntry[] {
     const rows = this.sql
       .prepare<ReflectionRow>(
@@ -80,12 +80,14 @@ export class ReflectionRepository {
   }
 
   // 沉淀条目列表摘要(反思专页 3s 轮询):content/question/answer 在 SQL 内截断,
+  // status 在 SQL 层过滤(不在截断后的结果里滤,否则老待审会被 limit 挤掉)。
   // 全文走 reflectionEntryDetail —— 全量全文曾把响应顶到 MB 级(曾因整理记录全文同款事故)。
   // contentLen 供前端判断是否截断(展开后拉全文)。
   reflectionEntrySummaries(
     contentCap = 300,
     sourceCap = 200,
-    limit = ReflectionRepository.MAX_SUMMARY_ROWS
+    limit = ReflectionRepository.MAX_SUMMARY_ROWS,
+    status?: ReflectionStatus
   ): ReflectionSummary[] {
     const boundedLimit = Number.isFinite(limit)
       ? Math.max(
@@ -100,9 +102,18 @@ export class ReflectionRepository {
               COALESCE(m.status, 'approved') AS status,
               m.review_state, COALESCE(m.review_attempts, 0) AS review_attempts, m.review_note
          FROM kb_chunks c LEFT JOIN reflection_meta m ON m.chunk_id = c.id
-         WHERE c.doc = 'human-reflection' ORDER BY c.id DESC LIMIT ?`
+         WHERE c.doc = 'human-reflection'
+           AND (? IS NULL OR COALESCE(m.status, 'approved') = ?)
+         ORDER BY c.id DESC LIMIT ?`
       )
-      .all(contentCap, sourceCap, sourceCap, boundedLimit)
+      .all(
+        contentCap,
+        sourceCap,
+        sourceCap,
+        status ?? null,
+        status ?? null,
+        boundedLimit
+      )
     return rows.map((r) => ({
       ...mapReflectionRow(r),
       contentLen: r.contentLen,
@@ -132,6 +143,25 @@ export class ReflectionRepository {
     return row.n
   }
 
+  // 各审核状态的反思条数(overview / 反思页头部显示待审积压);无 meta 视为 approved
+  countReflectionsByStatus(): Record<ReflectionStatus, number> {
+    const out: Record<ReflectionStatus, number> = {
+      pending: 0,
+      approved: 0,
+      rejected: 0,
+      promoted: 0,
+    }
+    const rows = this.sql
+      .prepare<{ status: string | null; n: number }>(
+        `SELECT COALESCE(m.status, 'approved') AS status, COUNT(*) AS n
+         FROM kb_chunks c LEFT JOIN reflection_meta m ON m.chunk_id = c.id
+         WHERE c.doc = 'human-reflection' GROUP BY 1`
+      )
+      .all()
+    for (const r of rows) out[normalizeReflectionStatus(r.status)] += r.n
+    return out
+  }
+
   // 沉淀条目的 (id, source) 轻量清单:每 chat 沉淀计数等统计用,
   // 避免 reflectionEntries 的全文列被白白拉出(群活动页每 3s 轮询)
   reflectionSources(): { id: number; source: string | null }[] {
@@ -142,19 +172,42 @@ export class ReflectionRepository {
       .all()
   }
 
-  // 记录一条沉淀的来源问答(chunk_id 对应 kb_chunks.id)。poller 沉淀后调用;默认 approved 直接入库。
+  // 反思条目原子入库:chunk + 向量 + meta(status=pending,待人工审核)同一事务。
+  // meta 若在事务外补写,chunk 已可检索而 meta 未写(视为 approved)的窗口里,
+  // 另一进程(cs 子进程)会检索到未审条目。
+  insertReflectionEntry(
+    doc: string,
+    content: string,
+    source: string,
+    embedding: Float32Array,
+    meta: { channel: string; chatId: string; question: string; answer: string }
+  ): number {
+    return this.sql.transaction(() => {
+      const id = this.knowledge.insertKbChunk(doc, content, source)
+      this.knowledge.insertKbVec(id, embedding)
+      this.sql
+        .prepare(
+          "INSERT INTO reflection_meta (chunk_id, channel, group_id, question, answer, status) VALUES (?, ?, ?, ?, ?, 'pending')"
+        )
+        .run(id, meta.channel, meta.chatId, meta.question, meta.answer)
+      return id
+    })
+  }
+
+  // 测试造数据用:对已存在 chunk 补写 meta(默认 approved,即「已审核入库」);生产走 insertReflectionEntry
   insertReflectionMeta(
     chunkId: number,
     channel: string,
     chatId: string,
     question: string,
-    answer: string
+    answer: string,
+    status: ReflectionStatus = "approved"
   ): void {
     this.sql
       .prepare(
-        "INSERT OR REPLACE INTO reflection_meta (chunk_id, channel, group_id, question, answer, status) VALUES (?, ?, ?, ?, ?, 'approved')"
+        "INSERT OR REPLACE INTO reflection_meta (chunk_id, channel, group_id, question, answer, status) VALUES (?, ?, ?, ?, ?, ?)"
       )
-      .run(chunkId, channel, chatId, question, answer)
+      .run(chunkId, channel, chatId, question, answer, status)
   }
 
   setReflectionStatus(chunkId: number, status: ReflectionStatus): boolean {
@@ -240,7 +293,7 @@ export class ReflectionRepository {
       )
       .get(chunkId)
     const status = normalizeReflectionStatus(meta?.status)
-    if (status === "rejected") return { ok: false }
+    if (status === "rejected" || status === "pending") return { ok: false }
     return { ok: true, content: row.content, status }
   }
 

@@ -1,6 +1,6 @@
 import type { SqliteContext } from "../context.ts"
 import type { KbBaseHit, KbHit } from "../models.ts"
-import { KB_SEARCH_SQL } from "../kb-sql.ts"
+import { KB_SEARCH_SQL, kbSearchSql } from "../kb-sql.ts"
 
 /** Bound admin previews without limiting internal freshness scans. */
 export const MAX_KB_PREVIEW_CHUNKS = 500
@@ -164,13 +164,23 @@ export class KnowledgeRepository {
     return info.changes
   }
 
-  // 向量近邻检索。驳回/已升格的反思不参与命中:
+  // 向量近邻检索。待审/驳回/已升格的反思不参与命中:
+  // - pending:反思默认待审,人工审核前不得进检索
   // - rejected:人工纠错须立刻从检索消失
   // - promoted:知识已固化到正式文档(retrieval/**),避免与正式 chunk 重复占 top-k
-  // 无 meta / 非反思文档一律视为可检索(沉淀默认 approved)。
-  searchKb(query: Float32Array, k: number): KbHit[] {
+  // 无 meta / 非反思文档一律视为可检索。
+  // includePending 仅供反思入库去重与反思上下文使用,让反思看见自己积压的待审条目。
+  private readonly searchWithPendingSql = kbSearchSql({ includePending: true })
+
+  searchKb(
+    query: Float32Array,
+    k: number,
+    opts: { includePending?: boolean } = {}
+  ): KbHit[] {
     const rows = this.sql
-      .prepare<KbHit>(KB_SEARCH_SQL)
+      .prepare<KbHit>(
+        opts.includePending ? this.searchWithPendingSql : KB_SEARCH_SQL
+      )
       .all(Buffer.from(query.buffer), k)
     return rows
   }

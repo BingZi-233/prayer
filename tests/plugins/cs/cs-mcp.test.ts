@@ -32,7 +32,14 @@ describe("cs-mcp KB_SEARCH_SQL(插件路径检索过滤)", () => {
       "human-reflection:qq:1:1",
       vec()
     )
-    repo.insertReflectionMeta(ok, "qq", "1", "q", "a")
+    repo.insertReflectionMeta(ok, "qq", "1", "q", "a", "approved")
+    repo.insertReflectionEntry(
+      "human-reflection",
+      "待审反思",
+      "human-reflection:qq:1:4",
+      vec(),
+      { channel: "qq", chatId: "1", question: "q4", answer: "a4" }
+    )
     const bad = repo.insertKbEntry(
       "human-reflection",
       "已驳回反思",
@@ -55,6 +62,7 @@ describe("cs-mcp KB_SEARCH_SQL(插件路径检索过滤)", () => {
     const pluginContents = pluginHits.map((h) => h.content)
     expect(pluginContents).toContain("基础文档")
     expect(pluginContents).toContain("已入库反思")
+    expect(pluginContents).not.toContain("待审反思")
     expect(pluginContents).not.toContain("已驳回反思")
     expect(pluginContents).not.toContain("已升格反思")
 
