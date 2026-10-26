@@ -8,6 +8,7 @@ import {
   segmentFaq,
   sentenceChunks,
   unitIssue,
+  hasDanglingReference,
   plannedUnitIssue,
   planLegacySplit,
   applyLegacySplit,
@@ -164,6 +165,25 @@ describe("unitIssue", () => {
     expect(unitIssue("cc 分组只允许官方客户端。", ["官方客户端"], src)).toMatch(
       /过短/
     )
+  })
+  it("指代词:名词在条内另有出现或在「」报错原文里不算指代", () => {
+    expect(
+      hasDanglingReference("打开 cc 分组的详情页,确认该分组支持 Responses。")
+    ).toBe(false)
+    expect(
+      hasDanglingReference(
+        "报 503「该分组下的 X 无可用渠道」表示渠道侧无供给。"
+      )
+    ).toBe(false)
+    expect(hasDanglingReference("该怎么选分组?以官方文档为准。")).toBe(false)
+    expect(
+      hasDanglingReference("到控制台查该分组的模型列表,再确认分组与协议。")
+    ).toBe(false)
+    expect(hasDanglingReference("会话上文累积过多时开新会话。")).toBe(false)
+    expect(hasDanglingReference("该分组只允许官方客户端。")).toBe(true)
+    expect(hasDanglingReference("上文提到的配置同样适用。")).toBe(true)
+    expect(hasDanglingReference("cc 分组可用;上述方法同样适用。")).toBe(true)
+    expect(hasDanglingReference("Codex 报错时,此方法无效。")).toBe(true)
   })
   it("拒绝指代词、空行、超长、空摘录、脱敏占位符", () => {
     expect(unitIssue("同上,该分组不支持。", q, src)).toMatch(/指代/)

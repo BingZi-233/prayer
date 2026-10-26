@@ -46,9 +46,31 @@ const MAX_DEDUP_CANDIDATES = 2000
 /**
  * 指代词黑名单:只收「指向前文」的固定搭配,不收单字「该/此/上面」,
  * 避免误伤「该怎么选」「页面上面的按钮」「2.0 以上版本」等正常表达。
+ * 明确跨条引用(同上/上述/以上步骤…)一律拦;「上文」只拦「上文提到/所述」,
+ * 「会话上文堆积」指对话历史,不算指代。
  */
-const REFERENCE_RE =
-  /同上|如上|上述|前述|上文|上面(?:提到|所述|说的|讲的|介绍的)|以上(?:方法|步骤|内容|几点|情况|配置)|(?:该|此|这个|那个)(?:分组|模型|客户端|渠道|通道|令牌|密钥|功能|方法|步骤|问题|错误|版本|插件|配置)/
+const EXPLICIT_REFERENCE_RE =
+  /同上|如上|上述|前述|上文(?:提到|所述|所说|介绍)|上面(?:提到|所述|说的|讲的|介绍的)|以上(?:方法|步骤|内容|几点|情况|配置)/
+/**
+ * 「该/此/这个/那个 + 名词」只在本条别处没出现过该名词时才算指代:
+ * 「打开 cc 分组……该分组」「查该分组的模型列表……确认分组与协议」
+ * 名词在条内另有出现,脱离上下文仍可读,不拦。
+ * 「」内是引用的报错原文(如「该分组下的 X 无可用渠道」),不参与判断。
+ */
+const DEMONSTRATIVE_RE =
+  /(?:该|此|这个|那个)(分组|模型|客户端|渠道|通道|令牌|密钥|功能|方法|步骤|问题|错误|版本|插件|配置)/g
+
+/** 条目是否含脱离上下文就读不懂的指代;导出供测试。 */
+export function hasDanglingReference(text: string): boolean {
+  if (EXPLICIT_REFERENCE_RE.test(text)) return true
+  const unquoted = text.replace(/「[^」]*」/g, "「」")
+  const rest = unquoted.replace(DEMONSTRATIVE_RE, "")
+  for (const m of unquoted.matchAll(DEMONSTRATIVE_RE)) {
+    if (!rest.includes(m[1]!)) return true
+  }
+  return false
+}
+
 /** sanitizeForModel 的占位符(lib/model/sanitize-input.ts);出现在条目里说明模型复述了脱敏副本 */
 const SANITIZE_PLACEHOLDER_RE = /\[(?:网络|TOKEN)\]/
 
@@ -297,7 +319,7 @@ function unitTextIssue(text: string): string | null {
   const basic = unitBasicIssue(text)
   if (basic) return basic
   const t = text.trim()
-  if (REFERENCE_RE.test(t)) return "条目含指代词"
+  if (hasDanglingReference(t)) return "条目含指代词"
   if (SANITIZE_PLACEHOLDER_RE.test(t)) return "条目含脱敏占位符"
   return null
 }
