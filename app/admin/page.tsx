@@ -331,7 +331,13 @@ export default function StatusPage() {
           {
             label: "知识条目",
             value: ov?.reflectionCount ?? "—",
-            hint: "自动入库的自学习知识。",
+            hint: "自学习知识条目总数(含待审)。",
+          },
+          {
+            label: "待审反思",
+            value: ov?.reflectionPendingCount ?? "—",
+            hint: "新沉淀的知识需人工审核入库后才会被检索。",
+            warn: (ov?.reflectionPendingCount ?? 0) > 0,
           },
           {
             label: "今日成本",

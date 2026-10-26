@@ -33,6 +33,7 @@ export async function GET(): Promise<NextResponse> {
         brandDescription: cfg.brandDescription,
         enabledChats: cfg.enabledChats.length,
         reflectionCount: repo.countReflectionEntries(),
+        reflectionPendingCount: repo.countReflectionsByStatus().pending,
         humanSessions: repo.countHumanSessions(),
         // 结果指标(今日 0 点起)
         metrics: {

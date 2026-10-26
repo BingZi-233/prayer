@@ -20,8 +20,16 @@ import { useReflectionActions } from "@/components/admin/reflection/use-reflecti
 import { MetricRows } from "@/components/admin/stat"
 import { SectionCard } from "@/components/admin/section-card"
 import { DataState } from "@/components/admin/data-state"
+import type { EntryStatus } from "@/components/admin/reflection/types"
 import { useGroupNames } from "@/lib/core/chat/group-name"
 import { formatDuration } from "@/lib/core/format-duration"
+
+const STATUS_FILTERS: { label: string; value: EntryStatus | null }[] = [
+  { label: "全部", value: null },
+  { label: "待审", value: "pending" },
+  { label: "已入库", value: "approved" },
+  { label: "已驳回", value: "rejected" },
+]
 
 export default function ReflectionPage() {
   const {
@@ -32,6 +40,9 @@ export default function ReflectionPage() {
     promoteBusy,
     acting,
     approvedCount,
+    pendingCount,
+    statusFilter,
+    setStatusFilter,
     willPromote,
     autoPromote,
     act,
@@ -42,7 +53,7 @@ export default function ReflectionPage() {
     <PageShell>
       <PageHeader
         title="反思"
-        description="从人工答复中提炼知识，自动写入知识库。"
+        description="从人工答复中提炼知识，经人工审核后入库。"
         actions={
           <div className="flex flex-wrap gap-2">
             <Button
@@ -90,6 +101,12 @@ export default function ReflectionPage() {
                 : "关"
               : "—",
             hint: "正式文档升格评审的周期;「关」表示停用。",
+          },
+          {
+            label: "待审",
+            value: d ? pendingCount : "—",
+            hint: "新沉淀的知识默认待审,人工审核入库后才会被检索。",
+            warn: pendingCount > 0,
           },
           {
             label: "待升格候选",
@@ -154,7 +171,22 @@ export default function ReflectionPage() {
 
       <SectionCard
         title={`知识条目${d ? ` (${d.entries.length})` : ""}`}
-        description="自动入库的自学习知识，Agent 检索可直接命中；可驳回，或升格为正式文档。"
+        description="新沉淀的知识默认待审，审核入库后 Agent 才能检索命中；已入库的可驳回，或升格为正式文档。"
+        action={
+          <div className="flex flex-wrap gap-1">
+            {STATUS_FILTERS.map((f) => (
+              <Button
+                key={f.label}
+                size="sm"
+                variant={statusFilter === f.value ? "default" : "outline"}
+                onClick={() => setStatusFilter(f.value)}
+              >
+                {f.label}
+                {f.value && d ? ` ${d.counts[f.value]}` : ""}
+              </Button>
+            ))}
+          </div>
+        }
       >
         <DataState
           loading={loading}

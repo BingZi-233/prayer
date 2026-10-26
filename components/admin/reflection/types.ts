@@ -33,6 +33,7 @@ export interface EntryDetail {
   reviewAttempts?: number
   reviewNote?: string | null
 }
+export type EntryStatus = "pending" | "approved" | "rejected" | "promoted"
 export interface Data {
   config: {
     scanMs: number
@@ -45,4 +46,6 @@ export interface Data {
   }
   groups: GroupRow[]
   entries: Entry[]
+  /** 各审核状态的条数(不受列表筛选与 500 条上限影响) */
+  counts: Record<EntryStatus, number>
 }
