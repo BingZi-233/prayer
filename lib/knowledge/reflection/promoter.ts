@@ -230,6 +230,8 @@ async function promoteEntryUnlocked(
   if (!entry) return { ok: false, reason: "条目不存在" }
   if (entry.status === "rejected")
     return { ok: false, reason: "已驳回,不可升格" }
+  if (entry.status === "pending")
+    return { ok: false, reason: "待审条目,请先审核入库" }
   // 防御性分支:正常流程升格即物理删除 chunk,不会留下 status=promoted 的行。
   // 此时已无从得知当初落到哪个文档,故 file 留空——不为了避免一次 LLM 调用而瞎猜。
   if (entry.status === "promoted")

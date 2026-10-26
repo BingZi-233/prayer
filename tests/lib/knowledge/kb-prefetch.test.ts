@@ -189,3 +189,25 @@ describe("InjectedChunkMemo", () => {
     expect(memo.filterAndMark("s1", [{ id: 1 }])).toHaveLength(1)
   })
 })
+
+describe("makeKbPrefetch 与待审反思", () => {
+  it("真实 repo:pending 反思不被预检索命中,审核入库后命中", async () => {
+    const { openDb } = await import("@/lib/core/db/index")
+    const { Repo } = await import("@/lib/core/db/repo")
+    const repo = new Repo(openDb(":memory:", 3))
+    const id = repo.insertReflectionEntry(
+      "human-reflection",
+      "待审的退款知识",
+      "human-reflection:qq:1:1",
+      new Float32Array([1, 0, 0]),
+      { channel: "qq", chatId: "1", question: "q", answer: "a" }
+    )
+    const prefetch = makeKbPrefetch({
+      repo,
+      embed: async () => new Float32Array([1, 0, 0]),
+    })
+    expect(await prefetch("怎么退款呢", "qq:1:2")).toBe("")
+    repo.setReflectionStatus(id, "approved")
+    expect(await prefetch("怎么退款呢", "qq:1:3")).toContain("待审的退款知识")
+  })
+})

@@ -79,8 +79,8 @@ export function EntryRow({
                 variant="ghost"
                 disabled={acting === e.id}
                 onClick={() => onAct(e.id, "approve")}
-                title="恢复入库"
-                aria-label="恢复入库"
+                title={st === "pending" ? "审核入库" : "恢复入库"}
+                aria-label={st === "pending" ? "审核入库" : "恢复入库"}
               >
                 <Check data-icon="inline-start" />
               </Button>

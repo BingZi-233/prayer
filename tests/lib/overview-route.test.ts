@@ -5,6 +5,7 @@ const {
   usageDailyTotalCost,
   proactiveBadCount,
   countReflectionEntries,
+  countReflectionsByStatus,
   countHumanSessions,
   statusCounts,
 } = vi.hoisted(() => ({
@@ -12,6 +13,7 @@ const {
   usageDailyTotalCost: vi.fn(),
   proactiveBadCount: vi.fn(),
   countReflectionEntries: vi.fn(),
+  countReflectionsByStatus: vi.fn(),
   countHumanSessions: vi.fn(),
   statusCounts: vi.fn(),
 }))
@@ -30,6 +32,7 @@ vi.mock("@/lib/core/app-context", () => ({
       usageDailyTotalCost,
       proactiveBadCount,
       countReflectionEntries,
+      countReflectionsByStatus,
       countHumanSessions,
       outbox: { statusCounts },
     },
@@ -49,6 +52,12 @@ beforeEach(() => {
   usageDailyTotalCost.mockReset().mockReturnValue(0)
   proactiveBadCount.mockReset().mockReturnValue(0)
   countReflectionEntries.mockReset().mockReturnValue(0)
+  countReflectionsByStatus.mockReset().mockReturnValue({
+    pending: 3,
+    approved: 0,
+    rejected: 0,
+    promoted: 0,
+  })
   countHumanSessions.mockReset().mockReturnValue(0)
   statusCounts.mockReset().mockReturnValue({
     pending: 0,
@@ -64,6 +73,7 @@ describe("GET /api/overview resolution metrics", () => {
     const body = await response.json()
 
     expect(response.status).toBe(200)
+    expect(body.data.reflectionPendingCount).toBe(3)
     expect(body.data.metrics).toMatchObject({
       error: 2,
       operationalErrors: 50,

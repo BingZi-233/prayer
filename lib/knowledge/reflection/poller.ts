@@ -261,7 +261,9 @@ export async function collectKbContext(
     if (!batch.includes(q)) batch.push(q)
   }
   for (const q of batch) {
-    for (const h of repo.searchKb(await embed(q), Math.max(k, 3))) {
+    for (const h of repo.searchKb(await embed(q), Math.max(k, 3), {
+      includePending: true,
+    })) {
       const prev = byId.get(h.id)
       if (!prev || h.distance < prev.distance) byId.set(h.id, h)
     }
@@ -401,28 +403,25 @@ async function scanOnce(d: Resolved): Promise<void> {
         const faq = it.faq.trim()
         // 入库前硬去重:对照全库(含正式文档与历史反思)
         const faqVec = await d.embed(faq)
-        const near = d.repo.searchKb(faqVec, d.dupTopK)
+        // 待审条目也要参与去重,否则积压期间同一知识会反复沉淀
+        const near = d.repo.searchKb(faqVec, d.dupTopK, {
+          includePending: true,
+        })
         const dup = isDuplicateOfHits(faq, near, d.dupMaxDistance)
         if (dup.duplicate) continue
-        const chunkId = d.repo.insertKbEntry(
+        // chunk + 向量 + 来源问答(供 web 追溯)原子落库,默认 pending 待人工审核
+        d.repo.insertReflectionEntry(
           "human-reflection",
           faq,
           `human-reflection:${channel}:${chatId}:${d.now()}`,
-          faqVec
-        )
-        // 落来源问答(供 web 追溯这条沉淀从哪次人工问答来)
-        d.repo.insertReflectionMeta(
-          chunkId,
-          channel,
-          chatId,
-          it.question,
-          it.answer
+          faqVec,
+          { channel, chatId, question: it.question, answer: it.answer }
         )
         if (d.notifyAdmin && d.adminSurface) {
           bus.emit("action.send", {
             channel: d.adminSurface.channel,
             chatId: d.adminSurface.chatId,
-            text: `已从 ${channel}:${chatId} 的人工回复沉淀 1 条知识:${faq.slice(0, 40)}${faq.length > 40 ? "…" : ""}`,
+            text: `已从 ${channel}:${chatId} 的人工回复沉淀 1 条知识,待审 1 条(当前积压 ${d.repo.countReflectionsByStatus().pending} 条):${faq.slice(0, 40)}${faq.length > 40 ? "…" : ""}`,
           })
         }
       }

@@ -22,8 +22,10 @@ function chatKey(channel: string, chatId: string): string {
 }
 
 // 反思专页:节奏配置 + 每群进度(游标/滞后/缓冲/沉淀数) + 沉淀条目列表
-export async function GET(): Promise<NextResponse> {
+export async function GET(req?: Request): Promise<NextResponse> {
   try {
+    const statusParam = req ? new URL(req.url).searchParams.get("status") : null
+    const statusFilter = reflectionStatusSchema.safeParse(statusParam)
     const { cfg, repo } = getAppContext()
     const now = Date.now()
 
@@ -31,7 +33,14 @@ export async function GET(): Promise<NextResponse> {
     // 条目列表仍需展示,但只带预览截断(SQL 内截断):全文按需走
     // /api/reflection/entries/[id],3 秒轮询不背全量全文
     // SQL 层只取最近一页摘要;全文仍可通过 entries/[id] 按需读取。
-    const entries = repo.reflectionEntrySummaries(300, 200, 500)
+    // status 过滤在 SQL 层完成,避免老待审被 500 条上限截断而看不到
+    const entries = repo.reflectionEntrySummaries(
+      300,
+      200,
+      500,
+      statusFilter.success ? statusFilter.data : undefined
+    )
+    const counts = repo.countReflectionsByStatus()
 
     const enabled = listEnabledChats(cfg)
     const ids = new Set<string>([
@@ -87,12 +96,20 @@ export async function GET(): Promise<NextResponse> {
         },
         groups,
         entries: entryRows,
+        counts,
       })
     )
   } catch (err) {
     return NextResponse.json(fail(safeApiError(err)), { status: 500 })
   }
 }
+
+const reflectionStatusSchema = z.enum([
+  "pending",
+  "approved",
+  "rejected",
+  "promoted",
+])
 
 const patchSchema = z.object({
   id: z.number(),
@@ -112,7 +129,7 @@ function reflectionMutationFailure(err: unknown): NextResponse {
   return NextResponse.json(fail(safeApiError(err)), { status: 500 })
 }
 
-// 驳回 / 恢复入库 / 升格为正式 FAQ 文档(沉淀默认已 approved,无需审核)
+// 驳回 / 恢复入库 / 升格为正式 FAQ 文档(新沉淀默认 pending,approve 后才进检索)
 export async function PATCH(req: NextRequest): Promise<NextResponse> {
   try {
     const body = await readJsonBody(req)

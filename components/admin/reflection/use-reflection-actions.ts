@@ -1,10 +1,10 @@
 "use client"
 
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { toast } from "sonner"
 import { usePolling } from "@/components/admin/use-polling"
 import { fetchApi } from "@/lib/core/http-client"
-import type { Data } from "./types"
+import type { Data, EntryStatus } from "./types"
 import { runReflectionAction } from "./request-action"
 
 /**
@@ -15,12 +15,16 @@ import { runReflectionAction } from "./request-action"
  * 轮询数据与 refresh —— 所以整体收进一个 hook,不必按动作再拆。
  */
 export function useReflectionActions() {
+  // 状态筛选在服务端 SQL 层过滤;切换即换轮询 url
+  const [statusFilter, setStatusFilter] = useState<EntryStatus | null>(null)
   const {
     data: d,
     error,
     loading,
     refresh,
-  } = usePolling<Data>("/api/reflection")
+  } = usePolling<Data>(
+    statusFilter ? `/api/reflection?status=${statusFilter}` : "/api/reflection"
+  )
   const [promoteBusy, setPromoteBusy] = useState(false)
   const [acting, setActing] = useState<number | null>(null)
   const lifecycle = useRef<AbortController | null>(null)
@@ -30,13 +34,9 @@ export function useReflectionActions() {
     lifecycle.current = controller
     return () => controller.abort()
   }, [])
-  // 3s 轮询 + 操作都会触发 render:计数只随数据变化重算
-  const approvedCount = useMemo(
-    () =>
-      (d?.entries ?? []).filter((e) => (e.status ?? "approved") === "approved")
-        .length,
-    [d]
-  )
+  // 已入库数取服务端按状态计数,不依赖(可能被筛选/截断的)当前列表
+  const approvedCount = d?.counts.approved ?? 0
+  const pendingCount = d?.counts.pending ?? 0
   const willPromote = d
     ? approvedCount >= d.config.promoteMinEntries && d.config.promoteMs > 0
     : false
@@ -113,7 +113,7 @@ export function useReflectionActions() {
       if (r.ok) {
         if (action === "promote")
           toast.success(`已升格为正式文档：${r.data.file}`)
-        else toast.success(action === "approve" ? "已恢复入库" : "已驳回")
+        else toast.success(action === "approve" ? "已审核入库" : "已驳回")
         await refresh({ force: true })
       } else toast.error(r.error || "操作失败")
     } catch (e) {
@@ -132,6 +132,9 @@ export function useReflectionActions() {
     promoteBusy,
     acting,
     approvedCount,
+    pendingCount,
+    statusFilter,
+    setStatusFilter,
     willPromote,
     autoPromote,
     act,

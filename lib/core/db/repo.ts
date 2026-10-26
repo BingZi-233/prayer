@@ -278,6 +278,16 @@ export class Repo {
   ) {
     return this.reflection.reflectionSources(...args)
   }
+  insertReflectionEntry(
+    ...args: Parameters<ReflectionRepository["insertReflectionEntry"]>
+  ) {
+    return this.reflection.insertReflectionEntry(...args)
+  }
+  countReflectionsByStatus(
+    ...args: Parameters<ReflectionRepository["countReflectionsByStatus"]>
+  ) {
+    return this.reflection.countReflectionsByStatus(...args)
+  }
   insertReflectionMeta(
     ...args: Parameters<ReflectionRepository["insertReflectionMeta"]>
   ) {

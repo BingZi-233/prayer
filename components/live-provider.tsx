@@ -84,6 +84,8 @@ export interface Overview {
   brandDescription?: string
   enabledChats: number
   reflectionCount: number
+  /** 待审反思条数(积压提醒) */
+  reflectionPendingCount?: number
   humanSessions: number
   metrics?: OverviewMetrics
 }
