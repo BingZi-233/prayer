@@ -18,7 +18,7 @@ export type UsageSite =
   | "promote"
   | "promote-compose"
   | "topic"
-  | "legacy-split" // 一次性存量整理块拆分(阶段 2 删除脚本时一并移除)
+  | "legacy-split" // 历史站点,拆分脚本已删除,保留以显示历史用量
 
 // 单次调用从 SDK result 消息提取的增量
 export interface UsageDelta {

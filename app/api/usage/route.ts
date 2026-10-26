@@ -28,7 +28,7 @@ const SITE_ORDER = [
   "promote",
   "promote-compose",
   "topic",
-  "legacy-split",
+  "legacy-split", // 历史站点,仅展示
 ] as const
 const SITE_LABEL: Record<string, string> = {
   agent: "主客服",

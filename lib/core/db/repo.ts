@@ -233,7 +233,7 @@ export class Repo {
     return this.knowledge.searchBaseKb(...args)
   }
 
-  // 反思来源、审核状态与一次性拆分审计记录；与知识库共享事务连接。
+  // 反思来源、审核状态与替换审计记录；与知识库共享事务连接。
   groupReflectCursor(
     ...args: Parameters<ReflectionRepository["groupReflectCursor"]>
   ) {
