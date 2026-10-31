@@ -286,6 +286,33 @@ pnpm pm:enable
 pnpm pm:disable
 ```
 
+### Docker
+
+项目提供多阶段 Docker 构建，运行时使用 Node.js standalone server。SQLite 数据库、Claude
+配置和知识库都放在 `/app/data`，启动容器时应挂载持久化目录；容器保持单实例运行。
+
+```bash
+docker build -t prayer:latest .
+docker run --rm --init -p 3000:3000 \
+  --env-file .env \
+  -v "$PWD/data:/app/data" \
+  prayer:latest
+```
+
+也可以使用 Compose 管理构建和单实例运行：
+
+```bash
+docker compose up --build -d
+docker compose logs -f prayer
+docker compose down
+```
+
+默认监听宿主机 `3000` 端口，可通过 `PRAYER_PORT` 修改映射端口。
+
+`data/claude-config/settings.json` 仍需按本地部署方式准备模型配置。使用 bind mount 时，
+请确保宿主机目录允许容器默认用户（UID 1000）读写，并继续遵守 `.env`、`settings.json`
+和 SQLite 文件的 `0600` 权限要求。
+
 ### 部署边界
 
 - 必须使用标准 Node.js server runtime，不支持 Vercel、Edge Function 或其他 serverless 运行方式。

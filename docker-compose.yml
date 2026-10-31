@@ -1,0 +1,18 @@
+services:
+  prayer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: prayer:latest
+    init: true
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      HOSTNAME: 0.0.0.0
+      PORT: 3000
+    ports:
+      - "${PRAYER_PORT:-3000}:3000"
+    volumes:
+      - ./data:/app/data
