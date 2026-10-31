@@ -8,7 +8,8 @@ Node 版本见 `.node-version`，pnpm 版本见 `package.json` 的 `packageManag
 提交前运行 `pnpm check`，执行 TypeScript、ESLint 和完整 Vitest 测试。
 涉及页面、路由或打包边界时，还应运行生产构建；本机已有服务时使用
 `NEXT_DIST_DIR=.next-verify pnpm build`，避免覆盖正在服务的 `.next`。
-GitHub Actions 会在 PR 和 main 推送时执行检查与构建。
+GitHub Actions 会在 PR 和 main 推送时执行检查、生产构建和 Docker 镜像构建；main 推送会将镜像
+推送到 `ghcr.io/<owner>/prayer`，PR 只做构建验证。
 
 浏览器验证使用临时数据库、独立 Claude 配置目录，清空 QQ/TG 连接参数并关闭
 知识库预热与主动回复，避免开发检查触发真实客服应答。配置页至少检查：修改、

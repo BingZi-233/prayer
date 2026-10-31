@@ -3,7 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: prayer:latest
+    image: ${PRAYER_IMAGE:-ghcr.io/bingzi-233/prayer:latest}
     init: true
     restart: unless-stopped
     env_file:

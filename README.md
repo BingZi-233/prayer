@@ -302,12 +302,17 @@ docker run --rm --init -p 3000:3000 \
 也可以使用 Compose 管理构建和单实例运行：
 
 ```bash
-docker compose up --build -d
+docker compose pull
+docker compose up -d
 docker compose logs -f prayer
 docker compose down
 ```
 
 默认监听宿主机 `3000` 端口，可通过 `PRAYER_PORT` 修改映射端口。
+需要在本地构建时使用 `docker compose up --build -d`；也可以通过 `PRAYER_IMAGE` 覆盖镜像地址。
+
+GitHub Actions 在 `main` 推送时会把镜像推送到 `ghcr.io/<owner>/prayer`，并生成 `latest`、分支
+和提交 SHA 标签；Pull Request 只构建验证，不推送镜像。
 
 `data/claude-config/settings.json` 仍需按本地部署方式准备模型配置。使用 bind mount 时，
 请确保宿主机目录允许容器默认用户（UID 1000）读写，并继续遵守 `.env`、`settings.json`
