@@ -102,8 +102,8 @@ describe("buildDefaultSystem 弱模型契约", () => {
   it("故障排查先收集缺失信息,再给诊断", () => {
     expect(s).toContain("缺少明确错误码、原文或截图")
     expect(s).toContain("客户端/模型或触发操作中的任一关键项")
-    expect(s).toContain("先用一句话只问缺项")
-    expect(s).toContain("不猜原因或给步骤")
+    expect(s).toContain("回复只能是一句收集问题")
+    expect(s).toContain("不得同时给诊断、原因、步骤、配置、结论或后续承诺")
     expect(s).toContain("信息齐全后再诊断")
   })
 
