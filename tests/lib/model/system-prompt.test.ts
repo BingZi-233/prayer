@@ -65,7 +65,7 @@ describe("buildDefaultSystem 弱模型契约", () => {
     expect(s).toContain("不能查、不能办账户")
     expect(s).toContain("不说已经转接")
     expect(s).toContain("不提工单")
-    expect(s).toContain("只问一个")
+    expect(s).toContain("只问缺项")
     expect(s).toContain("多问分条答全")
     expect(s).toContain("不要用 Markdown 标题")
   })
@@ -91,6 +91,7 @@ describe("buildDefaultSystem 弱模型契约", () => {
     expect(s).not.toContain("# 回复要短")
     expect(concise).toContain("# 回复要短")
     expect(concise).toContain("能一句话说清就只写一句")
+    expect(concise).toContain("通常不超过 100 字")
     expect(concise).toContain("最多 3 步")
     expect(concise).toContain("不附选型建议")
     expect(concise.replace(/\n# 回复要短\n[\s\S]*?\n(?=\n# 没依据)/, "")).toBe(
@@ -104,6 +105,12 @@ describe("buildDefaultSystem 弱模型契约", () => {
     expect(s).toContain("先用一句话只问缺项")
     expect(s).toContain("不猜原因或给步骤")
     expect(s).toContain("信息齐全后再诊断")
+  })
+
+  it("问题明确时直接回答,不为可选信息追问", () => {
+    expect(s).toContain("问题已明确指向产品、模型或客户端时直接回答")
+    expect(s).toContain("不要为了补充可选信息而追问")
+    expect(s).toContain("只有缺少必要信息导致无法作答时才用一句话追问")
   })
 
   it("注入边界与保密规则不能被静默删掉", () => {
