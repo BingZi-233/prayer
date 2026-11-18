@@ -16,6 +16,7 @@ const nextConfig: NextConfig = {
   // Proxy 会为路由复制请求体；把其内存缓冲上限与 route-level bounded
   // reader 对齐。proxy 本身遇到超限会截断，真正的 413 由 proxy/route guard 返回。
   experimental: {
+    agentUpgrade: "security",
     proxyClientMaxBodySize: "1mb",
   },
   headers: async () => {
