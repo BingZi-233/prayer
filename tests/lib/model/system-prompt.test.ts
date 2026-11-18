@@ -90,11 +90,20 @@ describe("buildDefaultSystem 弱模型契约", () => {
     })
     expect(s).not.toContain("# 回复要短")
     expect(concise).toContain("# 回复要短")
-    expect(concise).toContain("不超过 3 句或 150 字")
+    expect(concise).toContain("能一句话说清就只写一句")
+    expect(concise).toContain("最多 3 步")
     expect(concise).toContain("不附选型建议")
     expect(concise.replace(/\n# 回复要短\n[\s\S]*?\n(?=\n# 没依据)/, "")).toBe(
       s
     )
+  })
+
+  it("故障排查先收集缺失信息,再给诊断", () => {
+    expect(s).toContain("缺少明确错误码、原文或截图")
+    expect(s).toContain("客户端/模型或触发操作中的任一关键项")
+    expect(s).toContain("先用一句话只问缺项")
+    expect(s).toContain("不猜原因或给步骤")
+    expect(s).toContain("信息齐全后再诊断")
   })
 
   it("注入边界与保密规则不能被静默删掉", () => {

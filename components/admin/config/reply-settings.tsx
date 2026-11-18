@@ -41,7 +41,7 @@ export function ReplySettings({
             }
           />
           <FieldLabel htmlFor="conciseReply">
-            精简回复(先给结论,约 150 字内)
+            精简回复(优先一句话,通常 150 字内)
           </FieldLabel>
         </Field>
         <Field>

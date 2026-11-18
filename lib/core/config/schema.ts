@@ -110,7 +110,7 @@ export const appConfigBaseSchema = z.object({
   proactiveCandidateBudget: proactiveCandidateCount.default(12),
   supportUrl: z.string().default(""),
   ackEnabled: z.boolean().default(true),
-  /** 精简回复：system prompt 追加字数与禁写约束，并设 SDK 内置 Concise 输出风格。 */
+  /** 精简回复：system prompt 追加一句话与禁写约束，并设 SDK 内置 Concise 输出风格。 */
   conciseReply: z.boolean().default(true),
   /** 0 不拆分；开启拆分时至少 50 字，避免发送大量碎片消息。 */
   maxReplyChars: z.union([z.literal(0), safeInteger(50)]).default(900),
